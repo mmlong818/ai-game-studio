@@ -296,8 +296,9 @@ test("十三类艺术化游戏都会产出可解析脚本、角色拆分位图�
         assert.match(script, /function syncMahjongControls/);
         assert.match(script, /function mahjongTileVisualState/);
         assert.match(script, /function moveMahjongKeyboardCursor/);
-        assert.match(script, /青绿描边可选/);
-        assert.match(script, /visualCueVersion: 2/);
+        assert.match(script, /亮面为自由牌/);
+        assert.match(script, /visualCueVersion: 3/);
+        assert.match(script, /selectionChangesGeometry: false/);
         assert.match(script, /再找一张图案与角标都相同的牌/);
         assert.match(script, /first\.pairId !== tile\.pairId/);
         assert.match(script, /mahjongRelicStacks/);

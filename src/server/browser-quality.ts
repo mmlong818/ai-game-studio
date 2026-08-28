@@ -471,10 +471,17 @@ export async function inspectStageEInBrowser(root: string, template: StageETempl
     if (template === "maze" && (initial.runtime.loopCount < 5 || initial.runtime.junctionCount < 3 || initial.runtime.alternativeSegments < 3 || !initial.runtime.hasMultipleRoutes)) throw new Error("苔径迷庭仍然只有单一路线，没有形成环路与有效岔口。 ");
     if (template === "mahjong-roguelite" && (initial?.runtime?.relicPoolSize ?? 0) < 12) throw new Error("月港雀旅遗物池不足 12 件。 ");
     if (template === "mahjong-roguelite" && (routeOffer?.runtime?.routePoolSize ?? 0) < 5) throw new Error("月港雀旅路线池不足 5 条。 ");
-    if (template === "mahjong-roguelite" && (initial?.runtime?.visualCueVersion ?? 0) < 2) throw new Error("月港雀旅没有区分可选、被压和配对目标的视觉状态。 ");
+    if (template === "mahjong-roguelite" && (initial?.runtime?.visualCueVersion ?? 0) < 3) throw new Error("月港雀旅没有用固定几何区分自由牌、被压牌、选中牌和配对目标。 ");
+    if (template === "mahjong-roguelite" && ((initial?.runtime?.layerCueVersion ?? 0) < 1 || initial?.runtime?.selectionChangesGeometry !== false)) throw new Error("月港雀旅没有把牌堆层级与选中反馈分离。 ");
     if (template === "mahjong-roguelite" && (initial?.runtime?.boardLayout?.boardWidth ?? 0) < 600) throw new Error("月港雀旅牌桌仍未充分利用手机横向空间。 ");
     if (template === "mahjong-roguelite" && ((initial?.runtime?.freeCount ?? 0) < 2 || (initial?.runtime?.blockedCount ?? 0) < 1)) throw new Error("月港雀旅开局没有同时呈现可选牌与被压牌。 ");
     if (template === "mahjong-roguelite" && (!selectedCue?.runtime?.selectedId || (selectedCue.runtime.compatibleFreeCount ?? 0) < 1)) throw new Error("月港雀旅选牌后没有形成可辨认的配对目标。 ");
+    if (template === "mahjong-roguelite") {
+      const selectedId = selectedCue?.runtime?.selectedId;
+      const beforeRect = initial?.runtime?.hitAreas?.find((area: { id: string }) => area.id === selectedId)?.rect;
+      const afterRect = selectedCue?.runtime?.hitAreas?.find((area: { id: string }) => area.id === selectedId)?.rect;
+      if (!beforeRect || !afterRect || JSON.stringify(beforeRect) !== JSON.stringify(afterRect)) throw new Error(`月港雀旅点击选牌后改变了牌的位置或尺寸：${JSON.stringify({ beforeRect, afterRect })}`);
+    }
     if (template === "mahjong-roguelite" && ((completedState?.runtime?.routeHistory?.length ?? 0) < 3 || !completedState?.runtime?.ending)) throw new Error("月港雀旅完成长局后没有路线历史或差异化结局。 ");
     if (runtimeErrors.length) throw new Error(`阶段 E 浏览器错误：${runtimeErrors.join(" | ")}`);
     const result: StageEQualityResult = { template, completedRuns: 3, failedRuns: 2, evidence: { routeOffer: routeOffer?.runtime ?? null, initial: initial?.runtime, selectedCue: selectedCue?.runtime ?? null, advanced: advanced?.runtime ?? null, restored: restored?.runtime ?? null, completed: completedState?.runtime ?? null } };
