@@ -66,8 +66,9 @@ test("十三类艺术化游戏都会产出可解析脚本、角色拆分位图�
       assert.equal(existsSync(join(output, "_studio", "OPEN_SOURCE_ATTRIBUTION.md")), true);
       assert.match(readFileSync(join(output, "_studio", "GAME_DESIGN.md"), "utf8"), /## 核心循环/);
       assert.match(readFileSync(join(output, "_studio", "ART_REVIEW.md"), "utf8"), /主体占据可用面积约 82%–94%/);
-      assert.match(readFileSync(join(output, "index.html"), "utf8"), /AI BITMAP ART · TRACEABLE ASSETS/);
-      assert.match(readFileSync(join(output, "index.html"), "utf8"), /20 LEVEL CAMPAIGN · STEPPED DIFFICULTY/);
+      assert.match(readFileSync(join(output, "index.html"), "utf8"), /COMMERCIAL GAMEPLAY CONTRACT/);
+      assert.match(readFileSync(join(output, "index.html"), "utf8"), /3-STAR MASTERY/);
+      assert.match(readFileSync(join(output, "index.html"), "utf8"), /data-mastery-mission/);
       assert.match(readFileSync(join(output, "index.html"), "utf8"), new RegExp(`data-visual-style="${visualStyle}"`));
       assert.match(readFileSync(join(output, "index.html"), "utf8"), /data-detail-level=/);
       assert.match(readFileSync(join(output, "index.html"), "utf8"), /class="style-ornament"/);
@@ -95,6 +96,7 @@ test("十三类艺术化游戏都会产出可解析脚本、角色拆分位图�
       assert.match(readFileSync(join(output, "app.js"), "utf8"), /function gameSceneHeight\(\)/);
       assert.match(readFileSync(join(output, "app.js"), "utf8"), /function setGameplayControlsEnabled\(enabled\)/);
       assert.match(readFileSync(join(output, "app.js"), "utf8"), /function setGameSessionState\(nextState\)/);
+      assert.match(readFileSync(join(output, "app.js"), "utf8"), /function evaluateCampaignMastery\(won\)/);
       assert.match(readFileSync(join(output, "app.js"), "utf8"), /function returnToSetup\(\)/);
       assert.match(readFileSync(join(output, "app.js"), "utf8"), /game:state-change/);
       assert.match(readFileSync(join(output, "app.js"), "utf8"), /再次点击“重新开始”即可放弃当前进度/);

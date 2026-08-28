@@ -51,12 +51,17 @@ test("阶段 E 逻辑、迷宫和长局模板具备计划要求的运行时能�
         assert.match(html, /data-mahjong-mode/);
         assert.match(html, /data-mahjong-seed/);
         assert.match(script, /mahjongRelics = \[/);
+        assert.match(script, /mahjongRoutes = \[/);
+        assert.match(script, /mahjongSynergies = \[/);
+        assert.match(script, /mahjongConflicts = \[/);
         assert.match(script, /mahjong-run-v2/);
         assert.match(script, /限时潮汐/);
         assert.match(script, /relicPoolSize/);
         assert.match(script, /mahjongTileVisualState/);
         assert.match(script, /boardLayout/);
         assert.match(script, /visualCueVersion: 2/);
+        assert.match(script, /mahjongEndingForRun/);
+        assert.match(script, /chooseEliteRoute/);
       }
     }
   } finally {

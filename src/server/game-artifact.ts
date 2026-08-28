@@ -207,6 +207,8 @@ export function writeDesignDocuments(
     ? `\n## 创作对话修订依据\n\n本版本设计合同参考了创作者在制作对话中的 ${directions.length} 条意见（按时间顺序${directionAudit ? "，并经模型逐条审计落实情况" : ""}）：\n\n${directionLines.join("\n")}\n`
     : "";
   const design = project.spec.designProfile;
+  const commercialLevels = createCampaignLevels(project.spec.template, project.spec.difficulty);
+  const masteryTable = commercialLevels.map((level) => `| ${level.number} | ${level.tierLabel} | ${level.ruleModifier} | ${level.masteryRules.map((rule) => rule.label).join("；")} | ${level.reward} |`).join("\n");
   const source = project.spec.templateSource;
   const visualStyle = visualStyleDirection(project);
   const sourceSection = source
@@ -214,7 +216,7 @@ export function writeDesignDocuments(
     : "## 模板来源\n\n当前玩法使用平台原创运行时，没有声明为第三方开源代码移植。";
   writeFileSync(
     join(studioRoot, "GAME_DESIGN.md"),
-    `# ${project.title} · 专业游戏设计文档\n\n## 产品定位\n\n- 类型：${design.genre}\n- 目标玩家：${design.targetPlayer}\n- 单局时长：${design.sessionLength}\n- 玩家幻想：${design.playerFantasy}\n- 设计来源：${project.spec.designSource === "llm" ? "AI 依据创意定制的设计合同" : "玩法模板预设设计"}\n\n## 核心承诺\n\n${project.spec.vision}\n\n## 核心循环\n\n${design.coreLoop.map((item, index) => `${index + 1}. ${item}`).join("\n")}\n\n## 胜负条件\n\n- 胜利：${design.winCondition}\n- 失败：${design.failCondition}\n\n## 机制与成长\n\n### 主要机制\n\n${markdownList(project.spec.mechanics)}\n\n### 局内推进\n\n${markdownList(design.progression)}\n\n## 难度曲线\n\n${markdownList(design.difficultyCurve)}\n\n## 手感与反馈\n\n${markdownList(design.gameFeel)}\n\n## 新手引导\n\n${markdownList(design.onboarding)}\n\n## 无障碍与输入\n\n${markdownList(design.accessibility)}\n\n## 制作风险\n\n${markdownList(design.productionRisks, "- 当前模板没有额外已知风险。")}
+    `# ${project.title} · 专业游戏设计文档\n\n## 产品定位\n\n- 类型：${design.genre}\n- 目标玩家：${design.targetPlayer}\n- 单局时长：${design.sessionLength}\n- 玩家幻想：${design.playerFantasy}\n- 设计来源：${project.spec.designSource === "llm" ? "AI 依据创意定制的设计合同" : "玩法模板预设设计"}\n\n## 核心承诺\n\n${project.spec.vision}\n\n## 核心循环\n\n${design.coreLoop.map((item, index) => `${index + 1}. ${item}`).join("\n")}\n\n## 胜负条件\n\n- 胜利：${design.winCondition}\n- 失败：${design.failCondition}\n\n## 机制与成长\n\n### 主要机制\n\n${markdownList(project.spec.mechanics)}\n\n### 局内推进\n\n${markdownList(design.progression)}\n\n## 难度曲线\n\n${markdownList(design.difficultyCurve)}\n\n## 商业级关卡合同\n\n每关包含一个必须完成的主要任务和两个可选技巧目标。通关获得 1 枚基础星章，完成效率与控制目标各增加 1 枚；历史最佳评价只升不降。星章用于证明掌握程度和提供复玩目标，不出售数值优势。\n\n| 关卡 | 阶段 | 规则变化 | 技巧目标 | 奖励 |\n| ---: | --- | --- | --- | --- |\n${masteryTable}\n\n## 手感与反馈\n\n${markdownList(design.gameFeel)}\n\n## 新手引导\n\n${markdownList(design.onboarding)}\n\n## 无障碍与输入\n\n${markdownList(design.accessibility)}\n\n## 制作风险\n\n${markdownList(design.productionRisks, "- 当前模板没有额外已知风险。")}
 \n## 硬约束\n\n${constraints}\n${directionSection}\n${sourceSection}\n\n## 验收清单\n\n${project.spec.acceptanceCriteria.map((criterion) => `- [ ] ${criterion.id} · ${criterion.priority} · ${criterion.statement}`).join("\n")}\n`,
     "utf8",
   );
@@ -316,6 +318,7 @@ let campaignLevelIndex = 0;
 let campaignMaxUnlocked = 0;
 let currentGoal = config.goal;
 let currentDuration = config.duration;
+let campaignMastery = {};
 
 function currentCampaignLevel() { return config.campaignLevels[campaignLevelIndex]; }
 function syncCampaignUi() {
@@ -324,15 +327,31 @@ function syncCampaignUi() {
   Array.from(campaignSelect.options).forEach((option, index) => { option.disabled = index > campaignMaxUnlocked; });
   campaignProgress.textContent = "第 " + level.number + " / " + config.campaignLevels.length + " 关 · " + level.tierLabel + " · " + level.ruleModifier;
   document.body.dataset.campaignCurrentLevel = String(level.number);
+  let masteryCard = startCard.querySelector("[data-mastery-card]");
+  if (!masteryCard) {
+    masteryCard = document.createElement("section");
+    masteryCard.dataset.masteryCard = "";
+    masteryCard.className = "signal-mastery-card";
+    masteryCard.innerHTML = '<strong data-mastery-mission></strong><ul data-mastery-objectives></ul><small data-mastery-summary></small>';
+    startCard.querySelector(".signal-setup-actions")?.before(masteryCard);
+  }
+  masteryCard.querySelector("[data-mastery-mission]").textContent = level.mission;
+  masteryCard.querySelector("[data-mastery-objectives]").replaceChildren(...level.masteryRules.map((rule) => {
+    const item = document.createElement("li"); item.textContent = rule.label; return item;
+  }));
+  const earned = Math.max(0, Math.min(3, Number(campaignMastery[level.id]) || 0));
+  const total = Object.values(campaignMastery).reduce((sum, value) => sum + Math.max(0, Math.min(3, Number(value) || 0)), 0);
+  masteryCard.querySelector("[data-mastery-summary]").textContent = "本关 " + "★".repeat(earned) + "☆".repeat(3 - earned) + " · 总星章 " + total + " / 60";
 }
 function saveCampaign() {
-  try { safeStorage.setItem(config.campaignStorageKey, JSON.stringify({ schemaVersion: 1, current: campaignLevelIndex, maxUnlocked: campaignMaxUnlocked })); } catch {}
+  try { safeStorage.setItem(config.campaignStorageKey, JSON.stringify({ schemaVersion: 2, current: campaignLevelIndex, maxUnlocked: campaignMaxUnlocked, mastery: campaignMastery })); } catch {}
 }
 function loadCampaign() {
   try {
     const saved = JSON.parse(safeStorage.getItem(config.campaignStorageKey) || "null");
     campaignMaxUnlocked = Math.max(0, Math.min(config.campaignLevels.length - 1, Number(saved?.maxUnlocked) || 0));
     campaignLevelIndex = Math.max(0, Math.min(campaignMaxUnlocked, Number(saved?.current) || 0));
+    campaignMastery = saved?.mastery && typeof saved.mastery === "object" ? saved.mastery : {};
   } catch {}
   syncCampaignUi();
 }
@@ -405,6 +424,11 @@ function moveTarget() {
 
 function finish(won) {
   const finalWin = won && campaignLevelIndex === config.campaignLevels.length - 1;
+  if (won) {
+    const completedLevel = currentCampaignLevel();
+    const stars = 1 + completedLevel.masteryRules.filter((rule) => remaining >= rule.target).length;
+    campaignMastery[completedLevel.id] = Math.max(Number(campaignMastery[completedLevel.id]) || 0, stars);
+  }
   setGameSessionState(won ? (finalWin ? "won" : "stage-complete") : "lost");
   if (timerId) window.clearInterval(timerId);
   timerId = null;
@@ -491,7 +515,7 @@ document.addEventListener("visibilitychange", () => setAmbient(running && !docum
 loadCampaign();
 applyCampaignLevel();
 const gameDebugApi = {
-  getState: () => ({ score, remaining, running, soundEnabled, state: arena.dataset.state, campaign: { level: currentCampaignLevel(), maxUnlocked: campaignMaxUnlocked + 1, total: config.campaignLevels.length }, goal: currentGoal }),
+  getState: () => ({ score, remaining, running, soundEnabled, state: arena.dataset.state, campaign: { level: currentCampaignLevel(), maxUnlocked: campaignMaxUnlocked + 1, total: config.campaignLevels.length, mastery: { ...campaignMastery }, stars: Object.values(campaignMastery).reduce((sum, value) => sum + Number(value || 0), 0) }, goal: currentGoal }),
   collect,
   forceWin: () => finish(true),
   restart: start,
@@ -504,6 +528,8 @@ if (new URLSearchParams(location.search).has("probe")) window.__GAME_DEBUG__ = g
 const gameStyles = `:root{font-family:Inter,"Microsoft YaHei",sans-serif;color:#f1eee7;background:#0e1313;color-scheme:dark}*{box-sizing:border-box;touch-action:manipulation}body{margin:0;min-height:100vh;background:#0e1313}.game-shell{width:min(1180px,100%);min-height:100vh;margin:auto;padding:clamp(18px,3.5vw,46px);display:grid;grid-template-rows:auto 1fr auto;gap:18px}.game-header{display:flex;align-items:end;justify-content:space-between;gap:24px}.title-lockup{display:flex;align-items:end;gap:18px}.chapter{padding-bottom:5px;color:#e7673f;font:600 11px/1 ui-monospace,Consolas,monospace;letter-spacing:.12em}.chapter::before{content:"01";display:block;margin-bottom:8px;color:#f1eee7;font-size:26px;letter-spacing:-.05em}h1{margin:0;font-size:clamp(32px,6vw,70px);font-weight:620;line-height:.92;letter-spacing:-.055em}.kicker{display:block;margin-bottom:9px;color:#d97859;font:600 10px/1 ui-monospace,Consolas,monospace;letter-spacing:.12em;text-transform:uppercase}.vision{max-width:430px;margin:0;color:#a9b1ad;font-size:13px;line-height:1.6}.arena{position:relative;min-height:480px;overflow:hidden;border:1px solid #414b48;background:#17201f url("./assets/arena-background.png") center/cover no-repeat;box-shadow:0 22px 60px #050a0a88}.arena::before{position:absolute;z-index:1;inset:0;background:linear-gradient(180deg,#0c151533 0%,#07100f55 55%,#050908aa 100%),radial-gradient(circle at 50% 48%,transparent 0 28%,#07100f88 100%);content:"";pointer-events:none}.arena::after{position:absolute;z-index:1;inset:14px;border:1px solid #dbe7df26;content:"";pointer-events:none}.target{position:absolute;z-index:4;width:clamp(60px,7vw,82px);aspect-ratio:1;border:1px solid #ffb195;border-radius:50%;transform:translate(-50%,-50%);cursor:pointer;background-color:#e85f34;background-image:url("./assets/gameplay-atlas.png");background-position:0 0;background-size:300% 300%;background-repeat:no-repeat;box-shadow:0 0 0 9px #ee684038,0 0 40px #ff70489c;transition:left .2s ease,top .2s ease,transform .12s ease,box-shadow .12s ease}.target::before,.target::after{position:absolute;inset:-18px;border:1px solid #ff8b634f;border-radius:50%;content:""}.target::after{inset:-31px;border-color:#ff8b6326}.target:hover,.target:focus-visible{outline:2px solid #f1eee7;outline-offset:7px;transform:translate(-50%,-50%) scale(1.08);box-shadow:0 0 0 10px #ee684044,0 0 55px #ff7048bb}.start-card{position:absolute;z-index:5;left:50%;top:50%;width:min(390px,calc(100% - 36px));padding:28px;transform:translate(-50%,-50%);border:1px solid #8a938e;background:#101817eb;box-shadow:0 26px 70px #020606aa;backdrop-filter:blur(8px)}.start-card .card-index{display:block;margin-bottom:38px;color:#d97859;font:600 10px/1 ui-monospace,Consolas,monospace;letter-spacing:.14em}.start-card h2{margin:0;font-size:31px;letter-spacing:-.035em}.start-card p{margin:10px 0 22px;color:#b7c0bc;font-size:13px;line-height:1.6}.primary,.secondary{min-height:44px;border:1px solid #e86840;padding:0 18px;font:600 12px/1 Inter,"Microsoft YaHei",sans-serif;letter-spacing:.02em;cursor:pointer}.primary{width:100%;background:#e86840;color:#111815}.primary:hover{background:#f07952}.primary:focus-visible,.secondary:focus-visible{outline:2px solid #f1eee7;outline-offset:3px}.secondary{background:#121817;color:#e9e5dc;border-color:#59635f}.secondary:hover{border-color:#8d9893;background:#1b2422}.controls{display:grid;grid-template-columns:auto minmax(180px,1fr) auto;align-items:center;gap:18px}.hud{display:flex;gap:7px}.metric{min-width:105px;padding:10px 13px;border:1px solid #36403d;background:#141b1a}.metric>span{display:block;margin-bottom:4px;color:#84908b;font:600 9px/1 ui-monospace,Consolas,monospace;letter-spacing:.1em;text-transform:uppercase}.metric strong{font:500 23px/1 ui-monospace,Consolas,monospace}.metric strong span{display:inline}.status{margin:0;color:#b9c1bd;font-size:12px;letter-spacing:.01em}.control-actions{display:flex;gap:7px}.arena[data-state=won]{border-color:#61bd8b}.arena[data-state=won]::before{background:linear-gradient(#0c171344,#0a1d1588)}.arena[data-state=lost]{border-color:#bb685d}[hidden]{display:none!important}@media(max-width:720px){.game-header{align-items:start;flex-direction:column}.title-lockup{align-items:start}.chapter{display:none}.vision{display:none}.arena{min-height:58vh;background-position:50% center}.game-shell{padding:16px}.controls{grid-template-columns:1fr;gap:10px}.status{grid-row:1}.hud{width:100%}.metric{flex:1}.control-actions{display:grid;grid-template-columns:1fr 1fr}.secondary{width:100%}}@media(prefers-reduced-motion:reduce){*{transition:none!important}}`;
 
 const stageBSignalStyles = `.target{background-image:url("./assets/sprites/sprite-01.png");background-size:contain;background-position:center}.signal-level-field{display:grid;gap:6px;margin:0 0 7px}.signal-level-field>span{color:#9faeaa;font-size:10px}.signal-level-field select{width:100%;min-height:44px;border:1px solid #59635f;padding:0 34px 0 11px;background:#121817;color:#e9e5dc;font:600 12px/1 Inter,"Microsoft YaHei",sans-serif}.signal-level-field select:disabled{opacity:.7}.start-card [data-campaign-progress]{display:block;margin:0 0 14px;color:#9faeaa;font-size:10px;line-height:1.4}`;
+
+const signalMasteryStyles = `.signal-mastery-card{display:grid;gap:6px;margin:0 0 12px;padding:11px 12px;border:1px solid rgba(232,104,64,.48);background:rgba(232,104,64,.07);text-align:left}.signal-mastery-card strong{color:#f1eee7;font-size:12px;line-height:1.4}.signal-mastery-card ul{display:grid;gap:3px;margin:0;padding-left:17px;color:#aeb9b4;font-size:10px;line-height:1.35}.signal-mastery-card li::marker{color:#e86840}.signal-mastery-card small{color:#e99879;font-size:10px;font-weight:700;line-height:1.35}`;
 
 const signalMobilePlayFlowStyles = `.signal-setup-actions{display:grid;grid-template-columns:1fr;gap:7px;margin:8px 0}.signal-setup-actions .secondary{width:100%}
 @media(max-width:720px){body{display:grid;width:100%;height:100svh;min-height:100svh;overflow:hidden;place-items:center;background:#0e1313 url("./assets/arena-background.png") center/cover no-repeat}.game-shell{position:relative;width:min(100vw,56.25svh);height:min(100svh,177.7778vw);min-height:0;padding:0;gap:0;grid-template-rows:1fr}.game-header{display:none}.arena{width:100%;height:100%;min-height:0;border:0}.start-card{top:50%;width:calc(100% - 24px);max-height:calc(100% - 24px);padding:18px;overflow:auto;overscroll-behavior:contain}.start-card .card-index{margin-bottom:18px}.start-card p{margin-bottom:14px}.controls{position:absolute;z-index:7;inset:0;display:block;pointer-events:none}.hud{position:absolute;top:max(8px,env(safe-area-inset-top));right:max(8px,env(safe-area-inset-right));display:flex;width:auto;pointer-events:none}.metric{min-width:74px;padding:7px 9px;background:rgba(20,27,26,.86);backdrop-filter:blur(12px)}.metric strong{font-size:17px}.status{position:absolute;right:max(8px,env(safe-area-inset-right));bottom:max(8px,env(safe-area-inset-bottom));left:max(8px,env(safe-area-inset-left));padding:8px 10px;background:rgba(20,27,26,.86);font-size:11px;line-height:1.35;backdrop-filter:blur(12px)}.control-actions{position:absolute;z-index:2;top:max(8px,env(safe-area-inset-top));left:max(8px,env(safe-area-inset-left));display:flex;gap:5px;pointer-events:auto}.control-actions .secondary{width:auto;min-width:44px;min-height:44px;padding:0 9px;background:rgba(18,24,23,.88);backdrop-filter:blur(12px)}body:not([data-game-state=playing]) .controls{display:none}}
@@ -665,6 +691,7 @@ function templateScript(project: ProjectDetail) {
     campaign: project.spec.levelProgression,
     campaignLevels,
     campaignStorageKey: `forge-campaign:${project.id}:${project.version.id}`,
+    masteryStorageKey: `forge-mastery:${project.id}:${project.version.id}`,
   });
   return `${safeStorageShim}
 const config = ${config};
@@ -733,6 +760,9 @@ const metricValue = document.querySelector("#metric-value");
 const status = document.querySelector("#status");
 const campaignSelect = document.querySelector("[data-campaign-level]");
 const campaignProgressNodes = Array.from(document.querySelectorAll("[data-campaign-progress]"));
+const masteryMissionNodes = Array.from(document.querySelectorAll("[data-mastery-mission]"));
+const masteryObjectiveNodes = Array.from(document.querySelectorAll("[data-mastery-objectives]"));
+const masterySummaryNodes = Array.from(document.querySelectorAll("[data-mastery-summary]"));
 const sounds = {
   music: new Audio("./assets/music.wav"), ambient: new Audio("./assets/ambient.wav"),
   legal: new Audio("./assets/legal.wav"), illegal: new Audio("./assets/illegal.wav"), reward: new Audio("./assets/reward.wav"),
@@ -771,6 +801,7 @@ let runtimeDebugActions = {};
 let campaignLevelIndex = 0;
 let campaignMaxUnlocked = 0;
 let campaignRandomState = 1;
+let campaignMastery = {};
 
 function readCampaignProgress() {
   if (!config.campaign?.persistProgress) return;
@@ -779,6 +810,7 @@ function readCampaignProgress() {
     if (!saved || typeof saved !== "object") return;
     campaignMaxUnlocked = Math.max(0, Math.min(config.campaignLevels.length - 1, Number(saved.maxUnlocked) || 0));
     campaignLevelIndex = Math.max(0, Math.min(campaignMaxUnlocked, Number(saved.current) || 0));
+    campaignMastery = saved.mastery && typeof saved.mastery === "object" ? saved.mastery : {};
   } catch {}
 }
 
@@ -789,6 +821,7 @@ function writeCampaignProgress() {
       schemaVersion: 1,
       current: campaignLevelIndex,
       maxUnlocked: campaignMaxUnlocked,
+      mastery: campaignMastery,
       updatedAt: new Date().toISOString(),
     }));
   } catch {}
@@ -796,6 +829,53 @@ function writeCampaignProgress() {
 
 function currentCampaignLevel() {
   return config.campaignLevels[campaignLevelIndex] || config.campaignLevels[0];
+}
+
+function masteryMetric(state, path) {
+  return String(path || "").split(".").reduce((value, key) => value?.[key], state);
+}
+
+function masteryRulePassed(rule, state) {
+  const value = Number(masteryMetric(state, rule.metric));
+  if (!Number.isFinite(value)) return false;
+  if (rule.comparison === "gte") return value >= Number(rule.target);
+  if (rule.comparison === "lte") return value <= Number(rule.target);
+  const reference = Number(masteryMetric(state, rule.referenceMetric));
+  if (!Number.isFinite(reference) || reference <= 0) return false;
+  const ratio = value / reference;
+  return rule.comparison === "ratio-gte" ? ratio >= Number(rule.target) : ratio <= Number(rule.target);
+}
+
+function campaignStarTotal() {
+  return Object.values(campaignMastery).reduce((total, value) => total + Math.max(0, Math.min(3, Number(value) || 0)), 0);
+}
+
+function evaluateCampaignMastery(won) {
+  const level = currentCampaignLevel();
+  const state = runtimeDebugState?.() || {};
+  const checks = (level.masteryRules || []).map((rule) => ({ ...rule, passed: won && masteryRulePassed(rule, state) }));
+  const stars = won ? 1 + checks.filter((check) => check.passed).length : 0;
+  if (won) {
+    campaignMastery[level.id] = Math.max(Number(campaignMastery[level.id]) || 0, stars);
+    writeCampaignProgress();
+  }
+  return { stars, checks, total: campaignStarTotal() };
+}
+
+function syncMasteryUi() {
+  const level = currentCampaignLevel();
+  const earned = Math.max(0, Math.min(3, Number(campaignMastery[level.id]) || 0));
+  masteryMissionNodes.forEach((node) => { node.textContent = level.mission; });
+  masteryObjectiveNodes.forEach((node) => {
+    node.replaceChildren(...(level.masteryRules || []).map((rule) => {
+      const item = document.createElement("li");
+      item.textContent = rule.label;
+      return item;
+    }));
+  });
+  masterySummaryNodes.forEach((node) => {
+    node.textContent = "本关 " + "★".repeat(earned) + "☆".repeat(3 - earned) + " · 总星章 " + campaignStarTotal() + " / " + (config.campaignLevels.length * 3) + " · 奖励 " + level.reward;
+  });
 }
 
 function campaignScale(key, fallback = 1) {
@@ -821,6 +901,7 @@ function syncCampaignUi() {
     Array.from(campaignSelect.options).forEach((option, index) => { option.disabled = index > campaignMaxUnlocked; });
   }
   campaignProgressNodes.forEach((node) => { node.textContent = "第 " + level.number + " / " + config.campaignLevels.length + " 关 · " + level.tierLabel + " · " + level.ruleModifier; });
+  syncMasteryUi();
 }
 
 function setCampaignLevel(index, options = {}) {
@@ -1143,15 +1224,19 @@ function showTerminalResult(won, title, detail) {
 }
 
 function showResult(won, title, detail) {
+  const mastery = evaluateCampaignMastery(won);
+  const masteryDetail = won
+    ? " 本关评价 " + "★".repeat(mastery.stars) + "☆".repeat(3 - mastery.stars) + "；" + mastery.checks.map((check) => (check.passed ? "已达成：" : "待挑战：") + check.label).join("；") + "。"
+    : " 本关尚未获得星章；重新开始不会降低既有最佳评价。";
   if (!won) {
-    showTerminalResult(false, title, detail + " 当前为第 " + currentCampaignLevel().number + " 关，可从本关重新开始。");
+    showTerminalResult(false, title, detail + masteryDetail + " 当前为第 " + currentCampaignLevel().number + " 关，可从本关重新开始。");
     return;
   }
   const completed = currentCampaignLevel();
   if (completed.number >= config.campaignLevels.length) {
     campaignMaxUnlocked = config.campaignLevels.length - 1;
     writeCampaignProgress();
-    showTerminalResult(true, "20 关全部完成 · " + title, detail + " 你已经完成整套渐进关卡。");
+    showTerminalResult(true, "20 关全部完成 · " + title, detail + masteryDetail + " 你已经完成整套渐进关卡，共获得 " + mastery.total + " / " + (config.campaignLevels.length * 3) + " 枚星章。");
     return;
   }
   const nextIndex = unlockNextCampaignLevel();
@@ -1160,7 +1245,7 @@ function showResult(won, title, detail) {
   setGameSessionState("stage-complete");
   stopEnvironmentAudio();
   overlayTitle.textContent = "第 " + completed.number + " 关完成 · " + title;
-  overlayDetail.textContent = detail + " 下一关：" + nextLevel.tierLabel + " · " + nextLevel.ruleModifier + "。";
+  overlayDetail.textContent = detail + masteryDetail + " 下一关：" + nextLevel.tierLabel + " · " + nextLevel.ruleModifier + "。";
   startButton.textContent = "进入第 " + nextLevel.number + " 关";
   overlay.hidden = false;
   playSound("success");
@@ -1233,7 +1318,7 @@ const gameDebugApi = {
     running,
     metric: metricValue.textContent,
     status: status.textContent,
-    campaign: { level: currentCampaignLevel(), index: campaignLevelIndex, maxUnlocked: campaignMaxUnlocked + 1, total: config.campaignLevels.length },
+    campaign: { level: currentCampaignLevel(), index: campaignLevelIndex, maxUnlocked: campaignMaxUnlocked + 1, total: config.campaignLevels.length, mastery: { ...campaignMastery }, stars: campaignStarTotal() },
     runtime: runtimeDebugState(),
   }),
   ...runtimeDebugActions,
@@ -1244,7 +1329,7 @@ if (new URLSearchParams(location.search).has("probe")) window.__GAME_DEBUG__ = g
 
 const touchSafeTemplateStyles = `${templateStyles}${templateVisualStyles}.game-canvas{touch-action:none}.control-button:disabled{cursor:not-allowed;opacity:.42;transform:none}.game-help{border:1px solid var(--theme-line);border-radius:var(--theme-radius);background:var(--theme-panel);overflow:hidden}.game-help summary{position:relative;display:flex;min-height:44px;align-items:center;padding:0 38px 0 13px;color:var(--theme-text);font-size:12px;font-weight:700;letter-spacing:.02em;cursor:pointer;list-style:none}.game-help summary::-webkit-details-marker{display:none}.game-help summary::after{position:absolute;right:14px;content:"＋";color:var(--theme-accent);font-size:17px}.game-help[open] summary::after{content:"−"}.game-help-content{display:grid;gap:8px;padding:0 8px 8px}.game-help .panel-block,.game-help .source-proof{background:color-mix(in srgb,var(--theme-panel) 82%,transparent)}.puzzle-setup{display:grid;grid-template-columns:minmax(0,1.25fr) minmax(0,.75fr);gap:8px;margin:14px 0 16px}.puzzle-field{display:grid;gap:6px;min-width:0}.puzzle-field>span{color:var(--theme-muted);font-size:11px;line-height:1.2;letter-spacing:.015em}.puzzle-field select{width:100%;min-height:44px;border:1px solid var(--theme-line);border-radius:calc(var(--theme-radius)*.55);padding:0 32px 0 11px;background:var(--theme-panel);color:var(--theme-text);font:600 12px/1 Inter,"Microsoft YaHei",sans-serif;letter-spacing:.015em}.puzzle-panel .puzzle-setup{margin:11px 0 0}.breakout-setup{display:grid;gap:6px;margin:14px 0 16px}.breakout-panel .breakout-setup{margin:10px 0 0}.breakout-field{display:grid;gap:6px}.breakout-field>span{color:var(--theme-muted);font-size:11px}.breakout-field select{width:100%;min-height:44px;border:1px solid var(--theme-line);border-radius:calc(var(--theme-radius)*.55);padding:0 34px 0 11px;background:var(--theme-panel);color:var(--theme-text);font:600 12px/1 Inter,"Microsoft YaHei",sans-serif}.breakout-progress{color:var(--theme-muted);font-size:10px;line-height:1.5}.maze-pad{grid-template-columns:repeat(3,minmax(52px,1fr));grid-template-rows:repeat(2,52px);gap:6px}.maze-pad [data-control=up]{grid-column:2;grid-row:1}.maze-pad [data-control=left]{grid-column:1;grid-row:2}.maze-pad [data-control=down]{grid-column:2;grid-row:2}.maze-pad [data-control=right]{grid-column:3;grid-row:2}.maze-pad .control-button{min-height:52px;font-size:17px}.rule-note{display:block;margin-top:9px;color:#7f8e87;font-size:10px;line-height:1.5}.source-proof{display:grid;gap:5px;padding:12px;border:1px solid var(--theme-line);border-radius:var(--theme-radius);background:var(--theme-panel);color:var(--theme-muted);font-size:10px;line-height:1.45}.source-proof strong{color:var(--theme-text);font-size:11px}.source-proof a{color:var(--theme-accent);text-underline-offset:3px}body[data-template=puzzle]{background-color:#f5f0e7;background-image:none}body[data-template=puzzle]::before{background:linear-gradient(180deg,rgba(255,253,249,.82),rgba(242,234,223,.9))}body[data-template=puzzle] .style-ornament{display:none}body[data-template=puzzle] .canvas-frame{background:#ebe4da;box-shadow:0 18px 46px rgba(87,69,62,.13)}body[data-template=puzzle] .canvas-frame::before{background:rgba(255,252,247,.42)}body[data-template=puzzle] .game-overlay h2{margin-top:20px;font-size:28px}body[data-template=puzzle] .game-overlay p{margin-bottom:0}body[data-template=puzzle] .game-overlay .primary{margin-top:2px}body[data-template=breakout] .game-overlay h2{margin-top:20px}body[data-template=breakout] .game-overlay p{margin-bottom:0}@media(max-width:520px){.puzzle-setup{gap:6px}.puzzle-field>span,.breakout-field>span{font-size:10px}.puzzle-field select,.breakout-field select{min-height:42px;padding-left:9px;font-size:11px}.maze-pad{grid-template-columns:repeat(3,minmax(48px,1fr));grid-template-rows:repeat(2,48px)}.maze-pad .control-button{min-height:48px}}`;
 
-const campaignTemplateStyles = `.campaign-setup{display:grid;gap:6px;margin:14px 0 12px}.campaign-field{display:grid;gap:6px}.campaign-field>span{color:var(--theme-muted);font-size:11px}.campaign-field select,.campaign-field input[type=text]{width:100%;min-height:44px;border:1px solid var(--theme-line);border-radius:calc(var(--theme-radius)*.55);padding:0 34px 0 11px;background:var(--theme-panel);color:var(--theme-text);font:650 12px/1 Inter,"Microsoft YaHei",sans-serif}.campaign-field select:disabled{cursor:not-allowed;opacity:.72}.campaign-progress{display:block;margin-top:7px;color:var(--theme-muted);font-size:10px;line-height:1.45}.setup-option{display:flex;min-height:44px;align-items:center;gap:9px;color:var(--theme-text);font-size:12px}.setup-option input{width:20px;height:20px;accent-color:var(--theme-accent)}.secondary-setup{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:-2px 0 10px}@media(max-width:520px){.campaign-setup{margin:10px 0 9px}.campaign-field>span{font-size:10px}.campaign-field select,.campaign-field input[type=text]{min-height:42px;padding-left:9px;font-size:11px}.secondary-setup{gap:6px;margin-bottom:8px}}`;
+const campaignTemplateStyles = `.campaign-setup{display:grid;gap:6px;margin:14px 0 12px}.campaign-field{display:grid;gap:6px}.campaign-field>span{color:var(--theme-muted);font-size:11px}.campaign-field select,.campaign-field input[type=text]{width:100%;min-height:44px;border:1px solid var(--theme-line);border-radius:calc(var(--theme-radius)*.55);padding:0 34px 0 11px;background:var(--theme-panel);color:var(--theme-text);font:650 12px/1 Inter,"Microsoft YaHei",sans-serif}.campaign-field select:disabled{cursor:not-allowed;opacity:.72}.campaign-progress{display:block;margin-top:7px;color:var(--theme-muted);font-size:10px;line-height:1.45}.mastery-card{display:grid;gap:7px;margin:10px 0 14px;padding:13px 14px;border:1px solid color-mix(in srgb,var(--theme-accent) 44%,var(--theme-line));border-radius:calc(var(--theme-radius)*.7);background:color-mix(in srgb,var(--theme-accent) 7%,var(--theme-panel));text-align:left}.mastery-kicker{color:var(--theme-accent)!important;font:750 9px/1.2 ui-monospace,Consolas,monospace!important;letter-spacing:.09em;text-transform:uppercase}.mastery-card strong,.mastery-panel strong{color:var(--theme-text);font-size:12px;line-height:1.45}.mastery-card ul,.mastery-panel ul{display:grid;gap:4px;margin:0;padding-left:17px;color:var(--theme-muted);font-size:11px;line-height:1.35}.mastery-card li::marker,.mastery-panel li::marker{color:var(--theme-accent)}.mastery-card small,.mastery-panel small{color:var(--theme-accent);font-size:10px;font-weight:700;line-height:1.35;letter-spacing:.015em}.mastery-panel{display:grid;gap:7px}.setup-option{display:flex;min-height:44px;align-items:center;gap:9px;color:var(--theme-text);font-size:12px}.setup-option input{width:20px;height:20px;accent-color:var(--theme-accent)}.secondary-setup{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:-2px 0 10px}@media(max-width:520px){.campaign-setup{margin:10px 0 9px}.campaign-field>span{font-size:10px}.campaign-field select,.campaign-field input[type=text]{min-height:42px;padding-left:9px;font-size:11px}.mastery-card{gap:5px;margin:7px 0 9px;padding:10px 11px}.mastery-card strong{font-size:11px}.mastery-card ul{font-size:10px}.secondary-setup{gap:6px;margin-bottom:8px}}`;
 
 const snakeEnhancementStyles = `body[data-template=snake]{--theme-accent:#ed725d;--theme-secondary:#50aa85;--theme-line:rgba(54,118,94,.28);--theme-panel:rgba(250,255,251,.9);--theme-text:#183d32;--theme-muted:#58766d;background-color:#e8f1e8}body[data-template=snake]::before{background:linear-gradient(180deg,rgba(237,247,239,.44),rgba(225,237,228,.68))}body[data-template=snake] .canvas-frame{background-position:center 72%;box-shadow:0 24px 70px rgba(28,76,58,.18)}body[data-template=snake] .canvas-frame::before{background:linear-gradient(180deg,rgba(236,247,238,.08),rgba(213,232,219,.28))}body[data-template=snake] .game-overlay{border-color:rgba(57,120,96,.24);background:rgba(251,255,252,.94);box-shadow:0 26px 70px rgba(39,83,66,.2)}body[data-template=snake] .game-overlay h2{margin-top:18px;font-size:29px}body[data-template=snake] .game-overlay p{margin-bottom:0}.snake-setup{display:grid;gap:8px;margin:14px 0}.snake-difficulty{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px}.snake-difficulty button{display:grid;min-width:0;min-height:54px;align-content:center;gap:4px;border:1px solid var(--theme-line);border-radius:calc(var(--theme-radius)*.72);padding:7px 5px;background:rgba(255,255,255,.54);color:var(--theme-text);font:600 11px/1 Inter,"Microsoft YaHei",sans-serif;cursor:pointer;transition:border-color 140ms ease,background-color 140ms ease,transform 90ms ease}.snake-difficulty button strong{font-size:12px;letter-spacing:.02em}.snake-difficulty button span{overflow:hidden;color:var(--theme-muted);font-size:9px;line-height:1.15;text-overflow:ellipsis;white-space:nowrap}.snake-difficulty button:hover{border-color:color-mix(in srgb,var(--theme-accent) 60%,var(--theme-line));background:rgba(255,255,255,.82)}.snake-difficulty button:active{transform:scale(.98)}.snake-difficulty button:focus-visible{outline:2px solid var(--theme-accent);outline-offset:2px}.snake-difficulty button.is-selected,.snake-difficulty button[aria-pressed=true]{border-color:var(--theme-accent);background:color-mix(in srgb,var(--theme-accent) 13%,white);box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--theme-accent) 28%,transparent)}.snake-difficulty button.is-selected strong{color:#b9483d}.snake-difficulty-note{min-height:28px;margin:0;color:var(--theme-muted);font-size:10px;line-height:1.4}.snake-panel .snake-setup{margin:10px 0 0}.snake-panel{padding:13px}.game-overlay [data-snake-difficulty-label]{font:inherit;color:inherit}.game-overlay .snake-setup+.primary{margin-top:2px}@media(max-width:720px){body[data-template=snake] .snake-panel{grid-column:1/-1;grid-row:3}body[data-template=snake] .game-help{grid-row:4}.snake-panel{padding:9px 10px}.snake-panel .snake-difficulty-note{display:none}.snake-panel .snake-setup{margin-top:7px}.snake-difficulty button{min-height:46px;padding:5px 3px}.snake-difficulty button span{font-size:8px}}@media(max-width:420px){body[data-template=snake] .game-overlay{top:41%;padding:16px}.snake-setup{margin:10px 0}.snake-difficulty{gap:4px}.snake-difficulty button{min-height:44px}.snake-difficulty-note{font-size:9px}.game-overlay .snake-difficulty button span{display:none}}`;
 
@@ -1256,7 +1341,7 @@ const stageDTemplateStyles = `.tetris-setup{display:grid;grid-template-columns:r
 
 const mobilePlayFlowStyles = `.setup-actions{display:grid;grid-template-columns:1fr;gap:7px;margin-top:8px}.setup-actions .secondary{width:100%;min-height:44px}.game-overlay .setup-upload{margin:9px 0 0;padding:0;border:0;background:transparent}.game-overlay .setup-upload .upload-name{text-align:center}.return-to-setup{min-height:44px}
 @media(max-width:720px){body{display:grid;width:100%;height:100svh;min-height:100svh;overflow:hidden;place-items:center;background-attachment:scroll}body[data-visual-style] .template-shell{width:100vw;height:100svh;min-height:0;padding:0;gap:0;grid-template-rows:1fr}body[data-visual-style] .template-workspace{position:relative;display:block;width:100%;height:100%;min-height:0}body[data-visual-style] .canvas-frame{display:grid;width:100%;height:100%;min-height:0;padding:0;border:0;border-radius:0;place-items:center;line-height:0}body[data-visual-style] .game-canvas{display:block;width:min(100vw,56.25svh);height:auto;max-height:100svh;margin:0;border-radius:0;aspect-ratio:9/16}body[data-visual-style] .game-overlay{top:50%;width:min(390px,calc(100% - 24px));max-height:calc(100svh - 24px);padding:18px;overflow:auto;line-height:normal;overscroll-behavior:contain}body[data-visual-style] .game-overlay h2{margin-top:18px;font-size:clamp(25px,7vw,31px)}body[data-visual-style] .game-overlay p{font-size:12px}body[data-visual-style] .game-panel{display:none}body[data-game-state=playing][data-visual-style] .game-panel{position:absolute;z-index:6;inset:0;display:block;width:100%;height:100%;padding:0;background:transparent;pointer-events:none}body[data-game-state=playing] .game-panel>*{pointer-events:auto}body[data-game-state=playing] .game-status{position:absolute;top:max(8px,env(safe-area-inset-top));right:max(8px,env(safe-area-inset-right));left:auto;width:140px;min-height:44px;padding:7px 10px;border:0;background:color-mix(in srgb,var(--theme-panel) 88%,transparent);box-shadow:none;backdrop-filter:blur(12px)}body[data-game-state=playing] .game-status .metric-label,body[data-game-state=playing] .game-status .objective,body[data-game-state=playing] .game-status .campaign-progress,body[data-game-state=playing] .game-status .status{display:none}body[data-game-state=playing] .metric-value{display:block;margin:0;font-size:18px;line-height:30px;text-align:center}body[data-game-state=playing] .game-controls{position:absolute;right:max(8px,env(safe-area-inset-right));bottom:max(8px,env(safe-area-inset-bottom));left:max(8px,env(safe-area-inset-left));padding:6px;border:0;background:color-mix(in srgb,var(--theme-panel) 86%,transparent);box-shadow:none;backdrop-filter:blur(12px)}body[data-game-state=playing] .game-controls>.metric-label{display:none}body[data-game-state=playing] .touch-controls{grid-template-columns:repeat(4,minmax(44px,1fr));gap:5px}body[data-game-state=playing] .touch-controls.maze-pad{width:min(100%,220px);margin-left:auto;grid-template-columns:repeat(3,minmax(44px,1fr));grid-template-rows:repeat(2,44px)}body[data-game-state=playing] .control-button{min-height:44px}body[data-game-state=playing] .game-help,body[data-game-state=playing] .proof-note{display:none}body[data-game-state=playing] .panel-actions{position:absolute;z-index:2;top:max(8px,env(safe-area-inset-top));right:auto;bottom:auto;left:max(8px,env(safe-area-inset-left));display:flex;height:44px;align-items:flex-start;gap:5px;margin:0;pointer-events:auto}body[data-game-state=playing] .panel-actions .secondary{width:auto;min-width:44px;height:44px;min-height:44px;max-height:44px;padding:0 9px;background:color-mix(in srgb,var(--theme-panel) 88%,transparent);backdrop-filter:blur(12px)}body[data-game-state=playing] #sound-toggle{display:none}.proof-note{display:none}}
-@media(max-width:360px){body[data-game-state=playing] .game-status{width:116px;padding-inline:7px}body[data-game-state=playing] .panel-actions .secondary{padding-inline:7px;font-size:11px}.game-overlay{width:calc(100% - 16px)!important;padding:14px!important}.campaign-setup,.puzzle-setup,.snake-setup{margin-block:8px}.game-overlay p{margin-bottom:10px!important}}
+@media(max-width:360px){body[data-game-state=playing] .game-status{width:116px;padding-inline:7px}body[data-game-state=playing] .panel-actions .secondary{padding-inline:7px;font-size:11px}.game-overlay{width:calc(100% - 16px)!important;padding:14px!important}.campaign-setup,.puzzle-setup,.snake-setup{margin-block:8px}.game-overlay p{margin-bottom:10px!important}.game-overlay>.primary{position:sticky;z-index:3;bottom:0;width:100%;min-height:46px;box-shadow:0 -10px 24px color-mix(in srgb,var(--theme-panel) 82%,transparent)}}
 @media(prefers-reduced-motion:reduce){.game-panel,.game-overlay{scroll-behavior:auto}}`;
 
 function gameAspectStyles(project: ProjectDetail) {
@@ -1287,6 +1372,7 @@ function templateHtml(project: ProjectDetail) {
   const campaignLevels = createCampaignLevels(project.spec.template, project.spec.difficulty);
   const campaignAttribute = project.spec.template === "breakout" ? " data-breakout-level" : "";
   const campaignSetup = `<div class="campaign-setup"><label class="campaign-field"><span>渐进关卡</span><select data-campaign-level${campaignAttribute} aria-label="选择渐进关卡">${campaignLevels.map((level, index) => `<option value="${index}"${index > 0 ? " disabled" : ""}>${escapeHtml(level.label)}</option>`).join("")}</select></label><span class="campaign-progress" data-campaign-progress>第 1 / ${campaignLevels.length} 关 · ${escapeHtml(campaignLevels[0].tierLabel)} · ${escapeHtml(campaignLevels[0].ruleModifier)}</span></div>`;
+  const masterySetup = `<section class="mastery-card" aria-label="本关任务与技巧目标"><span class="mastery-kicker">MISSION CONTRACT / 本关合同</span><strong data-mastery-mission>${escapeHtml(campaignLevels[0].mission)}</strong><ul data-mastery-objectives>${campaignLevels[0].masteryRules.map((rule) => `<li>${escapeHtml(rule.label)}</li>`).join("")}</ul><small data-mastery-summary>本关 ☆☆☆ · 总星章 0 / ${campaignLevels.length * 3} · 奖励 ${escapeHtml(campaignLevels[0].reward)}</small></section>`;
   const puzzleLevelOptions = [
     ...(project.spec.customImageDataUrl ? [{ id: "custom", label: "我的图片" }] : []),
     ...puzzleBuiltInLevels,
@@ -1325,7 +1411,7 @@ function templateHtml(project: ProjectDetail) {
   const editionLabel = project.spec.template === "snake"
     ? `PLAYABLE EDITION / <b data-snake-difficulty-label>${activeSnakeDifficulty.label}</b>`
     : `PLAYABLE EDITION / ${project.spec.difficulty.toUpperCase()}`;
-  return `<!doctype html><html lang="zh-CN"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#101615"><title>${escapeHtml(project.title)}</title><link rel="preload" as="image" href="./assets/cover.png"><link rel="preload" as="image" href="./assets/gameplay-atlas.png"><link rel="stylesheet" href="./styles.css"><script src="./app.js" defer></script></head><body data-template="${project.spec.template}" data-visual-style="${project.spec.visualStyle}" data-detail-level="${style.detailLevel}"><div class="style-ornament" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i></div><main class="template-shell"><header class="template-header"><div><span class="eyebrow">${runtime.eyebrow}</span><h1>${escapeHtml(project.title)}</h1><span class="style-mode">${style.label} · ${style.detailLabel} · ${style.layout}</span></div><p>${escapeHtml(project.spec.vision)}</p></header><div class="template-workspace"><section class="canvas-frame" aria-label="${runtime.label}可玩区域"><canvas class="game-canvas" id="game-canvas" width="${canvasSize.width}" height="${canvasSize.height}" tabindex="0" aria-describedby="status"></canvas><div class="game-overlay" id="game-overlay"><span>${editionLabel}</span><h2 id="overlay-title">${runtime.intro}</h2><p id="overlay-detail">${runtime.objective}</p>${campaignSetup}${tetrisSetup}${puzzleSetup}${puzzleRuleNote}${snakeSetup}${mazeSetup}${mahjongSetup}${upload}<div class="setup-actions"><button class="secondary" id="sound-toggle" type="button" aria-pressed="true">声音开启</button></div><button class="primary" id="start" type="button">开始游戏</button></div></section><aside class="game-panel"><div class="panel-block game-status"><span class="metric-label">${runtime.primaryMetric}</span><strong class="metric-value" id="metric-value">—</strong><p class="status" id="status" aria-live="polite">准备开始。</p><p class="objective">${runtime.objective}</p><span class="campaign-progress" data-campaign-progress>第 1 / ${campaignLevels.length} 关</span></div>${breakoutSettings}${controls ? `<div class="panel-block game-controls"><span class="metric-label">${project.spec.template === "maze" ? "滑动迷宫或使用方向键" : "触控与键盘"}</span><div class="${controlsClass}">${controls}</div></div>` : ""}<details class="game-help"><summary>玩法说明</summary><div class="game-help-content"><div class="panel-block"><span class="metric-label">本局目标</span><p class="objective">${runtime.objective}</p></div>${sourceProof}</div></details><div class="panel-actions"><button class="secondary return-to-setup" id="back-to-setup" type="button" aria-label="返回启动设置">返回</button><button class="secondary" id="restart" type="button">重开</button></div><p class="proof-note">AI BITMAP ART · TRACEABLE ASSETS · 20 LEVEL CAMPAIGN · STEPPED DIFFICULTY · KEYBOARD + TOUCH</p></aside></div></main></body></html>`;
+  return `<!doctype html><html lang="zh-CN"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#101615"><title>${escapeHtml(project.title)}</title><link rel="preload" as="image" href="./assets/cover.png"><link rel="preload" as="image" href="./assets/gameplay-atlas.png"><link rel="stylesheet" href="./styles.css"><script src="./app.js" defer></script></head><body data-template="${project.spec.template}" data-visual-style="${project.spec.visualStyle}" data-detail-level="${style.detailLevel}"><div class="style-ornament" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i></div><main class="template-shell"><header class="template-header"><div><span class="eyebrow">${runtime.eyebrow}</span><h1>${escapeHtml(project.title)}</h1><span class="style-mode">${style.label} · ${style.detailLabel} · ${style.layout}</span></div><p>${escapeHtml(project.spec.vision)}</p></header><div class="template-workspace"><section class="canvas-frame" aria-label="${runtime.label}可玩区域"><canvas class="game-canvas" id="game-canvas" width="${canvasSize.width}" height="${canvasSize.height}" tabindex="0" aria-describedby="status"></canvas><div class="game-overlay" id="game-overlay"><span>${editionLabel}</span><h2 id="overlay-title">${runtime.intro}</h2><p id="overlay-detail">${runtime.objective}</p>${campaignSetup}${masterySetup}${tetrisSetup}${puzzleSetup}${puzzleRuleNote}${snakeSetup}${mazeSetup}${mahjongSetup}${upload}<div class="setup-actions"><button class="secondary" id="sound-toggle" type="button" aria-pressed="true">声音开启</button></div><button class="primary" id="start" type="button">开始游戏</button></div></section><aside class="game-panel"><div class="panel-block game-status"><span class="metric-label">${runtime.primaryMetric}</span><strong class="metric-value" id="metric-value">—</strong><p class="status" id="status" aria-live="polite">准备开始。</p><p class="objective">${runtime.objective}</p><span class="campaign-progress" data-campaign-progress>第 1 / ${campaignLevels.length} 关</span></div>${breakoutSettings}${controls ? `<div class="panel-block game-controls"><span class="metric-label">${project.spec.template === "maze" ? "滑动迷宫或使用方向键" : "触控与键盘"}</span><div class="${controlsClass}">${controls}</div></div>` : ""}<details class="game-help"><summary>任务与玩法</summary><div class="game-help-content"><div class="panel-block"><span class="metric-label">本局目标</span><p class="objective">${runtime.objective}</p></div><div class="panel-block mastery-panel"><strong data-mastery-mission>${escapeHtml(campaignLevels[0].mission)}</strong><ul data-mastery-objectives>${campaignLevels[0].masteryRules.map((rule) => `<li>${escapeHtml(rule.label)}</li>`).join("")}</ul><small data-mastery-summary>本关 ☆☆☆ · 总星章 0 / ${campaignLevels.length * 3}</small></div>${sourceProof}</div></details><div class="panel-actions"><button class="secondary return-to-setup" id="back-to-setup" type="button" aria-label="返回启动设置">返回</button><button class="secondary" id="restart" type="button">重开</button></div><p class="proof-note">COMMERCIAL GAMEPLAY CONTRACT · 20 LEVELS · 3-STAR MASTERY · KEYBOARD + TOUCH</p></aside></div></main></body></html>`;
 }
 
 function writeTemplateArtifact(root: string, project: ProjectDetail) {
@@ -1382,6 +1468,8 @@ body[data-visual-style=color-block]{--surface:#142132;--line:#05090e;--accent:#f
 `;
 
 const threeCampaignStyles = `.three-level-field{display:grid;gap:6px;margin:0 auto 9px;text-align:left}.three-level-field span,.three-start [data-campaign-progress]{display:block;color:#aebdb7;font-size:10px;line-height:1.4}.three-level-field select{width:100%;min-height:44px;border:1px solid var(--line,#4b5c5c);padding:0 34px 0 11px;background:#0b1111;color:#eef4ed;font:650 12px/1 Inter,sans-serif}.three-start [data-campaign-progress]{margin-bottom:16px;text-align:left}`;
+
+const threeMasteryStyles = `.three-mastery-card{display:grid;gap:6px;margin:0 0 16px;padding:12px 14px;border:1px solid color-mix(in srgb,var(--accent,#d6b968) 48%,var(--line,#415153));background:color-mix(in srgb,var(--accent,#d6b968) 8%,#0b1111);text-align:left}.three-mastery-card strong{color:#eef4ed;font-size:12px;line-height:1.4}.three-mastery-card ul{display:grid;gap:3px;margin:0;padding-left:17px;color:#aebdb7;font-size:10px;line-height:1.35}.three-mastery-card li::marker{color:var(--accent,#d6b968)}.three-mastery-card small{color:var(--accent,#d6b968);font-size:10px;font-weight:800;line-height:1.35}`;
 
 const threeMobilePlayFlowStyles = `.three-back{position:absolute;z-index:9;top:max(12px,env(safe-area-inset-top));left:max(12px,env(safe-area-inset-left));display:none;min-width:44px;min-height:44px;border:1px solid var(--line,#415153);background:color-mix(in srgb,var(--surface,#10191a) 88%,transparent);color:#eef4ed;font:700 12px/1 Inter,sans-serif;letter-spacing:.02em;cursor:pointer;backdrop-filter:blur(14px)}body[data-game-state=playing] .three-back{display:block}.three-back:focus-visible,.three-result button:focus-visible{outline:2px solid var(--accent,#d6b968);outline-offset:3px}.three-result-actions{display:grid;grid-template-columns:1fr 1fr;gap:7px}.three-result-actions button{width:100%;min-height:44px}.three-result-actions .secondary-result{border:1px solid var(--line,#415153);background:transparent;color:#eef4ed}
 @media(max-width:720px){body{display:grid;width:100%;height:100svh;min-height:100svh;overflow:hidden;place-items:center}.three-shell{width:min(100vw,56.25svh);height:min(100svh,177.7778vw);min-height:0;aspect-ratio:9/16}.three-start,.three-result{max-height:calc(100% - 24px);overflow:auto;overscroll-behavior:contain}.three-hud{padding:max(8px,env(safe-area-inset-top)) max(8px,env(safe-area-inset-right)) max(8px,env(safe-area-inset-bottom)) max(8px,env(safe-area-inset-left))}body[data-game-state=playing] .three-topbar{padding-left:52px}body[data-game-state=playing] .three-objective{max-width:calc(100% - 130px)}.three-controls button{min-width:44px;min-height:44px}.three-back{top:max(8px,env(safe-area-inset-top));left:max(8px,env(safe-area-inset-left))}}
@@ -1469,11 +1557,12 @@ environmentTexture.colorSpace = THREE.SRGBColorSpace;
 const state = { running: false, finished: false, collected: 0, remaining: config.duration, lastTime: 0, mode: config.mode, checkpoint: false, wave: 1, health: 100, upgrade: 0, renderCount: 0, performanceTier: "medium", suspended: false };
 let campaignLevelIndex = 0;
 let campaignMaxUnlocked = 0;
+let campaignMastery = {};
 let requiredFragments = 4;
 let activeDuration = config.duration;
 function currentCampaignLevel() { return config.campaignLevels[campaignLevelIndex]; }
 function saveCampaign() {
-  try { safeStorage.setItem(config.campaignStorageKey, JSON.stringify({ schemaVersion: 1, current: campaignLevelIndex, maxUnlocked: campaignMaxUnlocked })); } catch {}
+  try { safeStorage.setItem(config.campaignStorageKey, JSON.stringify({ schemaVersion: 2, current: campaignLevelIndex, maxUnlocked: campaignMaxUnlocked, mastery: campaignMastery })); } catch {}
 }
 function syncCampaignUi() {
   const level = currentCampaignLevel();
@@ -1482,12 +1571,28 @@ function syncCampaignUi() {
   campaignProgress.textContent = "第 " + level.number + " / " + config.campaignLevels.length + " 关 · " + level.tierLabel + " · " + level.ruleModifier;
   campaignHud.textContent = "WEB 3D · LEVEL " + String(level.number).padStart(2, "0") + " / " + config.campaignLevels.length;
   document.body.dataset.campaignCurrentLevel = String(level.number);
+  let masteryCard = startCard.querySelector("[data-mastery-card]");
+  if (!masteryCard) {
+    masteryCard = document.createElement("section");
+    masteryCard.dataset.masteryCard = "";
+    masteryCard.className = "three-mastery-card";
+    masteryCard.innerHTML = '<strong data-mastery-mission></strong><ul data-mastery-objectives></ul><small data-mastery-summary></small>';
+    startCard.querySelector("#start")?.before(masteryCard);
+  }
+  masteryCard.querySelector("[data-mastery-mission]").textContent = level.mission;
+  masteryCard.querySelector("[data-mastery-objectives]").replaceChildren(...level.masteryRules.map((rule) => {
+    const item = document.createElement("li"); item.textContent = rule.label; return item;
+  }));
+  const earned = Math.max(0, Math.min(3, Number(campaignMastery[level.id]) || 0));
+  const total = Object.values(campaignMastery).reduce((sum, value) => sum + Math.max(0, Math.min(3, Number(value) || 0)), 0);
+  masteryCard.querySelector("[data-mastery-summary]").textContent = "本关 " + "★".repeat(earned) + "☆".repeat(3 - earned) + " · 总星章 " + total + " / 60";
 }
 function loadCampaign() {
   try {
     const saved = JSON.parse(safeStorage.getItem(config.campaignStorageKey) || "null");
     campaignMaxUnlocked = Math.max(0, Math.min(config.campaignLevels.length - 1, Number(saved?.maxUnlocked) || 0));
     campaignLevelIndex = Math.max(0, Math.min(campaignMaxUnlocked, Number(saved?.current) || 0));
+    campaignMastery = saved?.mastery && typeof saved.mastery === "object" ? saved.mastery : {};
   } catch {}
   syncCampaignUi();
 }
@@ -1882,12 +1987,19 @@ function collectFragments(time) {
 
 function showResult(won) {
   const finalWin = won && campaignLevelIndex === config.campaignLevels.length - 1;
+  let masteryText = "";
+  if (won) {
+    const completedLevel = currentCampaignLevel();
+    const stars = 1 + completedLevel.masteryRules.filter((rule) => state.remaining >= rule.target).length;
+    campaignMastery[completedLevel.id] = Math.max(Number(campaignMastery[completedLevel.id]) || 0, stars);
+    masteryText = " 本关评价 " + "★".repeat(stars) + "☆".repeat(3 - stars) + "。";
+  }
   setGameSessionState(won ? (finalWin ? "won" : "stage-complete") : "lost"); state.finished = true;
   stopEnvironmentAudio();
   document.querySelector("#result-kicker").textContent = config.mode === "arena" ? (won ? "竞技场净空" : "潮光熄灭") : (won ? "遗迹已响应" : "探索中止");
   document.querySelector("#result-title").textContent = won ? (finalWin ? "20 关全部完成" : "第 " + (campaignLevelIndex + 1) + " 关完成") : (state.health <= 0 ? "战斗失败" : "时间耗尽");
   document.querySelector("#result-detail").textContent = won
-    ? (config.mode === "arena" ? "你完成了三波作战，并让潮印升级持续生效。" : "你收集了全部碎片、经过检查点并抵达出口。")
+    ? (config.mode === "arena" ? "你完成了三波作战，并让潮印升级持续生效。" : "你收集了全部碎片、经过检查点并抵达出口。") + masteryText
     : (config.mode === "arena" ? "已抵达第 " + state.wave + " 波，保留走位空间后再试一次。" : "已收集 " + state.collected + " / " + requiredFragments + " 枚碎片。重新规划路线再试一次。");
   resultCard.hidden = false;
   if (won && !finalWin) {
@@ -1987,7 +2099,7 @@ applyCampaignLevel();
 
 const gameDebugApi = {
   state,
-  getState() { return { ...state, campaign: { level: currentCampaignLevel(), maxUnlocked: campaignMaxUnlocked + 1, total: config.campaignLevels.length }, requiredFragments, enemyCount: enemies.filter((enemy) => enemy.visible).length, contract: config.contract }; },
+  getState() { return { ...state, campaign: { level: currentCampaignLevel(), maxUnlocked: campaignMaxUnlocked + 1, total: config.campaignLevels.length, mastery: { ...campaignMastery }, stars: Object.values(campaignMastery).reduce((sum, value) => sum + Number(value || 0), 0) }, requiredFragments, enemyCount: enemies.filter((enemy) => enemy.visible).length, contract: config.contract }; },
   collectAll() { fragments.forEach((fragment) => { fragment.visible = false; }); state.collected = requiredFragments; fragmentCount.firstChild.textContent = requiredFragments + " / "; gateMaterial.emissive.setHex(style.accent); gateEmblem.material.color.setHex(0xffffff); gateLight.intensity = 12; },
   moveToExit() { player.position.copy(exit.position); },
   reachCheckpoint() { state.checkpoint = true; checkpointRing.material.emissiveIntensity = 2.2; },
@@ -2015,7 +2127,7 @@ function writeThreeArtifact(root: string, project: ProjectDetail) {
     '<link rel="preload" as="image" href="./assets/sprites/sprite-02.png"><link rel="preload" as="image" href="./assets/sprites/sprite-03.png"><link rel="preload" as="image" href="./assets/sprites/sprite-04.png">',
   );
   writeFileSync(join(root, "index.html"), html, "utf8");
-  writeFileSync(join(root, "styles.css"), `${threeGameStyles}${threeCampaignStyles}${threeMobilePlayFlowStyles}\n.three-controls [data-key=action]{grid-row:1;grid-column:3;background:color-mix(in srgb,var(--accent,#d6b968) 24%,#0d1618)}body[data-game-state=paused] .three-back{display:block}.three-pause{left:max(64px,calc(env(safe-area-inset-left) + 64px))!important}\n@media(max-width:720px){.three-controls{grid-template-columns:repeat(3,44px);grid-template-rows:repeat(2,44px)}body[data-game-state=playing] .three-objective,body[data-game-state=paused] .three-objective{max-width:calc(100% - 148px)}body[data-game-state=playing] .three-brand,body[data-game-state=paused] .three-brand{display:none}body[data-game-state=playing] .three-topbar,body[data-game-state=paused] .three-topbar{justify-content:flex-end;padding-left:0}}`, "utf8");
+  writeFileSync(join(root, "styles.css"), `${threeGameStyles}${threeCampaignStyles}${threeMasteryStyles}${threeMobilePlayFlowStyles}\n.three-controls [data-key=action]{grid-row:1;grid-column:3;background:color-mix(in srgb,var(--accent,#d6b968) 24%,#0d1618)}body[data-game-state=paused] .three-back{display:block}.three-pause{left:max(64px,calc(env(safe-area-inset-left) + 64px))!important}\n@media(max-width:720px){.three-controls{grid-template-columns:repeat(3,44px);grid-template-rows:repeat(2,44px)}body[data-game-state=playing] .three-objective,body[data-game-state=paused] .three-objective{max-width:calc(100% - 148px)}body[data-game-state=playing] .three-brand,body[data-game-state=paused] .three-brand{display:none}body[data-game-state=playing] .three-topbar,body[data-game-state=paused] .three-topbar{justify-content:flex-end;padding-left:0}}`, "utf8");
   writeFileSync(join(root, "app.js"), `${threeGameScript(project)}${gameTelemetryScript(project)}`, "utf8");
   const provenanceRoot = join(root, "_studio");
   mkdirSync(provenanceRoot, { recursive: true });
@@ -2074,7 +2186,7 @@ export function writeGameArtifact(root: string, project: ProjectDetail) {
     '<link rel="preload" as="image" href="./assets/sprites/sprite-01.png">',
   );
   writeFileSync(join(root, "index.html"), html, "utf8");
-  writeFileSync(join(root, "styles.css"), `${gameStyles}${signalVisualStyles}${stageBSignalStyles}${signalAspectStyles(project)}${signalMobilePlayFlowStyles}`, "utf8");
+  writeFileSync(join(root, "styles.css"), `${gameStyles}${signalVisualStyles}${stageBSignalStyles}${signalMasteryStyles}${signalAspectStyles(project)}${signalMobilePlayFlowStyles}`, "utf8");
   writeFileSync(join(root, "app.js"), `${gameScript(project)}${gameTelemetryScript(project)}`, "utf8");
   writeFileSync(
     join(root, "game-manifest.json"),

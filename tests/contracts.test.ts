@@ -113,6 +113,10 @@ test("所有内置玩法采用二十关、每四关一档的渐进难度合同",
     });
     assert.equal(levels.length, 20);
     assert.equal(new Set(levels.map((level) => level.id)).size, 20);
+    assert.ok(levels.every((level) => level.mission.length >= 12));
+    assert.ok(levels.every((level) => level.masteryRules.length === 2));
+    assert.ok(levels.every((level) => level.masteryRules.map((rule) => rule.id).join(",") === "efficiency,control"));
+    assert.ok(levels.every((level) => level.reward.length >= 4));
     assert.deepEqual(levels.map((level) => level.tier), [
       1, 1, 1, 1,
       2, 2, 2, 2,

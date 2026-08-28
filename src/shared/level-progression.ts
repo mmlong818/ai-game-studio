@@ -15,6 +15,18 @@ export type CampaignLevel = {
   speedMultiplier: number;
   densityMultiplier: number;
   ruleModifier: string;
+  mission: string;
+  masteryRules: MasteryRule[];
+  reward: string;
+};
+
+export type MasteryRule = {
+  id: "efficiency" | "control";
+  label: string;
+  metric: string;
+  comparison: "gte" | "lte" | "ratio-gte" | "ratio-lte";
+  target: number;
+  referenceMetric?: string;
 };
 
 const tierLabels = ["认识规则", "稳定节奏", "加入变化", "组合压力", "最终掌握"] as const;
@@ -43,6 +55,119 @@ const templateModifiers: Record<GameTemplate, readonly string[]> = {
   generated: ["认识规则", "节奏提升", "复合变化", "极限挑战"],
 };
 
+type CommercialLevelDesign = {
+  mission: string;
+  masteryRules: [MasteryRule, MasteryRule];
+};
+
+const commercialLevelDesigns: Record<GameTemplate, CommercialLevelDesign> = {
+  "signal-hunt": {
+    mission: "在信号窗口关闭前完成捕获，并保持稳定节奏。",
+    masteryRules: [
+      { id: "efficiency", label: "完成时至少保留 8 秒", metric: "remaining", comparison: "gte", target: 8 },
+      { id: "control", label: "完成时至少保留 15 秒", metric: "remaining", comparison: "gte", target: 15 },
+    ],
+  },
+  tetris: {
+    mission: "完成目标消行，同时为后续构件保留干净落点。",
+    masteryRules: [
+      { id: "efficiency", label: "得分达到目标线数 × 300", metric: "score", comparison: "ratio-gte", referenceMetric: "lineTarget", target: 300 },
+      { id: "control", label: "至少取得目标线数 × 20 的硬降奖励", metric: "hardDropScore", comparison: "ratio-gte", referenceMetric: "lineTarget", target: 20 },
+    ],
+  },
+  puzzle: {
+    mission: "从外围辨认图像关系，以尽量少的试放恢复整幅画面。",
+    masteryRules: [
+      { id: "efficiency", label: "移动次数不超过拼块数的 160%", metric: "moves", comparison: "ratio-lte", referenceMetric: "pieceCount", target: 1.6 },
+      { id: "control", label: "错误回弹不超过 2 次", metric: "bounceCount", comparison: "lte", target: 2 },
+    ],
+  },
+  breakout: {
+    mission: "控制反弹角度清除砖阵，并用连续击破积蓄爆炸机会。",
+    masteryRules: [
+      { id: "efficiency", label: "形成至少 4 连续击破", metric: "clearStreak", comparison: "gte", target: 4 },
+      { id: "control", label: "连击倍率达到 ×2", metric: "combo", comparison: "gte", target: 2 },
+    ],
+  },
+  klotski: {
+    mission: "规划腾挪顺序，以接近最优步数的路线打开朱门。",
+    masteryRules: [
+      { id: "efficiency", label: "步数不超过最优参考的 150%", metric: "moves", comparison: "ratio-lte", referenceMetric: "optimalReference", target: 1.5 },
+      { id: "control", label: "保留完整可回放路径", metric: "replayLength", comparison: "ratio-gte", referenceMetric: "moves", target: 1 },
+    ],
+  },
+  maze: {
+    mission: "在多条路线间判断收益，点亮灯火后找到出口。",
+    masteryRules: [
+      { id: "efficiency", label: "步数不超过最短路径的 135%", metric: "steps", comparison: "ratio-lte", referenceMetric: "optimalSteps", target: 1.35 },
+      { id: "control", label: "点亮全部 3 个阶段灯火", metric: "checkpoints", comparison: "gte", target: 3 },
+    ],
+  },
+  snake: {
+    mission: "在身体持续增长时规划安全回路，完成本关收集目标。",
+    masteryRules: [
+      { id: "efficiency", label: "收集数量达到目标", metric: "score", comparison: "ratio-gte", referenceMetric: "target", target: 1 },
+      { id: "control", label: "完成时身体长度达到目标 + 3", metric: "length", comparison: "gte", target: 8 },
+    ],
+  },
+  "merge-2048": {
+    mission: "维持角落秩序和空位储备，合成目标数字。",
+    masteryRules: [
+      { id: "efficiency", label: "得分达到目标数字的 4 倍", metric: "score", comparison: "ratio-gte", referenceMetric: "target", target: 4 },
+      { id: "control", label: "完成时至少保留 3 个空格", metric: "availableCells", comparison: "gte", target: 3 },
+    ],
+  },
+  platformer: {
+    mission: "读取安全落点、收集能量并以稳定状态抵达信标。",
+    masteryRules: [
+      { id: "efficiency", label: "收集数量达到关卡目标", metric: "coinsCollected", comparison: "ratio-gte", referenceMetric: "coinTarget", target: 1 },
+      { id: "control", label: "完成时至少保留 2 次机会", metric: "lives", comparison: "gte", target: 2 },
+    ],
+  },
+  "space-shooter": {
+    mission: "在密集航线中维持输出，并用精准移动保存能量。",
+    masteryRules: [
+      { id: "efficiency", label: "击破数量达到关卡目标", metric: "kills", comparison: "ratio-gte", referenceMetric: "killTarget", target: 1 },
+      { id: "control", label: "完成时至少保留 2 点能量", metric: "lives", comparison: "gte", target: 2 },
+    ],
+  },
+  "polyomino-fit": {
+    mission: "预判旋转后的轮廓关系，用有限提示完成无重叠拼合。",
+    masteryRules: [
+      { id: "efficiency", label: "所有拼块一次完整吸附", metric: "placed", comparison: "ratio-gte", referenceMetric: "pieceCount", target: 1 },
+      { id: "control", label: "完成至少 4 块的复杂轮廓", metric: "pieceCount", comparison: "gte", target: 4 },
+    ],
+  },
+  "block-place": {
+    mission: "规划三块的放置顺序，用连续消行维持棋盘空间。",
+    masteryRules: [
+      { id: "efficiency", label: "得分达到关卡目标的 125%", metric: "score", comparison: "ratio-gte", referenceMetric: "target", target: 1.25 },
+      { id: "control", label: "连击倍率达到 ×2", metric: "combo", comparison: "gte", target: 2 },
+    ],
+  },
+  "region-logic": {
+    mission: "通过行、列、区域和相邻约束完成唯一解推理。",
+    masteryRules: [
+      { id: "efficiency", label: "全程不使用提示", metric: "hints", comparison: "lte", target: 0 },
+      { id: "control", label: "全程零错误", metric: "errors", comparison: "lte", target: 0 },
+    ],
+  },
+  "mahjong-roguelite": {
+    mission: "管理开放边缘、潮汐资源和遗物构筑，打通三段航线。",
+    masteryRules: [
+      { id: "efficiency", label: "完成时至少保留 1 次洗牌", metric: "shuffles", comparison: "gte", target: 1 },
+      { id: "control", label: "形成至少 2 件遗物的构筑", metric: "relicCount", comparison: "gte", target: 2 },
+    ],
+  },
+  generated: {
+    mission: "完成设计合同的主要目标，并尝试更高效的解法。",
+    masteryRules: [
+      { id: "efficiency", label: "完成主要目标", metric: "completed", comparison: "gte", target: 1 },
+      { id: "control", label: "保留至少一项关键资源", metric: "resource", comparison: "gte", target: 1 },
+    ],
+  },
+};
+
 function hashTemplate(template: GameTemplate) {
   let hash = 2166136261;
   for (const character of template) {
@@ -64,6 +189,7 @@ export function createCampaignLevels(template: GameTemplate, difficulty: GameSpe
     const withinTier = index % campaignTierSize;
     const tierPressure = tierIndex * 0.13;
     const localVariation = withinTier * 0.015;
+    const commercialDesign = commercialLevelDesigns[template];
     return {
       number,
       id: `${template}-${String(number).padStart(2, "0")}`,
@@ -76,6 +202,9 @@ export function createCampaignLevels(template: GameTemplate, difficulty: GameSpe
       speedMultiplier: Number(Math.max(0.72, 0.82 + difficultyOffset + tierPressure * 0.72 + localVariation).toFixed(3)),
       densityMultiplier: Number(Math.max(0.68, 0.78 + difficultyOffset + tierPressure * 0.88 + localVariation).toFixed(3)),
       ruleModifier: modifiers[variant],
+      mission: commercialDesign.mission,
+      masteryRules: commercialDesign.masteryRules.map((rule) => ({ ...rule })),
+      reward: tierIndex === 4 ? "大师徽记" : withinTier === campaignTierSize - 1 ? `解锁${tierLabels[Math.min(4, tierIndex + 1)]}` : "关卡星章",
     };
   });
 }

@@ -31,6 +31,8 @@ export type CampaignQualityResult = {
   initialLevel: number;
   unlockedAfterFirstWin: number;
   restoredUnlockedLevel: number;
+  masteryStarsAfterFirstWin: number;
+  restoredMasteryStars: number;
   tierOneRuntime: unknown;
   tierFiveRuntime: unknown;
   finalState: string;
@@ -193,6 +195,11 @@ async function runInteractionProbe(page: Page) {
   }
   if (initialState !== "playing") await page.locator("#start:visible, #setup-start:visible").first().click();
   await page.waitForTimeout(120);
+  await page.evaluate(() => {
+    const debug = (window as Window & { __GAME_DEBUG__?: { getState?: () => any; chooseFirstRoute?: () => void } }).__GAME_DEBUG__;
+    if (debug?.getState?.()?.runtime?.awaitingRoute) debug.chooseFirstRoute?.();
+  });
+  await page.waitForTimeout(120);
   const playingState = await page.locator("body").getAttribute("data-game-state");
   if (playingState !== "playing") throw new Error(`点击开始后状态不是 playing，而是 ${playingState ?? "空"}。`);
 
@@ -286,6 +293,7 @@ export async function inspectCampaignInBrowser(root: string): Promise<CampaignQu
         selectorOptionCounts: campaignSelectors.map((select) => select.options.length),
         optionCount: options.length,
         enabledValues: options.filter((option) => !option.disabled).map((option) => Number(option.value)),
+        hasMasteryContract: Boolean(document.querySelector("[data-mastery-mission]")),
         state: debug?.getState?.(),
       };
     });
@@ -294,24 +302,32 @@ export async function inspectCampaignInBrowser(root: string): Promise<CampaignQu
     if (initial.state?.campaign?.total !== 20 || initial.state?.campaign?.level?.number !== 1) throw new Error("运行时没有从第 1 / 20 关开始。 ");
 
     await page.locator("#start:visible, #setup-start:visible").first().click();
+    await page.evaluate(() => {
+      const debug = (window as Window & { __GAME_DEBUG__?: { getState?: () => any; chooseFirstRoute?: () => void } }).__GAME_DEBUG__;
+      if (debug?.getState?.()?.runtime?.awaitingRoute) debug.chooseFirstRoute?.();
+    });
     await page.waitForFunction(() => document.body.dataset.gameState === "playing", undefined, { timeout: 4_000 });
     await page.evaluate(() => (window as Window & { __GAME_DEBUG__?: { forceWin?: () => void } }).__GAME_DEBUG__?.forceWin?.());
     await page.waitForFunction(() => document.body.dataset.gameState === "stage-complete", undefined, { timeout: 4_000 });
     const afterFirstWin = await page.evaluate(() => (window as Window & { __GAME_DEBUG__?: { getState?: () => any } }).__GAME_DEBUG__?.getState?.());
     if (afterFirstWin?.campaign?.level?.number !== 2 || afterFirstWin?.campaign?.maxUnlocked < 2) throw new Error("首关胜利后没有解锁并切换到第 2 关。 ");
+    if (initial.hasMasteryContract && (afterFirstWin?.campaign?.stars < 1 || Object.keys(afterFirstWin?.campaign?.mastery ?? {}).length < 1)) throw new Error("首关胜利后没有记录商业级星章评价。 ");
 
     await page.reload({ waitUntil: "domcontentloaded" });
     await page.waitForFunction(() => Boolean((window as Window & { __GAME_DEBUG__?: unknown }).__GAME_DEBUG__), undefined, { timeout: 8_000 });
     const restored = await page.evaluate(() => (window as Window & { __GAME_DEBUG__?: { getState?: () => any } }).__GAME_DEBUG__?.getState?.());
     if (restored?.campaign?.maxUnlocked < 2) throw new Error("刷新页面后，第 2 关解锁进度没有保留。 ");
+    if (initial.hasMasteryContract && (restored?.campaign?.stars < 1 || Object.keys(restored?.campaign?.mastery ?? {}).length < 1)) throw new Error("刷新页面后，星章最佳评价没有保留。 ");
 
     const tierRuntime = await page.evaluate(() => {
       const debug = (window as Window & { __GAME_DEBUG__?: { setLevel?: (level: number) => void; restart?: () => void; getState?: () => any } }).__GAME_DEBUG__;
       debug?.setLevel?.(1);
       debug?.restart?.();
+      if (debug?.getState?.()?.runtime?.awaitingRoute) (debug as typeof debug & { chooseFirstRoute?: () => void }).chooseFirstRoute?.();
       const tierOne = debug?.getState?.();
       debug?.setLevel?.(17);
       debug?.restart?.();
+      if (debug?.getState?.()?.runtime?.awaitingRoute) (debug as typeof debug & { chooseFirstRoute?: () => void }).chooseFirstRoute?.();
       const tierFive = debug?.getState?.();
       return { tierOne, tierFive };
     });
@@ -333,6 +349,8 @@ export async function inspectCampaignInBrowser(root: string): Promise<CampaignQu
       initialLevel: initial.state.campaign.level.number,
       unlockedAfterFirstWin: afterFirstWin.campaign.maxUnlocked,
       restoredUnlockedLevel: restored.campaign.maxUnlocked,
+      masteryStarsAfterFirstWin: Number(afterFirstWin.campaign.stars) || 0,
+      restoredMasteryStars: Number(restored.campaign.stars) || 0,
       tierOneRuntime,
       tierFiveRuntime,
       finalState: finalState ?? "",
@@ -377,6 +395,13 @@ export async function inspectStageEInBrowser(root: string, template: StageETempl
     if (template === "maze") await page.locator("[data-maze-shortest]").check();
     if (template === "mahjong-roguelite") await page.locator("[data-mahjong-mode]").selectOption("daily");
     await page.locator("#start").click();
+    let routeOffer: any = null;
+    if (template === "mahjong-roguelite") {
+      await page.waitForFunction(() => document.body.dataset.gameState === "stage-complete", undefined, { timeout: 4_000 });
+      routeOffer = await stageEDebugState(page);
+      if (!routeOffer?.runtime?.awaitingRoute || routeOffer.runtime.routeChoices.length !== 3) throw new Error("月港雀旅开局没有提供三选一路线。 ");
+      await stageEDebugAction(page, "chooseFirstRoute");
+    }
     await page.waitForFunction(() => document.body.dataset.gameState === "playing", undefined, { timeout: 4_000 });
     const initial = await stageEDebugState(page);
     let restored: any = null;
@@ -419,6 +444,9 @@ export async function inspectStageEInBrowser(root: string, template: StageETempl
             const state = await stageEDebugState(page);
             if (!state?.runtime?.awaitingRelic || state.runtime.relicChoices.length !== 3) throw new Error("月港雀旅航段结算没有提供三选一遗物。 ");
             await stageEDebugAction(page, "chooseFirstRelic");
+            const routeState = await stageEDebugState(page);
+            if (!routeState?.runtime?.awaitingRoute || routeState.runtime.routeChoices.length !== 3) throw new Error("月港雀旅遗物结算后没有进入路线选择。 ");
+            await stageEDebugAction(page, routeState.runtime.routeChoices.some((route: { id: string }) => route.id === "elite") ? "chooseEliteRoute" : "chooseFirstRoute");
           }
         }
       } else {
@@ -442,12 +470,14 @@ export async function inspectStageEInBrowser(root: string, template: StageETempl
     if (template === "maze" && (!initial?.runtime?.challenge || initial.runtime.optimalSteps < 1)) throw new Error("苔径迷庭最短径挑战没有生效。 ");
     if (template === "maze" && (initial.runtime.loopCount < 5 || initial.runtime.junctionCount < 3 || initial.runtime.alternativeSegments < 3 || !initial.runtime.hasMultipleRoutes)) throw new Error("苔径迷庭仍然只有单一路线，没有形成环路与有效岔口。 ");
     if (template === "mahjong-roguelite" && (initial?.runtime?.relicPoolSize ?? 0) < 12) throw new Error("月港雀旅遗物池不足 12 件。 ");
+    if (template === "mahjong-roguelite" && (routeOffer?.runtime?.routePoolSize ?? 0) < 5) throw new Error("月港雀旅路线池不足 5 条。 ");
     if (template === "mahjong-roguelite" && (initial?.runtime?.visualCueVersion ?? 0) < 2) throw new Error("月港雀旅没有区分可选、被压和配对目标的视觉状态。 ");
     if (template === "mahjong-roguelite" && (initial?.runtime?.boardLayout?.boardWidth ?? 0) < 600) throw new Error("月港雀旅牌桌仍未充分利用手机横向空间。 ");
     if (template === "mahjong-roguelite" && ((initial?.runtime?.freeCount ?? 0) < 2 || (initial?.runtime?.blockedCount ?? 0) < 1)) throw new Error("月港雀旅开局没有同时呈现可选牌与被压牌。 ");
     if (template === "mahjong-roguelite" && (!selectedCue?.runtime?.selectedId || (selectedCue.runtime.compatibleFreeCount ?? 0) < 1)) throw new Error("月港雀旅选牌后没有形成可辨认的配对目标。 ");
+    if (template === "mahjong-roguelite" && ((completedState?.runtime?.routeHistory?.length ?? 0) < 3 || !completedState?.runtime?.ending)) throw new Error("月港雀旅完成长局后没有路线历史或差异化结局。 ");
     if (runtimeErrors.length) throw new Error(`阶段 E 浏览器错误：${runtimeErrors.join(" | ")}`);
-    const result: StageEQualityResult = { template, completedRuns: 3, failedRuns: 2, evidence: { initial: initial?.runtime, selectedCue: selectedCue?.runtime ?? null, advanced: advanced?.runtime ?? null, restored: restored?.runtime ?? null, completed: completedState?.runtime ?? null } };
+    const result: StageEQualityResult = { template, completedRuns: 3, failedRuns: 2, evidence: { routeOffer: routeOffer?.runtime ?? null, initial: initial?.runtime, selectedCue: selectedCue?.runtime ?? null, advanced: advanced?.runtime ?? null, restored: restored?.runtime ?? null, completed: completedState?.runtime ?? null } };
     mkdirSync(join(root, "_studio"), { recursive: true });
     writeFileSync(join(root, "_studio", "STAGE_E_QUALITY_REPORT.json"), `${JSON.stringify({ checkedAt: new Date().toISOString(), ...result }, null, 2)}\n`, "utf8");
     return result;
@@ -1211,8 +1241,9 @@ export async function inspectGameInBrowser(root: string): Promise<BrowserQuality
           if (resultState !== "won") failures.push(`最终关胜利状态不是 won，而是 ${resultState ?? "空"}。`);
           await takeScreenshot(page, join(qualityRoot, `${viewport.name}-result.png`), screenshotPaths);
           const restarted = await page.evaluate(() => {
-            const debug = (window as Window & { __GAME_DEBUG__?: { restart?: () => void } }).__GAME_DEBUG__;
+            const debug = (window as Window & { __GAME_DEBUG__?: { restart?: () => void; getState?: () => any; chooseFirstRoute?: () => void } }).__GAME_DEBUG__;
             debug?.restart?.();
+            if (debug?.getState?.()?.runtime?.awaitingRoute) debug.chooseFirstRoute?.();
             return Boolean(debug?.restart);
           });
           await page.waitForTimeout(90);
