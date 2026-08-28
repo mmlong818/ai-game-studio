@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="light">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="description" content="从一句玩法想法，到有测试证据和独立网址的可玩游戏。" />
+    <meta name="color-scheme" content="light dark" />
+    <meta name="theme-color" content="#f4f1e9" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#0c1210" media="(prefers-color-scheme: dark)" />
+    <meta property="og:title" content="造界 · AI 游戏工坊" />
+    <meta property="og:description" content="从一句玩法想法，到有测试证据和独立网址的可玩游戏。" />
+    <meta property="og:type" content="website" />
+    <meta property="og:image" content="http://127.0.0.1:4312/media/template-art/signal-hunt/cover.png" />
+    <link rel="icon" type="image/png" href="/media/template-art/signal-hunt/cover.png" />
+    <script>
+      try {
+        const setting = localStorage.getItem("forge-theme") || "system";
+        const dark = setting === "dark" || (setting === "system" && matchMedia("(prefers-color-scheme: dark)").matches);
+        document.documentElement.dataset.theme = dark ? "dark" : "light";
+      } catch {}
+    </script>
+    <title>造界 · AI 游戏工坊</title>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/web/main.tsx"></script>
+  </body>
+</html>

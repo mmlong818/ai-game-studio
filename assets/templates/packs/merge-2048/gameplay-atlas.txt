@@ -1,0 +1,7 @@
+Use case: stylized-concept
+Asset type: 3×3 game sprite atlas
+Primary request: Exact row-major 3x3 atlas for a cute number-merging puzzle. Cell 1 is one empty neutral cream rounded bento tile. Cells 2-7 are six isolated rounded value tiles of identical size and increasing visual richness: coral, mango, cobalt, lilac, cyan and radiant rainbow. Every tile is blank because numerals are rendered separately. Cell 8 is one compact elastic merge burst. Cell 9 is one compact pop-star sparkle.
+Style/medium: premium kawaii industrial-design sprites, tactile silicone and translucent candy, bold color blocks
+Composition/framing: strict 3x3 equal-cell contact sheet, one single square tile or effect per cell, all seven tiles identical dimensions and centered
+Lighting/mood: clean product light with bright soft reflections
+Constraints: solid uniform chroma-green #00FF00 background; no grid lines, text, letters, numerals, logos, watermark, overlap, full grid, scene, cast shadows crossing cells or green-family colors on objects

@@ -1,0 +1,238 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+    <meta name="theme-color" content="#8cc8f2">
+    <meta name="description" content="玩家与战术 AI 分区操作的多回合三消对战游戏。">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="星梦对决">
+    <title>星梦对决 · AI 三消竞技</title>
+    <link rel="manifest" href="manifest.webmanifest?v=6">
+    <link rel="icon" href="icons/app-icon.svg" type="image/svg+xml">
+    <link rel="apple-touch-icon" href="icons/app-icon-192.png">
+    <link rel="preload" as="image" href="assets/tiles-v2/moon.png">
+    <link rel="preload" as="image" href="assets/tiles-v2/cloud.png">
+    <link rel="preload" as="image" href="assets/tiles-v2/star.png">
+    <link rel="preload" as="image" href="assets/tiles-v2/flower.png">
+    <link rel="preload" as="image" href="assets/tiles-v2/heart.png">
+    <link rel="preload" as="image" href="assets/tiles-v2/drop.png">
+    <link rel="stylesheet" href="styles.css?v=6">
+  </head>
+  <body data-game-state="idle" data-running="false">
+    <div class="sky" aria-hidden="true">
+      <span class="sky__cloud sky__cloud--one"></span>
+      <span class="sky__cloud sky__cloud--two"></span>
+      <span class="sky__cloud sky__cloud--three"></span>
+      <span class="sky__spark sky__spark--one">✦</span>
+      <span class="sky__spark sky__spark--two">✦</span>
+      <span class="sky__spark sky__spark--three">✦</span>
+    </div>
+
+    <main class="game" aria-labelledby="game-title">
+      <header class="game__header">
+        <div class="brand">
+          <div class="brand__mark" aria-hidden="true"><span>★</span></div>
+          <div>
+            <p class="eyebrow">AI MATCH-3 DUEL</p>
+            <h1 id="game-title">星梦对决</h1>
+          </div>
+        </div>
+        <div class="header-actions">
+          <button class="soft-button install-button" id="install-app" type="button" hidden>
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12m0 0 4-4m-4 4-4-4M5 19h14"/></svg>
+            安装 App
+          </button>
+          <button class="soft-button" id="back-to-setup" type="button" aria-label="返回启动设置">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 12a8 8 0 1 1-2.3-5.7L20 8.6M20 4v4.6h-4.6"/></svg>
+            返回
+          </button>
+        </div>
+      </header>
+
+      <section class="arena" aria-label="三消对战区域">
+        <aside class="status-panel" aria-label="对战信息">
+          <section class="fighter fighter--ai" aria-label="AI 对手积分">
+            <div class="fighter__head">
+              <div class="avatar avatar--ai" aria-hidden="true">
+                <span class="avatar__ear avatar__ear--left"></span>
+                <span class="avatar__ear avatar__ear--right"></span>
+                <span class="avatar__face">✦</span>
+              </div>
+              <div class="fighter__identity">
+                <span class="fighter__role">战术 AI</span>
+                <strong>露娜</strong>
+              </div>
+              <output class="fighter__score" id="ai-score" aria-label="AI 当前积分">100</output>
+            </div>
+            <div class="score-track" aria-hidden="true"><span id="ai-score-bar"></span></div>
+          </section>
+
+          <div class="round-card">
+            <div class="round-card__top">
+              <span>当前回合</span>
+              <strong>第 <span id="round-current">1</span><small>回合</small></strong>
+            </div>
+            <div class="turn-banner" id="turn-banner" role="status" aria-live="polite">
+              <span class="turn-banner__orb"></span>
+              <span id="turn-text">轮到你行动</span>
+            </div>
+          </div>
+
+          <section class="fighter fighter--player" aria-label="玩家积分">
+            <div class="fighter__head">
+              <div class="avatar avatar--player" aria-hidden="true">
+                <span class="avatar__shine">✦</span>
+                <span class="avatar__heart">♥</span>
+              </div>
+              <div class="fighter__identity">
+                <span class="fighter__role">梦境旅人</span>
+                <strong>你</strong>
+              </div>
+              <output class="fighter__score" id="player-score" aria-label="玩家当前积分">100</output>
+            </div>
+            <div class="score-track" aria-hidden="true"><span id="player-score-bar"></span></div>
+          </section>
+
+          <section class="rule-card" aria-labelledby="rules-title">
+            <div class="rule-card__title">
+              <span class="rule-card__icon" aria-hidden="true">✦</span>
+              <h2 id="rules-title">对战规则</h2>
+            </div>
+            <ol>
+              <li><span>1</span>只交换下半区的相邻棋子</li>
+              <li><span>2</span>3 枚得 5 分，每多 1 枚翻倍</li>
+              <li><span>3</span>后续连消都记在当前行动方</li>
+            </ol>
+          </section>
+
+          <section class="battle-log" aria-labelledby="log-title">
+            <div class="battle-log__head">
+              <h2 id="log-title">战况</h2>
+              <span id="damage-summary">双方尚未出手</span>
+            </div>
+            <ol id="battle-log-list" aria-live="polite"></ol>
+          </section>
+        </aside>
+
+        <section class="board-stage" aria-label="共用棋盘">
+          <div class="opponent-strip">
+            <div class="opponent-strip__portrait" aria-hidden="true"><span>✦</span></div>
+            <div>
+              <span class="opponent-strip__label">AI CONTROL</span>
+              <strong>露娜正在观察棋局</strong>
+            </div>
+            <div class="thinking-dots" id="thinking-dots" aria-hidden="true"><span></span><span></span><span></span></div>
+          </div>
+
+          <div class="board-shell">
+            <div class="board" id="board" role="grid" aria-label="8 乘 8 三消棋盘"></div>
+            <div class="fx-layer" id="fx-layer" aria-hidden="true"></div>
+            <div class="ai-veil" aria-hidden="true">
+              <div class="ai-veil__badge">
+                <svg viewBox="0 0 24 24"><path d="M9 11a3 3 0 1 1 6 0v2H9v-2Zm-2 2h10v7H7v-7Zm2-7V4m6 2V4M4 10H2m20 0h-2"/></svg>
+                AI 操作区 · 不可操作
+              </div>
+            </div>
+            <div class="zone-divider" aria-hidden="true">
+              <span></span><strong>你的操作区</strong><span></span>
+            </div>
+            <div class="board-toast" id="board-toast" role="status" aria-live="assertive"></div>
+          </div>
+
+          <div class="move-guide">
+            <span class="move-guide__gesture" aria-hidden="true"><i></i><b>↔</b><i></i></span>
+            <p><strong>交换相邻棋子</strong><span>连成 3 枚或更多即可攻击</span></p>
+            <button id="hint-button" type="button">给我提示</button>
+          </div>
+        </section>
+      </section>
+
+      <footer class="studio-credit">此应用由云一工作室设计维护</footer>
+    </main>
+
+    <div class="setup-modal is-visible" id="setup-modal">
+      <section class="setup-card" role="dialog" aria-modal="true" aria-labelledby="setup-title" aria-describedby="setup-description">
+        <div class="setup-card__hero">
+          <div class="setup-card__mascot" aria-hidden="true">
+            <span>✦</span>
+          </div>
+          <div>
+            <p class="eyebrow">新手指引</p>
+            <h2 id="setup-title">欢迎来到星梦对决</h2>
+          </div>
+        </div>
+        <p class="setup-card__description" id="setup-description">你和露娜共用一张棋盘，各自控制一半区域。先了解 3 条规则，再选择本局总分。</p>
+
+        <div class="campaign-picker">
+          <label for="campaign-level">星梦旅程</label>
+          <select id="campaign-level" data-campaign-level aria-describedby="campaign-progress"></select>
+          <small id="campaign-progress" data-campaign-progress>第 1 / 20 关 · 认识规则</small>
+          <label for="ai-difficulty">AI 难度</label>
+          <select id="ai-difficulty" aria-label="选择 AI 难度">
+            <option value="relaxed">陪练 · 会保留次优选择</option>
+            <option value="standard" selected>标准 · 在高价值走法中选择</option>
+            <option value="challenging">挑战 · 优先最佳连消</option>
+          </select>
+        </div>
+
+        <div class="guide-steps" aria-label="新手玩法介绍">
+          <article>
+            <span class="guide-steps__number">1</span>
+            <div><strong>你操作下半区</strong><p>点击或滑动相邻棋子；上半区由 AI 操作。</p></div>
+          </article>
+          <article>
+            <span class="guide-steps__number">2</span>
+            <div><strong>消除会攻击对手</strong><p>3 枚得 5 分，每多 1 枚积分翻倍。</p></div>
+          </article>
+          <article>
+            <span class="guide-steps__number">3</span>
+            <div><strong>连消归当前行动方</strong><p>新棋子落下产生的消除，也计入触发者。</p></div>
+          </article>
+        </div>
+
+        <div class="score-picker">
+          <div class="score-picker__heading">
+            <div>
+              <label for="score-range">选择本局总分</label>
+              <span>双方使用相同初始积分</span>
+            </div>
+            <output id="setup-score-value" for="score-range" aria-live="polite">100</output>
+          </div>
+          <div class="score-picker__controls" role="group" aria-label="调整本局总分">
+            <button id="score-minus" type="button" aria-label="减少 100 分">−</button>
+            <input id="score-range" name="starting-score" type="range" min="100" max="1000" step="100" value="100">
+            <button id="score-plus" type="button" aria-label="增加 100 分">＋</button>
+          </div>
+          <div class="score-picker__range" aria-hidden="true"><span>100</span><span>每次 100</span><span>1000</span></div>
+        </div>
+
+        <button class="setup-sound-button" id="sound-toggle" type="button" aria-label="关闭音效" aria-pressed="true">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9v6h4l5 4V5L8 9H4Zm12.5 1.1a3 3 0 0 1 0 3.8M18.8 7a7 7 0 0 1 0 10"/></svg>
+          <span id="sound-toggle-label">声音开启</span>
+        </button>
+        <button class="setup-card__start" id="setup-start" type="button">以 <span id="setup-start-score">100</span> 分开始对局</button>
+        <p class="install-note">添加到手机主屏幕，即可全屏并支持离线启动。</p>
+      </section>
+    </div>
+
+    <div class="result-modal" id="result-modal" hidden>
+      <section class="result-card" role="dialog" aria-modal="true" aria-labelledby="result-title" aria-describedby="result-detail">
+        <div class="result-card__burst" aria-hidden="true">✦</div>
+        <p class="eyebrow">BATTLE COMPLETE</p>
+        <h2 id="result-title">对局结束</h2>
+        <p id="result-detail"></p>
+        <div class="result-scores">
+          <span>你 <strong id="result-player-score">0</strong></span>
+          <i>VS</i>
+          <span>露娜 <strong id="result-ai-score">0</strong></span>
+        </div>
+        <button id="play-again" type="button">再战一局</button>
+      </section>
+    </div>
+
+    <script type="module" src="app.js?v=6"></script>
+  </body>
+</html>

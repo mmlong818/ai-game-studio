@@ -1,0 +1,25 @@
+{
+  "checkedAt": "2026-08-27T14:01:59.637Z",
+  "template": "star-dream-duel",
+  "completedRuns": 3,
+  "failedRuns": 2,
+  "evidence": {
+    "initial": {
+      "startingScore": 100,
+      "playerDamageMultiplier": 1,
+      "aiDamageMultiplier": 1,
+      "aiDifficulty": "challenging",
+      "duelStep": "player-ready",
+      "recoverable": true
+    },
+    "restored": {
+      "startingScore": 100,
+      "playerDamageMultiplier": 1,
+      "aiDamageMultiplier": 1,
+      "aiDifficulty": "challenging",
+      "duelStep": "player-ready",
+      "recoverable": true
+    },
+    "overflow": 0
+  }
+}

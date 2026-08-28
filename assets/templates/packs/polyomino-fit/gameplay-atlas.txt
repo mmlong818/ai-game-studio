@@ -1,0 +1,7 @@
+Use case: stylized-concept
+Asset type: 3×3 game sprite atlas
+Primary request: Exact row-major 3x3 atlas for a soft-vinyl polyomino fitting puzzle. Cells 1-6 are six isolated single square gummy tiles of identical size and camera angle, each with a distinct tactile surface motif: apricot citrus, aqua bubble, cherry seed, butter star, sky ripple, cream confetti. Cell 7 is one compact snap halo. Cell 8 is one compact hint sparkle. Cell 9 is one compact completion burst.
+Style/medium: premium translucent gummy and soft-vinyl mobile game sprites, crisp rounded silhouettes, no purple
+Composition/framing: strict 3x3 equal-cell contact sheet, exactly one centered isolated square tile or effect per cell, identical tile scale
+Lighting/mood: bright soft product light with controlled glassy highlights
+Constraints: solid uniform chroma-green #00FF00 background; no grid lines, text, letters, numbers, logos, watermark, connected polyomino, scene, overlap, cast shadows crossing cells or green-family colors on objects

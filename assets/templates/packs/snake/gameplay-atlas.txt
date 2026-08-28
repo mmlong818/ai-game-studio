@@ -1,0 +1,7 @@
+Use case: stylized-concept
+Asset type: 3×3 game sprite atlas
+Primary request: Exact row-major 3x3 atlas for a cute snake arcade game. Cell 1 is one expressive round mochi-dragon head facing right. Cells 2 and 3 are two different single round body segments, one coral and one lilac, each designed to occupy one grid cell. Cell 4 is one oversized sparkling strawberry food token. Cell 5 is one compact collection star burst. Cell 6 is one small picnic flower. Cell 7 is one tiny mango fruit friend. Cell 8 is one speed puff. Cell 9 is one tapered rounded dragon tail segment pointing left. All parts must visually belong to the same character.
+Style/medium: premium plush-soft 3D kawaii sprites with crisp cel-shaded edges and expressive mobile silhouettes
+Composition/framing: strict 3x3 equal-cell contact sheet, one centered isolated object per cell, consistent character scale
+Lighting/mood: bright soft daylight with candy rim light
+Constraints: solid uniform chroma-green #00FF00 background; no grid lines, text, logos, watermark, overlap, full snake, connected body, scene, cast shadows crossing cells or green-family colors on objects

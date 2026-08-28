@@ -1,0 +1,11 @@
+{
+  "out": "breakout-damage-atlas-v2.png",
+  "prompt": "Create a production-ready brick damage atlas for a premium vertical mobile breakout game called Lacquer Sea. Use an exact grid of 5 horizontal material families by 3 vertical damage states. Each row is one distinct level, top to bottom: 1 luminous pearl shoal with rounded shell-inlay brick, 2 coral corridor with branching coral-lacquer brick, 3 jellyfish tide with translucent aqua membrane brick, 4 star reef with angular mineral-star brick, 5 abyss crown with dark obsidian-and-gold crowned brick. Each row's three cells, left to right: pristine armored state, visibly cracked weakened state, critical almost-shattered state with missing chips but still one readable rectangular gameplay object. Make silhouette, surface material and shield language unmistakably different between all five rows. Objects must remain readable at approximately 60 by 34 pixels, use bold macro details rather than tiny decoration, consistent slightly top-down camera, no full background scene.",
+  "use_case": "stylized-concept",
+  "style": "high-end contemporary mobile game bitmap assets, lacquer, pearl, coral, translucent gel, mineral and obsidian materials, cinematic but clean",
+  "composition": "exact equal 5 rows by 3 columns grid, one centered isolated rectangular brick per cell, generous padding, no overlap",
+  "lighting": "controlled game asset studio lighting, strong rim and material highlights, high contrast silhouettes",
+  "constraints": "solid uniform pure magenta #FF00FF background only; no text; no labels; no border; no watermark; no scenery; no cast shadow outside each brick; exact row and column order",
+  "size": "1024x1536",
+  "quality": "high"
+}

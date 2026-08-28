@@ -1,0 +1,7 @@
+Use case: stylized-concept
+Asset type: 3×3 game sprite atlas
+Primary request: Exact row-major 3x3 atlas for a cute side-view platform game. Cell 1 is one round comet hero facing right. Cell 2 is the exact same hero facing left. Cell 3 is one wide cloud-cushion platform tile. Cell 4 is one wide inflatable star platform tile. Cell 5 is one round fruit-planet collectible. Cell 6 is one tall smiling destination beacon. Cell 7 is one compact landing puff. Cell 8 is one compact jump sparkle. Cell 9 is one tiny distant planet ornament, never a scene or background.
+Style/medium: premium sticker-book and soft-foam kawaii game sprites, clear side-view silhouettes
+Composition/framing: strict 3x3 equal-cell contact sheet, one centered isolated asset per cell; platforms wide, beacon tall, characters consistent scale
+Lighting/mood: bright sky studio light with cheerful rim highlights
+Constraints: solid uniform chroma-green #00FF00 background; no grid lines, text, logos, watermark, overlap, full level, scene, cast shadows crossing cells or green-family colors on objects

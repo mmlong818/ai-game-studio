@@ -1,0 +1,50 @@
+{
+  "name": "ai-game-studio",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "node scripts/dev.mjs",
+    "dev:web": "vite --host 127.0.0.1 --port 4311",
+    "dev:api": "tsx watch src/server/index.ts",
+    "build": "vite build && tsc -p tsconfig.server.json",
+    "start": "node dist-server/server/index.js",
+    "db:up": "docker compose up -d postgres",
+    "db:down": "docker compose down",
+    "db:logs": "docker compose logs -f postgres",
+    "seed:showcases": "node scripts/seed-showcase-games.mjs",
+    "release:golden-quality": "tsx scripts/release-golden-quality.ts",
+    "baseline:quality": "node scripts/build-quality-baseline.mjs",
+    "baseline:quality:force": "node scripts/build-quality-baseline.mjs --force",
+    "baseline:art-review": "node scripts/apply-art-baseline.mjs",
+    "promote:export": "node scripts/export-promotion-candidate.mjs",
+    "audit:stage-c": "node scripts/run-stage-c-batch-audit.mjs",
+    "audit:stage-c-long": "tsx scripts/run-stage-c-long-audit.ts",
+    "audit:stage-d": "node scripts/run-stage-d-batch-audit.mjs",
+    "audit:stage-e": "node scripts/run-stage-e-batch-audit.mjs",
+    "audit:stage-f": "node scripts/run-stage-f-batch-audit.mjs",
+    "test:stage-d": "tsx --test tests/stage-d-quality.test.ts",
+    "typecheck": "tsc --noEmit",
+    "test": "tsx --test --test-concurrency=1 tests/*.test.ts",
+    "check": "npm run typecheck && npm run test && npm run build"
+  },
+  "dependencies": {
+    "lucide-react": "^1.34.0",
+    "pg": "8.23.0",
+    "playwright-core": "^1.62.1",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8",
+    "three": "0.185.1",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@types/node": "^26.3.0",
+    "@types/pg": "8.23.1",
+    "@types/react": "^19.2.18",
+    "@types/react-dom": "^19.2.5",
+    "@vitejs/plugin-react": "^6.1.0",
+    "tsx": "^4.23.12",
+    "typescript": "^7.0.2",
+    "vite": "^8.2.2"
+  }
+}

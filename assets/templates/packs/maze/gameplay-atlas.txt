@@ -1,0 +1,7 @@
+Use case: stylized-concept
+Asset type: 3×3 game sprite atlas
+Primary request: Exact row-major 3x3 atlas for a cute maze game. Cell 1 is one seamless straight candy-hedge wall segment in coral and cream, designed to stretch horizontally or rotate vertically. Cell 2 is one small pastel path-tile ornament, not a full board. Cell 3 is one round cloud-creature player token seen top-down. Cell 4 is one bright smiling star destination token. Cell 5 is one bubble house. Cell 6 is one rainbow bridge icon. Cell 7 is one fruit lantern. Cell 8 is one sparkle trail. Cell 9 is one tiny cloud puff.
+Style/medium: premium soft-clay and felt kawaii game sprites, bold simple silhouettes
+Composition/framing: strict 3x3 equal-cell contact sheet, one centered isolated object per cell, clear mobile-scale readability
+Lighting/mood: bright dreamy morning studio light
+Constraints: solid uniform chroma-green #00FF00 background; no grid lines, text, logos, watermark, overlap, full maze, scene, cast shadows crossing cells or green-family colors on objects

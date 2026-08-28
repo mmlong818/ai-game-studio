@@ -1,0 +1,13 @@
+node_modules/
+dist-web/
+dist-server/
+data/
+output/
+tmp/
+coverage/
+*.tsbuildinfo
+.claude/
+*.log
+.env
+.env.*
+!.env.example

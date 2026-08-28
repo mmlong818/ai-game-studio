@@ -1,0 +1,7 @@
+Use case: stylized-concept
+Asset type: 3×3 game sprite atlas
+Primary request: Exact row-major 3x3 atlas for a contemporary cute falling-block game called Prismatic Stack. Cells 1-7 each contain exactly ONE isolated square construction module of identical size, designed to connect edge-to-edge into coherent tetromino silhouettes. Give every module a distinct graphic identity and directional detail: coral with a diagonal light cut, mango with a circular lens core, sunny yellow with a four-point prism, cobalt with twin inset rails, cyan with a soft wave cut, violet with a faceted diamond core, pink with a rounded cross core. Cell 8 is one compact prismatic line-clear burst. Cell 9 is one compact soft white landing ripple. The modules must feel like premium modular light sculptures, not candy, jelly, gems or plain colored squares.
+Style/medium: premium contemporary kawaii game sprites, matte soft-vinyl frame with luminous translucent inset, bold flat silhouette, crisp dark plum outline, subtle tactile depth, strong mobile readability
+Composition/framing: strict 3x3 equal-cell contact sheet, one large centered isolated object per cell, identical outer size and edge alignment for cells 1-7, generous clear separation
+Lighting/mood: clean bright studio light with controlled highlights and minimal shadow
+Constraints: solid uniform chroma-green #00FF00 background; no grid lines, text, numbers, faces, logos, watermark, overlap, cast shadows crossing cells, multi-block pieces, glossy candy appearance or green-family colors on objects
