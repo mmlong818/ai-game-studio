@@ -282,7 +282,9 @@ export class BuildOrchestrator {
         difficulty: project.spec.difficulty,
         aspectRatio: project.spec.presentationVersion < 2 ? "9:16" : project.spec.aspectRatio,
         cameraMode: project.spec.presentationVersion < 5 ? "auto" : project.spec.cameraMode,
-        inputModes: project.spec.presentationVersion < 5 ? undefined : project.spec.inputModes,
+        inputModes: project.spec.template === "merge-2048" || project.spec.presentationVersion < 5
+          ? undefined
+          : project.spec.inputModes,
         puzzlePieceCount: project.spec.puzzleRules?.pieceCount,
         customImageDataUrl: project.spec.customImageDataUrl ?? undefined,
       }, project.spec.ideaAnalysis ?? null, revisedDesign ?? preservedDesign),

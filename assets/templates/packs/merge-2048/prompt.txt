@@ -1,2 +1,10 @@
 Use case: stylized-concept
-Primary request: A bold portrait mobile-game key art for a number-merging puzzle: a clean grid of chunky rounded bento tiles made from soft silicone and translucent candy, progressively combining into one large radiant rainbow capsule in the center; tiny pop stars and elastic motion arcs show satisfying merging. Contemporary kawaii industrial design, premium product illustration, strong color blocking, tactile and surprising. 9:16 portrait, oversized central tile field, clean hierarchy and mobile readability. Palette: cobalt, peach, mango, mint, lilac, hot coral and cream. No brass, stone, lacquer, museum materials, Swiss austerity, text, letters, numbers, logos, watermark or literal UI.
+Asset type: premium portrait mobile-game key art and in-game background source
+Primary request: an original 4x4 number-merging puzzle world built from beautifully crafted blank square tiles, with a clear material progression and one satisfying merge moment
+Scene/backdrop: contemporary abstract design studio set made from soft molded paper planes, translucent recycled-resin sheets and subtle woven fabric waves; unmistakably modern, playful and fresh
+Subject: one dominant centered 4x4 matrix of thick rounded-square blank tiles, several tiles gliding together toward a precise soft glow
+Style/medium: premium editorial 3D illustration, 2026 product-design aesthetic, tactile and charming but not childish
+Composition/framing: 9:16 portrait; board occupies the central 58 percent; quiet negative space at top and bottom for UI
+Lighting/mood: bright diffused daylight with crisp soft shadows and restrained luminous motion trails
+Color palette: warm cream, mint-celadon, deep teal, soft sky blue, apricot and one restrained coral-red accent, tiny brushed-brass details
+Constraints: all tile faces blank; no text, numbers, letters, logos, watermark, traditional motifs, pine, ink painting, antique frames, candy, toy studs, stars, rainbow capsule or clutter

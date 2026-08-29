@@ -252,12 +252,19 @@ test("十三类艺术化游戏都会产出可解析脚本、角色拆分位图�
       }
       if (template === "merge-2048") {
         const script = readFileSync(join(output, "app.js"), "utf8");
+        const styles = readFileSync(join(output, "styles.css"), "utf8");
         assert.match(script, /function drawTileNumber\(/);
         assert.match(script, /ui-monospace, SFMono-Regular/);
-        assert.match(script, /mergeFlashUntil = performance\.now\(\) \+ 260/);
+        assert.match(script, /const mergeBlueprints = \[/);
+        assert.match(script, /function resolveMergeMove\(source, direction\)/);
+        assert.match(script, /const mergeMoveDuration = 168/);
+        assert.match(script, /merge-session-v2/);
+        assert.match(script, /prepareDoubleMerge/);
+        assert.match(script, /directSwipe: true/);
+        assert.match(script, /spawnDistribution/);
         assert.match(script, /ctx\.roundRect\(layout\.originX/);
-        assert.match(script, /scale: value \? 1\.28 : 1\.22/);
-        assert.match(script, /alpha: value \? 1 : \.42/);
+        assert.match(styles, /body\[data-template=merge-2048\]\[data-game-state=playing\] \[data-control=up\]/);
+        assert.doesNotMatch(script, /mergeFlashUntil/);
       }
       if (template === "platformer") {
         const script = readFileSync(join(output, "app.js"), "utf8");

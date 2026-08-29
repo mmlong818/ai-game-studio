@@ -621,19 +621,31 @@ export async function inspectStageDClassicInBrowser(root: string, template: Stag
       const tierOne = await stageCDebugState(page);
       await stageCDebugAction(page, "prepareMerge");
       await page.keyboard.press("ArrowLeft");
+      await page.waitForTimeout(40);
+      const moving = await stageCDebugState(page);
+      await stageCDebugAction(page, "finishAnimation");
       const merged = await stageCDebugState(page);
       await stageCDebugAction(page, "undo");
       const undone = await stageCDebugState(page);
+      await stageCDebugAction(page, "prepareDoubleMerge");
+      await page.keyboard.press("ArrowLeft");
+      await page.waitForTimeout(40);
+      await stageCDebugAction(page, "finishAnimation");
+      const doubleMerged = await stageCDebugState(page);
       await stageCDebugAction(page, "prepareDanger");
       const danger = await stageCDebugState(page);
       await page.evaluate(() => { const debug = (window as any).__GAME_DEBUG__; debug.setLevel(17); debug.restart(); });
       const tierFive = await stageCDebugState(page);
-      if (merged.runtime.score !== 4 || !merged.runtime.canUndo || !merged.runtime.spawnAnimated) throw new Error("2048 合并、生成动画或撤销快照不完整。 ");
-      if (undone.runtime.score !== 0 || undone.runtime.canUndo) throw new Error("2048 撤销没有恢复上一步。 ");
+      if (tierOne.runtime.blueprintCount !== 20 || tierOne.runtime.uniqueBlueprintNames !== 20) throw new Error("2048 二十关开局蓝图不唯一。 ");
+      if (moving.runtime.animation?.duration !== 168) throw new Error("2048 连续位移动画时长合同不完整。 ");
+      if (merged.runtime.score !== 4 || !merged.runtime.canUndo || !merged.runtime.spawnAnimated) throw new Error("2048 合并、生成动画或撤销快照不完整：" + JSON.stringify({ score: merged.runtime.score, canUndo: merged.runtime.canUndo, spawnAnimated: merged.runtime.spawnAnimated, board: merged.runtime.board, animation: merged.runtime.animation }) + "。 ");
+      if (undone.runtime.score !== 0 || undone.runtime.undoCredits !== 1 || undone.runtime.canUndo) throw new Error("2048 限次回溯没有恢复完整状态。 ");
+      if (doubleMerged.runtime.score !== 8 || doubleMerged.runtime.board?.[3]?.[0] !== 4 || doubleMerged.runtime.board?.[3]?.[1] !== 4) throw new Error("2048 的 2、2、2、2 没有按一次一并规则得到 4、4。 ");
       if (!danger.runtime.danger) throw new Error("2048 临近锁死时没有危险状态。 ");
       if (!(tierFive.runtime.target > tierOne.runtime.target)) throw new Error("2048 高阶关卡目标没有提升。 ");
-      checks.push("数字层级", "生成与合并动画", "一步撤销", "历史最佳", "危险提示与分档目标");
-      evidence.tierOne = tierOne.runtime; evidence.merged = merged.runtime; evidence.undone = undone.runtime; evidence.danger = danger.runtime; evidence.tierFive = tierFive.runtime;
+      if (!tierOne.runtime.directSwipe || tierOne.runtime.spawnDistribution !== "90/10") throw new Error("2048 直接滑动或标准生成概率合同不完整。 ");
+      checks.push("二十个独立关卡", "一次一并规则", "168ms 位移动画", "下一块预告", "限次回溯", "直接滑动", "标准 90/10 生成", "危险与限步任务");
+      evidence.tierOne = tierOne.runtime; evidence.moving = moving.runtime; evidence.merged = merged.runtime; evidence.undone = undone.runtime; evidence.doubleMerged = doubleMerged.runtime; evidence.danger = danger.runtime; evidence.tierFive = tierFive.runtime;
     }
 
     if (template === "klotski") {

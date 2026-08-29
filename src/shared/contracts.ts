@@ -449,7 +449,7 @@ const templateDefaults: Record<GameTemplate, { title: string; perspective: GameS
   klotski: { title: "朱门华容", perspective: "ui", controls: ["点击木块再选择方向", "触控方向键"], style: "playful" },
   maze: { title: "苔径迷庭", perspective: "top-down", controls: ["方向键移动", "触控方向键"], style: "dreamy" },
   snake: { title: "青玉长游", perspective: "top-down", controls: ["方向键改变方向", "触控方向键"], style: "playful" },
-  "merge-2048": { title: "数织矩阵", perspective: "ui", controls: ["方向键推动数字", "触控方向键"], style: "pop" },
+  "merge-2048": { title: "数织矩阵", perspective: "ui", controls: ["棋盘直接滑动", "方向键或 WASD", "Z 键回溯"], style: "pop" },
   platformer: { title: "云脊跃迁", perspective: "side", controls: ["左右移动", "跳跃", "触控按钮"], style: "dreamy" },
   "space-shooter": { title: "星环突围", perspective: "top-down", controls: ["左右移动", "持续射击", "触控按钮"], style: "pop" },
   "polyomino-fit": { title: "软糖拼岛", perspective: "ui", controls: ["选择与放置", "旋转", "提示与撤销"], style: "playful" },
@@ -513,6 +513,7 @@ export function recommendedCameraMode(template: GameTemplate, dimensions: "2d" |
 export function recommendedInputModes(template: GameTemplate, dimensions: "2d" | "3d"): InputMode[] {
   if (dimensions === "3d") return ["keyboard", "virtual-stick"];
   if (template === "puzzle") return ["drag", "pointer", "keyboard"];
+  if (template === "merge-2048") return ["swipe", "keyboard"];
   if (template === "space-shooter") return ["drag", "keyboard", "touch-buttons"];
   if (["tetris", "merge-2048", "maze", "snake"].includes(template)) return ["swipe", "keyboard", "touch-buttons"];
   if (template === "platformer") return ["keyboard", "touch-buttons"];
@@ -725,11 +726,11 @@ const designBlueprints: Record<GameTemplate, Omit<z.infer<typeof gameDesignProfi
     coreLoop: ["观察空位与相同数字", "选择一个整体滑动方向", "合并同值数字", "为新数字块预留空间"],
     winCondition: "合成当前难度指定的目标数字",
     failCondition: "棋盘填满且四个方向都不能产生移动或合并",
-    progression: ["最大数字和分数持续提高", "棋盘密度增加迫使玩家规划角落和空位"],
-    gameFeel: ["有效移动伴随短促反馈", "新纪录数字使用尺寸和亮度强调", "无效移动不生成新块"],
-    onboarding: ["开始前展示同值合并规则", "开局只放两个数字块保留安全试错空间"],
-    accessibility: ["键盘、WASD 和触控方向键等价", "数字文本始终提供，不只依赖色块"],
-    productionRisks: ["一次移动中每个数字块最多合并一次", "无可用移动判定必须覆盖潜在合并"],
+    progression: ["二十个独立开局分为五章，逐步加入角落、空位、连并、预告、限步和零回溯任务", "最终关合成 2048 后可继续无尽模式"],
+    gameFeel: ["数字块在 168ms 内连续滑向目标格，合并与新生分别反馈", "无效移动只产生轻微回弹且绝不生成新块", "下一块预告靠近棋盘并在生成后更新"],
+    onboarding: ["第一关在棋盘下方只显示一次滑动提示", "开局保持低密度，随后用不同初始局面教学角落与空位"],
+    accessibility: ["手机直接滑动棋盘，桌面使用方向键或 WASD，Z 键和回溯按钮等价", "数字文本始终提供并维持高对比，不只依赖色块"],
+    productionRisks: ["一次移动中每个数字块最多合并一次；2、2、2、2 必须得到 4、4", "动画期间只允许缓存一个方向，存档必须保留棋盘、下一块和随机状态"],
   },
   platformer: {
     genre: "横版平台跳跃",

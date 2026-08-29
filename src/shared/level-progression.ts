@@ -45,7 +45,13 @@ const templateModifiers: Record<GameTemplate, readonly string[]> = {
   klotski: ["基础开门", "横块换位", "竖块让路", "多步腾挪"],
   maze: ["短径辨向", "岔路记忆", "回环取舍", "长径冲刺"],
   snake: ["开放边界", "围墙规则", "庭石障碍", "高速长身"],
-  "merge-2048": ["小目标合成", "空间保留", "连锁规划", "高阶目标"],
+  "merge-2048": [
+    "成双启程", "角落锚点", "余白四格", "六十四结点",
+    "双并同拍", "三段回声", "高低分流", "百二十八核",
+    "下一块·二", "下一块·四", "预兆转向", "二百五十六门",
+    "密阵开局", "一步回溯", "限步织造", "五百一十二塔",
+    "千位角锚", "零撤销局", "连锁三响", "二〇四八核心",
+  ],
   platformer: [
     "轻羽起步", "长风落点", "星核岔路", "坡顶信标",
     "往返云台", "弹簧花径", "碎云踏板", "风琴追逐",
@@ -123,10 +129,10 @@ const commercialLevelDesigns: Record<GameTemplate, CommercialLevelDesign> = {
     ],
   },
   "merge-2048": {
-    mission: "维持角落秩序和空位储备，合成目标数字。",
+    mission: "根据本关开局、下一块预告与任务条件规划滑动，在锁死前完成目标。",
     masteryRules: [
-      { id: "efficiency", label: "得分达到目标数字的 4 倍", metric: "score", comparison: "ratio-gte", referenceMetric: "target", target: 4 },
-      { id: "control", label: "完成时至少保留 3 个空格", metric: "availableCells", comparison: "gte", target: 3 },
+      { id: "efficiency", label: "得分达到目标数字的 2 倍", metric: "score", comparison: "ratio-gte", referenceMetric: "target", target: 2 },
+      { id: "control", label: "完成时至少保留 4 个空格", metric: "availableCells", comparison: "gte", target: 4 },
     ],
   },
   platformer: {
