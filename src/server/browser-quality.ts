@@ -463,21 +463,61 @@ export async function inspectStageEInBrowser(root: string, template: StageETempl
     let restored: any = null;
     let advanced: any = null;
     let selectedCue: any = null;
+    let regionSurvey: any[] | null = null;
+    let regionInteraction: any = null;
     if (template === "region-logic") {
-      await stageEDebugAction(page, "probeDeadEnd");
-      const reasoningConflict = await stageEDebugState(page);
-      if (reasoningConflict?.runtime?.lastConflictType !== "dead-end" || reasoningConflict.runtime.errors !== 1) throw new Error("星灵巡格没有识别会让剩余棋盘无解的错误落子。 ");
-      advanced = await page.evaluate(() => {
-        const debug = (window as any).__GAME_DEBUG__;
-        debug.setLevel(17);
-        debug.restart();
-        return debug.getState();
-      });
+      regionSurvey = [];
+      mkdirSync(join(root, "_studio", "quality"), { recursive: true });
+      await stageEDebugAction(page, "unlockAllLevels");
+      for (let level = 1; level <= 20; level += 1) {
+        const state = await page.evaluate((number) => {
+          const debug = (window as any).__GAME_DEBUG__;
+          debug.setLevel(number);
+          debug.restart();
+          return debug.getState().runtime;
+        }, level);
+        regionSurvey.push(state);
+        if ([13, 20].includes(level)) await page.screenshot({ path: join(root, "_studio", "quality", `region-level-${String(level).padStart(2, "0")}.png`), fullPage: true });
+      }
+      if (regionSurvey.length !== 20 || new Set(regionSurvey.map((state) => state.layoutSignature)).size !== 20) throw new Error("星灵巡格没有形成 20 个不同布局。 ");
+      const invalidRegionLevels = regionSurvey.filter((state) => state.uniqueSolutions !== 1 || !state.regionsConnected || !state.logicSolvable);
+      if (invalidRegionLevels.length) throw new Error(`星灵巡格存在非唯一解、区域不连通或没有推理轨迹的关卡：${JSON.stringify(invalidRegionLevels.map((state) => ({ level: state.level, uniqueSolutions: state.uniqueSolutions, regionsConnected: state.regionsConnected, logicSolvable: state.logicSolvable })))}`);
+      if (regionSurvey.slice(0, 12).some((state) => state.starsPerUnit !== 1) || regionSurvey.slice(12).some((state) => state.size !== 10 || state.starsPerUnit !== 2 || state.targetStars !== 20)) throw new Error("星灵巡格的一星到双星章节进程不符合设计合同。 ");
       await page.evaluate(() => {
         const debug = (window as any).__GAME_DEBUG__;
         debug.setLevel(1);
         debug.restart();
       });
+      await stageEDebugAction(page, "probeDirectConflict");
+      const directConflict = await stageEDebugState(page);
+      if (directConflict?.runtime?.lastConflictType !== "direct-rule" || directConflict.runtime.errors !== 1) throw new Error("星灵巡格没有在格内拒绝直接相邻冲突。 ");
+      await stageEDebugAction(page, "undoRegion");
+      await stageEDebugAction(page, "cycleFirstCell");
+      const cycled = await stageEDebugState(page);
+      await stageEDebugAction(page, "undoRegion");
+      const undone = await stageEDebugState(page);
+      await stageEDebugAction(page, "redoRegion");
+      const redone = await stageEDebugState(page);
+      const hintsBefore = redone.runtime.hints;
+      await stageEDebugAction(page, "hintRegion");
+      const hinted = await stageEDebugState(page);
+      if (cycled.runtime.stars !== 1 || undone.runtime.stars !== 0 || redone.runtime.stars !== 1 || redone.runtime.futureDepth !== 0) throw new Error("星灵巡格的循环输入、撤销或重做没有形成可恢复历史。 ");
+      if (hinted.runtime.hints !== hintsBefore - 1 || !hinted.runtime.hintRule || hinted.runtime.hintUsesSolution !== false || hinted.runtime.stars !== redone.runtime.stars) throw new Error("星灵巡格的提示没有只解释一步推理。 ");
+      const regionSessionEntries = await page.evaluate(() => Object.keys(localStorage).filter((key) => key.startsWith("forge-region-v3:")).map((key) => ({ key, value: localStorage.getItem(key) })));
+      if (!regionSessionEntries.length) throw new Error("星灵巡格执行落子后没有写入浏览器断点。 ");
+      await page.reload({ waitUntil: "domcontentloaded" });
+      await page.locator("#start").click();
+      restored = await stageEDebugState(page);
+      if (!restored?.runtime?.restored || restored.runtime.stars !== redone.runtime.stars) throw new Error(`星灵巡格刷新后没有恢复当前推理进度：${JSON.stringify({ expectedStars: redone.runtime.stars, restored: restored?.runtime, campaign: restored?.campaign?.level?.number, regionSessionEntries })}`);
+      advanced = await page.evaluate(() => {
+        const debug = (window as any).__GAME_DEBUG__;
+        debug.setLevel(20);
+        debug.restart();
+        return debug.getState();
+      });
+      if (advanced?.runtime?.size !== 10 || advanced.runtime.starsPerUnit !== 2 || advanced.runtime.targetStars !== 20 || advanced.runtime.uniqueSolutions !== 1) throw new Error("星灵巡格最终章没有形成 10×10 双星唯一解。 ");
+      await page.evaluate(() => { const debug = (window as any).__GAME_DEBUG__; debug.setLevel(1); debug.restart(); });
+      regionInteraction = { directConflict: directConflict.runtime, cycled: cycled.runtime, undone: undone.runtime, redone: redone.runtime, hinted: hinted.runtime };
     }
     if (template === "mahjong-roguelite") {
       await stageEDebugAction(page, "selectFirstFree");
@@ -518,11 +558,9 @@ export async function inspectStageEInBrowser(root: string, template: StageETempl
       await page.waitForTimeout(40);
       if (await page.locator("body").getAttribute("data-game-state") !== "lost") throw new Error(`${template} 的失败分支没有进入 lost。`);
     }
-    if (template === "region-logic" && initial?.runtime?.uniqueSolutions !== 1) throw new Error("星灵巡格题面没有唯一解。 ");
-    if (template === "region-logic" && (initial.runtime.size < 6 || initial.runtime.fixedStars !== 0 || initial.runtime.hints > 2)) throw new Error(`星灵巡格标准首关仍然给出过多答案或使用过小棋盘：${JSON.stringify(initial.runtime)}`);
-    if (template === "region-logic" && (initial.runtime.searchNodes < initial.runtime.complexityTarget.minSearchNodes || initial.runtime.branchPoints < initial.runtime.complexityTarget.minBranchPoints)) throw new Error("星灵巡格首关推理链仍然过短。 ");
-    if (template === "region-logic" && (advanced?.runtime?.size < 8 || advanced.runtime.hints !== 0 || advanced.runtime.directAnswerEnabled)) throw new Error("星灵巡格后期关没有形成 8×8、零提示的进阶难度。 ");
-    if (template === "region-logic" && (advanced.runtime.searchNodes < advanced.runtime.complexityTarget.minSearchNodes || advanced.runtime.branchPoints < advanced.runtime.complexityTarget.minBranchPoints)) throw new Error("星灵巡格后期关推理复杂度不足。 ");
+    if (template === "region-logic" && (initial?.runtime?.catalogSize !== 20 || initial.runtime.campaignSignatureCount !== 20 || initial.runtime.uniqueSolutions !== 1 || !initial.runtime.regionsConnected || initial.runtime.hintUsesSolution !== false)) throw new Error(`星灵巡格首关合同不完整：${JSON.stringify(initial.runtime)}`);
+    if (template === "region-logic" && (initial.runtime.size !== 6 || initial.runtime.starsPerUnit !== 1 || initial.runtime.boardAreaVersion < 2)) throw new Error("星灵巡格首关没有形成 6×6 一星大棋盘。 ");
+    if (template === "region-logic" && (advanced?.runtime?.size !== 10 || advanced.runtime.starsPerUnit !== 2 || advanced.runtime.targetStars !== 20 || advanced.runtime.logicTraceSteps <= initial.runtime.logicTraceSteps)) throw new Error("星灵巡格后期关没有形成更长的 10×10 双星推理链。 ");
     if (template === "maze" && (!initial?.runtime?.challenge || initial.runtime.optimalSteps < 1 || initial.runtime.challengeTarget <= initial.runtime.optimalSteps)) throw new Error("苔径迷庭竞径目标没有形成有效的可选挑战。 ");
     if (template === "maze" && (initial.runtime.loopCount < 5 || initial.runtime.junctionCount < 3 || initial.runtime.alternativeSegments < 3 || !initial.runtime.hasMultipleRoutes)) throw new Error("苔径迷庭仍然只有单一路线，没有形成环路与有效岔口。 ");
     if (template === "mahjong-roguelite" && (initial?.runtime?.relicPoolSize ?? 0) < 12) throw new Error("月港雀旅遗物池不足 12 件。 ");
@@ -541,7 +579,7 @@ export async function inspectStageEInBrowser(root: string, template: StageETempl
     }
     if (template === "mahjong-roguelite" && ((completedState?.runtime?.routeHistory?.length ?? 0) < 3 || !completedState?.runtime?.ending)) throw new Error("月港雀旅完成长局后没有路线历史或差异化结局。 ");
     if (runtimeErrors.length) throw new Error(`阶段 E 浏览器错误：${runtimeErrors.join(" | ")}`);
-    const result: StageEQualityResult = { template, completedRuns: 3, failedRuns: 2, evidence: { routeOffer: routeOffer?.runtime ?? null, initial: initial?.runtime, mazeSurvey, mazeInteraction, selectedCue: selectedCue?.runtime ?? null, advanced: advanced?.runtime ?? null, restored: restored?.runtime ?? null, completed: completedState?.runtime ?? null } };
+    const result: StageEQualityResult = { template, completedRuns: 3, failedRuns: 2, evidence: { routeOffer: routeOffer?.runtime ?? null, initial: initial?.runtime, mazeSurvey, mazeInteraction, regionSurvey, regionInteraction, selectedCue: selectedCue?.runtime ?? null, advanced: advanced?.runtime ?? null, restored: restored?.runtime ?? null, completed: completedState?.runtime ?? null } };
     mkdirSync(join(root, "_studio"), { recursive: true });
     writeFileSync(join(root, "_studio", "STAGE_E_QUALITY_REPORT.json"), `${JSON.stringify({ checkedAt: new Date().toISOString(), ...result }, null, 2)}\n`, "utf8");
     return result;

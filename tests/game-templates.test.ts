@@ -6,6 +6,7 @@ import { join, resolve } from "node:path";
 import test from "node:test";
 import { inspectGameArtifact, writeDesignDocuments, writeGameArtifact } from "../src/server/game-artifact";
 import { openTestDatabase } from "../src/server/database";
+import { regionLogicLevels } from "../src/server/game-runtimes/region-logic-levels.generated";
 import { StudioRepository } from "../src/server/studio-repository";
 import type { GameTemplate, VisualStyle } from "../src/shared/contracts";
 
@@ -370,12 +371,20 @@ test("十三类艺术化游戏都会产出可解析脚本、角色拆分位图�
       }
       if (template === "region-logic") {
         const script = readFileSync(join(output, "app.js"), "utf8");
-        assert.match(script, /function analyzeRegionPuzzle/);
+        assert.equal(regionLogicLevels.length, 20);
+        assert.equal(new Set(regionLogicLevels.map((level) => level.regions.flat().join(""))).size, 20);
+        assert.equal(regionLogicLevels.filter((level) => level.starsPerUnit === 2).length, 8);
+        assert.equal(new Set(regionLogicLevels.filter((level) => level.starsPerUnit === 2).map((level) => JSON.stringify(level.solution))).size, 8);
+        assert.ok(regionLogicLevels.every((level) => level.difficulty.steps > 0));
+        assert.match(script, /const regionLevelCatalog/);
+        assert.match(script, /function solveRegionPuzzle/);
         assert.match(script, /function countRegionSolutions/);
         assert.match(script, /function countRegionCompletions/);
-        assert.match(script, /function generateUniqueRegionPuzzle/);
         assert.match(script, /function recomputeAutoMarks/);
-        assert.match(script, /directAnswerEnabled/);
+        assert.match(script, /function nextRegionDeduction/);
+        assert.match(script, /function restoreRegionSession/);
+        assert.match(script, /function redoRegionMove/);
+        assert.match(script, /hintUsesSolution: false/);
         assert.match(script, /probeDeadEnd/);
       }
       if (template === "mahjong-roguelite") {

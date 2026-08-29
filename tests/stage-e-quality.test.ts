@@ -32,13 +32,15 @@ test("阶段 E 逻辑、迷宫和长局模板具备计划要求的运行时能�
       const html = readFileSync(join(artifactRoot, "index.html"), "utf8");
       const script = readFileSync(join(artifactRoot, "app.js"), "utf8");
       if (template === "region-logic") {
-        assert.match(html, /hint-conflict/);
-        assert.match(html, /hint-eliminate/);
-        assert.match(html, /hint-correct/);
+        assert.match(html, /data-control="cycle"/);
+        assert.match(html, /data-control="redo"/);
+        assert.match(html, /data-control="hint"/);
+        assert.match(script, /regionLevelCatalog/);
         assert.match(script, /uniqueSolutions/);
-        assert.match(script, /branchPoints/);
         assert.match(script, /countRegionCompletions/);
-        assert.match(script, /directAnswerEnabled/);
+        assert.match(script, /nextRegionDeduction/);
+        assert.match(script, /restoreRegionSession/);
+        assert.match(script, /hintUsesSolution: false/);
         assert.match(script, /regionErrors/);
       }
       if (template === "maze") {

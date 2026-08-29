@@ -1,474 +1,428 @@
-// 规则架构参考 mkgame-sudoku（MIT）；题面、生成器、名称和视听资产均为本平台原创。
+import { regionLogicLevels } from "./region-logic-levels.generated.js";
+
+// Core Star Battle solver/generator structure is adapted from
+// MelodyLucien/starbattle (MIT). The fixed campaign, hint pedagogy, session
+// model, rendering, input system and all audiovisual assets are original.
 export const regionLogicScript = String.raw`
+const regionLevelCatalog = ${JSON.stringify(regionLogicLevels)};
 const regionDifficulty = {
-  relaxed: { size: 5, lives: 5, freeHints: 3, fixedStars: 1 },
-  standard: { size: 6, lives: 4, freeHints: 2, fixedStars: 0 },
-  challenging: { size: 7, lives: 3, freeHints: 1, fixedStars: 0 },
+  relaxed: { hints: 4 },
+  standard: { hints: 3 },
+  challenging: { hints: 2 },
 }[config.difficulty];
-let regionSize = regionDifficulty.size;
-let regionFixedStars = regionDifficulty.fixedStars;
+const regionSessionSchemaVersion = 3;
+const regionColors = ["#f7dca5", "#bfe5d5", "#f3c4cb", "#c9d8ee", "#d9cbea", "#b9dfe4", "#efc8aa", "#cbdcaf", "#ead6a4", "#c8cedf"];
+const regionRuleLabels = { "quota-fill": "配额填满", "unit-complete": "单位已满", "line-lock": "行列锁定", contradiction: "反证排除", conflict: "路径矛盾" };
 
-function applyRegionCampaignSettings() {
-  const tier = currentCampaignLevel().tier;
-  regionSize = Math.min(8, regionDifficulty.size + Math.floor((tier - 1) / 2));
-  regionFixedStars = Math.max(0, regionDifficulty.fixedStars - Math.floor((tier - 1) / 2));
-}
-
-let regionPuzzle = null;
+let regionPuzzle = regionLevelCatalog[0];
 let placedRegionStars = new Set();
 let manualRegionMarks = new Set();
 let autoRegionMarks = new Set();
 let regionHistory = [];
-let regionMode = "star";
-let regionLives = regionDifficulty.lives;
-let regionHints = regionDifficulty.freeHints;
-let regionFlash = null;
+let regionFuture = [];
+let regionToolMode = "cycle";
+let regionHints = regionDifficulty.hints;
+let regionHintsUsed = 0;
 let regionErrors = 0;
-let regionHintCost = 0;
+let regionMoves = 0;
 let regionStartedAt = 0;
+let regionElapsedBeforeRestore = 0;
+let regionRestored = false;
+let regionFocus = { row: 0, column: 0 };
+let regionFlash = null;
+let regionHint = null;
 let regionLastConflictType = "none";
+let regionLastAction = "none";
+let regionUniqueSolutions = 0;
 
 function regionKey(row, column) { return row + ":" + column; }
+function currentRegionPuzzle() { return regionLevelCatalog[Math.max(0, Math.min(regionLevelCatalog.length - 1, currentCampaignLevel().number - 1))]; }
+function regionTargetStars() { return regionPuzzle.size * regionPuzzle.starsPerUnit; }
 
-function regionRandom(seed) {
-  let state = seed >>> 0;
-  return () => {
-    state = (Math.imul(state, 1664525) + 1013904223) >>> 0;
-    return state / 4294967296;
-  };
-}
-
-function shuffledRegionValues(values, random) {
-  const result = [...values];
-  for (let index = result.length - 1; index > 0; index -= 1) {
-    const swap = Math.floor(random() * (index + 1));
-    [result[index], result[swap]] = [result[swap], result[index]];
-  }
-  return result;
-}
-
-function createRegionSolution(size, random) {
-  const columns = Array.from({ length: size }, (_, index) => index);
-  for (let attempt = 0; attempt < 500; attempt += 1) {
-    const candidate = shuffledRegionValues(columns, random);
-    if (candidate.every((column, row) => row === 0 || Math.abs(column - candidate[row - 1]) > 1)) return candidate;
-  }
-  const fallback = [];
-  function search(row, used) {
-    if (row === size) return true;
-    for (const column of columns) {
-      if (used.has(column) || (row > 0 && Math.abs(column - fallback[row - 1]) <= 1)) continue;
-      fallback[row] = column; used.add(column);
-      if (search(row + 1, used)) return true;
-      used.delete(column);
+const regionComboCache = new Map();
+function regionRowCombos(size, starsPerUnit) {
+  const cacheKey = size + ":" + starsPerUnit;
+  if (regionComboCache.has(cacheKey)) return regionComboCache.get(cacheKey);
+  const result = [];
+  function visit(start, chosen) {
+    if (chosen.length === starsPerUnit) { result.push([...chosen]); return; }
+    for (let column = start; column < size; column += 1) {
+      if (chosen.length && column <= chosen[chosen.length - 1] + 1) continue;
+      chosen.push(column); visit(column + 2, chosen); chosen.pop();
     }
-    return false;
   }
-  search(0, new Set());
-  return fallback;
+  visit(0, []); regionComboCache.set(cacheKey, result); return result;
 }
 
-function growConnectedRegions(size, solution, random) {
-  const regions = Array.from({ length: size }, () => Array(size).fill(-1));
-  solution.forEach((column, row) => { regions[row][column] = row; });
-  let remaining = size * size - size;
-  const neighbors = [[-1,0],[1,0],[0,-1],[0,1]];
-  while (remaining > 0) {
-    let grew = false;
-    for (const regionId of shuffledRegionValues(Array.from({ length: size }, (_, index) => index), random)) {
-      const frontier = [];
-      for (let row = 0; row < size; row += 1) for (let column = 0; column < size; column += 1) {
-        if (regions[row][column] !== regionId) continue;
-        for (const [deltaRow, deltaColumn] of neighbors) {
-          const nextRow = row + deltaRow;
-          const nextColumn = column + deltaColumn;
-          if (nextRow >= 0 && nextColumn >= 0 && nextRow < size && nextColumn < size && regions[nextRow][nextColumn] < 0) frontier.push([nextRow, nextColumn]);
-        }
+function solveRegionPuzzle(requiredStars = new Set(), forbiddenMarks = new Set(), limit = 2) {
+  const size = regionPuzzle.size;
+  const starsPerUnit = regionPuzzle.starsPerUnit;
+  const solutions = [];
+  const columnCounts = Array(size).fill(0);
+  const regionCounts = Array(size).fill(0);
+  const rows = [];
+  const requiredRows = Array.from({ length: size }, () => []);
+  for (const key of requiredStars) {
+    const parts = key.split(":").map(Number);
+    if (parts[0] < 0 || parts[1] < 0 || parts[0] >= size || parts[1] >= size) return [];
+    requiredRows[parts[0]].push(parts[1]);
+  }
+  function search(row) {
+    if (solutions.length >= limit) return;
+    if (row === size) {
+      if (columnCounts.every((count) => count === starsPerUnit) && regionCounts.every((count) => count === starsPerUnit)) solutions.push(rows.flatMap((columns, rowIndex) => columns.map((column) => [rowIndex, column])));
+      return;
+    }
+    for (const columns of regionRowCombos(size, starsPerUnit)) {
+      if (requiredRows[row].some((column) => !columns.includes(column))) continue;
+      if (columns.some((column) => forbiddenMarks.has(regionKey(row, column)))) continue;
+      if (columns.some((column) => columnCounts[column] >= starsPerUnit || regionCounts[regionPuzzle.regions[row][column]] >= starsPerUnit)) continue;
+      if (row > 0 && columns.some((column) => rows[row - 1].some((previous) => Math.abs(column - previous) <= 1))) continue;
+      rows[row] = columns;
+      columns.forEach((column) => { columnCounts[column] += 1; regionCounts[regionPuzzle.regions[row][column]] += 1; });
+      search(row + 1);
+      columns.forEach((column) => { columnCounts[column] -= 1; regionCounts[regionPuzzle.regions[row][column]] -= 1; });
+    }
+  }
+  search(0); return solutions;
+}
+
+function countRegionSolutions(limit = 2) { return solveRegionPuzzle(new Set(), new Set(), limit).length; }
+function countRegionCompletions(stars = placedRegionStars, marks = new Set([...manualRegionMarks, ...autoRegionMarks]), limit = 1) { return solveRegionPuzzle(stars, marks, limit).length; }
+
+function regionCellsForUnit(kind, id) {
+  const cells = [];
+  for (let row = 0; row < regionPuzzle.size; row += 1) for (let column = 0; column < regionPuzzle.size; column += 1) {
+    if ((kind === "row" && row === id) || (kind === "column" && column === id) || (kind === "region" && regionPuzzle.regions[row][column] === id)) cells.push([row, column]);
+  }
+  return cells;
+}
+function regionStarsInUnit(kind, id) { return regionCellsForUnit(kind, id).filter(([row, column]) => placedRegionStars.has(regionKey(row, column))).length; }
+function regionCandidateCells(kind, id) {
+  return regionCellsForUnit(kind, id).filter(([row, column]) => {
+    const key = regionKey(row, column);
+    return !placedRegionStars.has(key) && !manualRegionMarks.has(key) && !autoRegionMarks.has(key);
+  });
+}
+
+function allRegionsConnected() {
+  for (let id = 0; id < regionPuzzle.size; id += 1) {
+    const cells = regionCellsForUnit("region", id);
+    if (!cells.length) return false;
+    const available = new Set(cells.map(([row, column]) => regionKey(row, column)));
+    const seen = new Set([regionKey(cells[0][0], cells[0][1])]);
+    const queue = [cells[0]];
+    for (let index = 0; index < queue.length; index += 1) {
+      const [row, column] = queue[index];
+      for (const [rowDelta, columnDelta] of [[-1,0],[1,0],[0,-1],[0,1]]) {
+        const next = [row + rowDelta, column + columnDelta];
+        const key = regionKey(next[0], next[1]);
+        if (available.has(key) && !seen.has(key)) { seen.add(key); queue.push(next); }
       }
-      if (!frontier.length) continue;
-      const [row, column] = frontier[Math.floor(random() * frontier.length)];
-      if (regions[row][column] >= 0) continue;
-      regions[row][column] = regionId;
-      remaining -= 1;
-      grew = true;
     }
-    if (!grew) break;
+    if (seen.size !== cells.length) return false;
   }
-  return regions;
-}
-
-function canMoveRegionCell(regions, row, column) {
-  const source = regions[row][column];
-  const size = regions.length;
-  const remaining = [];
-  for (let targetRow = 0; targetRow < size; targetRow += 1) for (let targetColumn = 0; targetColumn < size; targetColumn += 1) {
-    if (regions[targetRow][targetColumn] === source && (targetRow !== row || targetColumn !== column)) remaining.push([targetRow, targetColumn]);
-  }
-  if (!remaining.length) return false;
-  const seen = new Set([regionKey(remaining[0][0], remaining[0][1])]);
-  const queue = [remaining[0]];
-  for (let index = 0; index < queue.length; index += 1) {
-    const [currentRow, currentColumn] = queue[index];
-    for (const [deltaRow, deltaColumn] of [[-1,0],[1,0],[0,-1],[0,1]]) {
-      const nextRow = currentRow + deltaRow;
-      const nextColumn = currentColumn + deltaColumn;
-      const key = regionKey(nextRow, nextColumn);
-      if (nextRow < 0 || nextColumn < 0 || nextRow >= size || nextColumn >= size || seen.has(key) || regions[nextRow][nextColumn] !== source || (nextRow === row && nextColumn === column)) continue;
-      seen.add(key); queue.push([nextRow, nextColumn]);
-    }
-  }
-  return seen.size === remaining.length;
-}
-
-function mutateRegionShape(regions, solution, random) {
-  const size = regions.length;
-  for (let attempt = 0; attempt < 48; attempt += 1) {
-    const row = Math.floor(random() * size);
-    const column = Math.floor(random() * size);
-    if (solution[row] === column || !canMoveRegionCell(regions, row, column)) continue;
-    const source = regions[row][column];
-    const targets = [];
-    for (const [deltaRow, deltaColumn] of [[-1,0],[1,0],[0,-1],[0,1]]) {
-      const nextRow = row + deltaRow;
-      const nextColumn = column + deltaColumn;
-      if (nextRow < 0 || nextColumn < 0 || nextRow >= size || nextColumn >= size) continue;
-      const target = regions[nextRow][nextColumn];
-      if (target !== source && !targets.includes(target)) targets.push(target);
-    }
-    if (!targets.length) continue;
-    const target = targets[Math.floor(random() * targets.length)];
-    regions[row][column] = target;
-    return { row, column, source };
-  }
-  return null;
-}
-
-function analyzeRegionPuzzle(regions, fixedStars, limit = 2) {
-  const size = regions.length;
-  const usedColumns = new Set();
-  const usedRegions = new Set();
-  let solutions = 0;
-  let searchNodes = 0;
-  let branchPoints = 0;
-  let maxCandidates = 0;
-  function search(row, previousColumn) {
-    if (solutions >= limit) return;
-    searchNodes += 1;
-    if (row === size) { solutions += 1; return; }
-    const fixedColumn = fixedStars.has(row) ? fixedStars.get(row) : null;
-    const candidates = [];
-    for (let column = 0; column < size; column += 1) {
-      if (fixedColumn !== null && column !== fixedColumn) continue;
-      const regionId = regions[row][column];
-      if (usedColumns.has(column) || usedRegions.has(regionId) || (row > 0 && Math.abs(column - previousColumn) <= 1)) continue;
-      candidates.push(column);
-    }
-    if (candidates.length > 1) branchPoints += 1;
-    maxCandidates = Math.max(maxCandidates, candidates.length);
-    for (const column of candidates) {
-      const regionId = regions[row][column];
-      usedColumns.add(column); usedRegions.add(regionId);
-      search(row + 1, column);
-      usedColumns.delete(column); usedRegions.delete(regionId);
-    }
-  }
-  search(0, -99);
-  return { solutions, searchNodes, branchPoints, maxCandidates, score: searchNodes + branchPoints * 3 };
-}
-
-function countRegionSolutions(regions, fixedStars, limit = 2) {
-  return analyzeRegionPuzzle(regions, fixedStars, limit).solutions;
-}
-
-function countRegionCompletions(regions, stars, limit = 1) {
-  const requiredStars = new Map();
-  for (const key of stars) {
-    const [row, column] = key.split(":").map(Number);
-    if (requiredStars.has(row) && requiredStars.get(row) !== column) return 0;
-    requiredStars.set(row, column);
-  }
-  return analyzeRegionPuzzle(regions, requiredStars, limit).solutions;
-}
-
-function regionComplexityTarget() {
-  const tier = currentCampaignLevel().tier;
-  return { minSearchNodes: regionSize + tier * 2, minBranchPoints: Math.min(5, tier + 1) };
-}
-
-function generateUniqueRegionPuzzle() {
-  const size = regionSize;
-  const random = regionRandom((currentCampaignLevel().seed ^ size * 0x9e3779b1) >>> 0);
-  let candidate = null;
-  let bestUnique = null;
-  const target = regionComplexityTarget();
-  for (let attempt = 0; attempt < 28; attempt += 1) {
-    const solution = createRegionSolution(size, random);
-    const regions = growConnectedRegions(size, solution, random);
-    const fixedStars = new Map();
-    const requested = Math.min(regionFixedStars, size - 1);
-    const fixedRows = shuffledRegionValues(Array.from({ length: size }, (_, row) => row), random).slice(0, requested);
-    for (const row of fixedRows) fixedStars.set(row, solution[row]);
-    let solutionCount = countRegionSolutions(regions, fixedStars, 32);
-    candidate = { size, solution, regions, fixedStars, complexity: analyzeRegionPuzzle(regions, fixedStars) };
-    for (let step = 0; step < 320; step += 1) {
-      const mutation = mutateRegionShape(regions, solution, random);
-      if (!mutation) break;
-      const nextCount = countRegionSolutions(regions, fixedStars, 32);
-      const accept = nextCount <= solutionCount || random() < .025;
-      if (!accept) regions[mutation.row][mutation.column] = mutation.source;
-      else solutionCount = nextCount;
-      if (solutionCount !== 1) continue;
-      const complexity = analyzeRegionPuzzle(regions, fixedStars);
-      candidate = { size, solution, regions: regions.map((line) => [...line]), fixedStars, complexity };
-      if (!bestUnique || complexity.score > bestUnique.complexity.score) bestUnique = candidate;
-      if (complexity.searchNodes >= target.minSearchNodes && complexity.branchPoints >= target.minBranchPoints) return candidate;
-    }
-  }
-  if (bestUnique) return bestUnique;
-  for (let row = 0; row < size - 1; row += 1) {
-    candidate.fixedStars.set(row, candidate.solution[row]);
-    if (countRegionSolutions(candidate.regions, candidate.fixedStars) === 1) break;
-  }
-  candidate.complexity = analyzeRegionPuzzle(candidate.regions, candidate.fixedStars);
-  return candidate;
+  return true;
 }
 
 function recomputeAutoMarks() {
   autoRegionMarks = new Set();
-  if (!regionPuzzle) return;
   for (const key of placedRegionStars) {
     const [row, column] = key.split(":").map(Number);
     const regionId = regionPuzzle.regions[row][column];
-    for (let index = 0; index < regionPuzzle.size; index += 1) {
-      autoRegionMarks.add(regionKey(row, index));
-      autoRegionMarks.add(regionKey(index, column));
-    }
+    for (let index = 0; index < regionPuzzle.size; index += 1) { autoRegionMarks.add(regionKey(row, index)); autoRegionMarks.add(regionKey(index, column)); }
     for (let targetRow = 0; targetRow < regionPuzzle.size; targetRow += 1) for (let targetColumn = 0; targetColumn < regionPuzzle.size; targetColumn += 1) {
       if (regionPuzzle.regions[targetRow][targetColumn] === regionId || (Math.abs(targetRow - row) <= 1 && Math.abs(targetColumn - column) <= 1)) autoRegionMarks.add(regionKey(targetRow, targetColumn));
     }
   }
-  for (const star of placedRegionStars) autoRegionMarks.delete(star);
+  for (const key of placedRegionStars) autoRegionMarks.delete(key);
+  for (const key of manualRegionMarks) autoRegionMarks.delete(key);
 }
 
-function snapshotRegionState() {
-  regionHistory.push({ stars: new Set(placedRegionStars), marks: new Set(manualRegionMarks) });
-  if (regionHistory.length > 30) regionHistory.shift();
+function regionElapsedSeconds() { return Math.max(0, Math.round(regionElapsedBeforeRestore + (running && regionStartedAt ? (performance.now() - regionStartedAt) / 1000 : 0))); }
+function regionSnapshot() { return { stars: [...placedRegionStars], marks: [...manualRegionMarks], moves: regionMoves, errors: regionErrors, hints: regionHints, hintsUsed: regionHintsUsed, elapsed: regionElapsedSeconds() }; }
+function restoreRegionSnapshot(snapshot) {
+  placedRegionStars = new Set(snapshot.stars); manualRegionMarks = new Set(snapshot.marks);
+  regionMoves = snapshot.moves; regionErrors = snapshot.errors; regionHints = snapshot.hints; regionHintsUsed = snapshot.hintsUsed;
+  regionElapsedBeforeRestore = snapshot.elapsed; regionStartedAt = performance.now(); recomputeAutoMarks();
 }
-
-function regionLayout() {
-  const boardSize = Math.min(620, gameSceneHeight() * .56);
-  return { boardSize, cell: boardSize / regionPuzzle.size, x: (720 - boardSize) / 2, y: 205 };
+function regionSessionKey() { return "forge-region-v3:" + config.campaignStorageKey + ":" + currentCampaignLevel().number; }
+function persistRegionSession() {
+  if (!running) return;
+  try { safeStorage.setItem(regionSessionKey(), JSON.stringify({ schemaVersion: regionSessionSchemaVersion, level: currentCampaignLevel().number, signature: regionPuzzle.regions.flat().join(""), ...regionSnapshot(), history: regionHistory.slice(-40), future: regionFuture.slice(-40), updatedAt: new Date().toISOString() })); } catch {}
 }
-
-function drawRegionLogic() {
-  clearCanvas();
-  ctx.save(); ctx.translate(0, gameSceneTop());
-  const layout = regionLayout();
-  const regionColors = ["#ffe09a", "#c6f2df", "#ffc8d7", "#cbd8ff", "#ddd0ff", "#bfeaf2", "#f7c7a7"];
-  drawPlayfield(74, 64, 572, 116, { radius: 26, alpha: .96, fill: "rgba(255,250,248,.94)", stroke: "rgba(102,84,107,.18)", lineWidth: 2 });
-  ctx.textAlign = "center"; ctx.fillStyle = "#4f3f52";
-  ctx.font = "800 30px Inter, sans-serif";
-  ctx.fillText("星星 " + placedRegionStars.size + " / " + regionPuzzle.size + "   能量 " + "●".repeat(regionLives), 360, 118);
-  ctx.fillStyle = "rgba(79,63,82,.76)"; ctx.font = "600 20px Inter, sans-serif";
-  ctx.fillText("每行、每列、每个色区一颗星 · 星星不能相邻", 360, 158);
-  drawPlayfield(layout.x - 18, layout.y - 18, layout.boardSize + 36, layout.boardSize + 36, { radius: 34, alpha: .92 });
-  for (let row = 0; row < regionPuzzle.size; row += 1) for (let column = 0; column < regionPuzzle.size; column += 1) {
-    const x = layout.x + column * layout.cell;
-    const y = layout.y + row * layout.cell;
-    const regionId = regionPuzzle.regions[row][column];
-    const key = regionKey(row, column);
-    ctx.fillStyle = regionColors[regionId % regionColors.length];
-    ctx.globalAlpha = .62; ctx.fillRect(x, y, layout.cell, layout.cell); ctx.globalAlpha = 1;
-    ctx.strokeStyle = "rgba(41,44,47,.14)"; ctx.lineWidth = 1; ctx.strokeRect(x, y, layout.cell, layout.cell);
-    ctx.strokeStyle = "rgba(33,35,38,.72)"; ctx.lineWidth = 5;
-    if (row === 0 || regionPuzzle.regions[row - 1][column] !== regionId) { ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x + layout.cell, y); ctx.stroke(); }
-    if (column === 0 || regionPuzzle.regions[row][column - 1] !== regionId) { ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x, y + layout.cell); ctx.stroke(); }
-    if (row === regionPuzzle.size - 1 || regionPuzzle.regions[row + 1][column] !== regionId) { ctx.beginPath(); ctx.moveTo(x, y + layout.cell); ctx.lineTo(x + layout.cell, y + layout.cell); ctx.stroke(); }
-    if (column === regionPuzzle.size - 1 || regionPuzzle.regions[row][column + 1] !== regionId) { ctx.beginPath(); ctx.moveTo(x + layout.cell, y); ctx.lineTo(x + layout.cell, y + layout.cell); ctx.stroke(); }
-    if (autoRegionMarks.has(key)) {
-      ctx.fillStyle = "rgba(52,67,73,.28)";
-      ctx.beginPath(); ctx.arc(x + layout.cell / 2, y + layout.cell / 2, Math.max(2.5, layout.cell * .045), 0, Math.PI * 2); ctx.fill();
-    }
-    if (manualRegionMarks.has(key)) drawBitmapSprite(5, x + layout.cell * .3, y + layout.cell * .3, layout.cell * .4, layout.cell * .4, { fallback: palette.textSoft, alpha: .9, scale: 1.06 });
-    if (placedRegionStars.has(key)) {
-      const locked = regionPuzzle.fixedStars.has(row) && regionPuzzle.fixedStars.get(row) === column;
-      drawBitmapSprite(locked ? 1 : regionId % 5, x + 6, y + 6, layout.cell - 12, layout.cell - 12, { fallback: palette.highlight, scale: 1.18 });
-    }
+function validRegionKeys(values) {
+  return Array.isArray(values) && values.every((value) => {
+    const parts = String(value).split(":").map(Number);
+    return parts.length === 2 && parts.every(Number.isInteger) && parts[0] >= 0 && parts[1] >= 0 && parts[0] < regionPuzzle.size && parts[1] < regionPuzzle.size;
+  });
+}
+function validRegionStarSet(stars) {
+  const rowCounts = Array(regionPuzzle.size).fill(0);
+  const columnCounts = Array(regionPuzzle.size).fill(0);
+  const regionCounts = Array(regionPuzzle.size).fill(0);
+  const coordinates = [...stars].map((key) => key.split(":").map(Number));
+  for (const [row, column] of coordinates) {
+    rowCounts[row] += 1; columnCounts[column] += 1; regionCounts[regionPuzzle.regions[row][column]] += 1;
   }
-  if (regionFlash && performance.now() < regionFlash.until) {
-    const x = layout.x + regionFlash.column * layout.cell;
-    const y = layout.y + regionFlash.row * layout.cell;
-    drawBitmapSprite(regionFlash.type === "hint" ? 6 : 7, x + 2, y + 2, layout.cell - 4, layout.cell - 4, { fallback: regionFlash.type === "hint" ? palette.highlight : palette.primary, alpha: .82, scale: 1.16 });
-  }
-  const modeY = Math.min(gameSceneHeight() - 135, layout.y + layout.boardSize + 74);
-  ctx.fillStyle = palette.text; ctx.font = "700 23px Inter, sans-serif";
-  ctx.fillText(regionMode === "star" ? "当前：放置星星" : "当前：标记排除格", 360, modeY);
-  ctx.fillStyle = palette.textSoft; ctx.font = "500 18px Inter, sans-serif";
-  const complexityLabel = regionPuzzle.complexity.branchPoints >= 5 ? "高阶推理" : regionPuzzle.complexity.branchPoints >= 3 ? "进阶推理" : "基础推理";
-  ctx.fillText("提示能量 " + regionHints + " · 错误 " + regionErrors + " · " + complexityLabel, 360, modeY + 38);
-  ctx.restore(); finishCanvasStyle();
+  if ([...rowCounts, ...columnCounts, ...regionCounts].some((count) => count > regionPuzzle.starsPerUnit)) return false;
+  return coordinates.every(([row, column], index) => coordinates.slice(index + 1).every(([otherRow, otherColumn]) => Math.abs(row - otherRow) > 1 || Math.abs(column - otherColumn) > 1));
 }
+function restoreRegionSession() {
+  regionRestored = false;
+  try {
+    const saved = JSON.parse(safeStorage.getItem(regionSessionKey()) || "null");
+    if (!saved || saved.schemaVersion !== regionSessionSchemaVersion || saved.level !== currentCampaignLevel().number || saved.signature !== regionPuzzle.regions.flat().join("")) return;
+    if (!validRegionKeys(saved.stars) || !validRegionKeys(saved.marks) || saved.stars.some((key) => saved.marks.includes(key))) return;
+    const candidateStars = new Set(saved.stars); const candidateMarks = new Set(saved.marks);
+    if (candidateStars.size >= regionTargetStars() || !validRegionStarSet(candidateStars)) return;
+    placedRegionStars = candidateStars; manualRegionMarks = candidateMarks;
+    regionMoves = Math.max(0, Number(saved.moves) || 0); regionErrors = Math.max(0, Number(saved.errors) || 0);
+    regionHints = Math.max(0, Number(saved.hints) || 0); regionHintsUsed = Math.max(0, Number(saved.hintsUsed) || 0);
+    regionElapsedBeforeRestore = Math.max(0, Number(saved.elapsed) || 0);
+    regionHistory = Array.isArray(saved.history) ? saved.history.filter((entry) => validRegionKeys(entry?.stars) && validRegionKeys(entry?.marks)).slice(-40) : [];
+    regionFuture = Array.isArray(saved.future) ? saved.future.filter((entry) => validRegionKeys(entry?.stars) && validRegionKeys(entry?.marks)).slice(-40) : [];
+    recomputeAutoMarks(); regionRestored = true;
+  } catch {}
+}
+function pushRegionHistory() { regionHistory.push(regionSnapshot()); if (regionHistory.length > 40) regionHistory.shift(); regionFuture = []; }
 
-function findRegionRuleConflict(row, column) {
+function directRegionConflict(row, column) {
   const regionId = regionPuzzle.regions[row][column];
-  for (const star of placedRegionStars) {
-    const [starRow, starColumn] = star.split(":").map(Number);
-    if (starRow === row) return "同一行已经有星星";
-    if (starColumn === column) return "同一列已经有星星";
-    if (regionPuzzle.regions[starRow][starColumn] === regionId) return "同一色区已经有星星";
-    if (Math.abs(starRow - row) <= 1 && Math.abs(starColumn - column) <= 1) return "星星不能彼此相邻";
+  if (regionStarsInUnit("row", row) >= regionPuzzle.starsPerUnit) return "这一行的星数已经满足";
+  if (regionStarsInUnit("column", column) >= regionPuzzle.starsPerUnit) return "这一列的星数已经满足";
+  if (regionStarsInUnit("region", regionId) >= regionPuzzle.starsPerUnit) return "这个色区的星数已经满足";
+  for (const key of placedRegionStars) {
+    const [starRow, starColumn] = key.split(":").map(Number);
+    if (Math.abs(starRow - row) <= 1 && Math.abs(starColumn - column) <= 1) return "星星不能横向、纵向或对角相邻";
   }
   return "";
 }
 
-function toggleRegionCell(row, column) {
-  const key = regionKey(row, column);
-  if (regionMode === "mark") {
-    if (placedRegionStars.has(key)) return;
-    snapshotRegionState();
-    if (manualRegionMarks.has(key)) manualRegionMarks.delete(key); else manualRegionMarks.add(key);
-    playSound("move"); drawRegionLogic(); return;
+function regionLayout() {
+  const boardSize = Math.min(660, gameSceneHeight() * .62);
+  return { boardSize, cell: boardSize / regionPuzzle.size, x: (720 - boardSize) / 2, y: 196 };
+}
+function drawRegionCompletionTicks(layout) {
+  for (let index = 0; index < regionPuzzle.size; index += 1) {
+    ctx.fillStyle = regionStarsInUnit("row", index) === regionPuzzle.starsPerUnit ? "#2f9b7f" : "rgba(72,62,78,.14)";
+    ctx.fillRect(layout.x - 12, layout.y + index * layout.cell + 5, 5, layout.cell - 10);
+    ctx.fillStyle = regionStarsInUnit("column", index) === regionPuzzle.starsPerUnit ? "#2f9b7f" : "rgba(72,62,78,.14)";
+    ctx.fillRect(layout.x + index * layout.cell + 5, layout.y - 12, layout.cell - 10, 5);
   }
-  const locked = regionPuzzle.fixedStars.has(row) && regionPuzzle.fixedStars.get(row) === column;
-  if (locked) return;
-  if (placedRegionStars.has(key)) {
-    snapshotRegionState(); placedRegionStars.delete(key); recomputeAutoMarks();
-    setMetric(placedRegionStars.size + " / " + regionPuzzle.size); playSound("move"); drawRegionLogic(); return;
-  }
-  const ruleConflict = findRegionRuleConflict(row, column);
-  const tentativeStars = new Set(placedRegionStars);
-  tentativeStars.add(key);
-  const createsDeadEnd = !ruleConflict && countRegionCompletions(regionPuzzle.regions, tentativeStars) === 0;
-  if (ruleConflict || createsDeadEnd) {
-    regionLives -= 1; regionErrors += 1; regionFlash = { row, column, type: "error", until: performance.now() + 720 };
-    regionLastConflictType = ruleConflict ? "rule" : "dead-end";
-    playSound("fail"); setStatus(ruleConflict ? ruleConflict + "；换一个满足全部规则的位置。 " : "这一步会让剩余行无解；请结合色区边界继续排除。 ");
-    if (regionLives <= 0) { drawRegionLogic(); showResult(false, "星能耗尽", "重新观察色区边界，并先标记确定不能放星的位置。 "); return; }
-    drawRegionLogic(); return;
-  }
-  snapshotRegionState(); placedRegionStars.add(key); manualRegionMarks.delete(key); recomputeAutoMarks();
-  playSound("move"); setMetric(placedRegionStars.size + " / " + regionPuzzle.size);
-  if (placedRegionStars.size === regionPuzzle.size) {
-    const elapsed = Math.max(1, Math.round((performance.now() - regionStartedAt) / 1000));
-    const cleanBonus = regionErrors === 0 ? " · 无错误奖励" : "";
-    const noHintBonus = regionHintCost === 0 ? " · 无提示奖励" : "";
-    drawRegionLogic(); showResult(true, "星灵巡格完成", "用时 " + elapsed + " 秒 · 错误 " + regionErrors + " 次" + cleanBonus + noHintBonus + "。每行、每列与每个色区都已成立。 "); return;
-  }
-  setStatus("规则成立；自动排除范围已淡化标记。 "); drawRegionLogic();
 }
 
-function spendRegionHint(cost) {
-  if (regionHints < cost) { setStatus("提示能量不足；查冲突免费，排除一格消耗 1，点亮答案消耗 2。 "); return false; }
-  regionHints -= cost; regionHintCost += cost; return true;
-}
-
-function hintRegionConflict() {
-  const wrongMark = [...manualRegionMarks].find((key) => {
-    const [row, column] = key.split(":").map(Number);
-    return regionPuzzle.solution[row] === column;
-  });
-  if (!wrongMark) { setStatus("当前没有规则冲突或误排除；继续从行、列和色区交叉判断。 "); return; }
-  const [row, column] = wrongMark.split(":").map(Number);
-  regionFlash = { row, column, type: "error", until: performance.now() + 1400 };
-  setStatus("这里错误地排除了答案格；查冲突不消耗提示能量。 "); drawRegionLogic();
-}
-
-function hintRegionEliminate() {
-  if (!spendRegionHint(1)) return;
+function drawRegionLogic() {
+  clearCanvas(); ctx.save(); ctx.translate(0, gameSceneTop());
+  const layout = regionLayout(); const target = regionTargetStars();
+  drawPlayfield(42, 52, 636, 118, { radius: 25, alpha: .97, fill: "rgba(255,252,249,.95)", stroke: "rgba(83,67,89,.18)", lineWidth: 2 });
+  ctx.textAlign = "left"; ctx.fillStyle = "#4d3e52"; ctx.font = "800 29px Inter, sans-serif"; ctx.fillText(regionPuzzle.name, 70, 101);
+  ctx.fillStyle = "rgba(77,62,82,.72)"; ctx.font = "650 18px Inter, sans-serif"; ctx.fillText(regionPuzzle.size + "×" + regionPuzzle.size + " · 每行 / 列 / 区 " + regionPuzzle.starsPerUnit + " 星", 70, 137);
+  ctx.textAlign = "right"; ctx.fillStyle = "#239783"; ctx.font = "800 31px ui-monospace, Consolas, monospace"; ctx.fillText(placedRegionStars.size + " / " + target, 650, 111);
+  ctx.fillStyle = "rgba(77,62,82,.64)"; ctx.font = "650 16px Inter, sans-serif"; ctx.fillText("提示 " + regionHints + " · " + regionElapsedSeconds() + "秒", 650, 141);
+  drawPlayfield(layout.x - 20, layout.y - 20, layout.boardSize + 40, layout.boardSize + 40, { radius: 30, alpha: .96, fill: "rgba(255,252,249,.92)", stroke: "rgba(74,64,80,.22)", lineWidth: 2 });
+  drawRegionCompletionTicks(layout);
   for (let row = 0; row < regionPuzzle.size; row += 1) for (let column = 0; column < regionPuzzle.size; column += 1) {
-    const key = regionKey(row, column);
-    if (regionPuzzle.solution[row] === column || autoRegionMarks.has(key) || manualRegionMarks.has(key)) continue;
-    snapshotRegionState(); manualRegionMarks.add(key);
-    regionFlash = { row, column, type: "hint", until: performance.now() + 1100 };
-    setStatus("已排除一格，不会替你落星；消耗 1 点提示能量。 "); drawRegionLogic(); return;
+    const x = layout.x + column * layout.cell; const y = layout.y + row * layout.cell; const key = regionKey(row, column); const regionId = regionPuzzle.regions[row][column];
+    ctx.fillStyle = regionColors[regionId % regionColors.length]; ctx.globalAlpha = .78; ctx.fillRect(x, y, layout.cell, layout.cell); ctx.globalAlpha = 1;
+    ctx.strokeStyle = "rgba(55,51,61,.11)"; ctx.lineWidth = 1; ctx.strokeRect(x, y, layout.cell, layout.cell);
+    ctx.strokeStyle = "rgba(45,42,50,.78)"; ctx.lineWidth = regionPuzzle.size >= 10 ? 3 : 4;
+    if (row === 0 || regionPuzzle.regions[row - 1][column] !== regionId) { ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x + layout.cell, y); ctx.stroke(); }
+    if (column === 0 || regionPuzzle.regions[row][column - 1] !== regionId) { ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x, y + layout.cell); ctx.stroke(); }
+    if (row === regionPuzzle.size - 1 || regionPuzzle.regions[row + 1][column] !== regionId) { ctx.beginPath(); ctx.moveTo(x, y + layout.cell); ctx.lineTo(x + layout.cell, y + layout.cell); ctx.stroke(); }
+    if (column === regionPuzzle.size - 1 || regionPuzzle.regions[row][column + 1] !== regionId) { ctx.beginPath(); ctx.moveTo(x + layout.cell, y); ctx.lineTo(x + layout.cell, y + layout.cell); ctx.stroke(); }
+    if (autoRegionMarks.has(key)) { ctx.fillStyle = "rgba(63,65,73,.3)"; ctx.beginPath(); ctx.arc(x + layout.cell / 2, y + layout.cell / 2, Math.max(2.5, layout.cell * .047), 0, Math.PI * 2); ctx.fill(); }
+    if (manualRegionMarks.has(key)) drawBitmapSprite(5, x + layout.cell * .3, y + layout.cell * .3, layout.cell * .4, layout.cell * .4, { fallback: "#685d70", alpha: .9, scale: 1.02 });
+    if (placedRegionStars.has(key)) drawBitmapSprite(regionId % 5, x + layout.cell * .1, y + layout.cell * .1, layout.cell * .8, layout.cell * .8, { fallback: "#f1ac42", scale: 1.09 });
+    if (regionFocus.row === row && regionFocus.column === column) { ctx.strokeStyle = "rgba(214,151,51,.95)"; ctx.lineWidth = 3; ctx.strokeRect(x + 4, y + 4, layout.cell - 8, layout.cell - 8); }
   }
-  setStatus("当前可排除格都已经标记。 ");
+  const now = performance.now();
+  const activeCue = regionHint && now < regionHint.until ? regionHint : regionFlash && now < regionFlash.until ? regionFlash : null;
+  if (activeCue) for (const [row, column] of activeCue.cells) {
+    const x = layout.x + column * layout.cell; const y = layout.y + row * layout.cell;
+    ctx.save(); ctx.strokeStyle = activeCue.type === "error" ? "#df5d62" : "#d39a30"; ctx.lineWidth = 6; ctx.shadowColor = activeCue.type === "error" ? "rgba(223,93,98,.45)" : "rgba(211,154,48,.45)"; ctx.shadowBlur = 15;
+    ctx.strokeRect(x + 5, y + 5, layout.cell - 10, layout.cell - 10);
+    if (activeCue.type === "error") { ctx.beginPath(); ctx.moveTo(x + 12, y + 12); ctx.lineTo(x + layout.cell - 12, y + layout.cell - 12); ctx.stroke(); }
+    ctx.restore();
+  }
+  const noteY = layout.y + layout.boardSize + 48;
+  ctx.textAlign = "center"; ctx.fillStyle = "#4d3e52"; ctx.font = "750 21px Inter, sans-serif";
+  ctx.fillText(regionHint && now < regionHint.until ? regionRuleLabels[regionHint.rule] : regionToolMode === "cycle" ? "点按循环：星星 → 排除 → 清空" : regionToolMode === "star" ? "当前工具：放置星星" : "当前工具：标记排除", 360, noteY);
+  ctx.fillStyle = "rgba(77,62,82,.68)"; ctx.font = "560 17px Inter, sans-serif";
+  const detail = regionHint && now < regionHint.until ? regionHint.text : regionPuzzle.starsPerUnit === 2 ? "双星关：每个单位都必须恰好放置两颗星" : "星星不能横向、纵向或对角相邻";
+  ctx.fillText(detail, 360, noteY + 34); ctx.restore(); finishCanvasStyle();
 }
 
-function hintRegionCorrect() {
-  if (currentCampaignLevel().tier >= 3) { setStatus("进阶关不再直接点亮答案；可用排除提示继续推理。 "); return; }
-  if (!spendRegionHint(2)) return;
-  const row = regionPuzzle.solution.findIndex((column, index) => !placedRegionStars.has(regionKey(index, column)));
-  if (row < 0) return;
-  regionFlash = { row, column: regionPuzzle.solution[row], type: "hint", until: performance.now() + 1600 };
-  setStatus("点亮了一个正确位置，但不会自动落子；消耗 2 点提示能量。 "); drawRegionLogic();
+function syncRegionControls() {
+  document.body.dataset.regionTool = regionToolMode;
+  document.querySelectorAll("[data-control=cycle],[data-control=star],[data-control=mark]").forEach((button) => {
+    const active = button.dataset.control === regionToolMode; button.classList.toggle("is-selected", active); button.setAttribute("aria-pressed", String(active));
+  });
+  const undo = document.querySelector("[data-control=undo]"); const redo = document.querySelector("[data-control=redo]"); const hint = document.querySelector("[data-control=hint]");
+  if (undo) undo.disabled = !running || !regionHistory.length;
+  if (redo) redo.disabled = !running || !regionFuture.length;
+  if (hint) { hint.disabled = !running || regionHints <= 0; hint.textContent = "推理 " + regionHints; }
 }
+function refreshRegionUi(message) { setMetric(placedRegionStars.size + " / " + regionTargetStars()); if (message) setStatus(message); syncRegionControls(); drawRegionLogic(); }
+function setRegionCue(type, cells, duration = 1300) { regionFlash = { type, cells, until: performance.now() + duration }; drawRegionLogic(); setTimeout(() => drawRegionLogic(), duration + 20); }
+
+function checkRegionCompletion() {
+  if (placedRegionStars.size !== regionTargetStars() || countRegionCompletions(placedRegionStars, new Set([...manualRegionMarks, ...autoRegionMarks]), 1) !== 1) return false;
+  const elapsed = regionElapsedSeconds(); running = false;
+  try { safeStorage.removeItem(regionSessionKey()); } catch {}
+  drawRegionLogic(); playSound("win");
+  showResult(true, "星域成立", regionPuzzle.name + " · " + regionPuzzle.size + "×" + regionPuzzle.size + " · " + elapsed + " 秒 · 提示 " + regionHintsUsed + " 次 · 错误 " + regionErrors + " 次。 ");
+  return true;
+}
+
+function placeRegionStar(row, column) {
+  const key = regionKey(row, column);
+  if (placedRegionStars.has(key)) {
+    pushRegionHistory(); placedRegionStars.delete(key); regionMoves += 1; recomputeAutoMarks(); persistRegionSession(); refreshRegionUi("已移除星星；相关格重新开放。 "); return true;
+  }
+  const conflict = directRegionConflict(row, column);
+  if (conflict) {
+    regionErrors += 1; regionLastConflictType = "direct-rule"; regionLastAction = "rejected-star"; playSound("fail"); setStatus(conflict + "。 "); setRegionCue("error", [[row, column]], 900); return false;
+  }
+  pushRegionHistory(); placedRegionStars.add(key); manualRegionMarks.delete(key); regionMoves += 1; regionLastAction = "star"; recomputeAutoMarks(); playSound("move"); persistRegionSession();
+  if (!checkRegionCompletion()) refreshRegionUi("星星已放置；直接确定的排除格已自动标记。 "); return true;
+}
+function toggleRegionMark(row, column) {
+  const key = regionKey(row, column); if (placedRegionStars.has(key)) return false;
+  pushRegionHistory(); if (manualRegionMarks.has(key)) manualRegionMarks.delete(key); else manualRegionMarks.add(key);
+  regionMoves += 1; regionLastAction = manualRegionMarks.has(key) ? "mark" : "clear-mark"; recomputeAutoMarks(); playSound("ui"); persistRegionSession();
+  refreshRegionUi(manualRegionMarks.has(key) ? "已标记为排除格。 " : "已清除手动排除。 "); return true;
+}
+function cycleRegionCell(row, column) {
+  const key = regionKey(row, column);
+  if (placedRegionStars.has(key)) {
+    pushRegionHistory(); placedRegionStars.delete(key); manualRegionMarks.add(key); regionMoves += 1; regionLastAction = "star-to-mark"; recomputeAutoMarks(); playSound("ui"); persistRegionSession(); refreshRegionUi("星星已改为手动排除。 "); return true;
+  }
+  if (manualRegionMarks.has(key)) return toggleRegionMark(row, column);
+  return placeRegionStar(row, column);
+}
+function actOnRegionCell(row, column) { regionFocus = { row, column }; return regionToolMode === "star" ? placeRegionStar(row, column) : regionToolMode === "mark" ? toggleRegionMark(row, column) : cycleRegionCell(row, column); }
 
 function undoRegionMove() {
-  const state = regionHistory.pop();
-  if (!state) return;
-  placedRegionStars = state.stars; manualRegionMarks = state.marks; recomputeAutoMarks();
-  setMetric(placedRegionStars.size + " / " + regionPuzzle.size); setStatus("已撤销上一步。 "); drawRegionLogic();
+  const snapshot = regionHistory.pop(); if (!snapshot) return false;
+  regionFuture.push(regionSnapshot()); restoreRegionSnapshot(snapshot); regionLastAction = "undo"; playSound("ui"); persistRegionSession(); refreshRegionUi("已撤销上一步。 "); return true;
+}
+function redoRegionMove() {
+  const snapshot = regionFuture.pop(); if (!snapshot) return false;
+  regionHistory.push(regionSnapshot()); restoreRegionSnapshot(snapshot); regionLastAction = "redo"; playSound("ui"); persistRegionSession(); refreshRegionUi("已恢复下一步。 "); return true;
 }
 
+function nextRegionDeduction() {
+  const combinedMarks = new Set([...manualRegionMarks, ...autoRegionMarks]);
+  if (solveRegionPuzzle(placedRegionStars, combinedMarks, 1).length === 0) {
+    const lastStar = [...placedRegionStars].at(-1); const cells = lastStar ? [lastStar.split(":").map(Number)] : [];
+    return { rule: "conflict", action: "undo", cells, text: "当前落子使剩余题面无解；请撤销最近一次星星。" };
+  }
+  for (const kind of ["row", "column", "region"]) for (let id = 0; id < regionPuzzle.size; id += 1) {
+    const remaining = regionPuzzle.starsPerUnit - regionStarsInUnit(kind, id); const candidates = regionCandidateCells(kind, id);
+    if (remaining > 0 && candidates.length === remaining) {
+      const unit = kind === "row" ? "这一行" : kind === "column" ? "这一列" : "这个色区";
+      return { rule: "quota-fill", action: "star", cells: candidates, text: unit + "剩余候选数等于缺少星数。" };
+    }
+  }
+  for (let regionId = 0; regionId < regionPuzzle.size; regionId += 1) {
+    const candidates = regionCandidateCells("region", regionId); if (candidates.length < 2) continue;
+    const rows = new Set(candidates.map(([row]) => row)); const columns = new Set(candidates.map(([, column]) => column));
+    if (rows.size === 1) {
+      const row = [...rows][0]; const outside = regionCandidateCells("row", row).filter(([candidateRow, candidateColumn]) => regionPuzzle.regions[candidateRow][candidateColumn] !== regionId);
+      if (outside.length) return { rule: "line-lock", action: "mark", cells: outside, text: "该色区的候选都在同一行，行内区外格可排除。" };
+    }
+    if (columns.size === 1) {
+      const column = [...columns][0]; const outside = regionCandidateCells("column", column).filter(([candidateRow, candidateColumn]) => regionPuzzle.regions[candidateRow][candidateColumn] !== regionId);
+      if (outside.length) return { rule: "line-lock", action: "mark", cells: outside, text: "该色区的候选都在同一列，列内区外格可排除。" };
+    }
+  }
+  for (let row = 0; row < regionPuzzle.size; row += 1) for (let column = 0; column < regionPuzzle.size; column += 1) {
+    const key = regionKey(row, column); if (placedRegionStars.has(key) || manualRegionMarks.has(key) || autoRegionMarks.has(key)) continue;
+    const assumed = new Set(placedRegionStars); assumed.add(key);
+    if (solveRegionPuzzle(assumed, combinedMarks, 1).length === 0) return { rule: "contradiction", action: "mark", cells: [[row, column]], text: "假设这里放星会使题面无解，因此可排除。" };
+  }
+  return null;
+}
+function requestRegionHint() {
+  if (regionHints <= 0) { setStatus("本关推理提示已用完；撤销不会返还提示。 "); return false; }
+  const deduction = nextRegionDeduction(); if (!deduction) { setStatus("当前没有可执行提示；请检查手动标记。 "); return false; }
+  regionHints -= 1; regionHintsUsed += 1;
+  regionHint = { ...deduction, type: deduction.rule === "conflict" ? "error" : "hint", until: performance.now() + 2600 };
+  regionLastConflictType = deduction.rule === "conflict" ? "logical-dead-end" : regionLastConflictType; regionLastAction = "hint-" + deduction.rule;
+  playSound("ui"); persistRegionSession(); refreshRegionUi(regionRuleLabels[deduction.rule] + "：" + deduction.text + " 提示只解释一步，不会替你落子。 "); setTimeout(() => drawRegionLogic(), 2620); return true;
+}
+
+function initializeRegionPuzzle() {
+  regionPuzzle = currentRegionPuzzle(); placedRegionStars = new Set(); manualRegionMarks = new Set(); autoRegionMarks = new Set(); regionHistory = []; regionFuture = [];
+  regionHints = Math.max(1, regionDifficulty.hints - Math.floor((regionPuzzle.chapter - 1) / 2)); regionHintsUsed = 0; regionErrors = 0; regionMoves = 0;
+  regionElapsedBeforeRestore = 0; regionRestored = false; regionFocus = { row: 0, column: 0 }; regionFlash = null; regionHint = null; regionLastConflictType = "none"; regionLastAction = "none";
+  regionUniqueSolutions = countRegionSolutions(2); recomputeAutoMarks();
+}
 function startGame() {
-  applyRegionCampaignSettings();
-  regionPuzzle = generateUniqueRegionPuzzle();
-  placedRegionStars = new Set(); manualRegionMarks = new Set(); autoRegionMarks = new Set(); regionHistory = [];
-  regionPuzzle.fixedStars.forEach((column, row) => placedRegionStars.add(regionKey(row, column)));
-  recomputeAutoMarks(); regionMode = "star";
-  regionLives = Math.max(2, regionDifficulty.lives - Math.floor((currentCampaignLevel().tier - 1) / 2));
-  regionHints = Math.max(0, regionDifficulty.freeHints - Math.floor((currentCampaignLevel().tier - 1) / 2));
-  regionFlash = null; regionErrors = 0; regionHintCost = 0; regionLastConflictType = "none"; regionStartedAt = performance.now();
-  running = true; hideOverlay(); startAmbient();
-  setMetric(placedRegionStars.size + " / " + regionPuzzle.size);
-  setStatus("第 " + currentCampaignLevel().number + " 关 · " + regionSize + "×" + regionSize + " · " + regionPuzzle.fixedStars.size + " 颗引导星 · " + regionHints + " 点提示；题面已验证唯一解。 "); drawRegionLogic();
+  initializeRegionPuzzle(); restoreRegionSession(); running = true; regionStartedAt = performance.now(); hideOverlay(); startAmbient();
+  canvas.setAttribute("aria-label", "星灵巡格 " + regionPuzzle.size + " 乘 " + regionPuzzle.size + " 棋盘，每行每列每区 " + regionPuzzle.starsPerUnit + " 颗星");
+  refreshRegionUi((regionRestored ? "已恢复进度 · " : "") + "第 " + currentCampaignLevel().number + " 关 · " + regionPuzzle.name + " · 严格唯一解 · " + regionPuzzle.size + "×" + regionPuzzle.size + " · 每单位 " + regionPuzzle.starsPerUnit + " 星。 ");
 }
-
 function handleControl(value) {
-  if (value === "star") { regionMode = "star"; drawRegionLogic(); }
-  if (value === "mark") { regionMode = "mark"; drawRegionLogic(); }
-  if (value === "undo") undoRegionMove();
-  if (value === "hint-conflict") hintRegionConflict();
-  if (value === "hint-eliminate") hintRegionEliminate();
-  if (value === "hint-correct") hintRegionCorrect();
+  if (["cycle", "star", "mark"].includes(value)) { regionToolMode = value; refreshRegionUi(value === "cycle" ? "单击依次切换星星、排除和清空。 " : value === "star" ? "已切换为星星工具。 " : "已切换为排除工具。 "); return true; }
+  if (value === "undo") return undoRegionMove(); if (value === "redo") return redoRegionMove(); if (value === "hint") return requestRegionHint(); return false;
 }
 function handleKey(key) {
-  if (key.toLowerCase() === "s") { regionMode = "star"; drawRegionLogic(); }
-  if (key.toLowerCase() === "x") { regionMode = "mark"; drawRegionLogic(); }
-  if (key.toLowerCase() === "z") undoRegionMove();
-  if (key.toLowerCase() === "h") hintRegionConflict();
+  if (key === "ArrowUp") regionFocus.row = Math.max(0, regionFocus.row - 1);
+  else if (key === "ArrowDown") regionFocus.row = Math.min(regionPuzzle.size - 1, regionFocus.row + 1);
+  else if (key === "ArrowLeft") regionFocus.column = Math.max(0, regionFocus.column - 1);
+  else if (key === "ArrowRight") regionFocus.column = Math.min(regionPuzzle.size - 1, regionFocus.column + 1);
+  else if (key === " " || key === "Enter") return actOnRegionCell(regionFocus.row, regionFocus.column);
+  else if (key.toLowerCase() === "s") return placeRegionStar(regionFocus.row, regionFocus.column);
+  else if (key.toLowerCase() === "x") return toggleRegionMark(regionFocus.row, regionFocus.column);
+  else if (key.toLowerCase() === "z") return undoRegionMove();
+  else if (key.toLowerCase() === "y") return redoRegionMove();
+  else if (key.toLowerCase() === "h") return requestRegionHint();
+  else return false;
+  drawRegionLogic(); return true;
 }
 
 canvas.addEventListener("pointerup", (event) => {
-  if (!running) return;
-  const point = eventScenePoint(event);
-  const layout = regionLayout();
-  if (point.y < layout.y || point.y > layout.y + layout.boardSize || point.x < layout.x || point.x > layout.x + layout.boardSize) return;
-  toggleRegionCell(Math.min(regionPuzzle.size - 1, Math.floor((point.y - layout.y) / layout.cell)), Math.min(regionPuzzle.size - 1, Math.floor((point.x - layout.x) / layout.cell)));
+  if (!running) return; const point = eventScenePoint(event); const layout = regionLayout();
+  if (point.y < layout.y || point.y >= layout.y + layout.boardSize || point.x < layout.x || point.x >= layout.x + layout.boardSize) return;
+  actOnRegionCell(Math.floor((point.y - layout.y) / layout.cell), Math.floor((point.x - layout.x) / layout.cell));
 });
 
-applyRegionCampaignSettings();
-regionPuzzle = generateUniqueRegionPuzzle();
-regionPuzzle.fixedStars.forEach((column, row) => placedRegionStars.add(regionKey(row, column)));
-recomputeAutoMarks();
-onCampaignLevelChanged = () => {
-  if (!running) {
-    applyRegionCampaignSettings();
-    regionPuzzle = generateUniqueRegionPuzzle();
-    placedRegionStars = new Set();
-    regionPuzzle.fixedStars.forEach((column, row) => placedRegionStars.add(regionKey(row, column)));
-    recomputeAutoMarks();
-    drawRegionLogic();
-  }
-};
+initializeRegionPuzzle();
+onCampaignLevelChanged = () => { if (!running) { initializeRegionPuzzle(); drawRegionLogic(); } };
 runtimeDebugActions = {
+  cycleFirstCell: () => actOnRegionCell(0, 0),
+  undoRegion: () => undoRegionMove(),
+  redoRegion: () => redoRegionMove(),
+  hintRegion: () => requestRegionHint(),
+  probeDirectConflict: () => {
+    const first = regionPuzzle.solution[0]; placeRegionStar(first[0], first[1]);
+    const adjacentColumn = first[1] + 1 < regionPuzzle.size ? first[1] + 1 : first[1] - 1;
+    if (adjacentColumn >= 0) { placeRegionStar(first[0], adjacentColumn); return true; }
+    return false;
+  },
   probeDeadEnd: () => {
+    const solutionKeys = new Set(regionPuzzle.solution.map(([row, column]) => regionKey(row, column)));
     for (let row = 0; row < regionPuzzle.size; row += 1) for (let column = 0; column < regionPuzzle.size; column += 1) {
-      if (regionPuzzle.solution[row] === column || findRegionRuleConflict(row, column)) continue;
-      toggleRegionCell(row, column);
-      return true;
+      const key = regionKey(row, column); if (solutionKeys.has(key) || directRegionConflict(row, column)) continue;
+      const assumed = new Set(placedRegionStars); assumed.add(key);
+      if (solveRegionPuzzle(assumed, new Set([...manualRegionMarks, ...autoRegionMarks]), 1).length === 0) { placeRegionStar(row, column); requestRegionHint(); return true; }
     }
     return false;
   },
-  solveRegion: () => {
-    placedRegionStars = new Set(regionPuzzle.solution.map((column, row) => regionKey(row, column)));
-    recomputeAutoMarks(); drawRegionLogic();
-    const elapsed = Math.max(1, Math.round((performance.now() - regionStartedAt) / 1000));
-    showResult(true, "星灵巡格完成", "用时 " + elapsed + " 秒 · 错误 " + regionErrors + " 次。 ");
-  },
-  failRegion: () => { regionLives = 0; regionErrors += 1; drawRegionLogic(); showResult(false, "星能耗尽", "错误次数达到本局上限。 "); },
+  solveRegion: () => { placedRegionStars = new Set(regionPuzzle.solution.map(([row, column]) => regionKey(row, column))); manualRegionMarks = new Set(); recomputeAutoMarks(); drawRegionLogic(); checkRegionCompletion(); },
+  failRegion: () => { running = false; showResult(false, "推理中断", "调试失败分支已验证；标准游戏不会因错误次数耗尽而强制结束。 "); },
 };
-runtimeDebugState = () => ({ level: currentCampaignLevel().number, tier: currentCampaignLevel().tier, size: regionPuzzle.size, lives: regionLives, hints: regionHints, errors: regionErrors, hintCost: regionHintCost, stars: placedRegionStars.size, fixedStars: regionPuzzle.fixedStars.size, uniqueSolutions: countRegionSolutions(regionPuzzle.regions, regionPuzzle.fixedStars), searchNodes: regionPuzzle.complexity.searchNodes, branchPoints: regionPuzzle.complexity.branchPoints, maxCandidates: regionPuzzle.complexity.maxCandidates, complexityTarget: regionComplexityTarget(), directAnswerEnabled: currentCampaignLevel().tier < 3, lastConflictType: regionLastConflictType });
+runtimeDebugState = () => ({
+  level: currentCampaignLevel().number, chapter: regionPuzzle.chapter, name: regionPuzzle.name, size: regionPuzzle.size, starsPerUnit: regionPuzzle.starsPerUnit,
+  targetStars: regionTargetStars(), stars: placedRegionStars.size, manualMarks: manualRegionMarks.size, autoMarks: autoRegionMarks.size,
+  hints: regionHints, hintsUsed: regionHintsUsed, errors: regionErrors, moves: regionMoves, uniqueSolutions: regionUniqueSolutions, regionsConnected: allRegionsConnected(),
+  layoutSignature: regionPuzzle.regions.flat().join(""), campaignSignatureCount: new Set(regionLevelCatalog.map((level) => level.regions.flat().join(""))).size,
+  catalogSize: regionLevelCatalog.length, logicTraceSteps: regionPuzzle.difficulty.steps, contradictionSteps: regionPuzzle.difficulty.contradictionSteps,
+  logicSolvable: regionPuzzle.difficulty.steps > 0, hintRule: regionHint?.rule || null, hintAction: regionHint?.action || null, hintUsesSolution: false,
+  lastConflictType: regionLastConflictType, lastAction: regionLastAction, historyDepth: regionHistory.length, futureDepth: regionFuture.length,
+  sessionSchemaVersion: regionSessionSchemaVersion, restored: regionRestored, toolMode: regionToolMode, boardAreaVersion: 2,
+});
 drawRegionLogic();
 `;
