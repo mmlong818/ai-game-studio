@@ -1393,7 +1393,7 @@ function templateHtml(project: ProjectDetail) {
     ? `<div class="snake-setup"><div class="snake-difficulty" role="group" aria-label="选择青玉长游难度">${snakeDifficultyOptions.map((option) => `<button type="button" data-snake-difficulty="${option.id}" aria-pressed="${option.id === activeSnakeDifficulty.id}" class="${option.id === activeSnakeDifficulty.id ? "is-selected" : ""}"><strong>${option.label}</strong><span>${option.short}</span></button>`).join("")}</div><p class="snake-difficulty-note" data-snake-difficulty-note>${activeSnakeDifficulty.detail}</p></div>`
     : "";
   const tetrisSetup = project.spec.template === "tetris"
-    ? `<div class="tetris-setup" role="group" aria-label="选择俄罗斯方块模式"><button type="button" data-tetris-mode="standard" class="is-selected" aria-pressed="true">标准</button><button type="button" data-tetris-mode="timed" aria-pressed="false">限时</button><button type="button" data-tetris-mode="zen" aria-pressed="false">禅模式</button></div>`
+    ? `<div class="tetris-setup" role="group" aria-label="选择下落消行模式"><button type="button" data-tetris-mode="standard" class="is-selected" aria-pressed="true">旅程关卡</button><button type="button" data-tetris-mode="timed" aria-pressed="false">限时挑战</button><button type="button" data-tetris-mode="zen" aria-pressed="false">禅意练习</button></div>`
     : "";
   const mazeSetup = project.spec.template === "maze"
     ? `<label class="setup-option"><input type="checkbox" data-maze-shortest>最短路径挑战（到达后对照最优步数）</label>`

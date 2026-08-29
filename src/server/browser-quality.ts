@@ -585,6 +585,10 @@ export async function inspectStageDClassicInBrowser(root: string, template: Stag
 
     if (template === "tetris") {
       const tierOne = await stageCDebugState(page);
+      await stageCDebugAction(page, "softDrop");
+      const softDropped = await stageCDebugState(page);
+      await stageCDebugAction(page, "prepareWallKick");
+      const wallKicked = await stageCDebugState(page);
       await stageCDebugAction(page, "setTimedMode");
       const timed = await stageCDebugState(page);
       await stageCDebugAction(page, "setZenMode");
@@ -599,14 +603,18 @@ export async function inspectStageDClassicInBrowser(root: string, template: Stag
       await page.evaluate(() => { const debug = (window as any).__GAME_DEBUG__; debug.setLevel(17); debug.restart(); });
       const tierFive = await stageCDebugState(page);
       if (held.runtime.heldPieceIndex === null || !held.runtime.holdUsed) throw new Error("俄罗斯方块暂存没有生效。 ");
+      if (softDropped.runtime.softDropScore !== 1 || softDropped.runtime.score < 1) throw new Error("俄罗斯方块软降没有逐格计分。 ");
+      if (wallKicked.runtime.currentPiece?.rotation !== 2 || wallKicked.runtime.currentPiece?.x !== 0) throw new Error("俄罗斯方块 SRS 贴墙旋转没有生效。 ");
       if (dropped.runtime.hardDropScore <= 0) throw new Error("硬降没有计分。 ");
       if (feedback.runtime.clearFeedbackMs <= 0) throw new Error("消行反馈不可见。 ");
       if (!(tierFive.runtime.fallInterval < tierOne.runtime.fallInterval)) throw new Error("高阶关卡下落速度没有收紧。 ");
       if (!tierOne.runtime.gestureSupport) throw new Error("移动端手势没有启用。 ");
+      if (!tierOne.runtime.sevenBagRandomizer || tierOne.runtime.nextQueue?.length !== 5 || new Set(tierOne.runtime.nextQueue).size !== 5) throw new Error("俄罗斯方块七袋随机或五枚预览不完整。 ");
+      if (tierOne.runtime.rotationSystem !== "SRS-clockwise" || tierOne.runtime.lockDelayMs !== 500 || tierOne.runtime.maxLockResets !== 15) throw new Error("俄罗斯方块现代旋转或落地延迟合同不完整。 ");
       if (!tierOne.runtime.cellGeometry?.axisAlignedCells || tierOne.runtime.cellGeometry?.protrusion !== 0) throw new Error("俄罗斯方块外轮廓没有被约束到整数格。 ");
       if (timed.runtime.mode !== "timed" || timed.runtime.modeTimeLimit <= 0 || zen.runtime.mode !== "zen" || new Set(tierOne.runtime.modes).size !== 3) throw new Error("标准、限时与禅模式没有共用运行时切换。 ");
-      checks.push("下一个与暂存", "等级、消行与硬降计分", "消行反馈与危险高度", "触控手势", "标准、限时、禅模式", "五档速度渐进", "整数格外轮廓");
-      evidence.tierOne = tierOne.runtime; evidence.timed = timed.runtime; evidence.zen = zen.runtime; evidence.held = held.runtime; evidence.dropped = dropped.runtime; evidence.tierFive = tierFive.runtime;
+      checks.push("七袋随机与五枚预览", "暂存与 SRS 贴墙旋转", "500ms 落地延迟", "等级、软降与硬降计分", "消行反馈与危险高度", "触控手势", "标准、限时、禅模式", "五档速度渐进", "整数格外轮廓");
+      evidence.tierOne = tierOne.runtime; evidence.softDropped = softDropped.runtime; evidence.wallKicked = wallKicked.runtime; evidence.timed = timed.runtime; evidence.zen = zen.runtime; evidence.held = held.runtime; evidence.dropped = dropped.runtime; evidence.tierFive = tierFive.runtime;
     }
 
     if (template === "merge-2048") {

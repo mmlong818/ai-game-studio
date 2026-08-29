@@ -2,15 +2,72 @@ export const tetrisScript = String.raw`
 const columns = 10;
 const rows = 20;
 const board = Array.from({ length: rows }, () => Array(columns).fill(0));
-const shapes = [
-  [[1, 1, 1, 1]],
-  [[1, 1], [1, 1]],
-  [[0, 1, 0], [1, 1, 1]],
-  [[1, 0, 0], [1, 1, 1]],
-  [[0, 0, 1], [1, 1, 1]],
-  [[0, 1, 1], [1, 1, 0]],
-  [[1, 1, 0], [0, 1, 1]],
+const pieceNames = ["I", "O", "T", "J", "L", "S", "Z"];
+const rotationStates = [
+  [
+    [[0, 0, 0, 0], [1, 1, 1, 1], [0, 0, 0, 0], [0, 0, 0, 0]],
+    [[0, 0, 1, 0], [0, 0, 1, 0], [0, 0, 1, 0], [0, 0, 1, 0]],
+    [[0, 0, 0, 0], [0, 0, 0, 0], [1, 1, 1, 1], [0, 0, 0, 0]],
+    [[0, 1, 0, 0], [0, 1, 0, 0], [0, 1, 0, 0], [0, 1, 0, 0]],
+  ],
+  [
+    [[1, 1], [1, 1]],
+    [[1, 1], [1, 1]],
+    [[1, 1], [1, 1]],
+    [[1, 1], [1, 1]],
+  ],
+  [
+    [[0, 1, 0], [1, 1, 1], [0, 0, 0]],
+    [[0, 1, 0], [0, 1, 1], [0, 1, 0]],
+    [[0, 0, 0], [1, 1, 1], [0, 1, 0]],
+    [[0, 1, 0], [1, 1, 0], [0, 1, 0]],
+  ],
+  [
+    [[1, 0, 0], [1, 1, 1], [0, 0, 0]],
+    [[0, 1, 1], [0, 1, 0], [0, 1, 0]],
+    [[0, 0, 0], [1, 1, 1], [0, 0, 1]],
+    [[0, 1, 0], [0, 1, 0], [1, 1, 0]],
+  ],
+  [
+    [[0, 0, 1], [1, 1, 1], [0, 0, 0]],
+    [[0, 1, 0], [0, 1, 0], [0, 1, 1]],
+    [[0, 0, 0], [1, 1, 1], [1, 0, 0]],
+    [[1, 1, 0], [0, 1, 0], [0, 1, 0]],
+  ],
+  [
+    [[0, 1, 1], [1, 1, 0], [0, 0, 0]],
+    [[0, 1, 0], [0, 1, 1], [0, 0, 1]],
+    [[0, 0, 0], [0, 1, 1], [1, 1, 0]],
+    [[1, 0, 0], [1, 1, 0], [0, 1, 0]],
+  ],
+  [
+    [[1, 1, 0], [0, 1, 1], [0, 0, 0]],
+    [[0, 0, 1], [0, 1, 1], [0, 1, 0]],
+    [[0, 0, 0], [1, 1, 0], [0, 1, 1]],
+    [[0, 1, 0], [1, 1, 0], [1, 0, 0]],
+  ],
 ];
+const shapes = rotationStates.map((states) => states[0]);
+const jlstzKickTests = {
+  "0>1": [[0, 0], [-1, 0], [-1, -1], [0, 2], [-1, 2]],
+  "1>0": [[0, 0], [1, 0], [1, 1], [0, -2], [1, -2]],
+  "1>2": [[0, 0], [1, 0], [1, 1], [0, -2], [1, -2]],
+  "2>1": [[0, 0], [-1, 0], [-1, -1], [0, 2], [-1, 2]],
+  "2>3": [[0, 0], [1, 0], [1, -1], [0, 2], [1, 2]],
+  "3>2": [[0, 0], [-1, 0], [-1, 1], [0, -2], [-1, -2]],
+  "3>0": [[0, 0], [-1, 0], [-1, 1], [0, -2], [-1, -2]],
+  "0>3": [[0, 0], [1, 0], [1, -1], [0, 2], [1, 2]],
+};
+const iKickTests = {
+  "0>1": [[0, 0], [-2, 0], [1, 0], [-2, 1], [1, -2]],
+  "1>0": [[0, 0], [2, 0], [-1, 0], [2, -1], [-1, 2]],
+  "1>2": [[0, 0], [-1, 0], [2, 0], [-1, -2], [2, 1]],
+  "2>1": [[0, 0], [1, 0], [-2, 0], [1, 2], [-2, -1]],
+  "2>3": [[0, 0], [2, 0], [-1, 0], [2, -1], [-1, 2]],
+  "3>2": [[0, 0], [-2, 0], [1, 0], [-2, 1], [1, -2]],
+  "3>0": [[0, 0], [1, 0], [-2, 0], [1, 2], [-2, -1]],
+  "0>3": [[0, 0], [-1, 0], [2, 0], [-1, -2], [2, 1]],
+};
 const blockColors = palette.pieces;
 const tetrisCellGeometry = Object.freeze({
   inset: 3,
@@ -22,23 +79,31 @@ const tetrisCellGeometry = Object.freeze({
 });
 let piece;
 let nextPieceIndex = 0;
+let pieceQueue = [];
 let heldPieceIndex = null;
 let holdUsed = false;
 let lines = 0;
 let score = 0;
 let hardDropScore = 0;
+let softDropScore = 0;
+let combo = -1;
+let backToBack = false;
+let lastClearLabel = "";
+let lastClearPoints = 0;
+let lastActionWasRotation = false;
 let clearedRows = [];
 let clearFlashUntil = 0;
 let tetrisMode = "standard";
 let modeTimeLimit = 0;
 let modeStartedAt = 0;
 let tickId = null;
+let lockTimerId = null;
+let lockResetCount = 0;
+let pieceSerial = 0;
 let lineTarget = 6;
 let fallInterval = 570;
-
-function rotateShape(shape) {
-  return shape[0].map((_, index) => shape.map((row) => row[index]).reverse());
-}
+const lockDelayMs = 500;
+const maxLockResets = 15;
 
 function collides(candidate, offsetX = piece.x, offsetY = piece.y) {
   return candidate.some((row, y) => row.some((value, x) => value && (
@@ -48,14 +113,61 @@ function collides(candidate, offsetX = piece.x, offsetY = piece.y) {
 }
 
 function randomPieceIndex() {
-  return Math.floor(campaignRandom() * shapes.length);
+  fillPieceQueue();
+  const index = pieceQueue.shift();
+  fillPieceQueue();
+  return index;
+}
+
+function createSevenBag() {
+  const bag = pieceNames.map((_, index) => index);
+  for (let index = bag.length - 1; index > 0; index -= 1) {
+    const swapIndex = Math.floor(campaignRandom() * (index + 1));
+    [bag[index], bag[swapIndex]] = [bag[swapIndex], bag[index]];
+  }
+  return bag;
+}
+
+function fillPieceQueue() {
+  while (pieceQueue.length < 7) pieceQueue.push(...createSevenBag());
+}
+
+function clearLockTimer() {
+  if (lockTimerId) clearTimeout(lockTimerId);
+  lockTimerId = null;
+}
+
+function scheduleLock() {
+  if (lockTimerId || !running) return;
+  const serial = piece.serial;
+  lockTimerId = setTimeout(() => {
+    lockTimerId = null;
+    if (!running || piece.serial !== serial || !collides(piece.shape, piece.x, piece.y + 1)) return;
+    mergePiece();
+    drawTetris();
+  }, lockDelayMs);
+}
+
+function refreshLockDelay() {
+  if (!collides(piece.shape, piece.x, piece.y + 1)) {
+    clearLockTimer();
+    return;
+  }
+  if (lockResetCount >= maxLockResets) return;
+  lockResetCount += 1;
+  clearLockTimer();
+  scheduleLock();
 }
 
 function spawnPiece(forcedIndex = null) {
-  const shapeIndex = forcedIndex === null ? nextPieceIndex : forcedIndex;
-  if (forcedIndex === null) nextPieceIndex = randomPieceIndex();
-  piece = { shape: shapes[shapeIndex].map((row) => [...row]), x: 3, y: 0, color: shapeIndex + 1 };
+  clearLockTimer();
+  const shapeIndex = forcedIndex === null ? randomPieceIndex() : forcedIndex;
+  fillPieceQueue();
+  nextPieceIndex = pieceQueue[0];
+  piece = { shapeIndex, rotation: 0, shape: rotationStates[shapeIndex][0].map((row) => [...row]), x: 3, y: 0, color: shapeIndex + 1, serial: ++pieceSerial };
   holdUsed = false;
+  lockResetCount = 0;
+  lastActionWasRotation = false;
   if (collides(piece.shape)) {
     if (tetrisMode === "zen") {
       board.splice(0, 4);
@@ -65,26 +177,63 @@ function spawnPiece(forcedIndex = null) {
   }
 }
 
+function tSpinDetected() {
+  if (piece.shapeIndex !== 2 || !lastActionWasRotation) return false;
+  const pivotX = piece.x + 1;
+  const pivotY = piece.y + 1;
+  const corners = [[-1, -1], [1, -1], [-1, 1], [1, 1]];
+  const occupied = corners.filter(([dx, dy]) => {
+    const x = pivotX + dx;
+    const y = pivotY + dy;
+    return x < 0 || x >= columns || y >= rows || (y >= 0 && board[y][x]);
+  }).length;
+  return occupied >= 3;
+}
+
+function scoreLineClear(cleared, tSpin, perfectClear) {
+  const level = Math.max(1, currentCampaignLevel().tier);
+  const lineBase = [0, 100, 300, 500, 800][cleared] || 0;
+  const tSpinBase = [400, 800, 1200, 1600][cleared] || 0;
+  const difficult = cleared === 4 || (tSpin && cleared > 0);
+  const wasBackToBack = backToBack;
+  combo = cleared > 0 ? combo + 1 : -1;
+  let points = (tSpin ? tSpinBase : lineBase) * level;
+  if (difficult && wasBackToBack) points = Math.round(points * 1.5);
+  if (cleared > 0 && combo > 0) points += 50 * combo * level;
+  if (perfectClear && cleared > 0) points += ([0, 800, 1200, 1800, 2000][cleared] || 0) * level;
+  if (difficult) backToBack = true;
+  else if (cleared > 0) backToBack = false;
+  if (cleared > 0 || tSpin) {
+    const clearNames = ["", "单消", "双消", "三消", "四线消除"];
+    lastClearLabel = (tSpin ? "T 旋 · " : "") + clearNames[cleared] + (wasBackToBack && difficult ? " · 背靠背" : "") + (combo > 0 ? " · 连消 ×" + (combo + 1) : "") + (perfectClear ? " · 全清" : "");
+    lastClearPoints = points;
+  } else {
+    lastClearLabel = "";
+    lastClearPoints = 0;
+  }
+  return points;
+}
+
 function mergePiece() {
+  clearLockTimer();
+  const tSpin = tSpinDetected();
   piece.shape.forEach((row, y) => row.forEach((value, x) => {
     if (value && piece.y + y >= 0) board[piece.y + y][piece.x + x] = piece.color;
   }));
   navigator.vibrate?.(12);
-  let cleared = 0;
+  const completedRows = [];
   for (let y = rows - 1; y >= 0; y -= 1) {
-    if (board[y].every(Boolean)) {
-      board.splice(y, 1);
-      board.unshift(Array(columns).fill(0));
-      cleared += 1;
-      y += 1;
-    }
+    if (board[y].every(Boolean)) completedRows.push(y);
   }
+  completedRows.forEach((rowIndex) => board.splice(rowIndex, 1));
+  for (let index = 0; index < completedRows.length; index += 1) board.unshift(Array(columns).fill(0));
+  const cleared = completedRows.length;
+  const perfectClear = cleared > 0 && board.every((row) => row.every((value) => !value));
+  score += scoreLineClear(cleared, tSpin, perfectClear);
   if (cleared) {
-    clearedRows = [];
-    for (let index = 0; index < cleared; index += 1) clearedRows.push(index);
+    clearedRows = completedRows;
     clearFlashUntil = performance.now() + 320;
     lines += cleared;
-    score += [0, 100, 300, 500, 800][cleared] * Math.max(1, currentCampaignLevel().tier);
     setMetric(lines + " / " + lineTarget);
     playSound("success");
     if (lines >= lineTarget) {
@@ -101,8 +250,23 @@ function stepDown() {
     showResult(false, "限时结束", "本局完成 " + lines + " 条消行、得到 " + score + " 分。 ");
     return;
   }
-  if (!collides(piece.shape, piece.x, piece.y + 1)) piece.y += 1;
-  else mergePiece();
+  if (!collides(piece.shape, piece.x, piece.y + 1)) {
+    piece.y += 1;
+    lastActionWasRotation = false;
+    clearLockTimer();
+  } else scheduleLock();
+  drawTetris();
+}
+
+function softDrop() {
+  if (!running) return;
+  if (!collides(piece.shape, piece.x, piece.y + 1)) {
+    piece.y += 1;
+    softDropScore += 1;
+    score += 1;
+    lastActionWasRotation = false;
+    clearLockTimer();
+  } else scheduleLock();
   drawTetris();
 }
 
@@ -110,6 +274,8 @@ function movePiece(direction) {
   if (!running) return;
   if (!collides(piece.shape, piece.x + direction, piece.y)) {
     piece.x += direction;
+    lastActionWasRotation = false;
+    refreshLockDelay();
     playSound("move");
   }
   drawTetris();
@@ -117,9 +283,19 @@ function movePiece(direction) {
 
 function rotatePiece() {
   if (!running) return;
-  const rotated = rotateShape(piece.shape);
-  if (!collides(rotated)) {
-    piece.shape = rotated;
+  const from = piece.rotation;
+  const to = (from + 1) % 4;
+  const rotated = rotationStates[piece.shapeIndex][to];
+  const table = piece.shapeIndex === 0 ? iKickTests : piece.shapeIndex === 1 ? { [from + ">" + to]: [[0, 0]] } : jlstzKickTests;
+  const tests = table[from + ">" + to] || [[0, 0]];
+  const kick = tests.find(([dx, dy]) => !collides(rotated, piece.x + dx, piece.y + dy));
+  if (kick) {
+    piece.rotation = to;
+    piece.shape = rotated.map((row) => [...row]);
+    piece.x += kick[0];
+    piece.y += kick[1];
+    lastActionWasRotation = true;
+    refreshLockDelay();
     playSound("move");
   }
   drawTetris();
@@ -129,6 +305,7 @@ function hardDrop() {
   if (!running) return;
   let distance = 0;
   while (!collides(piece.shape, piece.x, piece.y + 1)) { piece.y += 1; distance += 1; }
+  if (distance > 0) lastActionWasRotation = false;
   hardDropScore += distance * 2;
   score += distance * 2;
   mergePiece();
@@ -215,15 +392,26 @@ function drawShape(shape, offsetX, offsetY, colorIndex, size, originX, originY, 
   }));
 }
 
-function drawMiniPiece(shapeIndex, x, y, label) {
+function drawMiniPiece(shapeIndex, x, y, label = "", options = {}) {
   const shape = shapes[shapeIndex];
-  const miniCell = 20;
-  const shapeWidth = shape[0].length * miniCell;
-  const shapeHeight = shape.length * miniCell;
-  const shapeX = x + (124 - shapeWidth) / 2;
-  const shapeY = y + 30 + (48 - shapeHeight) / 2;
+  const miniCell = options.cell || 20;
+  const slotWidth = options.width || 124;
+  const slotHeight = options.height || 78;
+  const cells = [];
+  shape.forEach((row, rowIndex) => row.forEach((value, columnIndex) => { if (value) cells.push([columnIndex, rowIndex]); }));
+  const minX = Math.min(...cells.map(([column]) => column));
+  const maxX = Math.max(...cells.map(([column]) => column));
+  const minY = Math.min(...cells.map(([, row]) => row));
+  const maxY = Math.max(...cells.map(([, row]) => row));
+  const labelHeight = label ? 25 : 0;
+  const shapeWidth = (maxX - minX + 1) * miniCell;
+  const shapeHeight = (maxY - minY + 1) * miniCell;
+  const shapeX = x + (slotWidth - shapeWidth) / 2 - minX * miniCell;
+  const shapeY = y + labelHeight + (slotHeight - labelHeight - shapeHeight) / 2 - minY * miniCell;
   ctx.save();
-  ctx.fillStyle = palette.textSoft; ctx.font = "700 18px Inter, sans-serif"; ctx.textAlign = "center"; ctx.fillText(label, x + 62, y + 20);
+  if (label) {
+    ctx.fillStyle = palette.textSoft; ctx.font = "700 16px Inter, sans-serif"; ctx.textAlign = "center"; ctx.fillText(label, x + slotWidth / 2, y + 17);
+  }
   shape.forEach((row, rowIndex) => row.forEach((value, columnIndex) => {
     if (!value) return;
     drawBlock(columnIndex, rowIndex, shapeIndex + 1, miniCell, shapeX, shapeY, connectedEdges(shape, columnIndex, rowIndex));
@@ -243,13 +431,25 @@ function drawTetris() {
   const originX = (canvas.width - columns * size) / 2;
   const originY = config.aspectRatio === "9:16" ? 168 : (canvas.height - rows * size) / 2;
   if (config.aspectRatio === "9:16") {
-    drawPlayfield(22, 26, 150, 112, { radius: 22, alpha: .76 });
-    drawMiniPiece(nextPieceIndex, 35, 38, "下一个");
-    drawPlayfield(548, 26, 150, 112, { radius: 22, alpha: .76 });
-    if (heldPieceIndex === null) { ctx.fillStyle = palette.textSoft; ctx.font = "700 18px Inter, sans-serif"; ctx.textAlign = "center"; ctx.fillText("暂存", 623, 62); }
-    else drawMiniPiece(heldPieceIndex, 561, 38, "暂存");
+    drawPlayfield(18, 26, 132, 118, { radius: 22, alpha: .76 });
+    if (heldPieceIndex === null) {
+      ctx.fillStyle = palette.textSoft; ctx.font = "700 16px Inter, sans-serif"; ctx.textAlign = "center"; ctx.fillText("暂存", 84, 52); ctx.font = "800 25px Inter, sans-serif"; ctx.fillText("—", 84, 103);
+    } else drawMiniPiece(heldPieceIndex, 22, 37, "暂存", { width: 124, height: 96, cell: 18 });
+    drawPlayfield(160, 26, 398, 118, { radius: 22, alpha: .76 });
+    ctx.fillStyle = palette.textSoft; ctx.font = "750 15px Inter, sans-serif"; ctx.textAlign = "left";
+    ctx.fillText((tetrisMode === "standard" ? "旅程" : tetrisMode === "timed" ? "限时" : "禅模式") + " · 接下来 5 枚", 178, 49);
+    pieceQueue.slice(0, 5).forEach((shapeIndex, index) => drawMiniPiece(shapeIndex, 169 + index * 76, 57, "", { width: 72, height: 60, cell: 12 }));
+    if (lastClearLabel) {
+      ctx.fillStyle = palette.highlight; ctx.font = "800 13px Inter, sans-serif"; ctx.textAlign = "center";
+      ctx.fillText(lastClearLabel + "  +" + lastClearPoints, 359, 135, 365);
+    }
+    drawPlayfield(568, 26, 134, 118, { radius: 22, alpha: .76 });
     const timeText = tetrisMode === "timed" ? " · " + Math.max(0, Math.ceil(modeTimeLimit - (performance.now() - modeStartedAt) / 1000)) + "秒" : "";
-    ctx.fillStyle = palette.text; ctx.font = "800 24px Inter, sans-serif"; ctx.textAlign = "center"; ctx.fillText((tetrisMode === "standard" ? "标准" : tetrisMode === "timed" ? "限时" : "禅模式") + " · 得分 " + score + " · 等级 " + currentCampaignLevel().tier + timeText, 360, 102);
+    ctx.textAlign = "center"; ctx.fillStyle = palette.textSoft; ctx.font = "700 13px Inter, sans-serif"; ctx.fillText("得分", 635, 48);
+    ctx.fillStyle = palette.text; ctx.font = "850 21px Inter, sans-serif"; ctx.fillText(String(score), 635, 72, 118);
+    ctx.fillStyle = palette.textSoft; ctx.font = "700 13px Inter, sans-serif"; ctx.fillText(lines + "/" + lineTarget + " 行 · Lv." + currentCampaignLevel().tier, 635, 99);
+    ctx.fillStyle = backToBack ? palette.highlight : palette.textSoft; ctx.font = "750 12px Inter, sans-serif";
+    ctx.fillText((combo > 0 ? "连消 ×" + (combo + 1) : "连消待续") + timeText, 635, 125, 120);
   }
   ctx.save();
   ctx.globalAlpha = .96;
@@ -283,7 +483,8 @@ function drawTetris() {
   }
   if (clearFlashUntil > performance.now()) {
     ctx.save(); ctx.globalAlpha = (clearFlashUntil - performance.now()) / 320; ctx.fillStyle = palette.highlight;
-    ctx.fillRect(originX, originY, columns * size, rows * size); ctx.restore(); requestAnimationFrame(drawTetris);
+    clearedRows.forEach((row) => ctx.fillRect(originX, originY + row * size, columns * size, size));
+    ctx.restore(); requestAnimationFrame(drawTetris);
   }
   finishCanvasStyle();
 }
@@ -308,9 +509,14 @@ function startGame() {
   lines = 0;
   score = 0;
   hardDropScore = 0;
+  softDropScore = 0;
+  combo = -1;
+  backToBack = false;
+  lastClearLabel = "";
+  lastClearPoints = 0;
+  pieceQueue = [];
   heldPieceIndex = null;
   holdUsed = false;
-  nextPieceIndex = randomPieceIndex();
   running = true;
   hideOverlay();
   setMetric("0 / " + lineTarget);
@@ -325,7 +531,7 @@ function startGame() {
 function handleControl(value) {
   if (value === "left") movePiece(-1);
   if (value === "right") movePiece(1);
-  if (value === "down") stepDown();
+  if (value === "down") softDrop();
   if (value === "rotate") rotatePiece();
   if (value === "hold") holdPiece();
   if (value === "drop") hardDrop();
@@ -347,7 +553,7 @@ canvas.addEventListener("pointerup", (event) => {
   if (Math.max(Math.abs(dx), Math.abs(dy)) < 20) { rotatePiece(); return; }
   if (Math.abs(dx) > Math.abs(dy)) movePiece(dx > 0 ? 1 : -1);
   else if (dy > 0 && (Math.abs(dy) > 70 || elapsed < 220)) hardDrop();
-  else if (dy > 0) stepDown();
+  else if (dy > 0) softDrop();
 });
 function setTetrisMode(mode) {
   tetrisMode = ["standard", "timed", "zen"].includes(mode) ? mode : "standard";
@@ -361,8 +567,22 @@ function setTetrisMode(mode) {
 document.querySelectorAll("[data-tetris-mode]").forEach((button) => button.addEventListener("click", () => setTetrisMode(button.dataset.tetrisMode)));
 runtimeDebugState = () => {
   const dangerRow = board.findIndex((row) => row.some(Boolean));
-  return { level: currentCampaignLevel().number, tier: currentCampaignLevel().tier, mode: tetrisMode, modes: ["standard", "timed", "zen"], modeTimeLimit, lineTarget, lines, fallInterval, score, hardDropScore, nextPieceIndex, heldPieceIndex, holdUsed, dangerHeight: dangerRow >= 0 && dangerRow <= 4, clearFeedbackMs: Math.max(0, clearFlashUntil - performance.now()), gestureSupport: true, cellGeometry: { ...tetrisCellGeometry } };
+  return { level: currentCampaignLevel().number, tier: currentCampaignLevel().tier, mode: tetrisMode, modes: ["standard", "timed", "zen"], modeTimeLimit, lineTarget, lines, fallInterval, score, hardDropScore, softDropScore, combo, backToBack, lastClearLabel, lastClearPoints, nextPieceIndex, nextQueue: pieceQueue.slice(0, 5), heldPieceIndex, holdUsed, currentPiece: piece ? { shapeIndex: piece.shapeIndex, rotation: piece.rotation, x: piece.x, y: piece.y } : null, dangerHeight: dangerRow >= 0 && dangerRow <= 4, clearFeedbackMs: Math.max(0, clearFlashUntil - performance.now()), gestureSupport: true, sevenBagRandomizer: true, rotationSystem: "SRS-clockwise", lockDelayMs, maxLockResets, cellGeometry: { ...tetrisCellGeometry } };
 };
-runtimeDebugActions = { legalAction: hardDrop, hold: holdPiece, setStandardMode() { setTetrisMode("standard"); }, setTimedMode() { setTetrisMode("timed"); }, setZenMode() { setTetrisMode("zen"); }, clearLinePreview() { clearFlashUntil = performance.now() + 320; drawTetris(); } };
+runtimeDebugActions = {
+  legalAction: hardDrop,
+  softDrop: softDrop,
+  hold: holdPiece,
+  prepareWallKick() {
+    board.forEach((row) => row.fill(0));
+    clearLockTimer();
+    piece = { shapeIndex: 0, rotation: 1, shape: rotationStates[0][1].map((row) => [...row]), x: -2, y: 4, color: 1, serial: ++pieceSerial };
+    rotatePiece();
+  },
+  setStandardMode() { setTetrisMode("standard"); },
+  setTimedMode() { setTetrisMode("timed"); },
+  setZenMode() { setTetrisMode("zen"); },
+  clearLinePreview() { clearedRows = [17, 18, 19]; clearFlashUntil = performance.now() + 320; drawTetris(); },
+};
 drawTetris();
 `;
