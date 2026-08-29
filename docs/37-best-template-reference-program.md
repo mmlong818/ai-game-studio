@@ -30,7 +30,7 @@
 | 5 | 数织矩阵 | `merge-2048` | 已完成并发布 v34，见 `42-merge-2048-best-template-reference.md` | 20 个独立任务、下一块预告、连续位移动画、直接滑动、回溯与新位图资产均已落实；稳定网址已指向 `aa382c32-fc8c-497a-8e7f-e57c6f26b4a1` |
 | 6 | 朱门华容 | `klotski` | 已完成并发布 v34，见 `43-klotski-best-template-reference.md` | 20 个求解器验证布局、8–120 步真实距离带、直接拖动、逐步提示、撤销/重做和路径回放均已落实；稳定网址已指向 `119aae67-cd04-4c68-8c5f-bbeb41b6a0b0` |
 | 7 | 青玉长游 | `snake` | 已完成并发布 v34，见 `44-snake-best-template-reference.md` | 20 个固定场型与五章、双转向缓冲、真实滑动、100 次可达食物、暂停恢复、金果与结算统计均已落实；稳定网址已指向 `da0a6b12-df3a-4791-a234-ccf04e4e7d7b` |
-| 8 | 苔径迷庭 | `maze` | 待专门研究 | 待开始 |
+| 8 | 苔径迷庭 | `maze` | 已完成第一轮，见 `45-maze-best-template-reference.md` | 研究合同已锁定；进入 20 关、五章机制与移动端重构 |
 | 9 | 植光拼图 | `puzzle` | 待专门研究 | 待开始 |
 | 10 | 果冻填阵 | `block-place` | 待专门研究 | 待开始 |
 | 11 | 软糖拼岛 | `polyomino-fit` | 待专门研究 | 待开始 |
