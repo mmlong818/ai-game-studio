@@ -1,6 +1,13 @@
 // 核心规则移植自 mkgame-blocks（MIT）；品牌、界面、图像和声音均为本平台原创。
 export const blockPlaceScript = String.raw`
 const blockBoardSize = 8;
+const blockBlueprints = [
+  ["果冻初醒","空间感",120,2,.08,0],["双线花园","空间感",140,2,.1,1],["转角早餐","空间感",155,2,.12,2],["留白练习","空间感",170,2,.14,3],
+  ["三枚约定","三块规划",190,2,.17,4],["长条码头","三块规划",210,2,.19,5],["方糖街区","三块规划",230,2,.21,6],["刷新之前","三块规划",250,2,.23,7],
+  ["连击苏打","连击节奏",275,1,.27,8],["横竖同奏","连击节奏",300,1,.3,9],["果冻回声","连击节奏",325,1,.33,10],["彩虹三连","连击节奏",350,1,.36,11],
+  ["窄巷开花","危机管理",380,1,.4,12],["边缘救援","危机管理",410,1,.44,13],["中央留灯","危机管理",440,1,.48,14],["最后通道","危机管理",470,1,.52,15],
+  ["棱镜工坊","最终掌握",510,0,.56,16],["软糖高塔","最终掌握",550,0,.6,17],["满格庆典","最终掌握",600,0,.64,18],["果冻终章","最终掌握",660,0,.68,19],
+].map((value,index)=>({number:index+1,name:value[0],chapter:value[1],target:value[2],hints:value[3],hardRate:value[4],opening:value[5]}));
 const blockDifficulty = {
   relaxed: { target: 120, hardShapeRate: .08, comboGrace: 4 },
   standard: { target: 220, hardShapeRate: .24, comboGrace: 3 },
@@ -29,6 +36,18 @@ let blockClearEffect = null;
 let blockHint = null;
 let blockDragPreview = null;
 let blockBatchGuaranteed = true;
+let blockMode = "journey";
+let blockHintsRemaining = 2;
+let blockLinesCleared = 0;
+let blockBestCombo = 0;
+let blockBatchesCompleted = 0;
+let blockOpeningSignature = "empty";
+let blockDragState = null;
+let blockRestored = false;
+let blockModeBest = 0;
+let blockDailySeed = 0;
+const blockModeButtons = Array.from(document.querySelectorAll("[data-block-mode]"));
+const blockBlueprint = () => blockBlueprints[Math.max(0,Math.min(19,currentCampaignLevel().number-1))];
 const blockPieceStyles = [
   { plate: "#ffe2dd", outline: "#a73a30" },
   { plate: "#fff1b8", outline: "#805b00" },
@@ -48,6 +67,31 @@ function createSeededRandom(seed) {
 function createBlockBoard() {
   return Array.from({ length: blockBoardSize }, () => Array(blockBoardSize).fill(0));
 }
+
+function createBlockOpening(level) {
+  const board = createBlockBoard();
+  if (level.opening <= 0) return board;
+  const candidates = [];
+  for (let row = 0; row < blockBoardSize; row += 1) for (let column = 0; column < blockBoardSize; column += 1) {
+    if ((row + column + level.number) % 3 !== 0 || (row >= 2 && row <= 5 && column >= 2 && column <= 5)) candidates.push([row,column]);
+  }
+  const random = createSeededRandom((level.number * 0x9e3779b1) >>> 0);
+  for (let index = candidates.length - 1; index > 0; index -= 1) {
+    const swap = Math.floor(random() * (index + 1));
+    [candidates[index], candidates[swap]] = [candidates[swap], candidates[index]];
+  }
+  const fillCount = Math.min(14,Math.ceil(level.opening * .72));
+  candidates.slice(0,fillCount).forEach(([row,column],index)=>{board[row][column]=index%5+1;});
+  return board;
+}
+
+function blockSessionKey(){return config.campaignStorageKey+"-block-place-session-v2";}
+function blockBestKey(){return config.campaignStorageKey+"-block-place-best-"+blockMode+(blockMode==="daily"?"-"+blockDailySeed:"");}
+function clearBlockSession(){try{safeStorage.removeItem(blockSessionKey());}catch{}}
+function readBlockModeBest(){try{return Math.max(0,Number(safeStorage.getItem(blockBestKey()))||0);}catch{return 0;}}
+function updateBlockModeBest(){if(blockScore<=blockModeBest)return;blockModeBest=blockScore;try{safeStorage.setItem(blockBestKey(),String(blockModeBest));}catch{}}
+function persistBlockSession(){if(blockMode!=="journey")return;try{safeStorage.setItem(blockSessionKey(),JSON.stringify({schemaVersion:2,level:currentCampaignLevel().number,board:blockBoard,pieces:blockPieces,selected:selectedBlockPiece,score:blockScore,combo:blockCombo,dryMoves:blockDryMoves,generation:blockGeneration,lines:blockLinesCleared,bestCombo:blockBestCombo,batches:blockBatchesCompleted,hints:blockHintsRemaining,updatedAt:new Date().toISOString()}));}catch{}}
+function restoreBlockSession(){blockRestored=false;if(blockMode!=="journey")return;try{const saved=JSON.parse(safeStorage.getItem(blockSessionKey())||"null");const validBoard=Array.isArray(saved?.board)&&saved.board.length===blockBoardSize&&saved.board.every((row)=>Array.isArray(row)&&row.length===blockBoardSize&&row.every((cell)=>Number.isInteger(cell)&&cell>=0&&cell<=5));const validPieces=Array.isArray(saved?.pieces)&&saved.pieces.length===3&&saved.pieces.every((piece)=>Array.isArray(piece?.cells)&&piece.cells.length>0&&piece.cells.length<=5&&piece.cells.every((cell)=>Array.isArray(cell)&&cell.length===2&&cell.every((value)=>Number.isInteger(value)&&value>=0&&value<blockBoardSize))&&Number.isInteger(piece?.sprite)&&piece.sprite>=0&&piece.sprite<5&&typeof piece?.used==="boolean");if(!saved||saved.schemaVersion!==2||saved.level!==currentCampaignLevel().number||!validBoard||!validPieces)return;blockBoard=saved.board;blockPieces=saved.pieces;selectedBlockPiece=Math.max(0,Math.min(2,Number(saved.selected)||0));blockScore=Math.max(0,Number(saved.score)||0);blockCombo=Math.max(0,Number(saved.combo)||0);blockDryMoves=Math.max(0,Number(saved.dryMoves)||0);blockGeneration=Math.max(0,Number(saved.generation)||0);blockLinesCleared=Math.max(0,Number(saved.lines)||0);blockBestCombo=Math.max(0,Number(saved.bestCombo)||0);blockBatchesCompleted=Math.max(0,Number(saved.batches)||0);blockHintsRemaining=Math.max(0,Number(saved.hints)||0);blockRestored=true;}catch{}}
 
 function generateBlockPieces() {
   blockGeneration += 1;
@@ -147,6 +191,8 @@ function placeBlockPiece(row, column) {
   const lineCount = clear.rows.length + clear.columns.length;
   if (lineCount > 0) {
     blockCombo += 1;
+    blockLinesCleared += lineCount;
+    blockBestCombo = Math.max(blockBestCombo, blockCombo);
     blockDryMoves = 0;
     const earned = piece.cells.length + lineCount * 12 * blockCombo;
     blockScore += earned;
@@ -161,24 +207,28 @@ function placeBlockPiece(row, column) {
     if (blockDryMoves >= blockComboGrace) blockCombo = 0;
     blockClearEffect = null;
   }
+  updateBlockModeBest();
   blockHint = null;
   playSound("move");
-  if (blockPieces.every((candidate) => candidate.used)) blockPieces = generateBlockPieces();
+  if (blockPieces.every((candidate) => candidate.used)) { blockBatchesCompleted += 1; blockPieces = generateBlockPieces(); }
   const next = blockPieces.findIndex((candidate) => !candidate.used);
   if (next >= 0) selectedBlockPiece = next;
-  setMetric(blockScore + " / " + blockTarget);
-  if (blockScore >= blockTarget) {
+  setMetric(blockMode === "endless" ? blockScore + " · 最佳 " + blockModeBest : blockScore + " / " + blockTarget);
+  if (blockMode !== "endless" && blockScore >= blockTarget) {
+    clearBlockSession();
     drawBlockPlace();
     showResult(true, "果冻阵列完成", "你以 " + blockScore + " 分维持了棋盘空间，最高连击为 ×" + Math.max(1, blockCombo) + "。 ");
     return true;
   }
   if (!hasAnyPlacement()) {
+    clearBlockSession();
     drawBlockPlace();
     showResult(false, "棋盘没有空间了", "本局得到 " + blockScore + " 分；下一局优先保留中央与长条通道。 ");
     return true;
   }
   const placementCounts = blockPieces.filter((candidate) => !candidate.used).map(blockPlacementCount);
   const danger = placementCounts.length && Math.min(...placementCounts) <= 2;
+  persistBlockSession();
   setStatus(lineCount ? "消除 " + lineCount + " 条 · 连击 ×" + blockCombo + " · +" + blockClearEffect.earned : danger ? "危险：有候选只剩 " + Math.min(...placementCounts) + " 个落点，优先腾出长条通道。 " : "放置完成；继续为三个候选保留共同落点。 ");
   drawBlockPlace();
   return true;
@@ -186,15 +236,15 @@ function placeBlockPiece(row, column) {
 
 function blockLayout() {
   const size = Math.min(620, gameSceneHeight() * .54);
-  return { size, cell: size / blockBoardSize, x: (720 - size) / 2, y: 205 };
+  return { size, cell: size / blockBoardSize, x: (720 - size) / 2, y: 190 };
 }
 
 function blockTrayLayout(boardLayout = blockLayout()) {
   const slotWidth = 192;
-  const slotHeight = 126;
+  const slotHeight = 156;
   const gap = 12;
   const width = slotWidth * 3 + gap * 2;
-  const y = Math.min(gameSceneHeight() - 174, boardLayout.y + boardLayout.size + 66);
+  const y = Math.min(gameSceneHeight() - 196, boardLayout.y + boardLayout.size + 76);
   return { x: (720 - width) / 2, y, width, slotWidth, slotHeight, gap };
 }
 
@@ -225,27 +275,44 @@ function drawBlockCell(sprite, x, y, size, options = {}) {
 
 function drawBlockPlace() {
   clearCanvas();
+  ctx.save();
+  ctx.fillStyle = "rgba(249,246,239,.94)";
+  ctx.fillRect(0,0,canvas.width,canvas.height);
+  ctx.restore();
   ctx.save(); ctx.translate(0, gameSceneTop());
   const layout = blockLayout();
-  ctx.textAlign = "center";
-  ctx.fillStyle = palette.text;
-  ctx.font = "800 32px Inter, sans-serif";
-  ctx.fillText("得分 " + blockScore + "   连击 ×" + blockCombo, 360, 118);
-  ctx.fillStyle = palette.textSoft;
-  ctx.font = "600 20px Inter, sans-serif";
-  ctx.fillText("使用完三块才会刷新 · 横行与竖列都能消除", 360, 156);
-  drawPlayfield(layout.x - 16, layout.y - 16, layout.size + 32, layout.size + 32, { radius: 32, alpha: .92 });
+  if (running) {
+    ctx.textAlign = "center";
+    ctx.fillStyle = "#40372f";
+    ctx.font = "800 32px Inter, sans-serif";
+    ctx.fillText((blockMode === "endless" ? "无尽 " : "") + "得分 " + blockScore + "   连击 ×" + blockCombo, 360, 98);
+    ctx.fillStyle = "#786a5f";
+    ctx.font = "600 20px Inter, sans-serif";
+    ctx.fillText(blockBlueprint().name + " · 消除 " + blockLinesCleared + " 线 · 三块用完才刷新", 360, 137);
+  }
+  ctx.save();
+  ctx.shadowColor = "rgba(34,47,45,.18)";
+  ctx.shadowBlur = 22;
+  ctx.shadowOffsetY = 10;
+  ctx.fillStyle = "#263532";
+  ctx.beginPath(); ctx.roundRect(layout.x - 16, layout.y - 16, layout.size + 32, layout.size + 32, 34); ctx.fill();
+  ctx.shadowColor = "transparent";
+  ctx.strokeStyle = "rgba(19,33,31,.78)";
+  ctx.lineWidth = 3;
+  ctx.stroke();
+  ctx.restore();
   for (let row = 0; row < blockBoardSize; row += 1) for (let column = 0; column < blockBoardSize; column += 1) {
     const x = layout.x + column * layout.cell;
     const y = layout.y + row * layout.cell;
     const value = blockBoard[row][column];
     if (value) drawBlockCell((value - 1) % 5, x + 3, y + 3, layout.cell - 6, { compact: true });
     else {
-      ctx.fillStyle = "rgba(255,253,244,.42)";
-      ctx.strokeStyle = "rgba(57,52,45,.2)";
+      ctx.fillStyle = "#36433f";
+      ctx.strokeStyle = "rgba(209,224,217,.1)";
       ctx.lineWidth = 1;
-      ctx.beginPath(); ctx.roundRect(x + 5, y + 5, layout.cell - 10, layout.cell - 10, 13); ctx.fill(); ctx.stroke();
-      drawBitmapSprite(8, x + 7, y + 7, layout.cell - 14, layout.cell - 14, { fallback: palette.surfaceSoft, radius: 11, alpha: .16, scale: 1.08 });
+      ctx.beginPath(); ctx.roundRect(x + 5, y + 5, layout.cell - 10, layout.cell - 10, 12); ctx.fill(); ctx.stroke();
+      ctx.fillStyle = "rgba(11,24,22,.16)";
+      ctx.beginPath(); ctx.roundRect(x + 9, y + 9, layout.cell - 18, layout.cell - 18, 9); ctx.fill();
     }
     if (blockHint && blockHint.cells.has(row + ":" + column)) {
       ctx.fillStyle = "rgba(255,255,255,.34)"; ctx.fillRect(x + 6, y + 6, layout.cell - 12, layout.cell - 12);
@@ -267,66 +334,85 @@ function drawBlockPlace() {
     const slotX = tray.x + index * (tray.slotWidth + tray.gap);
     const selected = index === selectedBlockPiece && !piece.used;
     ctx.save();
-    ctx.fillStyle = selected ? "#fff3c9" : "#fbf9f1";
-    ctx.strokeStyle = selected ? "#8a6217" : "#b7ad99";
-    ctx.lineWidth = selected ? 5 : 2;
-    ctx.shadowColor = selected ? "rgba(138,98,23,.2)" : "rgba(40,34,25,.08)";
-    ctx.shadowBlur = selected ? 12 : 5;
+    ctx.fillStyle = selected ? "rgba(255,236,184,.46)" : "rgba(255,255,255,.24)";
+    ctx.strokeStyle = selected ? "rgba(128,91,0,.72)" : "rgba(126,111,88,.16)";
+    ctx.lineWidth = selected ? 3 : 1;
+    ctx.shadowColor = selected ? "rgba(255,190,76,.3)" : "transparent";
+    ctx.shadowBlur = selected ? 18 : 0;
     ctx.beginPath();
     ctx.roundRect(slotX, tray.y, tray.slotWidth, tray.slotHeight, 24);
     ctx.fill(); ctx.stroke();
     ctx.shadowBlur = 0;
-    ctx.fillStyle = selected ? "#6f4e12" : "#514a3f";
-    ctx.beginPath(); ctx.arc(slotX + 22, tray.y + 22, 14, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = selected ? "#6f4e12" : "#766d61";
+    ctx.beginPath(); ctx.arc(slotX + 21, tray.y + 21, 11, 0, Math.PI * 2); ctx.fill();
     ctx.fillStyle = "#fffdf7";
     ctx.font = "800 17px Inter, sans-serif";
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
-    ctx.fillText(String(index + 1), slotX + 22, tray.y + 22);
+    ctx.fillText(String(index + 1), slotX + 21, tray.y + 21);
     ctx.restore();
-    const pieceAlpha = piece.used ? .2 : 1;
+    const pieceAlpha = piece.used ? 0 : 1;
     const width = Math.max(...piece.cells.map((cell) => cell[1])) + 1;
     const height = Math.max(...piece.cells.map((cell) => cell[0])) + 1;
-    const mini = Math.min(44, 148 / width, 76 / height);
+    const mini = Math.min(56, 160 / width, 108 / height);
     const pieceX = slotX + (tray.slotWidth - width * mini) / 2;
-    const pieceY = tray.y + 34 + (tray.slotHeight - 40 - height * mini) / 2;
+    const pieceY = tray.y + 32 + (tray.slotHeight - 36 - height * mini) / 2;
     for (const [row, column] of piece.cells) drawBlockCell(piece.sprite, pieceX + column * mini, pieceY + row * mini, mini, { compact: false, alpha: pieceAlpha });
+    if (piece.used) {
+      ctx.fillStyle = "rgba(93,82,71,.56)";
+      ctx.font = "700 15px Inter, sans-serif";
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.fillText("已放置", slotX + tray.slotWidth / 2, tray.y + tray.slotHeight / 2 + 10);
+      ctx.textBaseline = "alphabetic";
+    }
   });
   if (blockClearEffect && performance.now() < blockClearEffect.until) {
     const sprite = blockClearEffect.invalid ? 7 : blockClearEffect.combo > 1 ? 6 : 5;
     drawBitmapSprite(sprite, 260, layout.y + layout.size * .42, 200, 200, { fallback: blockClearEffect.invalid ? palette.primary : palette.highlight, alpha: .74, scale: 1.12 });
   }
-  ctx.restore(); finishCanvasStyle();
+  ctx.restore();
+  if (config.visualStyle !== "color-block") finishCanvasStyle();
 }
 
 function hintBlockPlacement() {
+  if(blockHintsRemaining<=0){setStatus("本关提示已经用完；观察能同时保留三枚候选落点的位置。");return false;}
   for (let index = 0; index < blockPieces.length; index += 1) {
     const placement = blockFirstPlacement(blockPieces[index]);
     if (!placement) continue;
     selectedBlockPiece = index;
     const cells = new Set(blockPieces[index].cells.map(([row, column]) => (placement.row + row) + ":" + (placement.column + column)));
     blockHint = { ...placement, cells };
-    setStatus("已高亮一个安全落点；仍可自行选择更高分的位置。 "); drawBlockPlace(); return;
+    blockHintsRemaining-=1;document.querySelectorAll("[data-control=hint]").forEach((button)=>{button.textContent="提示 "+blockHintsRemaining;button.disabled=blockHintsRemaining<=0;});
+    setStatus("已高亮一个安全落点；仍可自行选择更高分的位置，还可提示 "+blockHintsRemaining+" 次。 "); drawBlockPlace(); return true;
   }
+  return false;
 }
 
 function startGame() {
   const level = currentCampaignLevel();
-  blockTarget = Math.max(80, Math.round(blockDifficulty.target * level.goalMultiplier));
-  blockHardShapeRate = Math.min(.72, blockDifficulty.hardShapeRate + (level.tier - 1) * .065);
+  const blueprint = blockBlueprint();
+  blockMode = blockModeButtons.find((button)=>button.classList.contains("is-selected"))?.dataset.blockMode||"journey";
+  blockTarget = Math.max(80, Math.round(blueprint.target * (blockDifficulty.target / 220)));
+  blockHardShapeRate = Math.min(.72, Math.max(blueprint.hardRate,blockDifficulty.hardShapeRate + (level.tier - 1) * .055));
   blockComboGrace = Math.max(1, blockDifficulty.comboGrace - Math.floor((level.tier - 1) / 2));
-  blockBoard = createBlockBoard();
-  blockScore = 0; blockCombo = 0; blockDryMoves = 0; blockGeneration = 0;
-  blockSeed = level.seed;
-  blockPieces = level.tier <= 2 ? [
+  blockBoard = createBlockOpening(blueprint);
+  blockOpeningSignature = blockBoard.map((row)=>row.map((cell)=>cell?1:0).join("")).join("/");
+  blockScore = 0; blockCombo = 0; blockDryMoves = 0; blockGeneration = 0; blockLinesCleared=0; blockBestCombo=0; blockBatchesCompleted=0; blockHintsRemaining=blueprint.hints; blockRestored=false;
+  blockDailySeed = blockMode==="daily"?Number(new Date().toISOString().slice(0,10).replaceAll("-","")):0;
+  blockSeed = blockDailySeed||level.seed;
+  blockModeBest = readBlockModeBest();
+  blockPieces = blockMode==="journey" && level.tier <= 2 ? [
     { id: "opening-a", cells: [[0,0],[0,1],[0,2]], sprite: 0, used: false },
     { id: "opening-b", cells: [[0,0],[0,1],[0,2]], sprite: 1, used: false },
     { id: "opening-c", cells: [[0,0],[0,1]], sprite: 2, used: false },
   ] : generateBlockPieces();
-  selectedBlockPiece = 0; blockClearEffect = null; blockHint = null; blockDragPreview = null; blockBatchGuaranteed = true;
+  selectedBlockPiece = 0; blockClearEffect = null; blockHint = null; blockDragPreview = null; blockDragState = null; blockBatchGuaranteed = true;
+  restoreBlockSession();
   running = true; hideOverlay(); startAmbient();
-  setMetric("0 / " + blockTarget);
-  setStatus("第 " + level.number + " 关 · " + level.ruleModifier + "；达到 " + blockTarget + " 分即可完成本关。 ");
+  document.querySelectorAll("[data-control=hint]").forEach((button)=>{button.textContent="提示 "+blockHintsRemaining;button.disabled=blockHintsRemaining<=0;});
+  setMetric(blockMode === "endless" ? blockScore + " · 最佳 " + blockModeBest : blockScore + " / " + blockTarget);
+  setStatus((blockRestored?"已恢复 · ":"")+"第 " + level.number + " 关 · " + blueprint.name + " · " + blueprint.chapter + (blockMode==="endless"?"；保持空间并刷新个人最佳。":"；达到 " + blockTarget + " 分完成。"));
   drawBlockPlace();
 }
 
@@ -336,6 +422,8 @@ function handleKey(key) {
   if (key.toLowerCase() === "h") hintBlockPlacement();
 }
 
+blockModeButtons.forEach((button)=>button.addEventListener("click",()=>{blockModeButtons.forEach((candidate)=>{const selected=candidate===button;candidate.classList.toggle("is-selected",selected);candidate.setAttribute("aria-pressed",String(selected));});clearBlockSession();}));
+
 canvas.addEventListener("pointerdown", (event) => {
   if (!running) return;
   const point = eventScenePoint(event);
@@ -343,6 +431,7 @@ canvas.addEventListener("pointerdown", (event) => {
   const pieceIndex = blockTrayPieceAt(point, layout);
   if (pieceIndex >= 0) {
     selectedBlockPiece = pieceIndex;
+    blockDragState = { pointerId:event.pointerId, liftCells:event.pointerType==="touch"?2:1 };
     try { canvas.setPointerCapture(event.pointerId); } catch {}
     drawBlockPlace();
   }
@@ -352,7 +441,7 @@ canvas.addEventListener("pointermove", (event) => {
   if (!running || !canvas.hasPointerCapture(event.pointerId)) return;
   const point = eventScenePoint(event);
   const layout = blockLayout();
-  const row = Math.floor((point.y - layout.y) / layout.cell);
+  const row = Math.floor((point.y - layout.y) / layout.cell) - (blockDragState?.liftCells||0);
   const column = Math.floor((point.x - layout.x) / layout.cell);
   const piece = blockPieces[selectedBlockPiece];
   const cells = new Set(piece.cells.map(([cellRow, cellColumn]) => (row + cellRow) + ":" + (column + cellColumn)));
@@ -365,16 +454,21 @@ canvas.addEventListener("pointerup", (event) => {
   const point = eventScenePoint(event);
   const layout = blockLayout();
   if (point.y >= layout.y && point.y <= layout.y + layout.size && point.x >= layout.x && point.x <= layout.x + layout.size) {
-    placeBlockPiece(Math.floor((point.y - layout.y) / layout.cell), Math.floor((point.x - layout.x) / layout.cell));
+    placeBlockPiece(Math.floor((point.y - layout.y) / layout.cell) - (blockDragState?.liftCells||0), Math.floor((point.x - layout.x) / layout.cell));
     blockDragPreview = null;
+    blockDragState = null;
     if (canvas.hasPointerCapture(event.pointerId)) canvas.releasePointerCapture(event.pointerId);
     return;
   }
   const pieceIndex = blockTrayPieceAt(point, layout);
   if (pieceIndex >= 0) {
     selectedBlockPiece = pieceIndex;
+    blockDragState = null;
     drawBlockPlace();
   }
+  blockDragPreview = null;
+  blockDragState = null;
+  if (canvas.hasPointerCapture(event.pointerId)) canvas.releasePointerCapture(event.pointerId);
 });
 
 blockBoard = createBlockBoard();
@@ -387,14 +481,20 @@ runtimeDebugState = () => {
   const remaining = blockPieces.filter((piece) => !piece.used);
   const placementCounts = remaining.map(blockPlacementCount);
   const tray = blockTrayLayout();
-  return { level: currentCampaignLevel().number, tier: currentCampaignLevel().tier, target: blockTarget, score: blockScore, combo: blockCombo, hardShapeRate: blockHardShapeRate, piecesRemaining: remaining.length, batchGuaranteed: blockBatchGuaranteed && blockBatchCanBePlaced(blockBoard, remaining), placementCounts, danger: placementCounts.length > 0 && Math.min(...placementCounts) <= 2, dragPreview: blockDragPreview, candidateUi: { style: "flat-light-dock", slotWidth: tray.slotWidth, slotHeight: tray.slotHeight, selectedOutlineWidth: 5, greenPlate: blockPieceStyles[2].plate, greenOutline: blockPieceStyles[2].outline, greenContrast: 5.68, numberedSlots: true } };
+  return { level: currentCampaignLevel().number, tier: currentCampaignLevel().tier, levelName:blockBlueprint().name, chapter:blockBlueprint().chapter, blueprintCount:blockBlueprints.length, uniqueBlueprintNames:new Set(blockBlueprints.map((entry)=>entry.name)).size, target: blockTarget, score: blockScore, combo:blockCombo, bestCombo:blockBestCombo, bestScore:blockModeBest, dailySeed:blockDailySeed, candidateSignature:blockPieces.map((piece)=>piece.cells.map((cell)=>cell.join(":" )).join("|")+"@"+piece.sprite).join("/"), linesCleared:blockLinesCleared, batchesCompleted:blockBatchesCompleted, hintsRemaining:blockHintsRemaining, mode:blockMode, hardShapeRate:blockHardShapeRate, openingSignature:blockOpeningSignature, piecesRemaining:remaining.length, batchGuaranteed:blockBatchGuaranteed && blockBatchCanBePlaced(blockBoard,remaining), placementCounts, danger:placementCounts.length > 0 && Math.min(...placementCounts) <= 2, dragPreview:blockDragPreview, dragLiftCells:blockDragState?.liftCells||0, restored:blockRestored, candidateUi:{ style: "floating-pedestals", slotWidth:tray.slotWidth, slotHeight:tray.slotHeight, selectedOutlineWidth:3, selectedHalo:true, greenPlate:blockPieceStyles[2].plate, greenOutline:blockPieceStyles[2].outline, greenContrast: 5.68, numberedSlots:true } };
 };
 runtimeDebugActions = {
+  pointerProbe(){const piece=blockPieces.find((candidate)=>!candidate.used),placement=piece&&blockFirstPlacement(piece),layout=blockLayout(),tray=blockTrayLayout(layout),index=blockPieces.indexOf(piece);if(!piece||!placement||index<0)return null;return{from:{x:tray.x+index*(tray.slotWidth+tray.gap)+tray.slotWidth/2,y:gameSceneTop()+tray.y+tray.slotHeight/2},to:{x:layout.x+(placement.column+.5)*layout.cell,y:gameSceneTop()+layout.y+(placement.row+1.5)*layout.cell},canvas:{width:canvas.width,height:canvas.height}};},
   legalAction() {
     const placement = blockFirstPlacement(blockPieces[selectedBlockPiece]);
     return placement ? placeBlockPiece(placement.row, placement.column) : false;
   },
   regenerate() { blockPieces = generateBlockPieces(); selectedBlockPiece = 0; drawBlockPlace(); },
+  surveyBatches(){let valid=0;for(let index=0;index<100;index+=1){const batch=generateBlockPieces();if(blockBatchCanBePlaced(blockBoard,batch))valid+=1;}return{count:100,valid};},
+  setJourneyMode(){blockMode="journey";blockModeButtons.forEach((button)=>{const selected=button.dataset.blockMode==="journey";button.classList.toggle("is-selected",selected);button.setAttribute("aria-pressed",String(selected));});},
+  setEndlessMode(){blockMode="endless";blockModeButtons.forEach((button)=>{const selected=button.dataset.blockMode==="endless";button.classList.toggle("is-selected",selected);button.setAttribute("aria-pressed",String(selected));});},
+  setDailyMode(){blockMode="daily";blockModeButtons.forEach((button)=>{const selected=button.dataset.blockMode==="daily";button.classList.toggle("is-selected",selected);button.setAttribute("aria-pressed",String(selected));});},
+  clearSession: clearBlockSession,
   hint: hintBlockPlacement,
   prepareDanger() {
     blockBoard = Array.from({ length: blockBoardSize }, (_, row) => Array.from({ length: blockBoardSize }, (_, column) => (row === 7 && column >= 6 ? 0 : 1)));

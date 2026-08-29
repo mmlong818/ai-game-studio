@@ -353,13 +353,20 @@ test("十三类艺术化游戏都会产出可解析脚本、角色拆分位图�
       }
       if (template === "block-place") {
         const script = readFileSync(join(output, "app.js"), "utf8");
+        const html = readFileSync(join(output, "index.html"), "utf8");
         assert.match(script, /function canPlaceBlockPiece/);
         assert.match(script, /function findLineClear/);
         assert.match(script, /function hasAnyPlacement/);
         assert.match(script, /function blockTrayLayout\(/);
         assert.match(script, /function drawBlockCell\(/);
-        assert.match(script, /style: "flat-light-dock"/);
+        assert.match(script, /const blockBlueprints = \[/);
+        assert.match(script, /function createBlockOpening\(/);
+        assert.match(script, /function restoreBlockSession\(/);
+        assert.match(script, /style: "floating-pedestals"/);
         assert.match(script, /greenContrast: 5\.68/);
+        assert.match(html, /data-block-mode="journey"/);
+        assert.match(html, /data-block-mode="daily"/);
+        assert.match(html, /data-block-mode="endless"/);
       }
       if (template === "region-logic") {
         const script = readFileSync(join(output, "app.js"), "utf8");

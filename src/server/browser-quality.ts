@@ -798,23 +798,74 @@ export async function inspectStageDClassicInBrowser(root: string, template: Stag
     }
 
     if (template === "block-place") {
+      const levelNames = new Set<string>();
+      const openingSignatures = new Set<string>();
+      const chapters = new Set<string>();
+      let firstLevel: any = null;
+      let finalLevel: any = null;
+      for (let level = 1; level <= 20; level += 1) {
+        const state = await page.evaluate((targetLevel) => { const debug = (window as any).__GAME_DEBUG__; debug.setLevel(targetLevel); debug.restart(); return debug.getState(); }, level);
+        levelNames.add(state.runtime.levelName);
+        openingSignatures.add(state.runtime.openingSignature);
+        chapters.add(state.runtime.chapter);
+        if (level === 1) firstLevel = state.runtime;
+        if (level === 20) finalLevel = state.runtime;
+      }
+      await page.evaluate(() => { const debug = (window as any).__GAME_DEBUG__; debug.setLevel(1); debug.restart(); });
       const tierOne = await stageCDebugState(page);
+      const batchSurvey = await stageCDebugAction(page, "surveyBatches") as { count: number; valid: number };
       for (let index = 0; index < 4; index += 1) {
         await stageCDebugAction(page, "regenerate");
         const state = await stageCDebugState(page);
         if (!state.runtime.batchGuaranteed) throw new Error("果冻填阵生成了不可连续放完的候选批次。 ");
       }
+      const pointerProbe = await stageCDebugAction(page, "pointerProbe") as { from: { x: number; y: number }; to: { x: number; y: number }; canvas: { width: number; height: number } } | null;
+      const blockCanvas = await page.locator("#game-canvas").boundingBox();
+      if (!pointerProbe || !blockCanvas) throw new Error("果冻填阵没有提供可执行的真实拖动目标。 ");
+      const blockScaleX = blockCanvas.width / pointerProbe.canvas.width;
+      const blockScaleY = blockCanvas.height / pointerProbe.canvas.height;
+      await page.mouse.move(blockCanvas.x + pointerProbe.from.x * blockScaleX, blockCanvas.y + pointerProbe.from.y * blockScaleY);
+      await page.mouse.down();
+      await page.mouse.move(blockCanvas.x + pointerProbe.to.x * blockScaleX, blockCanvas.y + pointerProbe.to.y * blockScaleY, { steps: 8 });
+      await page.mouse.up();
+      await page.waitForTimeout(80);
+      const dragged = await stageCDebugState(page);
       await stageCDebugAction(page, "hint");
+      const hinted = await stageCDebugState(page);
+      await page.reload({ waitUntil: "domcontentloaded" });
+      await page.waitForFunction(() => Boolean((window as any).__GAME_DEBUG__), undefined, { timeout: 8_000 });
+      await page.locator("#start:visible").click();
+      const restored = await stageCDebugState(page);
+      await stageCDebugAction(page, "clearSession");
+      await page.evaluate(() => { const debug = (window as any).__GAME_DEBUG__; debug.setEndlessMode(); debug.restart(); });
+      const endless = await stageCDebugState(page);
+      await stageCDebugAction(page, "legalAction");
+      const endlessScored = await stageCDebugState(page);
+      await page.evaluate(() => { (window as any).__GAME_DEBUG__.restart(); });
+      const endlessRestarted = await stageCDebugState(page);
+      await page.evaluate(() => { const debug = (window as any).__GAME_DEBUG__; debug.setDailyMode(); debug.restart(); });
+      const daily = await stageCDebugState(page);
+      await page.evaluate(() => { (window as any).__GAME_DEBUG__.restart(); });
+      const dailyRestarted = await stageCDebugState(page);
+      await page.evaluate(() => { const debug = (window as any).__GAME_DEBUG__; debug.setJourneyMode(); debug.restart(); });
       await stageCDebugAction(page, "prepareDanger");
       const danger = await stageCDebugState(page);
-      await page.evaluate(() => { const debug = (window as any).__GAME_DEBUG__; debug.setLevel(17); debug.restart(); });
+      await page.evaluate(() => { const debug = (window as any).__GAME_DEBUG__; debug.setLevel(20); debug.restart(); });
       const tierFive = await stageCDebugState(page);
       if (!tierOne.runtime.batchGuaranteed || !danger.runtime.danger) throw new Error("果冻填阵缺少可解批次保证或危险预警。 ");
-      if (tierOne.runtime.candidateUi.style !== "flat-light-dock" || tierOne.runtime.candidateUi.slotWidth < 190 || tierOne.runtime.candidateUi.selectedOutlineWidth < 4 || !tierOne.runtime.candidateUi.numberedSlots) throw new Error("果冻填阵候选框缺少清晰的扁平卡槽层级。 ");
+      if (tierOne.runtime.blueprintCount !== 20 || levelNames.size !== 20 || chapters.size !== 5 || openingSignatures.size < 18) throw new Error(`果冻填阵二十关蓝图或开局变化不足：${JSON.stringify({ levelNames: levelNames.size, chapters: chapters.size, openingSignatures: openingSignatures.size })}。`);
+      if (!(finalLevel.target > firstLevel.target) || !(finalLevel.hardShapeRate > firstLevel.hardShapeRate) || finalLevel.hintsRemaining >= firstLevel.hintsRemaining) throw new Error("果冻填阵没有形成目标、复杂构件和提示资源的五章渐进。 ");
+      if (!batchSurvey || batchSurvey.count !== 100 || batchSurvey.valid !== 100) throw new Error(`果冻填阵百批候选可连续落完验证失败：${JSON.stringify(batchSurvey)}。`);
+      if (dragged.runtime.piecesRemaining !== 2 || dragged.runtime.score <= 0 || !restored.runtime.restored || restored.runtime.score !== dragged.runtime.score) throw new Error(`果冻填阵真实拖动或中断续玩不可用：${JSON.stringify({ dragged: dragged.runtime, restored: restored.runtime })}。`);
+      if (!(hinted.runtime.hintsRemaining < dragged.runtime.hintsRemaining)) throw new Error("果冻填阵提示次数没有消耗。 ");
+      if (endless.runtime.mode !== "endless" || daily.runtime.mode !== "daily") throw new Error("果冻填阵旅程、每日与无尽模式没有共用运行时切换。 ");
+      if (endlessScored.runtime.bestScore <= 0 || endlessRestarted.runtime.bestScore !== endlessScored.runtime.bestScore) throw new Error("果冻填阵无尽模式个人最佳没有跨局保留。 ");
+      if (daily.runtime.dailySeed <= 0 || dailyRestarted.runtime.dailySeed !== daily.runtime.dailySeed || dailyRestarted.runtime.candidateSignature !== daily.runtime.candidateSignature) throw new Error("果冻填阵每日模式同日局面不可复现。 ");
+      if (tierOne.runtime.candidateUi.style !== "floating-pedestals" || tierOne.runtime.candidateUi.slotWidth < 190 || tierOne.runtime.candidateUi.selectedOutlineWidth < 2 || !tierOne.runtime.candidateUi.selectedHalo || !tierOne.runtime.candidateUi.numberedSlots) throw new Error("果冻填阵候选底座缺少清晰的悬浮层级。 ");
       if (tierOne.runtime.candidateUi.greenContrast < 4.5 || tierOne.runtime.candidateUi.greenPlate !== "#d9f7e9" || tierOne.runtime.candidateUi.greenOutline !== "#0b6b53") throw new Error("果冻填阵绿色拼块对比度不足。 ");
       if (!(tierFive.runtime.hardShapeRate > tierOne.runtime.hardShapeRate)) throw new Error("果冻填阵高阶关卡没有提高复杂构件比例。 ");
-      checks.push("浅色扁平候选底座", "编号与高对比选中态", "绿色拼块 4.5:1 以上对比", "整块候选位图", "拖动落点预览", "可解候选批次", "连击与消除反馈", "无落点危险预警");
-      evidence.tierOne = tierOne.runtime; evidence.danger = danger.runtime; evidence.tierFive = tierFive.runtime;
+      checks.push("20 个五章渐进局面", "旅程、每日与无尽模式", "无尽最佳与每日同日复现", "真实指针拖动与抬升预览", "中断续玩", "百批可连续落完候选", "悬浮候选底座与高对比选中态", "绿色拼块 4.5:1 以上对比", "连击、消除与危险预警");
+      evidence.tierOne = tierOne.runtime; evidence.dragged = dragged.runtime; evidence.hinted = hinted.runtime; evidence.restored = restored.runtime; evidence.endless = endless.runtime; evidence.endlessScored = endlessScored.runtime; evidence.endlessRestarted = endlessRestarted.runtime; evidence.daily = daily.runtime; evidence.dailyRestarted = dailyRestarted.runtime; evidence.danger = danger.runtime; evidence.tierFive = tierFive.runtime; evidence.progression = { levelNames: levelNames.size, chapters: chapters.size, openingSignatures: openingSignatures.size }; evidence.batchSurvey = batchSurvey;
     }
 
     if (template === "polyomino-fit") {
