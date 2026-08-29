@@ -1,11 +1,11 @@
-const CACHE_NAME = 'star-dream-duel-v6';
+const CACHE_NAME = 'star-dream-duel-v7';
 const APP_SHELL = [
   './',
   './index.html',
-  './styles.css?v=6',
-  './app.js?v=6',
-  './game-core.js?v=6',
-  './manifest.webmanifest?v=6',
+  './styles.css?v=7',
+  './app.js?v=7',
+  './game-core.js?v=7',
+  './manifest.webmanifest?v=7',
   './assets/tiles-v2/moon.png',
   './assets/tiles-v2/cloud.png',
   './assets/tiles-v2/star.png',

@@ -621,8 +621,56 @@ export async function inspectStarDreamStageEInBrowser(root: string): Promise<Sta
     });
     if (tileArt.uniqueSources !== 6 || tileArt.minimumDisplaySize < 36) throw new Error(`星梦对决位图卡面数量或显示尺寸不达标：${JSON.stringify(tileArt)}。`);
     const initial = await stageEDebugState(page);
+    if (initial?.runtime?.tacticalRuleVersion !== 2 || initial.runtime.campaignSignatureCount !== 20 || initial.runtime.chapterCount !== 5) {
+      throw new Error(`星梦对决没有形成 20 个独立任务和五章战术合同：${JSON.stringify(initial?.runtime)}。`);
+    }
+    if (initial.runtime.aiLookahead !== 2 || initial.runtime.aiFairness !== "same-board-same-zone-same-resources" || initial.runtime.aiZoneReadable !== true) {
+      throw new Error("星梦对决挑战 AI 没有两层回应评估，或 AI 半区仍不可读取。 ");
+    }
+    if (Object.keys(initial.runtime.tileRoles ?? {}).length !== 6) throw new Error("星梦对决六类棋子仍没有独立战术职责。 ");
     const overflow = await page.evaluate(() => Math.max(0, document.documentElement.scrollHeight - innerHeight));
     if (overflow > 1) throw new Error(`星梦对决 1280×720 仍纵向溢出 ${overflow}px。`);
+    const qualityRoot = join(root, "_studio", "quality");
+    mkdirSync(qualityRoot, { recursive: true });
+    await page.screenshot({ path: join(qualityRoot, "star-dream-duel-desktop.png"), fullPage: true });
+    await page.evaluate(() => {
+      const debug = (window as any).__GAME_DEBUG__;
+      debug.setLevel(5);
+      debug.restart();
+      debug.chargeSkills();
+      debug.useBloom();
+      debug.useVeil();
+    });
+    const skillState = await stageEDebugState(page);
+    if (skillState.runtime.playerEnergy.bloom !== 2 || skillState.runtime.playerEnergy.veil !== 2 || skillState.runtime.playerShield !== 20) {
+      throw new Error(`星梦对决技能没有正确消耗能量并产生持续状态：${JSON.stringify(skillState.runtime)}。`);
+    }
+    await page.screenshot({ path: join(qualityRoot, "star-dream-duel-skills.png"), fullPage: true });
+    await page.evaluate(async () => {
+      const debug = (window as any).__GAME_DEBUG__;
+      debug.setLevel(9);
+      debug.restart();
+      debug.primeFourMatch();
+      await debug.triggerPrimedFour();
+    });
+    const specialState = await stageEDebugState(page);
+    if (specialState.runtime.specialCount < 1 || !specialState.runtime.specialTypes.includes("row") || specialState.phase !== "player") {
+      throw new Error(`星梦对决四连没有生成持续星轨并保留行动权：${JSON.stringify(specialState)}。`);
+    }
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.screenshot({ path: join(qualityRoot, "star-dream-duel-special-phone.png"), fullPage: true });
+    await page.evaluate(() => {
+      const debug = (window as any).__GAME_DEBUG__;
+      debug.setLevel(20);
+      debug.restart();
+    });
+    const finalLevelState = await stageEDebugState(page);
+    if (!finalLevelState.runtime.allowSkills || !finalLevelState.runtime.allowShapes || finalLevelState.runtime.blockerCount !== 6 || !finalLevelState.runtime.blockerLayoutSignature) {
+      throw new Error(`星梦对决终章没有同时启用技能、特殊构形和独立障碍布局：${JSON.stringify(finalLevelState.runtime)}。`);
+    }
+    const mobileOverflow = await page.evaluate(() => Math.max(0, document.documentElement.scrollHeight - innerHeight));
+    if (mobileOverflow > 1) throw new Error(`星梦对决 390×844 仍纵向溢出 ${mobileOverflow}px。`);
+    await page.screenshot({ path: join(qualityRoot, "star-dream-duel-final-phone.png"), fullPage: true });
     await page.reload({ waitUntil: "domcontentloaded" });
     await page.locator("#ai-difficulty").selectOption("challenging");
     await page.locator("#setup-start").click();
@@ -638,7 +686,7 @@ export async function inspectStarDreamStageEInBrowser(root: string): Promise<Sta
       if (await page.locator("body").getAttribute("data-game-state") !== "lost") throw new Error("星梦对决失败分支没有进入 lost。 ");
     }
     if (runtimeErrors.length) throw new Error(`星梦对决浏览器错误：${runtimeErrors.join(" | ")}`);
-    const result: StageEQualityResult = { template: "star-dream-duel", completedRuns: 3, failedRuns: 2, evidence: { initial: initial?.runtime, restored: restored?.runtime, overflow, tileArt } };
+    const result: StageEQualityResult = { template: "star-dream-duel", completedRuns: 3, failedRuns: 2, evidence: { initial: initial?.runtime, skills: skillState?.runtime, special: specialState?.runtime, finalLevel: finalLevelState?.runtime, restored: restored?.runtime, overflow, mobileOverflow, tileArt } };
     mkdirSync(join(root, "_studio"), { recursive: true });
     writeFileSync(join(root, "_studio", "STAGE_E_QUALITY_REPORT.json"), `${JSON.stringify({ checkedAt: new Date().toISOString(), ...result }, null, 2)}\n`, "utf8");
     return result;

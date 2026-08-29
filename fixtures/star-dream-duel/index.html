@@ -10,7 +10,7 @@
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="apple-mobile-web-app-title" content="星梦对决">
     <title>星梦对决 · AI 三消竞技</title>
-    <link rel="manifest" href="manifest.webmanifest?v=6">
+    <link rel="manifest" href="manifest.webmanifest?v=7">
     <link rel="icon" href="icons/app-icon.svg" type="image/svg+xml">
     <link rel="apple-touch-icon" href="icons/app-icon-192.png">
     <link rel="preload" as="image" href="assets/tiles-v2/moon.png">
@@ -19,7 +19,7 @@
     <link rel="preload" as="image" href="assets/tiles-v2/flower.png">
     <link rel="preload" as="image" href="assets/tiles-v2/heart.png">
     <link rel="preload" as="image" href="assets/tiles-v2/drop.png">
-    <link rel="stylesheet" href="styles.css?v=6">
+    <link rel="stylesheet" href="styles.css?v=7">
   </head>
   <body data-game-state="idle" data-running="false">
     <div class="sky" aria-hidden="true">
@@ -54,7 +54,7 @@
 
       <section class="arena" aria-label="三消对战区域">
         <aside class="status-panel" aria-label="对战信息">
-          <section class="fighter fighter--ai" aria-label="AI 对手积分">
+          <section class="fighter fighter--ai" aria-label="AI 对手生命">
             <div class="fighter__head">
               <div class="avatar avatar--ai" aria-hidden="true">
                 <span class="avatar__ear avatar__ear--left"></span>
@@ -65,9 +65,12 @@
                 <span class="fighter__role">战术 AI</span>
                 <strong>露娜</strong>
               </div>
-              <output class="fighter__score" id="ai-score" aria-label="AI 当前积分">100</output>
+              <output class="fighter__score" id="ai-score" aria-label="AI 当前生命">100</output>
             </div>
             <div class="score-track" aria-hidden="true"><span id="ai-score-bar"></span></div>
+            <div class="fighter__resources" aria-label="露娜战术资源">
+              <span>盾 <b id="ai-shield">0</b></span><span>潮 <b id="ai-tide">0</b></span><span>花 <b id="ai-bloom">0</b></span><span>月 <b id="ai-veil">0</b></span>
+            </div>
           </section>
 
           <div class="round-card">
@@ -81,7 +84,7 @@
             </div>
           </div>
 
-          <section class="fighter fighter--player" aria-label="玩家积分">
+          <section class="fighter fighter--player" aria-label="玩家生命">
             <div class="fighter__head">
               <div class="avatar avatar--player" aria-hidden="true">
                 <span class="avatar__shine">✦</span>
@@ -91,9 +94,12 @@
                 <span class="fighter__role">梦境旅人</span>
                 <strong>你</strong>
               </div>
-              <output class="fighter__score" id="player-score" aria-label="玩家当前积分">100</output>
+              <output class="fighter__score" id="player-score" aria-label="玩家当前生命">100</output>
             </div>
             <div class="score-track" aria-hidden="true"><span id="player-score-bar"></span></div>
+            <div class="fighter__resources" aria-label="你的战术资源">
+              <span>盾 <b id="player-shield">0</b></span><span>潮 <b id="player-tide">0</b></span><span>花 <b id="player-bloom">0</b></span><span>月 <b id="player-veil">0</b></span>
+            </div>
           </section>
 
           <section class="rule-card" aria-labelledby="rules-title">
@@ -103,8 +109,8 @@
             </div>
             <ol>
               <li><span>1</span>只交换下半区的相邻棋子</li>
-              <li><span>2</span>3 枚得 5 分，每多 1 枚翻倍</li>
-              <li><span>3</span>后续连消都记在当前行动方</li>
+              <li><span>2</span>星星攻击、爱心恢复，水花月为技能充能</li>
+              <li><span>3</span>四连续行；全部连消归当前行动方</li>
             </ol>
           </section>
 
@@ -133,7 +139,7 @@
             <div class="ai-veil" aria-hidden="true">
               <div class="ai-veil__badge">
                 <svg viewBox="0 0 24 24"><path d="M9 11a3 3 0 1 1 6 0v2H9v-2Zm-2 2h10v7H7v-7Zm2-7V4m6 2V4M4 10H2m20 0h-2"/></svg>
-                AI 操作区 · 不可操作
+                AI 操作区 · 可观察不可交换
               </div>
             </div>
             <div class="zone-divider" aria-hidden="true">
@@ -144,8 +150,13 @@
 
           <div class="move-guide">
             <span class="move-guide__gesture" aria-hidden="true"><i></i><b>↔</b><i></i></span>
-            <p><strong>交换相邻棋子</strong><span>连成 3 枚或更多即可攻击</span></p>
+            <p><strong>选择战术交换</strong><span>星攻 · 心愈 · 水花月充能</span></p>
             <button id="hint-button" type="button">给我提示</button>
+          </div>
+          <div class="skill-bar" aria-label="战术技能">
+            <button type="button" data-skill="tide" aria-describedby="skill-tide-help"><strong>潮汐换位</strong><span><b id="skill-tide-value">0</b>/8</span><small id="skill-tide-help">跨格交换并形成消除</small></button>
+            <button type="button" data-skill="bloom" aria-describedby="skill-bloom-help"><strong>绽放复苏</strong><span><b id="skill-bloom-value">0</b>/10</span><small id="skill-bloom-help">恢复生命并强化星击</small></button>
+            <button type="button" data-skill="veil" aria-describedby="skill-veil-help"><strong>月幕</strong><span><b id="skill-veil-value">0</b>/10</span><small id="skill-veil-help">获得 20 点伤害护盾</small></button>
           </div>
         </section>
       </section>
@@ -164,7 +175,7 @@
             <h2 id="setup-title">欢迎来到星梦对决</h2>
           </div>
         </div>
-        <p class="setup-card__description" id="setup-description">你和露娜共用一张棋盘，各自控制一半区域。先了解 3 条规则，再选择本局总分。</p>
+        <p class="setup-card__description" id="setup-description">你和露娜共用一张棋盘，各自控制一半区域。不同棋子承担攻击、恢复和充能职责。</p>
 
         <div class="campaign-picker">
           <label for="campaign-level">星梦旅程</label>
@@ -172,9 +183,9 @@
           <small id="campaign-progress" data-campaign-progress>第 1 / 20 关 · 认识规则</small>
           <label for="ai-difficulty">AI 难度</label>
           <select id="ai-difficulty" aria-label="选择 AI 难度">
-            <option value="relaxed">陪练 · 会保留次优选择</option>
-            <option value="standard" selected>标准 · 在高价值走法中选择</option>
-            <option value="challenging">挑战 · 优先最佳连消</option>
+            <option value="relaxed">陪练 · 合法但不追求最优</option>
+            <option value="standard" selected>标准 · 权衡攻击、恢复与充能</option>
+            <option value="challenging">挑战 · 预判你的最佳回应</option>
           </select>
         </div>
 
@@ -185,26 +196,26 @@
           </article>
           <article>
             <span class="guide-steps__number">2</span>
-            <div><strong>消除会攻击对手</strong><p>3 枚得 5 分，每多 1 枚积分翻倍。</p></div>
+            <div><strong>棋子作用各不相同</strong><p>星星攻击、爱心恢复；水滴、花朵、月光为技能充能。</p></div>
           </article>
           <article>
             <span class="guide-steps__number">3</span>
-            <div><strong>连消归当前行动方</strong><p>新棋子落下产生的消除，也计入触发者。</p></div>
+            <div><strong>高价值构形改变回合</strong><p>四连可续行；新棋子落下的连消仍归触发者。</p></div>
           </article>
         </div>
 
         <div class="score-picker">
           <div class="score-picker__heading">
             <div>
-              <label for="score-range">选择本局总分</label>
-              <span>双方使用相同初始积分</span>
+              <label for="score-range">选择本局生命</label>
+              <span>双方使用相同初始生命</span>
             </div>
             <output id="setup-score-value" for="score-range" aria-live="polite">100</output>
           </div>
-          <div class="score-picker__controls" role="group" aria-label="调整本局总分">
-            <button id="score-minus" type="button" aria-label="减少 100 分">−</button>
+          <div class="score-picker__controls" role="group" aria-label="调整本局生命">
+            <button id="score-minus" type="button" aria-label="减少 100 点生命">−</button>
             <input id="score-range" name="starting-score" type="range" min="100" max="1000" step="100" value="100">
-            <button id="score-plus" type="button" aria-label="增加 100 分">＋</button>
+            <button id="score-plus" type="button" aria-label="增加 100 点生命">＋</button>
           </div>
           <div class="score-picker__range" aria-hidden="true"><span>100</span><span>每次 100</span><span>1000</span></div>
         </div>
@@ -213,7 +224,7 @@
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9v6h4l5 4V5L8 9H4Zm12.5 1.1a3 3 0 0 1 0 3.8M18.8 7a7 7 0 0 1 0 10"/></svg>
           <span id="sound-toggle-label">声音开启</span>
         </button>
-        <button class="setup-card__start" id="setup-start" type="button">以 <span id="setup-start-score">100</span> 分开始对局</button>
+        <button class="setup-card__start" id="setup-start" type="button">以 <span id="setup-start-score">100</span> 点生命开始对局</button>
         <p class="install-note">添加到手机主屏幕，即可全屏并支持离线启动。</p>
       </section>
     </div>
@@ -233,6 +244,6 @@
       </section>
     </div>
 
-    <script type="module" src="app.js?v=6"></script>
+    <script type="module" src="app.js?v=7"></script>
   </body>
 </html>

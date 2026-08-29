@@ -3,21 +3,26 @@ import {
   MIN_STARTING_SCORE,
   SCORE_STEP,
   STARTING_SCORE,
+  TACTICAL_RULE_VERSION,
   applyAttack,
-  calculateGroupScore,
-  calculateMatchScore,
+  calculateTacticalEffects,
   canOwnerSwap,
-  chooseAiMove,
+  chooseTacticalAiMove,
+  createSpecialFromGroups,
   createBoard,
   createSeededRng,
+  expandSpecialMatches,
   findMatchGroups,
   findMatches,
   findValidMoves,
   isAdjacent,
   normalizeStartingScore,
+  prismSwapTargets,
   removeAndCollapse,
-  swapTiles
-} from './game-core.js?v=6';
+  swapTiles,
+  tileBase,
+  tileSpecial,
+} from './game-core.js?v=7';
 
 const TILE_ART = {
   moon: './assets/tiles-v2/moon.png',
@@ -29,20 +34,59 @@ const TILE_ART = {
 };
 const TILE_LABEL = { moon: '月光', cloud: '云朵', star: '星星', flower: '花朵', heart: '爱心', drop: '水滴' };
 
-const CAMPAIGN_STORAGE_KEY = 'star-dream-duel:campaign:v1';
-const DUEL_SESSION_KEY = 'star-dream-duel:session:v2';
-const CAMPAIGN_TIERS = ['认识规则', '稳定节奏', '加入变化', '组合压力', '最终掌握'];
-const CAMPAIGN_RULES = ['基础交换', '观察连消', '保留下半区', '反制露娜'];
-const CAMPAIGN_LEVELS = Array.from({ length: 20 }, (_, index) => {
+const CAMPAIGN_STORAGE_KEY = 'star-dream-duel:campaign:v2';
+const DUEL_SESSION_KEY = 'star-dream-duel:session:v3';
+const CAMPAIGN_CHAPTERS = ['星击入门', '三相充能', '构形反击', '封锁博弈', '月蚀决胜'];
+const LEVEL_BLUEPRINTS = [
+  ['初见星痕', '用星星造成第一次伤害', 100, 'balanced'],
+  ['心光回响', '在受伤后用爱心恢复生命', 100, 'balanced'],
+  ['四星续行', '完成四连并获得额外回合', 110, 'tempo'],
+  ['边界攻防', '跨越分区观察完整连消', 110, 'balanced'],
+  ['潮汐初醒', '积攒水滴能量并读取技能收益', 120, 'tide'],
+  ['绽放复苏', '使用绽放恢复并强化下一击', 120, 'bloom'],
+  ['月幕守护', '用护盾吸收露娜的星击', 130, 'veil'],
+  ['三相抉择', '在进攻、恢复和充能之间取舍', 130, 'balanced'],
+  ['横贯星轨', '制造横向四连并保留先手', 140, 'tempo'],
+  ['纵落星轨', '制造纵向四连改变落子结构', 140, 'tempo'],
+  ['新星交汇', '利用交叉消除扩大收益', 150, 'shape'],
+  ['棱镜前夜', '争夺五连与连续行动', 150, 'shape'],
+  ['雾门试探', '识别低收益交换留下的反击口', 160, 'deny'],
+  ['潮锁反制', '用充能路线破坏露娜的准备', 160, 'tide'],
+  ['护幕消耗', '先破盾再完成致命星击', 170, 'veil'],
+  ['双层预判', '预判露娜回应后再选择走法', 170, 'deny'],
+  ['月蚀猎手', '迎战偏好直接进攻的露娜', 180, 'attack'],
+  ['繁花守卫', '迎战善于恢复与拖延的露娜', 180, 'bloom'],
+  ['潮汐策士', '迎战会为下一回合布局的露娜', 190, 'tide'],
+  ['终局星冕', '在完整规则下赢得最终对决', 200, 'master'],
+];
+const BLOCKER_LAYOUTS = [
+  [{ row: 2, col: 3 }, { row: 5, col: 4 }],
+  [{ row: 1, col: 2 }, { row: 2, col: 5 }, { row: 5, col: 2 }, { row: 6, col: 5 }],
+  [{ row: 2, col: 1 }, { row: 2, col: 6 }, { row: 5, col: 1 }, { row: 5, col: 6 }],
+  [{ row: 1, col: 3 }, { row: 2, col: 4 }, { row: 5, col: 3 }, { row: 6, col: 4 }],
+  [{ row: 1, col: 1 }, { row: 2, col: 6 }, { row: 5, col: 6 }, { row: 6, col: 1 }],
+  [{ row: 1, col: 4 }, { row: 2, col: 3 }, { row: 5, col: 4 }, { row: 6, col: 3 }],
+  [{ row: 1, col: 2 }, { row: 1, col: 5 }, { row: 6, col: 2 }, { row: 6, col: 5 }],
+  [{ row: 1, col: 3 }, { row: 2, col: 1 }, { row: 2, col: 6 }, { row: 5, col: 1 }, { row: 5, col: 6 }, { row: 6, col: 4 }],
+];
+const CAMPAIGN_LEVELS = LEVEL_BLUEPRINTS.map(([name, mission, startingScore, opponentStyle], index) => {
   const tier = Math.floor(index / 4) + 1;
   return {
     number: index + 1,
+    name,
+    mission,
+    rule: name,
     tier,
-    tierLabel: CAMPAIGN_TIERS[tier - 1],
-    rule: CAMPAIGN_RULES[index % 4],
-    startingScore: [100, 200, 300, 500, 700][tier - 1],
-    playerDamageMultiplier: [1, 0.98, 0.96, 0.94, 0.92][tier - 1],
-    aiDamageMultiplier: [1, 1.08, 1.16, 1.25, 1.35][tier - 1],
+    tierLabel: CAMPAIGN_CHAPTERS[tier - 1],
+    startingScore,
+    opponentStyle,
+    allowExtraTurn: index >= 2,
+    allowSkills: index >= 4,
+    allowShapes: index >= 8,
+    blockers: index >= 12 ? BLOCKER_LAYOUTS[index - 12] : [],
+    aiLookahead: index >= 15 ? 2 : 1,
+    playerDamageMultiplier: 1,
+    aiDamageMultiplier: [0.88, 0.94, 1, 1.05, 1.1][tier - 1],
     seed: 0x5f3759df ^ Math.imul(index + 1, 0x9e3779b1),
   };
 });
@@ -77,6 +121,17 @@ const setupStart = document.querySelector('#setup-start');
 const campaignSelect = document.querySelector('#campaign-level');
 const campaignProgress = document.querySelector('#campaign-progress');
 const aiDifficultySelect = document.querySelector('#ai-difficulty');
+const resourceElements = {
+  player: {
+    shield: document.querySelector('#player-shield'), tide: document.querySelector('#player-tide'),
+    bloom: document.querySelector('#player-bloom'), veil: document.querySelector('#player-veil'),
+  },
+  ai: {
+    shield: document.querySelector('#ai-shield'), tide: document.querySelector('#ai-tide'),
+    bloom: document.querySelector('#ai-bloom'), veil: document.querySelector('#ai-veil'),
+  },
+};
+const skillButtons = [...document.querySelectorAll('[data-skill]')];
 
 let state;
 let rng;
@@ -119,12 +174,12 @@ function syncCampaignUi() {
   campaignSelect.replaceChildren(...CAMPAIGN_LEVELS.map((item, index) => {
     const option = document.createElement('option');
     option.value = String(index);
-    option.textContent = `${String(item.number).padStart(2, '0')} · ${item.tierLabel} · ${item.rule}`;
+    option.textContent = `${String(item.number).padStart(2, '0')} · ${item.tierLabel} · ${item.name}`;
     option.disabled = index > campaignMaxUnlocked;
     option.selected = index === campaignLevelIndex;
     return option;
   }));
-  campaignProgress.textContent = `第 ${level.number} / 20 关 · ${level.tierLabel} · ${level.rule}`;
+  campaignProgress.textContent = `第 ${level.number} / 20 关 · ${level.tierLabel} · ${level.mission}`;
   document.body.dataset.campaignCurrentLevel = String(level.number);
 }
 
@@ -147,16 +202,17 @@ function setSessionState(nextState) {
 function saveDuelSession() {
   if (!state || state.phase !== 'player' || document.body.dataset.gameState !== 'playing') return;
   try {
-    localStorage.setItem(DUEL_SESSION_KEY, JSON.stringify({ schemaVersion: 2, level: currentCampaignLevel().number, aiDifficulty, state, updatedAt: Date.now() }));
+    localStorage.setItem(DUEL_SESSION_KEY, JSON.stringify({ schemaVersion: 3, level: currentCampaignLevel().number, aiDifficulty, state, updatedAt: Date.now() }));
   } catch {}
 }
 
 function restoreDuelSession() {
   try {
     const saved = JSON.parse(localStorage.getItem(DUEL_SESSION_KEY) || 'null');
-    if (!saved || saved.schemaVersion !== 2 || saved.level !== currentCampaignLevel().number || saved.aiDifficulty !== aiDifficulty || saved.state?.phase !== 'player') return false;
+    if (!saved || saved.schemaVersion !== 3 || saved.level !== currentCampaignLevel().number || saved.aiDifficulty !== aiDifficulty || saved.state?.phase !== 'player') return false;
     state = saved.state;
     state.selected = null;
+    state.skillMode = null;
     duelStep = 'player-ready';
     return true;
   } catch { return false; }
@@ -182,17 +238,22 @@ function renderBoard() {
   const fragment = document.createDocumentFragment();
   for (let row = 0; row < state.board.length; row += 1) {
     for (let col = 0; col < state.board[row].length; col += 1) {
-      const type = state.board[row][col];
+      const rawTile = state.board[row][col];
+      const type = tileBase(rawTile);
+      const special = tileSpecial(rawTile);
+      const blocker = rawTile === 'blocker';
       const button = document.createElement('button');
       button.type = 'button';
-      button.className = `tile tile--${type}`;
+      button.className = `tile ${blocker ? 'tile--blocker' : `tile--${type}`}${special ? ` tile--special tile--special-${special}` : ''}`;
       button.dataset.row = String(row);
       button.dataset.col = String(col);
       button.dataset.position = `${row}:${col}`;
       button.setAttribute('role', 'gridcell');
-      button.setAttribute('aria-label', `${row < 4 ? 'AI 区' : '玩家区'}第 ${row + 1} 行第 ${col + 1} 列${TILE_LABEL[type]}棋子`);
-      button.disabled = row < 4 || state.phase !== 'player';
-      button.innerHTML = `<span class="tile__face"><img src="${TILE_ART[type]}" alt="" width="512" height="512" draggable="false"></span>`;
+      const specialLabel = { row: '横向星轨', column: '纵向星轨', nova: '新星', prism: '棱镜' }[special] ?? '';
+      button.setAttribute('aria-label', `${row < 4 ? 'AI 区' : '玩家区'}第 ${row + 1} 行第 ${col + 1} 列${blocker ? '封印障碍' : specialLabel || TILE_LABEL[type]}棋子`);
+      button.disabled = blocker || row < 4 || state.phase !== 'player';
+      const artType = type === 'prism' ? 'star' : blocker ? 'moon' : type;
+      button.innerHTML = `<span class="tile__face"><img src="${TILE_ART[artType]}" alt="" width="512" height="512" draggable="false"></span>${blocker ? '<i class="tile__blocker-mark" aria-hidden="true">×</i>' : ''}${special ? `<i class="tile__special-mark" aria-hidden="true">${{ row: '↔', column: '↕', nova: '✦', prism: '◇' }[special]}</i>` : ''}`;
       if (state.selected && state.selected.row === row && state.selected.col === col) {
         button.classList.add('is-selected');
         button.setAttribute('aria-pressed', 'true');
@@ -207,6 +268,33 @@ function setScoreDisplay(element, bar, value) {
   element.value = formatScore(value);
   element.textContent = formatScore(value);
   bar.style.width = `${Math.max(0, value / state.startingScore) * 100}%`;
+}
+
+function actorEnergy(actor) {
+  return actor === 'player' ? state.playerEnergy : state.aiEnergy;
+}
+
+function actorShield(actor) {
+  return actor === 'player' ? state.playerShield : state.aiShield;
+}
+
+function renderResources() {
+  if (!state) return;
+  for (const actor of ['player', 'ai']) {
+    const energy = actorEnergy(actor);
+    resourceElements[actor].shield.textContent = String(actorShield(actor) ?? 0);
+    resourceElements[actor].tide.textContent = String(energy?.tide ?? 0);
+    resourceElements[actor].bloom.textContent = String(energy?.bloom ?? 0);
+    resourceElements[actor].veil.textContent = String(energy?.veil ?? 0);
+  }
+  const costs = { tide: 8, bloom: 10, veil: 10 };
+  for (const button of skillButtons) {
+    const skill = button.dataset.skill;
+    document.querySelector(`#skill-${skill}-value`).textContent = String(state.playerEnergy?.[skill] ?? 0);
+    const available = currentCampaignLevel().allowSkills && state.phase === 'player' && (state.playerEnergy?.[skill] ?? 0) >= costs[skill];
+    button.disabled = !available;
+    button.classList.toggle('is-armed', state.skillMode === skill);
+  }
 }
 
 function renderStatus() {
@@ -235,6 +323,30 @@ function renderStatus() {
   damageSummary.textContent = state.playerDamage + state.aiDamage
     ? `你造成 ${formatScore(state.playerDamage)} · AI 造成 ${formatScore(state.aiDamage)}`
     : '双方尚未出手';
+  renderResources();
+}
+
+function addEnergy(actor, gains) {
+  if (!currentCampaignLevel().allowSkills) return;
+  const energy = actorEnergy(actor);
+  for (const skill of ['tide', 'bloom', 'veil']) energy[skill] = Math.min(12, (energy[skill] ?? 0) + (gains[skill] ?? 0));
+}
+
+function applyBattleEffects(actor, effects) {
+  const level = currentCampaignLevel();
+  const energy = level.allowSkills ? effects.energy : { tide: 0, bloom: 0, veil: 0 };
+  const rawDamage = level.allowShapes ? effects.damage : effects.counts.star * 4 + Math.max(0, (effects.cascadeLevel ?? 1) - 1);
+  const boostKey = actor === 'player' ? 'playerAttackBoost' : 'aiAttackBoost';
+  const multiplier = actor === 'ai' ? level.aiDamageMultiplier : level.playerDamageMultiplier;
+  const boost = rawDamage > 0 ? state[boostKey] ?? 0 : 0;
+  const damage = Math.max(0, Math.round(rawDamage * multiplier) + boost);
+  if (boost) state[boostKey] = 0;
+  if (damage) Object.assign(state, applyAttack(state, actor, damage));
+  const scoreKey = actor === 'player' ? 'playerScore' : 'aiScore';
+  const healing = Math.min(effects.healing, state.startingScore - state[scoreKey]);
+  state[scoreKey] += healing;
+  addEnergy(actor, energy);
+  return { damage, healing, energy, absorbed: state.lastAbsorbed ?? 0, extraTurn: level.allowExtraTurn && effects.extraTurn };
 }
 
 function renderLog() {
@@ -348,17 +460,21 @@ function buildFallPlan(matches) {
 
   const plan = [];
   for (let col = 0; col < removedByColumn.length; col += 1) {
-    const removedRows = removedByColumn[col].sort((first, second) => first - second);
-    if (!removedRows.length) continue;
-    const removedSet = new Set(removedRows);
-
-    for (let row = 0; row < 8; row += 1) {
-      if (removedSet.has(row)) continue;
-      const shift = removedRows.filter((removedRow) => removedRow > row).length;
-      if (shift) plan.push({ col, toRow: row + shift, offsetRows: shift, isNew: false });
-    }
-    for (let row = 0; row < removedRows.length; row += 1) {
-      plan.push({ col, toRow: row, offsetRows: removedRows.length + 1, isNew: true });
+    let segmentStart = 0;
+    for (let boundary = 0; boundary <= 8; boundary += 1) {
+      if (boundary < 8 && state.board[boundary][col] !== 'blocker') continue;
+      const segmentEnd = boundary - 1;
+      const removedRows = removedByColumn[col].filter((row) => row >= segmentStart && row <= segmentEnd).sort((first, second) => first - second);
+      const removedSet = new Set(removedRows);
+      for (let row = segmentStart; row <= segmentEnd; row += 1) {
+        if (removedSet.has(row)) continue;
+        const shift = removedRows.filter((removedRow) => removedRow > row).length;
+        if (shift) plan.push({ col, toRow: row + shift, offsetRows: shift, isNew: false });
+      }
+      for (let index = 0; index < removedRows.length; index += 1) {
+        plan.push({ col, toRow: segmentStart + index, offsetRows: removedRows.length + 1, isNew: true });
+      }
+      segmentStart = boundary + 1;
     }
   }
   return plan;
@@ -477,19 +593,43 @@ async function animateMatchRemoval(matches, groups, actor) {
   await finishAnimations(animations);
 }
 
+async function resolvePrism(actor, prismEffect, version) {
+  const matches = prismEffect.matches;
+  const effects = calculateTacticalEffects(state.board, matches, [], 1);
+  effects.shape = 'prism';
+  effects.damage += 8;
+  duelStep = 'resolving';
+  renderStatus();
+  showToast(`棱镜共鸣 · 清除全部${TILE_LABEL[prismEffect.targetType]}`, actor, 1200);
+  playTone('match', 3);
+  const fallPlan = buildFallPlan(matches);
+  await animateMatchRemoval(matches, [], actor);
+  if (!isCurrentGame(version)) return null;
+  const applied = applyBattleEffects(actor, effects);
+  state.board = removeAndCollapse(state.board, matches, rng);
+  renderBoard();
+  await animateFall(fallPlan);
+  addLog(actor, actor === 'player' ? '你触发棱镜共鸣' : '露娜触发棱镜共鸣', `清除 ${matches.length} 枚 · 攻击 ${applied.damage} · 恢复 ${applied.healing}`, '◇');
+  return { totalDamage: applied.damage, totalHealing: applied.healing, totalEnergy: Object.values(applied.energy).reduce((sum, amount) => sum + amount, 0), cascades: 1, extraTurn: false, shapes: ['prism'] };
+}
+
 async function resolveMatches(actor, version) {
   let cascadeLevel = 1;
   let totalDamage = 0;
+  let totalHealing = 0;
+  let totalEnergy = 0;
+  let extraTurn = false;
+  const shapes = [];
 
   while (isCurrentGame(version)) {
     const groups = findMatchGroups(state.board);
     if (!groups.length) break;
-    const matches = findMatches(state.board);
-    const baseDamage = calculateMatchScore(groups);
-    const levelRule = currentCampaignLevel();
-    const damageMultiplier = actor === 'ai' ? levelRule.aiDamageMultiplier : levelRule.playerDamageMultiplier;
-    const damage = Math.max(1, Math.round(baseDamage * damageMultiplier));
-    const groupScores = groups.map((group) => calculateGroupScore(group.positions.length));
+    const baseMatches = findMatches(state.board);
+    const expanded = currentCampaignLevel().allowShapes ? expandSpecialMatches(state.board, baseMatches) : { matches: baseMatches, activated: [] };
+    const matches = expanded.matches;
+    const creation = currentCampaignLevel().allowShapes && cascadeLevel === 1 ? createSpecialFromGroups(groups, state.lastMovedTo) : null;
+    const fallingMatches = creation ? matches.filter(({ row, col }) => row !== creation.position.row || col !== creation.position.col) : matches;
+    const effects = { ...calculateTacticalEffects(state.board, matches, groups, cascadeLevel), cascadeLevel };
     duelStep = cascadeLevel > 1 ? 'cascade' : 'resolving';
     renderStatus();
     const comboText = cascadeLevel > 1
@@ -497,33 +637,44 @@ async function resolveMatches(actor, version) {
       : groups.length > 1
         ? `${groups.length} 组同时消除`
         : `${groups[0].positions.length} 枚一组`;
-    showToast(`${comboText}  −${formatScore(damage)}`, cascadeLevel > 1 ? 'combo' : actor, 1000);
+    const shapeLabel = { row: '横向星轨', column: '纵向星轨', nova: '新星交汇', prism: '棱镜构形' }[effects.shape];
+    showToast(`${comboText}${shapeLabel && currentCampaignLevel().allowShapes ? ` · ${shapeLabel}` : ''}`, cascadeLevel > 1 ? 'combo' : actor, 1000);
     playTone('match', cascadeLevel);
-    const fallPlan = buildFallPlan(matches);
-    await animateMatchRemoval(matches, groups, actor);
+    const fallPlan = buildFallPlan(fallingMatches);
+    await animateMatchRemoval(fallingMatches, groups, actor);
     if (!isCurrentGame(version)) return;
 
-    Object.assign(state, applyAttack(state, actor, damage));
-    totalDamage += damage;
-    pulseScore(actor);
+    const applied = applyBattleEffects(actor, effects);
+    totalDamage += applied.damage;
+    totalHealing += applied.healing;
+    totalEnergy += Object.values(applied.energy).reduce((total, amount) => total + amount, 0);
+    extraTurn ||= applied.extraTurn;
+    if (effects.shape !== 'plain') shapes.push(effects.shape);
+    if (applied.damage || applied.absorbed) pulseScore(actor);
     renderStatus();
 
-    state.board = removeAndCollapse(state.board, matches, rng);
+    state.board = removeAndCollapse(state.board, matches, rng, creation);
     renderBoard();
     await animateFall(fallPlan);
-    if (groupScores.length > 1) {
-      showToast(`${groupScores.join(' + ')} = ${damage} 分`, cascadeLevel > 1 ? 'combo' : actor, 750);
-    }
+    const resultParts = [];
+    if (applied.damage) resultParts.push(`攻击 ${applied.damage}`);
+    if (applied.absorbed) resultParts.push(`护盾吸收 ${applied.absorbed}`);
+    if (applied.healing) resultParts.push(`恢复 ${applied.healing}`);
+    if (Object.values(applied.energy).some(Boolean)) resultParts.push(`充能 +${Object.values(applied.energy).reduce((sum, amount) => sum + amount, 0)}`);
+    if (creation) resultParts.push(`生成${{ row: '横向星轨', column: '纵向星轨', nova: '新星', prism: '棱镜' }[creation.shape]}`);
+    if (expanded.activated.length) resultParts.push(`激活 ${expanded.activated.length} 个特殊棋子`);
+    if (resultParts.length) showToast(resultParts.join(' · '), cascadeLevel > 1 ? 'combo' : actor, 900);
     cascadeLevel += 1;
   }
 
   const cascades = cascadeLevel - 1;
   addLog(
     actor,
-    actor === 'player' ? `你造成 ${formatScore(totalDamage)} 伤害` : `露娜造成 ${formatScore(totalDamage)} 伤害`,
-    cascades > 1 ? `${cascades} 段连消全部记入本次行动` : '完成 1 段消除',
+    actor === 'player' ? `你的行动：攻击 ${totalDamage} · 恢复 ${totalHealing}` : `露娜行动：攻击 ${totalDamage} · 恢复 ${totalHealing}`,
+    `${cascades} 段消除 · 充能 ${totalEnergy}${extraTurn ? ' · 获得额外回合' : ''}${shapes.length ? ` · ${shapes.length} 次高阶构形` : ''}`,
     actor === 'player' ? '♥' : '✦'
   );
+  return { totalDamage, totalHealing, totalEnergy, cascades, extraTurn, shapes };
 }
 
 function hasEnded() {
@@ -535,16 +686,18 @@ async function ensurePlayable(version) {
   showToast('棋局进入星雾，正在重新排列…', 'info', 1500);
   await wait(500);
   if (!isCurrentGame(version)) return false;
-  state.board = createBoard(rng);
+    state.board = createBoard(rng, { blockers: currentCampaignLevel().blockers });
   renderBoard();
   addLog('system', '星雾重排了棋盘', '双方都获得了新的可消除选择', '↻');
   return true;
 }
 
 async function executeMove(actor, first, second, version) {
+  const prismEffect = currentCampaignLevel().allowShapes ? prismSwapTargets(state.board, first, second) : null;
   duelStep = actor === 'ai' ? 'ai-action' : 'resolving';
   state.phase = 'resolving';
   state.activeActor = actor;
+  state.lastMovedTo = second;
   state.selected = null;
   renderStatus();
   renderBoard();
@@ -556,7 +709,7 @@ async function executeMove(actor, first, second, version) {
   state.board = swapTiles(state.board, first, second);
   renderBoard();
 
-  if (!findMatches(state.board).length) {
+  if (!findMatches(state.board).length && !prismEffect) {
     highlightPositions([first, second], 'is-swapping');
     await animateSwap(first, second);
     if (!isCurrentGame(version)) return;
@@ -572,7 +725,8 @@ async function executeMove(actor, first, second, version) {
     return;
   }
 
-  await resolveMatches(actor, version);
+  const outcome = prismEffect ? await resolvePrism(actor, prismEffect, version) : await resolveMatches(actor, version);
+  state.lastMovedTo = null;
   if (!isCurrentGame(version)) return;
 
   if (hasEnded()) {
@@ -581,6 +735,20 @@ async function executeMove(actor, first, second, version) {
   }
 
   if (!(await ensurePlayable(version)) || !isCurrentGame(version)) return;
+
+  if (outcome?.extraTurn && (state.extraTurnStreak ?? 0) < 2) {
+    state.extraTurnStreak = (state.extraTurnStreak ?? 0) + 1;
+    state.phase = actor;
+    duelStep = actor === 'player' ? 'player-ready' : 'ai-thinking';
+    render();
+    showToast(actor === 'player' ? '四连续行 · 你保留行动权' : '露娜四连续行', actor, 1200);
+    if (actor === 'ai') {
+      await wait(520);
+      if (isCurrentGame(version)) await runAiTurn(version);
+    }
+    return;
+  }
+  state.extraTurnStreak = 0;
 
   if (actor === 'player') {
     state.phase = 'ai';
@@ -603,18 +771,17 @@ async function executeMove(actor, first, second, version) {
 }
 
 function chooseDuelAiMove() {
-  const moves = findValidMoves(state.board, 'ai');
-  if (!moves.length) return null;
-  if (aiDifficulty === 'challenging') return chooseAiMove(state.board, rng);
-  const ranked = [...moves].sort((left, right) => right.score - left.score);
-  const pool = aiDifficulty === 'relaxed'
-    ? ranked.slice(Math.max(0, Math.floor(ranked.length * .55)))
-    : ranked.slice(0, Math.max(1, Math.ceil(ranked.length / 2)));
-  return pool[Math.floor(rng() * pool.length)] || ranked[0];
+  const move = chooseTacticalAiMove(state.board, aiDifficulty, rng, {
+    lookahead: Math.max(currentCampaignLevel().aiLookahead, aiDifficulty === 'challenging' ? 2 : 1),
+    allowShapes: currentCampaignLevel().allowShapes,
+  });
+  state.lastAiDecision = move ? { tacticalScore: move.tacticalScore, immediateScore: move.immediateScore, opponentReply: move.opponentReply, effects: move.effects } : null;
+  return move;
 }
 
 async function runAiTurn(version) {
   duelStep = 'ai-thinking'; renderStatus();
+  maybeUseAiSkill();
   const move = chooseDuelAiMove();
   if (!move) {
     await ensurePlayable(version);
@@ -622,7 +789,8 @@ async function runAiTurn(version) {
     return runAiTurn(version);
   }
   highlightPositions([move.first, move.second], 'is-ai-thinking');
-  showToast(aiDifficulty === 'challenging' ? '露娜锁定了最佳消除' : '露娜正在权衡走法', 'ai', 900);
+  const forecast = move.effects?.extraTurn ? '额外回合' : move.effects?.damage ? `星击 ${move.effects.damage}` : move.effects?.healing ? `恢复 ${move.effects.healing}` : '技能充能';
+  showToast(aiDifficulty === 'challenging' ? `露娜预判回应 · ${forecast}` : `露娜权衡：${forecast}`, 'ai', 900);
   await wait(500);
   if (isCurrentGame(version)) await executeMove('ai', move.first, move.second, version);
 }
@@ -648,10 +816,10 @@ function finishGame() {
   const detail = document.querySelector('#result-detail');
   title.textContent = hasNextLevel ? `第 ${completedLevel.number} 关完成` : draw ? '星光平局' : playerWon ? '你赢下了星梦对决！' : '露娜守住了梦境';
   detail.textContent = draw
-    ? hasNextLevel ? `下一关进入“${currentCampaignLevel().tierLabel}”，露娜的攻击压力会按阶段提升。` : '双方积分完全相同，这是一场势均力敌的对局。'
+    ? hasNextLevel ? `下一关进入“${currentCampaignLevel().tierLabel}”，露娜的攻击压力会按阶段提升。` : '双方剩余生命完全相同，这是一场势均力敌的对局。'
     : playerWon
-      ? hasNextLevel ? `你以 ${formatScore(state.playerScore - state.aiScore)} 分优势通过本关。下一关：${currentCampaignLevel().rule}。` : `你以 ${formatScore(state.playerScore - state.aiScore)} 分优势完成全部 20 关，连消归属也全部正确结算。`
-      : `露娜以 ${formatScore(state.aiScore - state.playerScore)} 分优势获胜。${state.aiDamage > state.playerDamage ? '失败原因：AI 的有效消除与连消总伤害更高。' : '失败原因：关键回合未能把高价值走法转化为伤害。'} 下一局可降低 AI 难度或调整初始积分。`;
+      ? hasNextLevel ? `你以 ${formatScore(state.playerScore - state.aiScore)} 点剩余生命优势通过本关。下一关：${currentCampaignLevel().rule}。` : `你以 ${formatScore(state.playerScore - state.aiScore)} 点剩余生命优势完成全部 20 关，并掌握了技能与特殊构形。`
+      : `露娜以 ${formatScore(state.aiScore - state.playerScore)} 点剩余生命优势获胜。${state.aiDamage > state.playerDamage ? '失败原因：AI 的有效消除与连消总伤害更高。' : '失败原因：关键回合未能把高价值走法转化为伤害。'} 下一局可降低 AI 难度或调整初始生命。`;
   document.querySelector('#result-player-score').textContent = formatScore(state.playerScore);
   document.querySelector('#result-ai-score').textContent = formatScore(state.aiScore);
   resultModal.hidden = false;
@@ -705,16 +873,24 @@ function startGame(startingScore = selectedStartingScore) {
   rng = createSeededRng(currentCampaignLevel().seed + gameVersion * 997);
   const restored = restoreDuelSession();
   if (!restored) state = {
-    board: createBoard(rng),
+    board: createBoard(rng, { blockers: currentCampaignLevel().blockers }),
     startingScore: selectedStartingScore,
     playerScore: selectedStartingScore,
     aiScore: selectedStartingScore,
     playerDamage: 0,
     aiDamage: 0,
+    playerShield: 0,
+    aiShield: 0,
+    playerEnergy: { tide: 0, bloom: 0, veil: 0 },
+    aiEnergy: { tide: Math.max(0, currentCampaignLevel().tier - 2), bloom: Math.max(0, currentCampaignLevel().tier - 2), veil: Math.max(0, currentCampaignLevel().tier - 2) },
+    playerAttackBoost: 0,
+    aiAttackBoost: 0,
+    extraTurnStreak: 0,
     round: 1,
     phase: 'player',
     activeActor: 'player',
     selected: null,
+    skillMode: null,
     log: [{ actor: 'system', title: '第 1 回合开始', detail: '选择下半区的两枚相邻棋子', icon: '◇' }]
   };
   duelStep = 'player-ready';
@@ -725,7 +901,46 @@ function startGame(startingScore = selectedStartingScore) {
   gameRoot.inert = false;
   setSessionState('playing');
   render();
-  showToast(restored ? `已恢复第 ${state.round} 回合 · 轮到你` : `第 ${currentCampaignLevel().number} 关 · ${formatScore(selectedStartingScore)} 分对局 · 轮到你`, 'player', 1400);
+  showToast(restored ? `已恢复第 ${state.round} 回合 · 轮到你` : `第 ${currentCampaignLevel().number} 关 · ${formatScore(selectedStartingScore)} 点生命 · 轮到你`, 'player', 1400);
+}
+
+function useSkill(actor, skill) {
+  if (!currentCampaignLevel().allowSkills || state.phase !== actor) return false;
+  const energy = actorEnergy(actor);
+  const cost = skill === 'tide' ? 8 : 10;
+  if ((energy[skill] ?? 0) < cost) return false;
+  if (skill === 'tide' && actor === 'player') {
+    state.skillMode = 'tide';
+    state.selected = null;
+    render();
+    showToast('潮汐换位：选择下半区任意两枚棋子，交换后必须形成消除', 'player', 1900);
+    return true;
+  }
+  energy[skill] -= cost;
+  if (skill === 'bloom') {
+    const scoreKey = actor === 'player' ? 'playerScore' : 'aiScore';
+    const boostKey = actor === 'player' ? 'playerAttackBoost' : 'aiAttackBoost';
+    const restored = Math.min(18, state.startingScore - state[scoreKey]);
+    state[scoreKey] += restored;
+    state[boostKey] = Math.max(state[boostKey], 6);
+    addLog(actor, actor === 'player' ? '你释放绽放复苏' : '露娜释放绽放复苏', `恢复 ${restored} · 下一次星击 +6`, '✿');
+    showToast(`绽放复苏 · 恢复 ${restored} · 星击强化`, actor, 1300);
+  }
+  if (skill === 'veil') {
+    const shieldKey = actor === 'player' ? 'playerShield' : 'aiShield';
+    state[shieldKey] = Math.min(40, state[shieldKey] + 20);
+    addLog(actor, actor === 'player' ? '你展开月幕' : '露娜展开月幕', '护盾 +20', '☾');
+    showToast('月幕展开 · 护盾 +20', actor, 1200);
+  }
+  render();
+  return true;
+}
+
+function maybeUseAiSkill() {
+  if (!currentCampaignLevel().allowSkills) return;
+  const lifeRatio = state.aiScore / state.startingScore;
+  if (lifeRatio < 0.66 && state.aiEnergy.bloom >= 10) useSkill('ai', 'bloom');
+  else if (state.aiShield < 8 && state.aiEnergy.veil >= 10) useSkill('ai', 'veil');
 }
 
 function selectOrMovePlayerTile(position) {
@@ -742,6 +957,23 @@ function selectOrMovePlayerTile(position) {
     return;
   }
 
+  if (state.skillMode === 'tide') {
+    const first = state.selected;
+    const swapped = swapTiles(state.board, first, position);
+    if (!findMatches(swapped).length) {
+      state.selected = null;
+      renderBoard();
+      showToast('潮汐换位必须形成消除，请重新选择', 'warning', 1300);
+      return;
+    }
+    state.playerEnergy.tide -= 8;
+    state.skillMode = null;
+    state.selected = null;
+    addLog('player', '你释放潮汐换位', '跨格交换并形成消除', '≈');
+    executeMove('player', first, position, gameVersion);
+    return;
+  }
+
   if (!isAdjacent(state.selected, position)) {
     state.selected = position;
     playTone('select');
@@ -751,14 +983,14 @@ function selectOrMovePlayerTile(position) {
   }
 
   const first = state.selected;
-  if (canOwnerSwap(first, position, 'player')) {
+  if (canOwnerSwap(first, position, 'player', state.board)) {
     executeMove('player', first, position, gameVersion);
   }
 }
 
 boardElement.addEventListener('pointerdown', (event) => {
   const tile = event.target.closest('.tile');
-  if (!tile || state.phase !== 'player') return;
+  if (!tile || state.phase !== 'player' || state.skillMode === 'tide') return;
   const position = { row: Number(tile.dataset.row), col: Number(tile.dataset.col) };
   if (position.row < 4) return;
   pointerGesture = { pointerId: event.pointerId, x: event.clientX, y: event.clientY, position };
@@ -783,7 +1015,7 @@ boardElement.addEventListener('pointerup', (event) => {
     return;
   }
 
-  if (!canOwnerSwap(position, target, 'player')) return;
+  if (!canOwnerSwap(position, target, 'player', state.board)) return;
   state.selected = null;
   executeMove('player', position, target, gameVersion);
 });
@@ -803,14 +1035,20 @@ boardElement.addEventListener('click', (event) => {
 
 hintButton.addEventListener('click', () => {
   if (state.phase !== 'player') return;
-  const [move] = findValidMoves(state.board, 'player');
+  const move = findValidMoves(state.board, 'player')
+    .map((candidate) => ({ ...candidate, board: swapTiles(state.board, candidate.first, candidate.second) }))
+    .map((candidate) => ({ ...candidate, effects: calculateTacticalEffects(candidate.board, findMatches(candidate.board), findMatchGroups(candidate.board), 1) }))
+    .sort((left, right) => (right.effects.damage * 6 + right.effects.healing * 3 + (right.effects.extraTurn ? 24 : 0)) - (left.effects.damage * 6 + left.effects.healing * 3 + (left.effects.extraTurn ? 24 : 0)))[0];
   if (!move) return;
   state.selected = null;
   renderBoard();
   highlightPositions([move.first, move.second], 'is-hint');
-  showToast('这两枚棋子可以形成消除', 'player', 1300);
+  const reason = move.effects.extraTurn ? '形成四连并获得额外回合' : move.effects.damage ? `可造成 ${move.effects.damage} 点星击` : move.effects.healing ? `可恢复 ${move.effects.healing} 点生命` : '可为战术技能充能';
+  showToast(`建议交换：${reason}`, 'player', 1700);
   playTone('select');
 });
+
+for (const button of skillButtons) button.addEventListener('click', () => useSkill('player', button.dataset.skill));
 
 soundToggle.addEventListener('click', () => {
   soundEnabled = !soundEnabled;
@@ -844,7 +1082,7 @@ window.addEventListener('appinstalled', () => {
 window.addEventListener('load', () => {
   const isNativeAndroidApp = new URLSearchParams(window.location.search).has('native');
   if ('serviceWorker' in navigator && !isNativeAndroidApp) {
-    navigator.serviceWorker.register('./sw.js?v=6').catch((error) => {
+    navigator.serviceWorker.register('./sw.js?v=7').catch((error) => {
       console.warn('离线服务注册失败：', error);
     });
   }
@@ -874,6 +1112,26 @@ window.__GAME_DEBUG__ = {
       aiDifficulty,
       duelStep,
       recoverable: Boolean(localStorage.getItem(DUEL_SESSION_KEY)),
+      tacticalRuleVersion: TACTICAL_RULE_VERSION,
+      campaignSignatureCount: new Set(CAMPAIGN_LEVELS.map((level) => `${level.name}:${level.mission}:${level.seed}`)).size,
+      chapterCount: new Set(CAMPAIGN_LEVELS.map((level) => level.tierLabel)).size,
+      allowExtraTurn: currentCampaignLevel().allowExtraTurn,
+      allowSkills: currentCampaignLevel().allowSkills,
+      allowShapes: currentCampaignLevel().allowShapes,
+      aiLookahead: aiDifficulty === 'challenging' ? 2 : currentCampaignLevel().aiLookahead,
+      aiFairness: 'same-board-same-zone-same-resources',
+      tileRoles: { star: 'damage', heart: 'healing', drop: 'tide', flower: 'bloom', moon: 'veil', cloud: 'wild-energy' },
+      playerEnergy: state?.playerEnergy ?? { tide: 0, bloom: 0, veil: 0 },
+      aiEnergy: state?.aiEnergy ?? { tide: 0, bloom: 0, veil: 0 },
+      playerShield: state?.playerShield ?? 0,
+      aiShield: state?.aiShield ?? 0,
+      skillMode: state?.skillMode ?? null,
+      aiZoneReadable: true,
+      specialCount: state?.board?.flat().filter((tile) => Boolean(tileSpecial(tile))).length ?? 0,
+      specialTypes: [...new Set(state?.board?.flat().map(tileSpecial).filter(Boolean) ?? [])],
+      blockerCount: state?.board?.flat().filter((tile) => tile === 'blocker').length ?? 0,
+      blockerLayoutSignature: currentCampaignLevel().blockers.map(({ row, col }) => `${row}:${col}`).join('|'),
+      lastAiDecision: state?.lastAiDecision ?? null,
     },
   }),
   async legalAction() {
@@ -893,6 +1151,26 @@ window.__GAME_DEBUG__ = {
   restart: () => startGame(selectedStartingScore),
   setLevel: (level) => setCampaignLevel(level, true),
   unlockAllLevels: () => { campaignMaxUnlocked = 19; saveCampaignProgress(); syncCampaignUi(); },
+  chargeSkills() {
+    state.playerEnergy = { tide: 12, bloom: 12, veil: 12 };
+    render();
+  },
+  useBloom: () => useSkill('player', 'bloom'),
+  useVeil: () => useSkill('player', 'veil'),
+  primeFourMatch() {
+    state.board = createBoard(createSeededRng(0x51a7));
+    state.board[7][0] = 'star';
+    state.board[7][1] = 'star';
+    state.board[7][2] = 'cloud';
+    state.board[7][3] = 'star';
+    state.board[6][2] = 'star';
+    state.phase = 'player';
+    state.selected = null;
+    render();
+  },
+  async triggerPrimedFour() {
+    await executeMove('player', { row: 6, col: 2 }, { row: 7, col: 2 }, gameVersion);
+  },
 };
 loadCampaignProgress();
 syncCampaignUi();
