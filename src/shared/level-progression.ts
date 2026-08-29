@@ -46,7 +46,13 @@ const templateModifiers: Record<GameTemplate, readonly string[]> = {
   maze: ["短径辨向", "岔路记忆", "回环取舍", "长径冲刺"],
   snake: ["开放边界", "围墙规则", "庭石障碍", "高速长身"],
   "merge-2048": ["小目标合成", "空间保留", "连锁规划", "高阶目标"],
-  platformer: ["安全起跳", "节奏落点", "移动平台", "终点连跳"],
+  platformer: [
+    "轻羽起步", "长风落点", "星核岔路", "坡顶信标",
+    "往返云台", "弹簧花径", "碎云踏板", "风琴追逐",
+    "脉冲门钥", "逆风横渡", "跃迁冲刺", "雷芽守门",
+    "明灭云阶", "镜像岔道", "巡游星兽", "镜庭逃逸",
+    "四式复习", "零伤星路", "极限云脊", "天门重启",
+  ],
   "space-shooter": [
     "校准航道", "双翼接敌", "脉冲试炼", "曙光守环",
     "碎星回廊", "交错火网", "护盾护航", "赤潮守环",
@@ -124,7 +130,7 @@ const commercialLevelDesigns: Record<GameTemplate, CommercialLevelDesign> = {
     ],
   },
   platformer: {
-    mission: "读取安全落点、收集能量并以稳定状态抵达信标。",
+    mission: "掌握本关移动机制、收集星核并从最近检查点稳定抵达信标。",
     masteryRules: [
       { id: "efficiency", label: "收集数量达到关卡目标", metric: "coinsCollected", comparison: "ratio-gte", referenceMetric: "coinTarget", target: 1 },
       { id: "control", label: "完成时至少保留 2 次机会", metric: "lives", comparison: "gte", target: 2 },

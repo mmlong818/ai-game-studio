@@ -262,9 +262,16 @@ test("十三类艺术化游戏都会产出可解析脚本、角色拆分位图�
       if (template === "platformer") {
         const script = readFileSync(join(output, "app.js"), "utf8");
         assert.match(script, /height: portraitPlatformer \? 1280 : 720/);
+        assert.match(script, /const platformerLevelBlueprints = \[/);
+        assert.match(script, /function buildPlatformerLevel\(levelNumber\)/);
+        assert.match(script, /"bounce","crumble","phase","wind","dash","key-gate","patrol"/);
+        assert.match(script, /function performDash\(\)/);
         assert.match(script, /jumpBufferedUntil/);
-        assert.match(script, /ctx\.scale\(1\.35, 1\.35\)/);
+        assert.match(script, /variableHeight: true/);
+        assert.match(script, /simultaneous-hold-and-jump/);
         assert.match(script, /platformCameraY/);
+        assert.match(script, /dead-zone-look-ahead/);
+        assert.match(script, /recoveryMs: 430/);
       }
       if (template === "space-shooter") {
         const script = readFileSync(join(output, "app.js"), "utf8");

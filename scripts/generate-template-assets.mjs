@@ -29,7 +29,7 @@ const spriteRoles = {
   maze: ["obstacle-wall", "path-marker", "player-character", "completion-marker", "interactive-object-a", "interactive-object-b", "secondary-decoration", "legal-feedback", "illegal-feedback"],
   snake: ["player-head", "player-body-a", "player-body-b", "interactive-food", "reward-feedback", "secondary-decoration-a", "secondary-decoration-b", "speed-feedback", "player-tail"],
   "merge-2048": ["empty-tile", "primary-tile-a", "primary-tile-b", "primary-tile-c", "primary-tile-d", "primary-tile-e", "primary-tile-f", "merge-feedback", "reward-feedback"],
-  platformer: ["player-right", "player-left", "platform-a", "platform-b", "interactive-collectible", "completion-marker", "landing-feedback", "jump-feedback", "secondary-decoration"],
+  platformer: ["player-right", "player-left", "platform-a", "platform-b", "interactive-collectible", "completion-marker", "patrol-enemy", "dash-crystal", "checkpoint-pennant"],
   "space-shooter": ["player-character", "enemy-character", "elite-enemy", "player-projectile", "enemy-projectile", "hit-feedback", "interactive-pickup", "movement-feedback", "secondary-decoration"],
   "polyomino-fit": ["primary-piece-a", "primary-piece-b", "primary-piece-c", "primary-piece-d", "primary-piece-e", "primary-piece-f", "legal-feedback", "hint-feedback", "completion-feedback"],
   "block-place": ["primary-piece-a", "primary-piece-b", "primary-piece-c", "primary-piece-d", "primary-piece-e", "score-feedback", "combo-feedback", "illegal-feedback", "completion-feedback"],

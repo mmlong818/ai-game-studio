@@ -955,7 +955,8 @@ function clearCanvas() {
   ctx.fillRect(0, 0, canvas.width, canvas.height);
   if (!backgroundArtReady) return;
   ctx.save();
-  const backgroundStrength = config.visualStyle === "line-art" ? .18
+  const backgroundStrength = config.template === "platformer" ? .72
+    : config.visualStyle === "line-art" ? .18
     : config.visualStyle === "cute" ? .24
     : config.visualStyle === "color-block" ? .18
     : config.visualStyle === "calm" ? .3
@@ -963,7 +964,8 @@ function clearCanvas() {
   ctx.globalAlpha = backgroundStrength;
   drawImageCover(backgroundArt, 0, 0, canvas.width, canvas.height);
   ctx.globalAlpha = 1;
-  ctx.fillStyle = config.visualStyle === "cute" ? "rgba(255,250,248,.58)"
+  ctx.fillStyle = config.template === "platformer" ? "rgba(5,15,20,.18)"
+    : config.visualStyle === "cute" ? "rgba(255,250,248,.58)"
     : config.visualStyle === "line-art" ? "rgba(250,248,241,.68)"
     : config.visualStyle === "color-block" ? "rgba(8,12,14,.66)"
     : config.visualStyle === "calm" ? "rgba(6,12,14,.42)"
@@ -972,7 +974,7 @@ function clearCanvas() {
   const focalLight = ctx.createRadialGradient(canvas.width * .5, canvas.height * .48, 18, canvas.width * .5, canvas.height * .48, canvas.width * .7);
   focalLight.addColorStop(0, "rgba(255,255,255,.12)");
   focalLight.addColorStop(.58, "rgba(255,255,255,.025)");
-  focalLight.addColorStop(1, "rgba(0,0,0,.34)");
+  focalLight.addColorStop(1, config.template === "platformer" ? "rgba(0,0,0,.16)" : "rgba(0,0,0,.34)");
   ctx.fillStyle = focalLight;
   ctx.fillRect(0, 0, canvas.width, canvas.height);
   ctx.restore();
@@ -1337,6 +1339,8 @@ const mahjongEnhancementStyles = `body[data-template=mahjong-roguelite]{--theme-
 
 const stageBTemplateStyles = `.canvas-frame{background-image:url("./assets/background.png")}`;
 const stageCRealtimeStyles = `body[data-template=space-shooter]{--theme-bg:#07151d;--theme-text:#edfaff;--theme-muted:#9bbcc5;--theme-panel:rgba(7,25,34,.9);--theme-line:rgba(86,218,226,.34);--theme-accent:#ff6959;--theme-on-accent:#fff;--theme-soft:#58e5dc;--theme-backdrop:rgba(3,12,18,.68);--theme-shadow:0 22px 58px rgba(1,10,16,.42)}body[data-template=space-shooter] .canvas-frame,body[data-template=space-shooter] .game-canvas{border-width:1px;box-shadow:none}body[data-template=space-shooter] .panel-block,body[data-template=space-shooter] .game-help,body[data-template=space-shooter] .control-button,body[data-template=space-shooter] .secondary{border-width:1px;box-shadow:none}body[data-template=space-shooter] .game-panel .panel-block:nth-child(even){transform:none;background:var(--theme-panel);color:var(--theme-text)}.shooter-loadout-setup{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px;margin:11px 0 13px}.shooter-loadout-setup button{display:grid;min-width:0;min-height:58px;align-content:center;gap:4px;border:1px solid var(--theme-line);border-radius:10px;padding:8px 5px;background:rgba(9,32,42,.72);color:var(--theme-text);font:700 11px/1.15 Inter,"Microsoft YaHei",sans-serif;cursor:pointer}.shooter-loadout-setup button span{overflow:hidden;color:var(--theme-muted);font-size:9px;font-weight:600;text-overflow:ellipsis;white-space:nowrap}.shooter-loadout-setup button.is-selected,.shooter-loadout-setup button[aria-pressed=true]{border-color:var(--theme-soft);background:rgba(40,174,176,.16);box-shadow:inset 0 0 0 1px rgba(88,229,220,.22)}.shooter-loadout-setup button:focus-visible{outline:2px solid var(--theme-soft);outline-offset:2px}body[data-template=space-shooter] [data-control=pulse]{border-color:rgba(88,229,220,.55);color:#dffffd}body[data-template=space-shooter] [data-control=pulse]:not(:disabled){background:rgba(18,106,113,.78)}@media(max-width:720px){body[data-template=space-shooter][data-game-state=playing] .game-controls{right:max(14px,env(safe-area-inset-right));bottom:max(16px,env(safe-area-inset-bottom));left:auto;width:74px;height:74px;padding:0;border:0;background:transparent;backdrop-filter:none}body[data-template=space-shooter][data-game-state=playing] .touch-controls{display:block}body[data-template=space-shooter][data-game-state=playing] [data-control=pulse]{width:74px;height:74px;min-height:74px;border:2px solid rgba(88,229,220,.72);border-radius:50%;padding:0 5px;background:rgba(5,30,38,.78);box-shadow:0 0 0 5px rgba(88,229,220,.08),0 0 24px rgba(88,229,220,.24);font-size:10px;line-height:1.15;backdrop-filter:blur(8px)}.shooter-loadout-setup{margin-block:8px}.shooter-loadout-setup button{min-height:52px;padding:6px 4px}}`;
+
+const platformerEnhancementStyles = `body[data-template=platformer]{--theme-panel:rgba(7,25,35,.88);--theme-line:rgba(111,226,240,.32);--theme-text:#effcff;--theme-muted:#a7c5cc;--theme-accent:#65e2ea;--theme-on-accent:#06232b}body[data-template=platformer] .game-canvas{box-shadow:0 22px 64px rgba(2,18,28,.34)}body[data-template=platformer] .control-button{border-color:rgba(111,226,240,.42);background:rgba(7,28,39,.88);color:#effcff}body[data-template=platformer] .control-button:focus-visible{outline:3px solid #f4ce6a;outline-offset:3px}@media(max-width:720px){body[data-template=platformer][data-game-state=playing] .game-controls{right:max(12px,env(safe-area-inset-right));bottom:max(14px,env(safe-area-inset-bottom));left:max(12px,env(safe-area-inset-left));height:78px;padding:0;border:0;background:transparent;backdrop-filter:none;pointer-events:none}body[data-template=platformer][data-game-state=playing] .touch-controls{position:relative;display:block;width:100%;height:78px}body[data-template=platformer][data-game-state=playing] .control-button{position:absolute;bottom:0;width:58px;height:58px;min-height:58px;border:2px solid rgba(111,226,240,.58);border-radius:50%;padding:0;background:rgba(5,29,40,.78);box-shadow:0 0 0 5px rgba(101,226,234,.08),0 8px 26px rgba(2,18,28,.3);font-size:12px;pointer-events:auto;touch-action:none;backdrop-filter:blur(8px)}body[data-template=platformer][data-game-state=playing] [data-control=left]{left:0}body[data-template=platformer][data-game-state=playing] [data-control=right]{left:66px}body[data-template=platformer][data-game-state=playing] [data-control=jump]{right:0;width:76px;height:76px;min-height:76px;border-color:rgba(244,206,106,.82);background:rgba(92,66,18,.82);color:#fff8dc;font-size:14px;font-weight:800}body[data-template=platformer][data-game-state=playing] .game-status{width:126px;background:rgba(7,25,35,.78);color:#effcff}}`;
 const stageDTemplateStyles = `.tetris-setup,.breakout-mode-setup{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px;margin:10px 0 14px}.tetris-setup button,.breakout-mode-setup button{min-height:44px;border:1px solid var(--theme-line);border-radius:calc(var(--theme-radius)*.6);background:var(--theme-panel);color:var(--theme-text);font:700 11px/1 Inter,"Microsoft YaHei",sans-serif;cursor:pointer}.tetris-setup button.is-selected,.tetris-setup button[aria-pressed=true],.breakout-mode-setup button.is-selected,.breakout-mode-setup button[aria-pressed=true]{border-color:var(--theme-accent);background:color-mix(in srgb,var(--theme-accent) 16%,var(--theme-panel));color:var(--theme-accent)}.tetris-setup button:focus-visible,.breakout-mode-setup button:focus-visible{outline:2px solid var(--theme-accent);outline-offset:2px}`;
 
 const mobilePlayFlowStyles = `.setup-actions{display:grid;grid-template-columns:1fr;gap:7px;margin-top:8px}.setup-actions .secondary{width:100%;min-height:44px}.game-overlay .setup-upload{margin:9px 0 0;padding:0;border:0;background:transparent}.game-overlay .setup-upload .upload-name{text-align:center}.return-to-setup{min-height:44px}
@@ -1429,7 +1433,7 @@ function writeTemplateArtifact(root: string, project: ProjectDetail) {
     '<link rel="preload" as="image" href="./assets/background.png"><link rel="preload" as="image" href="./assets/sprites/sprite-01.png"><link rel="preload" as="image" href="./assets/sprites/sprite-02.png">',
   );
   writeFileSync(join(root, "index.html"), html, "utf8");
-  writeFileSync(join(root, "styles.css"), `${touchSafeTemplateStyles}${campaignTemplateStyles}${stageBTemplateStyles}${stageCRealtimeStyles}${stageDTemplateStyles}${gameAspectStyles(project)}${snakeEnhancementStyles}${mahjongEnhancementStyles}${mobilePlayFlowStyles}`, "utf8");
+  writeFileSync(join(root, "styles.css"), `${touchSafeTemplateStyles}${campaignTemplateStyles}${stageBTemplateStyles}${stageCRealtimeStyles}${platformerEnhancementStyles}${stageDTemplateStyles}${gameAspectStyles(project)}${snakeEnhancementStyles}${mahjongEnhancementStyles}${mobilePlayFlowStyles}`, "utf8");
   writeFileSync(join(root, "app.js"), `${templateScript(project)}${gameTelemetryScript(project)}`, "utf8");
   writeFileSync(join(root, "game-manifest.json"), JSON.stringify({
     title: project.title,
