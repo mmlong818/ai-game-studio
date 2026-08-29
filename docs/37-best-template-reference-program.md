@@ -26,7 +26,7 @@
 | 1 | 折光堆叠 | `tetris` | 已完成第一轮，见 `38-tetris-best-template-reference.md` | v41 已发布；继续累积真人长局证据 |
 | 2 | 漆海碎星 | `breakout` | 已完成第一轮，见 `39-breakout-best-template-reference.md` | v34 已发布；继续累积真人长局证据 |
 | 3 | 星环突围 | `space-shooter` | 已完成第一轮，见 `40-space-shooter-best-template-reference.md` | v19 已发布；同步清弹竞态、三波、机体、主动能力与 Boss 合同均已验收 |
-| 4 | 云脊跃迁 | `platformer` | 待专门研究 | 待开始 |
+| 4 | 云脊跃迁 | `platformer` | 已完成第一轮，见 `41-platformer-best-template-reference.md` | 待按独立关卡、机制递进、镜头与移动端输入合同重构 |
 | 5 | 数织矩阵 | `merge-2048` | 待专门研究 | 待开始 |
 | 6 | 朱门华容 | `klotski` | 待专门研究 | 待开始 |
 | 7 | 青玉长游 | `snake` | 待专门研究 | 待开始 |
