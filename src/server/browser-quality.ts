@@ -870,12 +870,21 @@ export async function inspectStageDClassicInBrowser(root: string, template: Stag
 
     if (template === "polyomino-fit") {
       const signatures: string[] = [];
+      const pieceSignatures: string[] = [];
+      const chapters = new Set<string>();
+      let firstLevel: any = null;
+      let finalLevel: any = null;
       for (let level = 1; level <= 20; level += 1) {
         const state = await page.evaluate((targetLevel) => { const debug = (window as any).__GAME_DEBUG__; debug.setLevel(targetLevel); debug.restart(); return debug.getState(); }, level);
         signatures.push(state.runtime.contourSignature);
+        pieceSignatures.push(state.runtime.pieceSignature);
+        chapters.add(state.runtime.chapter);
+        if (level === 1) firstLevel = state.runtime;
+        if (level === 20) finalLevel = state.runtime;
       }
       await page.evaluate(() => { const debug = (window as any).__GAME_DEBUG__; debug.setLevel(1); debug.restart(); });
       const initial = await stageCDebugState(page);
+      const levelSurvey = await stageCDebugAction(page, "surveyLevels") as { count: number; valid: number; uniqueTargets: number; uniquePieceSets: number; minArea: number; maxArea: number; minPieces: number; maxPieces: number };
       const canvasBox = await page.locator("#game-canvas").boundingBox();
       if (!canvasBox) throw new Error("软糖拼岛画布不可见。 ");
       const trayPoint = initial.runtime.trayFirstCenterCanvas;
@@ -885,20 +894,57 @@ export async function inspectStageDClassicInBrowser(root: string, template: Stag
         canvasBox.y + trayPoint.y / canvasSize.height * canvasBox.height,
       );
       const clickedRotation = await stageCDebugState(page);
-      await stageCDebugAction(page, "rotate");
-      const rotated = await stageCDebugState(page);
-      await stageCDebugAction(page, "hint");
-      const hinted = await stageCDebugState(page);
-      await stageCDebugAction(page, "placeSolutionPiece");
+      await page.evaluate(() => { const debug = (window as any).__GAME_DEBUG__; debug.selectPiece(1); });
+      const selectedOther = await stageCDebugState(page);
+      await page.evaluate(() => { const debug = (window as any).__GAME_DEBUG__; debug.selectPiece(1); });
+      const reselectedOther = await stageCDebugState(page);
+      await page.evaluate(() => { (window as any).__GAME_DEBUG__.restart(); });
+      const pointerProbe = await stageCDebugAction(page, "pointerProbe") as { from: { x: number; y: number }; to: { x: number; y: number }; invalidTo: { x: number; y: number }; canvas: { width: number; height: number } } | null;
+      if (!pointerProbe) throw new Error("软糖拼岛没有提供真实拖动探针。 ");
+      const scaleX = canvasBox.width / pointerProbe.canvas.width;
+      const scaleY = canvasBox.height / pointerProbe.canvas.height;
+      const drag = async (to: { x: number; y: number }) => {
+        await page.mouse.move(canvasBox.x + pointerProbe.from.x * scaleX, canvasBox.y + pointerProbe.from.y * scaleY);
+        await page.mouse.down();
+        await page.mouse.move(canvasBox.x + to.x * scaleX, canvasBox.y + to.y * scaleY, { steps: 8 });
+        await page.mouse.up();
+        await page.waitForTimeout(80);
+      };
+      await drag(pointerProbe.invalidTo);
+      const invalidDrag = await stageCDebugState(page);
+      const validProbe = await stageCDebugAction(page, "pointerProbe") as typeof pointerProbe;
+      if (!validProbe) throw new Error("软糖拼岛非法回弹后无法继续拖动。 ");
+      await page.mouse.move(canvasBox.x + validProbe.from.x * scaleX, canvasBox.y + validProbe.from.y * scaleY);
+      await page.mouse.down();
+      await page.mouse.move(canvasBox.x + validProbe.to.x * scaleX, canvasBox.y + validProbe.to.y * scaleY, { steps: 8 });
+      await page.mouse.up();
+      await page.waitForTimeout(80);
       const placed = await stageCDebugState(page);
-      if (new Set(signatures).size !== 20) throw new Error("软糖拼岛没有形成 20 个不同轮廓。 ");
+      const beforeHintRotation = placed.runtime.selectedRotation;
+      await stageCDebugAction(page, "hint");
+      const regionHint = await stageCDebugState(page);
+      await stageCDebugAction(page, "hint");
+      const anchorHint = await stageCDebugState(page);
+      await page.reload({ waitUntil: "domcontentloaded" });
+      await page.waitForFunction(() => Boolean((window as any).__GAME_DEBUG__), undefined, { timeout: 8_000 });
+      await page.locator("#start:visible").click();
+      const restored = await stageCDebugState(page);
+      await stageCDebugAction(page, "undo");
+      const undone = await stageCDebugState(page);
+      await page.evaluate(() => { (window as any).__GAME_DEBUG__.restart(); });
+      const reset = await stageCDebugState(page);
+      if (new Set(signatures).size !== 20 || new Set(pieceSignatures).size !== 20 || chapters.size !== 5) throw new Error("软糖拼岛没有形成 20 个独立轮廓、拼块组合与五章结构。 ");
+      if (!levelSurvey || levelSurvey.count !== 20 || levelSurvey.valid !== 20 || levelSurvey.uniqueTargets !== 20 || levelSurvey.uniquePieceSets !== 20) throw new Error(`软糖拼岛原创关卡编译或已知解验证失败：${JSON.stringify(levelSurvey)}。`);
       if (initial.runtime.pieceCount < 4 || initial.runtime.targetCellCount < 15) throw new Error("软糖拼岛首关上方轮廓仍然过于简单。 ");
       if (initial.runtime.tray.slotWidth < 150 || initial.runtime.tray.cellSize < 38) throw new Error("软糖拼岛下方拼块卡槽或拼块显示尺寸不足。 ");
       if (!clickedRotation.runtime.clickToRotate || clickedRotation.runtime.selectedRotation !== (initial.runtime.selectedRotation + 1) % 4) throw new Error("点击下方拼块没有直接旋转。 ");
-      if (rotated.runtime.selectedRotation !== hinted.runtime.selectedRotation || !hinted.runtime.hintAnchorOnly) throw new Error("软糖拼岛提示自动改变了玩家旋转方向。 ");
-      if (placed.runtime.placed !== 1) throw new Error("软糖拼岛合法吸附没有完成。 ");
-      checks.push("20 个不同轮廓", "首关四块十五格复杂轮廓", "下方大尺寸拼块卡槽", "点击拼块直接旋转", "提示仅区域与锚点", "提示不自动旋转", "旋转、撤销与吸附", "完成解锁链路");
-      evidence.uniqueContours = new Set(signatures).size; evidence.initial = initial.runtime; evidence.clickedRotation = clickedRotation.runtime; evidence.rotated = rotated.runtime; evidence.hinted = hinted.runtime; evidence.placed = placed.runtime;
+      if (selectedOther.runtime.rotationSignature !== reselectedOther.runtime.rotationSignature) throw new Error("软糖拼岛选择其他拼块时发生了意外旋转。 ");
+      if (invalidDrag.runtime.placed !== 0 || invalidDrag.runtime.invalidMoves < 1 || placed.runtime.placed !== 1) throw new Error("软糖拼岛非法回弹或真实拖动吸附没有按合同工作。 ");
+      if (regionHint.runtime.hintStage !== "region" || anchorHint.runtime.hintStage !== "anchor" || anchorHint.runtime.selectedRotation !== beforeHintRotation) throw new Error("软糖拼岛分层提示自动改变了方向或没有递进。 ");
+      if (!restored.runtime.restored || restored.runtime.placed !== 1 || undone.runtime.placed !== 0 || reset.runtime.placed !== 0) throw new Error("软糖拼岛中断续玩、撤销或重置发生状态分叉。 ");
+      if (!(finalLevel.targetCellCount > firstLevel.targetCellCount) || !(finalLevel.pieceCount > firstLevel.pieceCount) || levelSurvey.minPieces !== 4 || levelSurvey.maxPieces !== 8) throw new Error("软糖拼岛五章没有形成面积与拼块数量递进。 ");
+      checks.push("20 个原创可解轮廓", "五章四至八块递进", "下方大尺寸拼块卡槽", "点击同块旋转而选择不旋转", "真实拖动与手指抬升", "非法放置回弹", "区域到锚点的分层提示", "提示不自动旋转", "中断续玩、撤销与重置");
+      evidence.levelSurvey = levelSurvey; evidence.initial = initial.runtime; evidence.clickedRotation = clickedRotation.runtime; evidence.selectedOther = selectedOther.runtime; evidence.invalidDrag = invalidDrag.runtime; evidence.placed = placed.runtime; evidence.regionHint = regionHint.runtime; evidence.anchorHint = anchorHint.runtime; evidence.restored = restored.runtime; evidence.undone = undone.runtime; evidence.reset = reset.runtime;
     }
 
     if (runtimeErrors.length) throw new Error(`阶段 D 浏览器错误：${runtimeErrors.join(" | ")}`);

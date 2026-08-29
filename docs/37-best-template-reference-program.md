@@ -33,7 +33,7 @@
 | 8 | 苔径迷庭 | `maze` | 已完成并发布 v34，见 `45-maze-best-template-reference.md` | 20 个唯一可解关、五章机制、支路萤灯、雾/冰/星钥门/暮钟、有限提示、滑动与四键均已落实；稳定网址已指向 `860dc65f-4c62-4061-aafb-b0bdba3face5` |
 | 9 | 植光拼图 | `puzzle` | 已完成并发布 v35，见 `46-puzzle-best-template-reference.md` | 20 图、6–50 块、四区外围整理、真实指针拖动、缩放/预览/提示、邻接成组和真实上传图自适应均已验收；稳定网址已指向 `8e550150-c71f-46ef-a864-e6445dba4e5b` |
 | 10 | 果冻填阵 | `block-place` | 已完成研究合同，见 `47-block-place-best-template-reference.md` | 已发布 v22；20 个开局、五章、旅程/无尽/每日、无尽最佳、每日同日复现、100 批可连续放完验证、手指上方拖放、局内恢复与主美真检均通过 |
-| 11 | 软糖拼岛 | `polyomino-fit` | 已完成研究合同，见 `48-polyomino-fit-best-template-reference.md` | 实现中；锁定原创解编译、20 个独立轮廓、直接拖放、分层提示、撤销/重置与手机满屏题面 |
+| 11 | 软糖拼岛 | `polyomino-fit` | 已完成并发布 v18，见 `48-polyomino-fit-best-template-reference.md` | 20 个原创可解轮廓、五章 4–8 块递进、直接拖放、非法回弹、分层提示、恢复/撤销/重置和主美真检均通过 |
 | 12 | 星灵巡格 | `region-logic` | 待专门研究 | 待开始 |
 | 13 | 星梦对决 | 独立对战模板 | 待专门研究 | 待开始 |
 | 14 | 3D 收集闯关 | `generated-3d` | 待专门研究 | 待开始 |
