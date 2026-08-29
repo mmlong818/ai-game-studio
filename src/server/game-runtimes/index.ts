@@ -54,7 +54,10 @@ const runtimes: Record<Exclude<GameTemplate, "signal-hunt" | "generated">, Runti
     intro: "穿过五片漆海，击散二十种不同形状的砖阵。",
     objective: "移动挡板接住光球；连续消除三块会获得炸弹，下一次消除自动触发十字爆炸。",
     primaryMetric: "已清除",
-    controls: directions.filter((item) => item.value === "left" || item.value === "right"),
+    controls: [
+      ...directions.filter((item) => item.value === "left" || item.value === "right"),
+      { value: "focus", label: "聚光", ariaLabel: "切换聚光减速" },
+    ],
     script: breakoutScript,
     redrawFunction: "drawBreakout",
     probeTokens: ["function hitBrick(brick)", "function levelHasBrick(level, row, column)", "function showLevelComplete()", "data-breakout-level", "campaignComplete"],

@@ -900,6 +900,26 @@ export async function inspectStageCRealtimeInBrowser(root: string, template: Sta
       if (new Set(formations.map((state) => state.pattern)).size !== 20) throw new Error("二十关没有使用二十种不同砖阵。 ");
       if (new Set(formations.map((state) => state.layoutSignature)).size !== 20) throw new Error("二十关生成了重复的砖块形状。 ");
       if (chapters.some((state, index) => state.damageAssetStart !== index * 3)) throw new Error("五章三档受损位图映射错误。 ");
+      if (!formations.slice(4).some((state) => state.specialBrickCounts.shield > 0)) throw new Error("第二章后没有生成潮盾特殊砖。 ");
+      if (!formations.slice(8).some((state) => state.specialBrickCounts.wide > 0)) throw new Error("第三章后没有生成宽挡板特殊砖。 ");
+      if (!formations.slice(12).some((state) => state.specialBrickCounts.pierce > 0)) throw new Error("第四章后没有生成穿透特殊砖。 ");
+      await page.locator("#back-to-setup").click();
+      await stageCDebugAction(page, "setTimeAttackMode");
+      await page.locator("#start").click();
+      await stageCDebugAction(page, "toggleFocus");
+      await page.waitForTimeout(120);
+      await stageCDebugAction(page, "grantSpecialPowers");
+      await stageCDebugAction(page, "simulateSideCollision");
+      const activeSystems = await stageCDebugState(page);
+      if (activeSystems.runtime.mode !== "time-attack" || !activeSystems.runtime.focusActive || activeSystems.runtime.focusEnergy >= 100) throw new Error("限时模式或聚光减速没有真实生效。 ");
+      if (activeSystems.runtime.focusTimeScale !== .55 || activeSystems.runtime.focusScoreMultiplier !== .5) throw new Error("聚光没有同时体现减速与得分代价。 ");
+      if (!activeSystems.runtime.shieldCharges || !activeSystems.runtime.wideActive || activeSystems.runtime.pierceHits < 1) throw new Error("三类特殊能力没有进入运行状态。 ");
+      if (activeSystems.runtime.collisionSystem !== "substep-face-normal" || activeSystems.runtime.collisionProbe?.axis !== "horizontal" || activeSystems.runtime.collisionProbe?.afterVx >= 0 || !activeSystems.runtime.collisionProbe?.finite) throw new Error("砖块侧面碰撞没有按面法线反射或产生了非有限坐标。 ");
+      await page.locator("#back-to-setup").click();
+      await stageCDebugAction(page, "setEndlessMode");
+      const endlessSetup = await stageCDebugState(page);
+      if (endlessSetup.runtime.mode !== "endless") throw new Error("无尽模式没有被选择。 ");
+      await stageCDebugAction(page, "setCampaignMode");
       await page.evaluate(() => { const debug = (window as any).__GAME_DEBUG__; debug.setLevel(1); debug.restart(); });
       await stageCDebugAction(page, "earnBomb");
       const armed = await stageCDebugState(page);
@@ -914,10 +934,12 @@ export async function inspectStageCRealtimeInBrowser(root: string, template: Sta
       await page.evaluate(() => (window as any).__GAME_DEBUG__.control("right"));
       const afterComplete = await stageCDebugState(page);
       if (!controlsLocked || afterComplete.runtime.paddleX !== beforeComplete.runtime.paddleX) throw new Error("关卡完成期间输入没有正确锁定。 ");
-      checks.push("20 关五章", "二十种不同砖阵", "简洁砖块与三档耐久", "连消奖励与十字爆炸", "碎片反馈", "清场输入锁定");
+      checks.push("20 关五章", "二十种不同砖阵", "三类特殊砖与能力", "旅程/限时/无尽三模式", "聚光风险收益", "面法线分步碰撞", "连消奖励与十字爆炸", "碎片反馈", "清场输入锁定");
       evidence.chapters = chapters;
       evidence.formations = formations.map((state) => ({ level: state.level, pattern: state.pattern, brickCount: state.brickCount, layoutSignature: state.layoutSignature }));
       evidence.bomb = { armed: armed.runtime, exploded: exploded.runtime };
+      evidence.activeSystems = activeSystems.runtime;
+      evidence.endlessSetup = endlessSetup.runtime;
       evidence.controlsLocked = controlsLocked;
     }
 

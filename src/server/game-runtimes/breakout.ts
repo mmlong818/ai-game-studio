@@ -19,9 +19,27 @@ let lastBrickClearedAt = 0;
 let bombArmed = false;
 let lastExplosionRemoved = 0;
 let lastExplosionCells = [];
+let breakoutMode = "campaign";
+let score = 0;
+let bestCombo = 0;
+let boardsCleared = 0;
+let modeStartedAt = 0;
+let focusEnergy = 100;
+let focusActive = false;
+let shieldCharges = 0;
+let widePaddleUntil = 0;
+let pierceHits = 0;
+let lastPowerLabel = "";
+let lastPowerAt = 0;
+let physicsStepCount = 0;
+let collisionProbe = null;
 const bombClearThreshold = 3;
+const timeAttackSeconds = 120;
+const focusTimeScale = .55;
+const focusScoreMultiplier = .5;
 const levelInputs = Array.from(document.querySelectorAll("[data-breakout-level]"));
 const progressLabels = Array.from(document.querySelectorAll("[data-breakout-progress]"));
+const modeInputs = Array.from(document.querySelectorAll("[data-breakout-mode]"));
 const breakoutLevels = config.breakoutLevels;
 const levelImages = breakoutLevels.map((level) => {
   const image = new Image();
@@ -37,6 +55,59 @@ function currentLevel() {
 
 function breakoutChapterIndex() {
   return Math.min(4, Math.floor(currentLevelIndex / 4));
+}
+
+function breakoutModeLabel() {
+  return breakoutMode === "time-attack" ? "限时" : breakoutMode === "endless" ? "无尽" : "旅程";
+}
+
+function timeAttackRemaining() {
+  if (breakoutMode !== "time-attack" || !modeStartedAt) return 0;
+  return Math.max(0, timeAttackSeconds - Math.floor((performance.now() - modeStartedAt) / 1000));
+}
+
+function comboIntensity() {
+  return Math.min(5, Math.max(0, Math.floor((breakoutCombo - 1) / 2)));
+}
+
+function activePaddleWidth() {
+  const base = paddle?.baseWidth || 118;
+  return performance.now() < widePaddleUntil ? Math.min(184, base + 38) : base;
+}
+
+function activePowerLabel() {
+  if (shieldCharges) return "潮盾 ×" + shieldCharges;
+  if (performance.now() < widePaddleUntil) return "宽挡板";
+  if (pierceHits) return "穿透 ×" + pierceHits;
+  return "能力待命";
+}
+
+function updateModeButtons() {
+  modeInputs.forEach((input) => {
+    const selected = input.dataset.breakoutMode === breakoutMode;
+    input.classList.toggle("is-selected", selected);
+    input.setAttribute("aria-pressed", String(selected));
+  });
+}
+
+function setBreakoutMode(nextMode) {
+  if (running || !["campaign", "time-attack", "endless"].includes(nextMode)) return;
+  breakoutMode = nextMode;
+  pendingNextLevel = false;
+  campaignComplete = false;
+  if (breakoutMode === "campaign") currentLevelIndex = campaignLevelIndex;
+  if (paddle) prepareLevel();
+  updateModeButtons();
+  const descriptions = {
+    campaign: "二十关旅程：每关独立结算，逐章解锁特殊砖与更高压力。",
+    "time-attack": "120 秒限时：连续清场并追求高分，聚光会减速但得分减半。",
+    endless: "无尽航次：砖阵循环升级，失去全部机会后按清场数与得分结算。",
+  };
+  overlayTitle.textContent = breakoutModeLabel() + "模式 · " + currentLevel().label.replace(/^\d+\s*/, "");
+  overlayDetail.textContent = descriptions[breakoutMode];
+  startButton.textContent = "开始" + breakoutModeLabel();
+  setStatus("已选择" + breakoutModeLabel() + "模式，准备开始。 ");
+  drawBreakout();
 }
 
 function breakoutLayout() {
@@ -93,6 +164,15 @@ function levelHasBrick(level, row, column) {
   }
 }
 
+function breakoutBrickKind(level, row, column, armorValue) {
+  const tier = breakoutChapterIndex() + 1;
+  const specialValue = ((row * 43 + column * 67 + currentLevelIndex * 29) % 101) / 101;
+  if (tier >= 2 && specialValue < .045) return "shield";
+  if (tier >= 3 && specialValue >= .22 && specialValue < .27) return "wide";
+  if (tier >= 4 && specialValue >= .48 && specialValue < .535) return "pierce";
+  return armorValue < level.armorRate ? "armor" : "normal";
+}
+
 function createBricks() {
   const level = currentLevel();
   const layout = breakoutLayout();
@@ -106,8 +186,10 @@ function createBricks() {
     for (let column = 0; column < level.columns; column += 1) {
       if (!levelHasBrick(level, row, column)) continue;
       const armorValue = ((row * 17 + column * 31 + currentLevelIndex * 13) % 100) / 100;
-      const hits = armorValue < level.armorRate * .42 ? 3 : armorValue < level.armorRate ? 2 : 1;
+      const kind = breakoutBrickKind(level, row, column, armorValue);
+      const hits = kind === "armor" ? (armorValue < level.armorRate * .42 ? 3 : 2) : 1;
       bricks.push({
+        id: currentLevelIndex + ":" + row + ":" + column,
         x: 62 + column * (brickWidth + gap),
         y: layout.top + 118 + row * (brickHeight + rowGap),
         width: brickWidth,
@@ -117,6 +199,7 @@ function createBricks() {
         alive: true,
         hits,
         maxHits: hits,
+        kind,
         tone: (row + column + currentLevelIndex) % 4,
         hitAt: 0,
       });
@@ -128,8 +211,8 @@ function drawStageHud(layout) {
   const label = currentLevel().label.replace(/^\d+\s*/, "");
   ctx.save();
   ctx.beginPath();
-  ctx.roundRect(68, layout.top + 22, 584, 72, 24);
-  ctx.fillStyle = "rgba(4,17,43,.76)";
+  ctx.roundRect(68, layout.top + 22, 584, 76, 20);
+  ctx.fillStyle = "rgba(3,30,37,.9)";
   ctx.fill();
   ctx.strokeStyle = "rgba(192,236,255,.42)";
   ctx.lineWidth = 2;
@@ -138,10 +221,22 @@ function drawStageHud(layout) {
   ctx.textBaseline = "middle";
   ctx.fillStyle = "rgba(223,246,255,.72)";
   ctx.font = "650 18px Inter, sans-serif";
-  ctx.fillText("漆海航线 " + String(currentLevelIndex + 1).padStart(2, "0"), 94, layout.top + 48);
+  ctx.fillText(breakoutModeLabel() + " · " + String(currentLevelIndex + 1).padStart(2, "0"), 94, layout.top + 47);
   ctx.fillStyle = "#fff8e8";
   ctx.font = "800 27px Inter, sans-serif";
-  ctx.fillText(label, 94, layout.top + 74);
+  ctx.fillText(label, 94, layout.top + 75, 300);
+  ctx.textAlign = "center";
+  ctx.fillStyle = "rgba(223,246,255,.72)";
+  ctx.font = "650 14px Inter, sans-serif";
+  ctx.fillText("得分", 488, layout.top + 45);
+  ctx.fillStyle = "#ece4b4";
+  ctx.font = "850 23px Inter, sans-serif";
+  ctx.fillText(String(score), 488, layout.top + 73, 112);
+  if (breakoutMode === "time-attack") {
+    ctx.fillStyle = timeAttackRemaining() <= 15 ? "#f39ba8" : "rgba(223,246,255,.78)";
+    ctx.font = "750 12px ui-monospace, Consolas, monospace";
+    ctx.fillText(timeAttackRemaining() + "秒", 488, layout.top + 91);
+  }
   ctx.textAlign = "right";
   ctx.fillStyle = "rgba(223,246,255,.72)";
   ctx.font = "650 18px Inter, sans-serif";
@@ -228,6 +323,7 @@ function drawSimpleBrick(brick) {
   ];
   const colors = chapterColors[breakoutChapterIndex()];
   const color = colors[brick.tone % colors.length];
+  const kindColors = { shield: "#8adce8", wide: "#f0d080", pierce: "#f39ba8" };
   const damage = brick.maxHits - brick.hits;
   const impactScale = performance.now() - brick.hitAt < 120 ? .94 : 1;
   const radius = 8;
@@ -266,24 +362,50 @@ function drawSimpleBrick(brick) {
       ctx.fill();
     }
   }
+  if (brick.kind !== "normal" && brick.kind !== "armor") {
+    const marker = brick.kind === "shield" ? "◇" : brick.kind === "wide" ? "↔" : "✦";
+    ctx.beginPath();
+    ctx.arc(brick.x + 12, brick.y + brick.height / 2, 8, 0, Math.PI * 2);
+    ctx.fillStyle = kindColors[brick.kind];
+    ctx.fill();
+    ctx.fillStyle = "#07172b";
+    ctx.font = "900 11px Inter, sans-serif";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText(marker, brick.x + 12, brick.y + brick.height / 2 + .5);
+  }
   ctx.restore();
 }
 
 function drawBombStatus(layout) {
   ctx.save();
   ctx.beginPath();
-  ctx.roundRect(420, layout.top + 57, 124, 30, 15);
-  ctx.fillStyle = bombArmed ? "rgba(245,184,69,.96)" : "rgba(12,39,62,.76)";
+  ctx.roundRect(68, layout.paddleY - 82, 584, 48, 18);
+  ctx.fillStyle = "rgba(3,30,37,.88)";
   ctx.fill();
-  ctx.strokeStyle = bombArmed ? "rgba(255,247,201,.92)" : "rgba(185,224,239,.28)";
+  ctx.strokeStyle = bombArmed ? "rgba(236,228,180,.92)" : "rgba(185,224,239,.28)";
   ctx.lineWidth = 1.5;
   ctx.stroke();
-  if (bombArmed) drawBitmapSprite(6, 426, layout.top + 59, 25, 25, { fallback: "#fff0a8", padding: 2, scale: 1.08 });
-  ctx.fillStyle = bombArmed ? "#192431" : "rgba(223,246,255,.74)";
-  ctx.font = "800 14px Inter, sans-serif";
-  ctx.textAlign = "center";
+  ctx.textAlign = "left";
   ctx.textBaseline = "middle";
-  ctx.fillText(bombArmed ? "爆炸就绪" : "连消 " + clearStreak + " / " + bombClearThreshold, bombArmed ? 494 : 482, layout.top + 72);
+  ctx.fillStyle = "rgba(223,246,255,.68)";
+  ctx.font = "700 12px Inter, sans-serif";
+  ctx.fillText("聚光", 88, layout.paddleY - 58);
+  ctx.fillStyle = "rgba(223,246,255,.18)";
+  ctx.fillRect(128, layout.paddleY - 64, 126, 12);
+  ctx.fillStyle = focusActive ? "#8adce8" : "rgba(138,220,232,.72)";
+  ctx.fillRect(128, layout.paddleY - 64, 126 * focusEnergy / 100, 12);
+  ctx.fillStyle = "rgba(223,246,255,.8)";
+  ctx.font = "750 12px ui-monospace, Consolas, monospace";
+  ctx.fillText(Math.round(focusEnergy) + "%", 262, layout.paddleY - 58);
+  if (bombArmed) drawBitmapSprite(6, 316, layout.paddleY - 72, 28, 28, { fallback: "#ece4b4", padding: 2, scale: 1.08 });
+  ctx.fillStyle = bombArmed ? "#ece4b4" : "rgba(223,246,255,.68)";
+  ctx.font = "800 13px Inter, sans-serif";
+  ctx.fillText(bombArmed ? "爆炸就绪" : "连消 " + clearStreak + "/" + bombClearThreshold, 348, layout.paddleY - 58);
+  const powerText = activePowerLabel();
+  ctx.textAlign = "right";
+  ctx.fillStyle = shieldCharges || pierceHits || performance.now() < widePaddleUntil ? "#f5d38a" : "rgba(223,246,255,.62)";
+  ctx.fillText(powerText + (breakoutCombo >= 2 ? " · 连击 ×" + breakoutCombo : ""), 632, layout.paddleY - 58);
   ctx.restore();
 }
 
@@ -306,16 +428,6 @@ function drawBreakout() {
   ctx.strokeStyle = palette.textSoft;
   ctx.lineWidth = 7;
   ctx.beginPath(); ctx.arc(ball.x, ball.y, ball.radius + 6, 0, Math.PI * 2); ctx.stroke();
-  if (breakoutCombo >= 2) {
-    ctx.fillStyle = "rgba(4,17,43,.78)";
-    ctx.beginPath();
-    ctx.roundRect(512, layout.paddleY - 76, 142, 48, 18);
-    ctx.fill();
-    ctx.fillStyle = "#fff4ca";
-    ctx.font = "800 21px Inter, sans-serif";
-    ctx.textAlign = "center";
-    ctx.fillText("COMBO ×" + breakoutCombo, 583, layout.paddleY - 45);
-  }
   ctx.restore();
   finishCanvasStyle();
 }
@@ -331,6 +443,27 @@ function destroyBrick(brick, fragmentCount = 4) {
   spawnBrickFragments(brick, fragmentCount);
   cleared += 1;
   return true;
+}
+
+function grantBrickPower(brick) {
+  if (!brick || !["shield", "wide", "pierce"].includes(brick.kind)) return "";
+  if (brick.kind === "shield") shieldCharges = Math.min(2, shieldCharges + 1);
+  if (brick.kind === "wide") widePaddleUntil = Math.max(widePaddleUntil, performance.now()) + 10_000;
+  if (brick.kind === "pierce") pierceHits = Math.min(8, pierceHits + 4);
+  lastPowerLabel = brick.kind === "shield" ? "潮盾已充能" : brick.kind === "wide" ? "挡板扩展 10 秒" : "穿透强化 4 次";
+  lastPowerAt = performance.now();
+  playSound("reward");
+  return lastPowerLabel;
+}
+
+function scoreDestroyedBrick(brick, factor = 1) {
+  const base = brick.kind === "armor" ? 75 : ["shield", "wide", "pierce"].includes(brick.kind) ? 90 : 50;
+  const comboMultiplier = 1 + Math.min(9, Math.max(0, breakoutCombo - 1)) * .12;
+  const focusMultiplier = focusActive ? focusScoreMultiplier : 1;
+  const earned = Math.max(1, Math.round(base * comboMultiplier * focusMultiplier * factor));
+  score += earned;
+  focusEnergy = Math.min(100, focusEnergy + 6);
+  return earned;
 }
 
 function registerClearForBomb(timestamp) {
@@ -355,7 +488,10 @@ function triggerCrossExplosion(center) {
   lastExplosionCells = neighbors.map((brick) => brick.row + ":" + brick.column);
   lastExplosionRemoved = 0;
   neighbors.forEach((brick) => {
-    if (destroyBrick(brick, 6)) lastExplosionRemoved += 1;
+    if (!destroyBrick(brick, 6)) return;
+    lastExplosionRemoved += 1;
+    scoreDestroyedBrick(brick, .65);
+    grantBrickPower(brick);
   });
   impactBursts.push({ x: center.x + center.width / 2, y: center.y + center.height / 2, startedAt: performance.now(), cross: true });
   bombArmed = false;
@@ -366,20 +502,23 @@ function triggerCrossExplosion(center) {
 
 function resolveDestroyedBrick(brick) {
   const triggerBomb = bombArmed;
-  destroyBrick(brick, breakoutCombo >= 4 ? 7 : 4);
+  if (!destroyBrick(brick, breakoutCombo >= 4 ? 7 : 4)) return "";
+  const earned = scoreDestroyedBrick(brick);
+  const powerMessage = grantBrickPower(brick);
   if (triggerBomb) {
     const removed = triggerCrossExplosion(brick);
-    return "十字爆炸已触发 · 额外清除 " + removed + " 块相邻砖，只影响上下左右。";
+    return "十字爆炸 · 额外清除 " + removed + " 块 · +" + earned + " 分" + (powerMessage ? " · " + powerMessage : "");
   }
-  if (registerClearForBomb(performance.now())) return "连续消除达成 · 爆炸道具已就绪，将在下次消除时自动触发。";
-  return "";
+  if (registerClearForBomb(performance.now())) return "连续消除达成 · 爆炸已就绪 · +" + earned + " 分" + (powerMessage ? " · " + powerMessage : "");
+  return "+" + earned + " 分" + (powerMessage ? " · " + powerMessage : "");
 }
 
 function resetBall() {
   const level = currentLevel();
   const layout = breakoutLayout();
   const difficultyMultiplier = config.difficulty === "challenging" ? 1.08 : config.difficulty === "relaxed" ? .84 : 1;
-  const speed = level.speed * difficultyMultiplier;
+  const endlessPressure = breakoutMode === "endless" ? Math.min(1.32, 1 + boardsCleared * .025) : 1;
+  const speed = level.speed * difficultyMultiplier * endlessPressure;
   ball = { x: paddle.x + paddle.width / 2, y: layout.ballY, vx: speed * .72, vy: -speed, radius: 14 };
   serveDelay = 900;
 }
@@ -397,13 +536,22 @@ function showLevelComplete() {
   sounds.ambient.pause();
   pendingNextLevel = true;
   overlayTitle.textContent = currentLevel().label.replace(/^\d+\s*/, "") + " 已澄明";
-  overlayDetail.textContent = "已解锁下一关；二十关各有独立砖阵，难度每四关进入一个新阶段，速度和护盾会分段增强。";
+  overlayDetail.textContent = "本关得分 " + score + "，最高连击 ×" + bestCombo + "。已解锁下一关；每四关进入新章节并加入新的特殊砖。";
   startButton.textContent = "进入下一关";
   overlay.hidden = false;
   playSound("success");
 }
 
 function handleLevelCleared() {
+  boardsCleared += 1;
+  score += 250 + Math.min(750, bestCombo * 25);
+  if (breakoutMode !== "campaign") {
+    currentLevelIndex = (currentLevelIndex + 1) % breakoutLevels.length;
+    prepareLevel({ preserveRun: true });
+    setMetric(cleared + " / " + bricks.length);
+    setStatus(breakoutModeLabel() + "连续清场 " + boardsCleared + " 次 · 得分 " + score + " · 下一砖阵已展开。 ");
+    return;
+  }
   if (currentLevelIndex < breakoutLevels.length - 1) {
     unlockNextCampaignLevel();
     syncCampaignUi();
@@ -412,14 +560,16 @@ function handleLevelCleared() {
     return;
   }
   campaignComplete = true;
-  showResult(true, "五重漆海全部澄明", "你已经击散二十种砖阵，并完成深海王冠终局。");
+  showResult(true, "五重漆海全部澄明", "你已经击散二十种砖阵，以 " + score + " 分完成深海王冠终局，最高连击 ×" + bestCombo + "。 ");
 }
 
 function loseLife() {
   lives -= 1;
   breakoutCombo = 0;
+  focusActive = false;
   if (lives <= 0) {
-    showResult(false, "光球沉入海面", "本关三次机会已经用完；重新开始会保留当前关卡。");
+    if (breakoutMode === "campaign") showResult(false, "光球沉入海面", "本关三次机会已经用完；本局得分 " + score + "，最高连击 ×" + bestCombo + "。 ");
+    else showTerminalResult(false, "航次在漆海中止", "连续清场 " + boardsCleared + " 次，获得 " + score + " 分，最高连击 ×" + bestCombo + "。 ");
     syncLevelControls();
     return;
   }
@@ -429,15 +579,23 @@ function loseLife() {
   playSound("fail");
 }
 
-function updateBreakout(delta) {
-  const layout = breakoutLayout();
-  if (serveDelay > 0) {
-    serveDelay = Math.max(0, serveDelay - delta);
-    ball.x = paddle.x + paddle.width / 2;
-    ball.y = paddle.y - 28;
-    return;
-  }
-  const scale = Math.min(2, delta / 16.67);
+function syncActivePaddleWidth() {
+  const nextWidth = activePaddleWidth();
+  if (Math.abs(paddle.width - nextWidth) < .1) return;
+  const center = paddle.x + paddle.width / 2;
+  paddle.width = nextWidth;
+  paddle.x = Math.max(48, Math.min(672 - paddle.width, center - paddle.width / 2));
+}
+
+function updateFocus(delta) {
+  if (!focusActive) return;
+  focusEnergy = Math.max(0, focusEnergy - delta * .024);
+  if (focusEnergy > 0) return;
+  focusActive = false;
+  setStatus("聚光能量耗尽，时间流速已经恢复。 ");
+}
+
+function updateBrickFragments(scale) {
   brickFragments.forEach((fragment) => {
     fragment.x += fragment.vx * scale;
     fragment.y += fragment.vy * scale;
@@ -446,49 +604,124 @@ function updateBreakout(delta) {
     fragment.life -= .035 * scale;
   });
   brickFragments = brickFragments.filter((fragment) => fragment.life > 0);
-  ball.x += ball.vx * scale;
-  ball.y += ball.vy * scale;
-  if (ball.x < 56 || ball.x > 664) {
-    ball.vx *= -1;
-    ball.x = Math.max(56, Math.min(664, ball.x));
+}
+
+function resolvePaddleBounce(previousY) {
+  const crossedPaddle = previousY + ball.radius <= paddle.y + 3 && ball.y + ball.radius >= paddle.y;
+  if (ball.vy <= 0 || !crossedPaddle || ball.x < paddle.x - ball.radius || ball.x > paddle.x + paddle.width + ball.radius) return false;
+  const offset = Math.max(-1, Math.min(1, (ball.x - (paddle.x + paddle.width / 2)) / (paddle.width / 2)));
+  const endlessLimit = breakoutMode === "endless" ? 1 + Math.min(.28, boardsCleared * .02) : 1;
+  const speed = Math.min(currentLevel().speed * 1.78 * endlessLimit, Math.hypot(ball.vx, ball.vy) * 1.022);
+  ball.vx = Math.sin(offset * 1.02) * speed;
+  ball.vy = -Math.max(speed * .62, Math.abs(Math.cos(offset * 1.02) * speed));
+  const normalized = Math.hypot(ball.vx, ball.vy) || 1;
+  ball.vx = ball.vx / normalized * speed;
+  ball.vy = ball.vy / normalized * speed;
+  ball.y = paddle.y - ball.radius - 1;
+  playSound("move");
+  return true;
+}
+
+function reflectBallFromBrick(brick, previousX, previousY) {
+  const fromAbove = previousY + ball.radius <= brick.y;
+  const fromBelow = previousY - ball.radius >= brick.y + brick.height;
+  const fromLeft = previousX + ball.radius <= brick.x;
+  const fromRight = previousX - ball.radius >= brick.x + brick.width;
+  if (fromAbove) { ball.y = brick.y - ball.radius; ball.vy = -Math.abs(ball.vy); return "vertical"; }
+  if (fromBelow) { ball.y = brick.y + brick.height + ball.radius; ball.vy = Math.abs(ball.vy); return "vertical"; }
+  if (fromLeft) { ball.x = brick.x - ball.radius; ball.vx = -Math.abs(ball.vx); return "horizontal"; }
+  if (fromRight) { ball.x = brick.x + brick.width + ball.radius; ball.vx = Math.abs(ball.vx); return "horizontal"; }
+  const overlapX = Math.min(ball.x + ball.radius - brick.x, brick.x + brick.width - (ball.x - ball.radius));
+  const overlapY = Math.min(ball.y + ball.radius - brick.y, brick.y + brick.height - (ball.y - ball.radius));
+  if (overlapX < overlapY) { ball.vx *= -1; return "horizontal"; }
+  ball.vy *= -1;
+  return "vertical";
+}
+
+function accelerateBallAfterBrick() {
+  const currentSpeed = Math.hypot(ball.vx, ball.vy);
+  const speedLimit = currentLevel().speed * 1.82;
+  if (currentSpeed >= speedLimit) return;
+  const multiplier = Math.min(1.018, speedLimit / Math.max(.1, currentSpeed));
+  ball.vx *= multiplier;
+  ball.vy *= multiplier;
+}
+
+function resolveBrickContact(brick, previousX, previousY) {
+  const now = performance.now();
+  const piercing = pierceHits > 0;
+  impactBursts.push({ x: ball.x, y: ball.y, startedAt: now });
+  brick.hitAt = now;
+  breakoutCombo = now - lastBrickHitAt < 1450 ? breakoutCombo + 1 : 1;
+  bestCombo = Math.max(bestCombo, breakoutCombo);
+  lastBrickHitAt = now;
+  if (piercing) { pierceHits -= 1; brick.hits = 0; } else { brick.hits -= 1; reflectBallFromBrick(brick, previousX, previousY); }
+  accelerateBallAfterBrick();
+  if (sounds.ambient) sounds.ambient.volume = Math.min(.3, .16 + comboIntensity() * .025);
+  if (brick.hits <= 0) {
+    const effectMessage = resolveDestroyedBrick(brick);
+    setMetric(cleared + " / " + bricks.length);
+    setStatus((piercing ? "穿透命中 · " : "") + effectMessage + (breakoutCombo >= 3 ? " · 连击 ×" + breakoutCombo : ""));
+  } else {
+    spawnBrickFragments(brick, 2);
+    setStatus(currentLevel().label + " · 重甲受损 " + (brick.maxHits - brick.hits) + " / " + brick.maxHits + "。 ");
   }
-  if (ball.y < layout.top + 14) ball.vy = Math.abs(ball.vy);
-  if (ball.vy > 0 && ball.y + ball.radius >= paddle.y && ball.y < paddle.y + paddle.height && ball.x >= paddle.x && ball.x <= paddle.x + paddle.width) {
-    const offset = (ball.x - (paddle.x + paddle.width / 2)) / (paddle.width / 2);
-    const speed = Math.min(currentLevel().speed * 1.72, Math.hypot(ball.vx, ball.vy) * 1.018);
-    ball.vx = Math.sin(offset * 1.05) * speed;
-    ball.vy = -Math.max(speed * .58, Math.cos(offset * 1.05) * speed);
-    ball.y = paddle.y - ball.radius - 1;
-    playSound("move");
-  }
-  const brick = bricks.find(hitBrick);
-  if (brick) {
-    impactBursts.push({ x: ball.x, y: ball.y, startedAt: performance.now() });
-    brick.hits -= 1;
-    brick.hitAt = performance.now();
-    breakoutCombo = performance.now() - lastBrickHitAt < 1450 ? breakoutCombo + 1 : 1;
-    lastBrickHitAt = performance.now();
-    ball.vy *= -1;
-    const currentSpeed = Math.hypot(ball.vx, ball.vy);
-    const speedLimit = currentLevel().speed * 1.78;
-    if (currentSpeed < speedLimit) {
-      const multiplier = Math.min(1.018, speedLimit / Math.max(.1, currentSpeed));
-      ball.vx *= multiplier;
-      ball.vy *= multiplier;
+  playSound("move");
+  if (cleared === bricks.length) { handleLevelCleared(); return true; }
+  return false;
+}
+
+function advanceBallPhysics(scale, layout) {
+  const distance = Math.hypot(ball.vx, ball.vy) * scale;
+  const steps = Math.max(1, Math.ceil(distance / Math.max(5, ball.radius * .55)));
+  physicsStepCount = steps;
+  const hitIds = new Set();
+  for (let step = 0; step < steps; step += 1) {
+    const previousX = ball.x;
+    const previousY = ball.y;
+    ball.x += ball.vx * scale / steps;
+    ball.y += ball.vy * scale / steps;
+    if (ball.x - ball.radius < 48) { ball.x = 48 + ball.radius; ball.vx = Math.abs(ball.vx); }
+    if (ball.x + ball.radius > 672) { ball.x = 672 - ball.radius; ball.vx = -Math.abs(ball.vx); }
+    if (ball.y - ball.radius < layout.top + 10) { ball.y = layout.top + 10 + ball.radius; ball.vy = Math.abs(ball.vy); }
+    if (resolvePaddleBounce(previousY)) continue;
+    const brick = bricks.find((candidate) => !hitIds.has(candidate.id) && hitBrick(candidate));
+    if (brick) {
+      hitIds.add(brick.id);
+      if (resolveBrickContact(brick, previousX, previousY)) return;
     }
-    if (brick.hits <= 0) {
-      const effectMessage = resolveDestroyedBrick(brick);
-      setMetric(cleared + " / " + bricks.length);
-      if (effectMessage) setStatus(effectMessage);
-      else if (breakoutCombo >= 3) setStatus("连续击碎 ×" + breakoutCombo + " · 再保持连消即可获得爆炸道具。");
-    } else {
-      spawnBrickFragments(brick, 2);
-      setStatus(currentLevel().label + " · 护盾受损 " + (brick.maxHits - brick.hits) + " / " + brick.maxHits + "，裂纹状态已显现。");
-    }
-    playSound("move");
-    if (cleared === bricks.length) handleLevelCleared();
+    if (ball.y - ball.radius <= layout.bottom + 24) continue;
+    if (shieldCharges > 0) {
+      shieldCharges -= 1;
+      lastPowerLabel = "潮盾拦截失球";
+      lastPowerAt = performance.now();
+      resetBall();
+      setStatus("潮盾已拦截一次失球，光球重新发射。 ");
+      playSound("reward");
+    } else loseLife();
+    return;
   }
-  if (ball.y - ball.radius > layout.bottom + 24) loseLife();
+}
+
+function updateBreakout(delta) {
+  const layout = breakoutLayout();
+  if (breakoutMode === "time-attack" && modeStartedAt && timeAttackRemaining() <= 0) {
+    focusActive = false;
+    showTerminalResult(true, "限时航次结算", "120 秒内清场 " + boardsCleared + " 次，获得 " + score + " 分，最高连击 ×" + bestCombo + "。 ");
+    return;
+  }
+  updateFocus(delta);
+  syncActivePaddleWidth();
+  const timeScale = focusActive ? focusTimeScale : 1;
+  const scale = Math.min(2, delta / 16.67) * timeScale;
+  updateBrickFragments(scale);
+  if (serveDelay > 0) {
+    serveDelay = Math.max(0, serveDelay - delta);
+    ball.x = paddle.x + paddle.width / 2;
+    ball.y = paddle.y - 28;
+    return;
+  }
+  advanceBallPhysics(scale, layout);
 }
 
 function loop(timestamp) {
@@ -506,22 +739,47 @@ function movePaddle(direction) {
   drawBreakout();
 }
 
+function toggleFocus() {
+  if (!running) return;
+  if (!focusActive && focusEnergy <= 0) {
+    setStatus("聚光能量不足；击碎砖块可以补充能量。 ");
+    return;
+  }
+  focusActive = !focusActive;
+  setStatus(focusActive ? "聚光已开启：时间流速降低，期间得分减半。 " : "聚光已关闭：恢复正常流速与得分。 ");
+  playSound("move");
+}
+
 canvas.addEventListener("pointermove", (event) => {
   if (!running) return;
   const { x } = eventScenePoint(event);
   paddle.x = Math.max(48, Math.min(672 - paddle.width, x - paddle.width / 2));
 });
 
-function prepareLevel() {
+function prepareLevel(options = {}) {
+  const preserveRun = options.preserveRun === true;
   const paddleBase = config.difficulty === "relaxed" ? 150 : config.difficulty === "challenging" ? 88 : 118;
   const levelPenalty = breakoutChapterIndex() * 6;
   const layout = breakoutLayout();
-  paddle = { x: 360 - (paddleBase - levelPenalty) / 2, y: layout.paddleY, width: paddleBase - levelPenalty, height: 18 };
+  const baseWidth = paddleBase - levelPenalty;
+  paddle = { x: 360 - baseWidth / 2, y: layout.paddleY, width: baseWidth, baseWidth, height: 18 };
   cleared = 0;
-  lives = 3;
+  if (!preserveRun) {
+    lives = 3;
+    score = 0;
+    bestCombo = 0;
+    boardsCleared = 0;
+    focusEnergy = 100;
+    shieldCharges = 0;
+    widePaddleUntil = 0;
+    pierceHits = 0;
+    lastPowerLabel = "";
+    lastPowerAt = 0;
+  }
   impactBursts = [];
   brickFragments = [];
   breakoutCombo = 0;
+  focusActive = false;
   lastBrickHitAt = 0;
   clearStreak = 0;
   lastBrickClearedAt = 0;
@@ -535,21 +793,22 @@ function prepareLevel() {
 
 function startGame() {
   if (frameId) cancelAnimationFrame(frameId);
-  if (campaignComplete) {
+  if (breakoutMode === "campaign" && campaignComplete) {
     currentLevelIndex = 0;
     campaignComplete = false;
     setCampaignLevel(0, { allowLocked: true });
-  } else if (pendingNextLevel) {
+  } else if (breakoutMode === "campaign" && pendingNextLevel) {
     currentLevelIndex = Math.min(breakoutLevels.length - 1, currentLevelIndex + 1);
     setCampaignLevel(currentLevelIndex, { allowLocked: true, unlock: true });
   }
   pendingNextLevel = false;
   prepareLevel();
+  modeStartedAt = performance.now();
   running = true;
   lastFrame = 0;
   hideOverlay();
   setMetric("0 / " + bricks.length);
-  setStatus(currentLevel().label + " · 清除 " + bricks.length + " 块砖；连续消除三块可获得一次十字爆炸。");
+  setStatus(breakoutModeLabel() + "模式 · 清除 " + bricks.length + " 块砖；连消三块可获得十字爆炸，F 键或聚光按钮可减速。 ");
   startAmbient();
   frameId = requestAnimationFrame(loop);
 }
@@ -564,14 +823,15 @@ function selectLevel(index) {
   }
   prepareLevel();
   overlayTitle.textContent = currentLevel().label.replace(/^\d+\s*/, "");
-  overlayDetail.textContent = "每关使用不同砖阵；球速与护盾比例会随关卡提升，连续消除三块可获得十字爆炸。";
-  startButton.textContent = "开始本关";
+  overlayDetail.textContent = "每关使用不同砖阵；章节会逐步加入潮盾、宽挡板与穿透特殊砖，连消三块可获得十字爆炸。";
+  startButton.textContent = "开始" + breakoutModeLabel();
   setMetric("0 / " + bricks.length);
   setStatus("已选择 " + currentLevel().label + "，准备开始。");
   drawBreakout();
 }
 
 levelInputs.forEach((input) => input.addEventListener("change", () => selectLevel(Number(input.value))));
+modeInputs.forEach((input) => input.addEventListener("click", () => setBreakoutMode(input.dataset.breakoutMode)));
 
 onCampaignLevelChanged = () => {
   currentLevelIndex = campaignLevelIndex;
@@ -582,6 +842,29 @@ onCampaignLevelChanged = () => {
 };
 
 runtimeDebugActions = {
+  setCampaignMode: () => setBreakoutMode("campaign"),
+  setTimeAttackMode: () => setBreakoutMode("time-attack"),
+  setEndlessMode: () => setBreakoutMode("endless"),
+  toggleFocus: () => toggleFocus(),
+  grantSpecialPowers: () => {
+    shieldCharges = 1;
+    widePaddleUntil = performance.now() + 10_000;
+    pierceHits = 4;
+    lastPowerLabel = "验收能力组";
+    lastPowerAt = performance.now();
+    drawBreakout();
+  },
+  simulateSideCollision: () => {
+    const target = bricks.find((brick) => brick.alive);
+    if (!target) return;
+    ball.x = target.x - ball.radius + 1;
+    ball.y = target.y + target.height / 2;
+    ball.vx = Math.abs(ball.vx || currentLevel().speed);
+    const beforeVx = ball.vx;
+    const axis = reflectBallFromBrick(target, target.x - ball.radius - 2, ball.y);
+    collisionProbe = { axis, beforeVx, afterVx: ball.vx, finite: Number.isFinite(ball.x) && Number.isFinite(ball.y) };
+    drawBreakout();
+  },
   completeCurrentStage: () => {
     bricks.forEach((brick) => { brick.alive = false; });
     cleared = bricks.length;
@@ -617,6 +900,27 @@ runtimeDebugState = () => ({
   armoredBricks: bricks.filter((brick) => brick.alive && brick.maxHits > 1).length,
   damagedBricks: bricks.filter((brick) => brick.alive && brick.hits < brick.maxHits).length,
   combo: breakoutCombo,
+  bestCombo,
+  score,
+  mode: breakoutMode,
+  modeLabel: breakoutModeLabel(),
+  boardsCleared,
+  timeRemaining: timeAttackRemaining(),
+  focusEnergy: Math.round(focusEnergy * 10) / 10,
+  focusActive,
+  focusTimeScale,
+  focusScoreMultiplier,
+  shieldCharges,
+  wideActive: performance.now() < widePaddleUntil,
+  pierceHits,
+  activePowerLabel: activePowerLabel(),
+  lastPowerLabel,
+  lastPowerAt,
+  specialBrickCounts: Object.fromEntries(["shield", "wide", "pierce"].map((kind) => [kind, bricks.filter((brick) => brick.kind === kind).length])),
+  physicsStepCount,
+  collisionSystem: "substep-face-normal",
+  collisionProbe,
+  ballFinite: Number.isFinite(ball.x) && Number.isFinite(ball.y) && Number.isFinite(ball.vx) && Number.isFinite(ball.vy),
   clearStreak,
   bombArmed,
   lastExplosionRemoved,
@@ -630,13 +934,16 @@ runtimeDebugState = () => ({
 function handleControl(value) {
   if (value === "left") movePaddle(-1);
   if (value === "right") movePaddle(1);
+  if (value === "focus") toggleFocus();
 }
 
 function handleKey(key) {
   if (key === "ArrowLeft" || key.toLowerCase() === "a") movePaddle(-1);
   if (key === "ArrowRight" || key.toLowerCase() === "d") movePaddle(1);
+  if (key.toLowerCase() === "f") toggleFocus();
 }
 
+updateModeButtons();
 prepareLevel();
 drawBreakout();
 `;

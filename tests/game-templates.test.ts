@@ -135,6 +135,9 @@ test("十三类艺术化游戏都会产出可解析脚本、角色拆分位图�
         const script = readFileSync(join(output, "app.js"), "utf8");
         const html = readFileSync(join(output, "index.html"), "utf8");
         assert.match(html, /data-breakout-level/);
+        assert.match(html, /data-breakout-mode="campaign"/);
+        assert.match(html, /data-breakout-mode="time-attack"/);
+        assert.match(html, /data-breakout-mode="endless"/);
         assert.match(html, /20 · 最终掌握 · 王冠重甲/);
         assert.match(html, /连续消除三块会获得炸弹/);
         assert.match(script, /function levelHasBrick\(level, row, column\)/);
@@ -150,6 +153,15 @@ test("十三类艺术化游戏都会产出可解析脚本、角色拆分位图�
         assert.match(script, /Math\.abs\(candidate\.column - center\.column\) === 1/);
         assert.match(script, /Math\.abs\(candidate\.row - center\.row\) === 1/);
         assert.match(script, /bombClearThreshold = 3/);
+        assert.match(script, /focusTimeScale = \.55/);
+        assert.match(script, /focusScoreMultiplier = \.5/);
+        assert.match(script, /function setBreakoutMode\(nextMode\)/);
+        assert.match(script, /function grantBrickPower\(brick\)/);
+        assert.match(script, /function advanceBallPhysics\(scale, layout\)/);
+        assert.match(script, /collisionSystem: "substep-face-normal"/);
+        assert.match(script, /kind === "shield"/);
+        assert.match(script, /kind === "wide"/);
+        assert.match(script, /kind === "pierce"/);
         assert.match(script, /"formationIndex":19/);
         assert.match(script, /const brickHeight = level\.rows >= 8 \? 34 : 38/);
         assert.equal(existsSync(join(output, "assets", "breakout-levels.jsonl")), true);
