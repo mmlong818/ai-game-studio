@@ -306,6 +306,8 @@ test("十三类艺术化游戏都会产出可解析脚本、角色拆分位图�
         assert.match(script, /boardAreaVersion: 2/);
         assert.match(script, /hudDensityVersion: 2/);
         assert.match(script, /emptyRelicDockHeight: 44/);
+        assert.match(script, /inBoardLegend: false/);
+        assert.match(script, /resourceCountersPlacement: "external-controls"/);
         assert.match(script, /boardPlacement: "available-height-centered"/);
         assert.match(script, /tileScalePolicy: "preserve-ratio-and-spacing"/);
         assert.match(script, /persistentRelicDock: true/);
@@ -314,7 +316,7 @@ test("十三类艺术化游戏都会产出可解析脚本、角色拆分位图�
         assert.doesNotMatch(script, /function drawMahjongCornerMarks/);
         assert.doesNotMatch(script, /drawBitmapSprite\(mahjongFlash\.sprite/);
         assert.match(script, /function moveMahjongKeyboardCursor/);
-        assert.match(script, /亮面为自由牌/);
+        assert.doesNotMatch(script, /亮面为自由牌/);
         assert.match(script, /visualCueVersion: 4/);
         assert.match(script, /selectionChangesGeometry: false/);
         assert.match(script, /assetCompositionVersion: 2/);

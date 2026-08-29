@@ -62,6 +62,8 @@ test("阶段 E 逻辑、迷宫和长局模板具备计划要求的运行时能�
         assert.match(script, /boardAreaVersion: 2/);
         assert.match(script, /hudDensityVersion: 2/);
         assert.match(script, /emptyRelicDockHeight: 44/);
+        assert.match(script, /inBoardLegend: false/);
+        assert.match(script, /resourceCountersPlacement: "external-controls"/);
         assert.match(script, /boardPlacement: "available-height-centered"/);
         assert.match(script, /tileScalePolicy: "preserve-ratio-and-spacing"/);
         assert.match(script, /visualCueVersion: 4/);

@@ -729,13 +729,6 @@ function drawMahjongRoguelite() {
     ctx.restore();
     mahjongHitAreas.push({ tile, rect: { ...rect }, depth: tileDepth });
   });
-  const footerY = Math.min(gameSceneHeight() - 110, layout.boardTop + layout.boardHeight + 78);
-  drawPlayfield(91, footerY - 38, 538, 62, { radius: 22, alpha: .86 });
-  ctx.fillStyle = palette.text; ctx.font = "700 18px Inter, sans-serif";
-  ctx.fillText("亮面为自由牌   ·   星光为提示   ·   金色连点可配对   ·   青色底线已选", 360, footerY - 5);
-  ctx.fillStyle = palette.textSoft; ctx.font = "600 14px Inter, sans-serif";
-  const buildText = activeMahjongSynergies().length ? "协同 " + activeMahjongSynergies().map((item) => item.name).join("、") : mahjongRelicCount() ? "继续收集遗物以激活协同" : "首段完成后可选择遗物";
-  ctx.fillText("提示 " + mahjongHints + "   ·   洗牌 " + mahjongShuffles + "   ·   " + buildText, 360, footerY + 18);
   drawMahjongFeedback(now);
   drawMahjongRelicDock(now);
   if (mahjongAwaitingRelic) drawMahjongRelicChoice();
@@ -1112,6 +1105,8 @@ runtimeDebugState = () => ({
   boardAreaVersion: 2,
   hudDensityVersion: 2,
   emptyRelicDockHeight: 44,
+  inBoardLegend: false,
+  resourceCountersPlacement: "external-controls",
   boardPlacement: "available-height-centered",
   tileScalePolicy: "preserve-ratio-and-spacing",
   visualCueVersion: 4,
