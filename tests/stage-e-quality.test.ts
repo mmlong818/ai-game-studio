@@ -59,6 +59,9 @@ test("阶段 E 逻辑、迷宫和长局模板具备计划要求的运行时能�
         assert.match(script, /relicPoolSize/);
         assert.match(script, /mahjongTileVisualState/);
         assert.match(script, /boardLayout/);
+        assert.match(script, /boardAreaVersion: 2/);
+        assert.match(script, /boardPlacement: "available-height-centered"/);
+        assert.match(script, /tileScalePolicy: "preserve-ratio-and-spacing"/);
         assert.match(script, /visualCueVersion: 4/);
         assert.match(script, /layerCueVersion: 1/);
         assert.match(script, /assetCompositionVersion: 2/);

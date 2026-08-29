@@ -337,8 +337,12 @@ function mahjongLayout() {
   const verticalOffsets = alive.map((tile) => tile.y * stepY - tile.z * 18);
   const minOffset = Math.min(...verticalOffsets);
   const maxOffset = Math.max(...verticalOffsets);
-  const boardTop = 244;
   const boardHeight = maxOffset - minOffset + tileHeight + 22;
+  const boardRegionTop = 244;
+  const boardRegionBottom = Math.max(boardRegionTop, gameSceneHeight() - 92);
+  const boardAndLegendHeight = boardHeight + 102;
+  const centeredOffset = Math.max(0, (boardRegionBottom - boardRegionTop - boardAndLegendHeight) / 2);
+  const boardTop = config.aspectRatio === "9:16" ? boardRegionTop + centeredOffset : boardRegionTop;
   return { tileWidth, tileHeight, stepX, stepY, x: (720 - boardWidth) / 2, y: boardTop - minOffset, boardTop, boardWidth, boardHeight };
 }
 
@@ -1093,6 +1097,9 @@ runtimeDebugState = () => ({
   blockedCount: mahjongBoard.filter((tile) => !tile.deleted && !isMahjongTileFree(tile)).length,
   compatibleFreeCount: mahjongSelectedId ? mahjongBoard.filter((tile) => tile.id !== mahjongSelectedId && isMahjongTileFree(tile) && tile.pairId === mahjongBoard.find((candidate) => candidate.id === mahjongSelectedId)?.pairId).length : 0,
   boardLayout: mahjongLayout(),
+  boardAreaVersion: 2,
+  boardPlacement: "available-height-centered",
+  tileScalePolicy: "preserve-ratio-and-spacing",
   visualCueVersion: 4,
   layerCueVersion: 1,
   assetCompositionVersion: 2,

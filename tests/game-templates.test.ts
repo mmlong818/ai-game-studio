@@ -303,6 +303,9 @@ test("十三类艺术化游戏都会产出可解析脚本、角色拆分位图�
         assert.match(script, /function drawMahjongFeedback/);
         assert.match(script, /const minOffset = Math\.min\(\.\.\.verticalOffsets\)/);
         assert.match(script, /y: boardTop - minOffset/);
+        assert.match(script, /boardAreaVersion: 2/);
+        assert.match(script, /boardPlacement: "available-height-centered"/);
+        assert.match(script, /tileScalePolicy: "preserve-ratio-and-spacing"/);
         assert.match(script, /persistentRelicDock: true/);
         assert.match(script, /feedbackVersion: 3/);
         assert.match(script, /cuePrecedence: "selected-matching-hinted-newly-free"/);
@@ -321,6 +324,8 @@ test("十三类艺术化游戏都会产出可解析脚本、角色拆分位图�
         assert.match(script, /mahjongRemaining\(\) === 0/);
         assert.match(html, /id="game-canvas"[^>]+tabindex="0"[^>]+aria-describedby="status"/);
         assert.match(styles, /body\[data-template=mahjong-roguelite\] \.canvas-frame::before/);
+        assert.match(styles, /body\[data-template=mahjong-roguelite\] \.canvas-frame\{height:calc\(100vh - 24px\)/);
+        assert.match(styles, /calc\(\(100vh - 40px\)\*9\/16\)/);
         assert.equal(manifest.artPipeline?.assetCompositionVersion, 2);
         assert.equal(manifest.artPipeline?.tileBodySource, "canvas-single-layer");
         assert.equal(manifest.artPipeline?.spriteContent, "transparent-motif-only");
