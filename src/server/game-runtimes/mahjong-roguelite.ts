@@ -338,7 +338,7 @@ function mahjongLayout() {
   const minOffset = Math.min(...verticalOffsets);
   const maxOffset = Math.max(...verticalOffsets);
   const boardHeight = maxOffset - minOffset + tileHeight + 22;
-  const boardRegionTop = 244;
+  const boardRegionTop = 208;
   const boardRegionBottom = Math.max(boardRegionTop, gameSceneHeight() - 92);
   const boardAndLegendHeight = boardHeight + 102;
   const centeredOffset = Math.max(0, (boardRegionBottom - boardRegionTop - boardAndLegendHeight) / 2);
@@ -533,50 +533,54 @@ function drawMahjongRelicDock(now) {
     .filter((entry) => entry.relic);
   const entries = [...persistentEntries, ...activatedOnlyEntries].slice(0, 3);
   const activeIds = new Set(mahjongRelicActivation?.ids || []);
-  drawPlayfield(66, 158, 588, 70, { radius: 24, alpha: .9 });
+  const dockY = entries.length ? 128 : 132;
+  const dockHeight = entries.length ? 64 : 44;
+  drawPlayfield(80, dockY, 560, dockHeight, { radius: 20, alpha: .9 });
   ctx.textAlign = "left";
   ctx.fillStyle = palette.text;
-  ctx.font = "800 17px Inter, sans-serif";
-  ctx.fillText("旅途遗物", 88, 184);
-  ctx.fillStyle = palette.textSoft;
-  ctx.font = "650 13px Inter, sans-serif";
-  ctx.fillText(entries.length ? entries.length + " 件已选" : "尚未获得", 88, 207);
   if (!entries.length) {
+    ctx.font = "800 15px Inter, sans-serif";
+    ctx.fillText("旅途遗物", 100, 159);
     ctx.fillStyle = palette.textSoft;
-    ctx.font = "650 16px Inter, sans-serif";
-    ctx.fillText("完成首段后选择；效果会在这里持续展示", 204, 198);
+    ctx.font = "650 14px Inter, sans-serif";
+    ctx.fillText("首段完成后选择；获得后持续显示效果", 210, 159);
     return;
   }
+  ctx.font = "800 15px Inter, sans-serif";
+  ctx.fillText("旅途遗物", 96, 153);
+  ctx.fillStyle = palette.textSoft;
+  ctx.font = "650 12px Inter, sans-serif";
+  ctx.fillText(entries.length + " 件已选", 96, 174);
   const gap = 10;
-  const availableWidth = 438;
+  const availableWidth = 446;
   const chipWidth = Math.min(214, (availableWidth - gap * (entries.length - 1)) / entries.length);
   entries.forEach(({ relic, stacks }, index) => {
-    const x = 198 + index * (chipWidth + gap);
+    const x = 184 + index * (chipWidth + gap);
     const active = activeIds.has(relic.id) && mahjongRelicActivation && now < mahjongRelicActivation.until;
     const progress = active ? Math.min(1, Math.max(0, (now - mahjongRelicActivation.startedAt) / (mahjongRelicActivation.until - mahjongRelicActivation.startedAt))) : 0;
     ctx.save();
     ctx.fillStyle = active ? "rgba(255,247,218," + (.66 + (1 - progress) * .18) + ")" : "rgba(255,250,236,.56)";
     ctx.strokeStyle = "rgba(74,105,108,.28)";
     ctx.lineWidth = 2;
-    ctx.beginPath(); ctx.roundRect(x, 166, chipWidth, 54, 17); ctx.fill(); ctx.stroke();
+    ctx.beginPath(); ctx.roundRect(x, 135, chipWidth, 50, 16); ctx.fill(); ctx.stroke();
     if (active) {
       const pulse = 22 + progress * 10;
       ctx.strokeStyle = "rgba(230,164,44," + (.78 * (1 - progress)) + ")";
       ctx.lineWidth = 4 - progress * 2;
-      ctx.beginPath(); ctx.arc(x + 28, 193, pulse, 0, Math.PI * 2); ctx.stroke();
+      ctx.beginPath(); ctx.arc(x + 27, 160, pulse, 0, Math.PI * 2); ctx.stroke();
     }
-    drawBitmapSprite(relic.sprite, x + 7, 172, 42, 42, { fallback: palette.highlight, scale: 1 });
+    drawBitmapSprite(relic.sprite, x + 6, 139, 42, 42, { fallback: palette.highlight, scale: 1 });
     if (stacks > 1) {
-      ctx.fillStyle = "#146f78"; ctx.beginPath(); ctx.arc(x + 46, 174, 10, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = "#146f78"; ctx.beginPath(); ctx.arc(x + 45, 141, 10, 0, Math.PI * 2); ctx.fill();
       ctx.fillStyle = "#fffaf0"; ctx.font = "800 12px Inter, sans-serif"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
-      ctx.fillText(String(stacks), x + 46, 174); ctx.textBaseline = "alphabetic";
+      ctx.fillText(String(stacks), x + 45, 141); ctx.textBaseline = "alphabetic";
     }
     ctx.textAlign = "left";
     ctx.fillStyle = palette.text; ctx.font = "800 15px Inter, sans-serif";
-    ctx.fillText(relic.name, x + 56, 187, chipWidth - 64);
+    ctx.fillText(relic.name, x + 54, 155, chipWidth - 62);
     ctx.fillStyle = active ? "#a66515" : palette.textSoft; ctx.font = "650 12px Inter, sans-serif";
     const detail = active ? mahjongRelicActivation.label : relic.detail;
-    ctx.fillText(detail.length > 12 ? detail.slice(0, 12) + "…" : detail, x + 56, 207, chipWidth - 64);
+    ctx.fillText(detail.length > 12 ? detail.slice(0, 12) + "…" : detail, x + 54, 175, chipWidth - 62);
     ctx.restore();
   });
 }
@@ -674,15 +678,23 @@ function drawMahjongRoguelite() {
   const freeCount = mahjongBoard.filter(isMahjongTileFree).length;
   const pairCount = getAvailableMahjongPairs().length;
   const selectedTile = mahjongBoard.find((tile) => tile.id === mahjongSelectedId) || null;
-  drawPlayfield(94, 34, 532, 118, { radius: 30, alpha: .88 });
-  ctx.textAlign = "center"; ctx.fillStyle = palette.text;
-  ctx.font = "800 29px Inter, sans-serif";
+  drawPlayfield(72, 28, 576, 92, { radius: 26, alpha: .88 });
+  ctx.fillStyle = palette.text;
+  ctx.font = "800 24px Inter, sans-serif";
   const rule = currentMahjongRule();
-  const tideText = mahjongDeadline ? "   潮汐 " + mahjongTimeRemaining() + "秒" : "";
   const route = currentMahjongRoute();
-  ctx.fillText("航段 " + (mahjongStage + 1) + " / 3   " + (route?.name || "待选航线") + "   剩余 " + mahjongRemaining() + tideText, 360, 82);
-  ctx.fillStyle = palette.textSoft; ctx.font = "700 18px Inter, sans-serif";
-  ctx.fillText(rule.label + "   ·   可配对 " + pairCount + "   ·   得分 " + Math.round(mahjongScore) + "   ·   连击 ×" + Math.max(1, mahjongCombo), 360, 123);
+  ctx.textAlign = "left";
+  ctx.fillText("航段 " + (mahjongStage + 1) + " / 3", 96, 66);
+  ctx.textAlign = "center";
+  ctx.fillText(route?.name || "待选航线", 360, 66, 260);
+  ctx.textAlign = "right";
+  ctx.fillText("剩余 " + mahjongRemaining(), 624, 66);
+  ctx.fillStyle = palette.textSoft; ctx.font = "700 16px Inter, sans-serif";
+  ctx.textAlign = "left";
+  ctx.fillText("可配对 " + pairCount + "   ·   得分 " + Math.round(mahjongScore) + "   ·   连击 ×" + Math.max(1, mahjongCombo), 96, 101);
+  ctx.textAlign = "right";
+  ctx.fillStyle = mahjongDeadline ? "#a66515" : palette.textSoft;
+  ctx.fillText(mahjongDeadline ? "潮汐 " + mahjongTimeRemaining() + " 秒" : rule.label, 624, 101);
   drawPlayfield(layout.x - 24, layout.boardTop - 12, layout.boardWidth + 48, layout.boardHeight + 42, { radius: 36, alpha: .9 });
   mahjongHitAreas = [];
   const drawOrder = [...mahjongBoard].filter((tile) => !tile.deleted).sort((left, right) => left.z - right.z || left.y - right.y || left.x - right.x);
@@ -1098,6 +1110,8 @@ runtimeDebugState = () => ({
   compatibleFreeCount: mahjongSelectedId ? mahjongBoard.filter((tile) => tile.id !== mahjongSelectedId && isMahjongTileFree(tile) && tile.pairId === mahjongBoard.find((candidate) => candidate.id === mahjongSelectedId)?.pairId).length : 0,
   boardLayout: mahjongLayout(),
   boardAreaVersion: 2,
+  hudDensityVersion: 2,
+  emptyRelicDockHeight: 44,
   boardPlacement: "available-height-centered",
   tileScalePolicy: "preserve-ratio-and-spacing",
   visualCueVersion: 4,

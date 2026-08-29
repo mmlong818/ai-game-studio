@@ -304,6 +304,8 @@ test("十三类艺术化游戏都会产出可解析脚本、角色拆分位图�
         assert.match(script, /const minOffset = Math\.min\(\.\.\.verticalOffsets\)/);
         assert.match(script, /y: boardTop - minOffset/);
         assert.match(script, /boardAreaVersion: 2/);
+        assert.match(script, /hudDensityVersion: 2/);
+        assert.match(script, /emptyRelicDockHeight: 44/);
         assert.match(script, /boardPlacement: "available-height-centered"/);
         assert.match(script, /tileScalePolicy: "preserve-ratio-and-spacing"/);
         assert.match(script, /persistentRelicDock: true/);
