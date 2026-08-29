@@ -34,7 +34,7 @@
 | 9 | 植光拼图 | `puzzle` | 已完成并发布 v35，见 `46-puzzle-best-template-reference.md` | 20 图、6–50 块、四区外围整理、真实指针拖动、缩放/预览/提示、邻接成组和真实上传图自适应均已验收；稳定网址已指向 `8e550150-c71f-46ef-a864-e6445dba4e5b` |
 | 10 | 果冻填阵 | `block-place` | 已完成研究合同，见 `47-block-place-best-template-reference.md` | 已发布 v22；20 个开局、五章、旅程/无尽/每日、无尽最佳、每日同日复现、100 批可连续放完验证、手指上方拖放、局内恢复与主美真检均通过 |
 | 11 | 软糖拼岛 | `polyomino-fit` | 已完成并发布 v18，见 `48-polyomino-fit-best-template-reference.md` | 20 个原创可解轮廓、五章 4–8 块递进、直接拖放、非法回弹、分层提示、恢复/撤销/重置和主美真检均通过 |
-| 12 | 星灵巡格 | `region-logic` | 已完成研究合同，见 `49-region-logic-best-template-reference.md` | 实现中：目标为 20 个原创唯一解、无猜测推理轨迹、一星到二星五章、解释型提示和恢复/撤销/重做 |
+| 12 | 星灵巡格 | `region-logic` | 已完成并发布 v19，见 `49-region-logic-best-template-reference.md` | 20 个原创唯一解关卡、一星到二星五章、8 套不同双星答案、无猜测推理轨迹、解释型提示、恢复/撤销/重做与手机/桌面真检均已通过；稳定网址已指向 `e6250710-cc9f-4aa8-a220-e2339f25f99a` |
 | 13 | 星梦对决 | 独立对战模板 | 待专门研究 | 待开始 |
 | 14 | 3D 收集闯关 | `generated-3d` | 待专门研究 | 待开始 |
 | 15 | 3D 小型竞技场 | `signal-hunt` | 待专门研究 | 待开始 |
