@@ -1420,6 +1420,7 @@ export async function inspectStageF3DInBrowser(root: string, expectedMode: "coll
   const viewportsChecked: string[] = [];
   let performanceTier = "";
   let hiddenRenderPaused = false;
+  mkdirSync(join(root, "_studio"), { recursive: true });
   try {
     browser = await chromium.launch({ executablePath, headless: true, args: ["--enable-unsafe-swiftshader", "--use-angle=swiftshader"] });
     for (const viewport of [{ name: "phone", width: 390, height: 844 }, { name: "desktop", width: 1280, height: 720 }]) {
@@ -1437,7 +1438,48 @@ export async function inspectStageF3DInBrowser(root: string, expectedMode: "coll
         });
         if (initial.state?.mode !== expectedMode) throw new Error(`预期 ${expectedMode}，实际 ${String(initial.state?.mode)}`);
         if (!initial.shell || initial.shell.width < 300 || initial.shell.height < 560) throw new Error("3D 主体未充分利用画幅");
+        await page.screenshot({ path: join(root, "_studio", `stage-f-${expectedMode}-${viewport.name}-playing.png`), fullPage: true });
         performanceTier = String(initial.state?.performanceTier ?? "");
+        if (expectedMode === "collector") {
+          const collector = initial.state?.collector as Record<string, unknown> | undefined;
+          if (collector?.blueprintCount !== 20 || collector.uniqueSignatures !== 20 || collector.chapterCount !== 5 || collector.optionalCollectibles !== true) {
+            throw new Error(`3D 收集模板没有形成 20 个唯一蓝图、五章和可选收集分层：${JSON.stringify(collector)}`);
+          }
+          const jumpProbe = await page.evaluate(() => (window as any).__GAME_DEBUG__?.prepareJumpObstacle?.());
+          if (!jumpProbe?.obstacle) throw new Error("3D 收集模板没有可执行的低障碍跳跃探针");
+          await page.keyboard.down("ArrowUp");
+          await page.keyboard.press("Space");
+          await page.waitForTimeout(560);
+          await page.keyboard.up("ArrowUp");
+          const jumped = await page.evaluate(() => (window as any).__GAME_DEBUG__?.getState?.());
+          const clearedZ = Number(jumped?.player?.z) < Number(jumpProbe.obstacle.z) - 0.2 && Number(jumped?.player?.y) > Number(jumpProbe.obstacle.height);
+          if (!clearedZ) throw new Error(`3D 收集模板的跳跃仍不能越过低障碍：${JSON.stringify({ jumpProbe, player: jumped?.player })}`);
+          await page.evaluate(() => {
+            const debug = (window as any).__GAME_DEBUG__;
+            debug?.setLevel?.(3);
+            debug?.restart?.();
+            debug?.reachCheckpoint?.();
+            debug?.triggerHazardRecovery?.();
+          });
+          const recovered = await page.evaluate(() => (window as any).__GAME_DEBUG__?.getState?.());
+          if (recovered?.mistakes !== 1 || Math.hypot(Number(recovered?.player?.x) - Number(recovered?.collector?.respawn?.x), Number(recovered?.player?.z) - Number(recovered?.collector?.respawn?.z)) > 0.1) {
+            throw new Error(`3D 收集模板没有从最近检查点一致恢复：${JSON.stringify(recovered)}`);
+          }
+          await page.evaluate(() => (window as any).__GAME_DEBUG__?.persistSession?.());
+          await page.reload({ waitUntil: "domcontentloaded", timeout: 8_000 });
+          await page.waitForFunction(() => Boolean((window as any).__GAME_DEBUG__), undefined, { timeout: 8_000 });
+          await page.locator("#start").click();
+          const restored = await page.evaluate(() => (window as any).__GAME_DEBUG__?.getState?.());
+          if (restored?.restoredSession !== true || restored?.checkpointsReached !== recovered?.checkpointsReached || restored?.mistakes !== recovered?.mistakes) {
+            throw new Error(`3D 收集模板刷新后没有恢复本关进度：${JSON.stringify({ recovered, restored })}`);
+          }
+          await page.evaluate(() => { const debug = (window as any).__GAME_DEBUG__; debug?.setLevel?.(20); debug?.restart?.(); });
+          const finalCollector = await page.evaluate(() => (window as any).__GAME_DEBUG__?.getState?.());
+          if (finalCollector?.collector?.checkpointTarget !== 2 || finalCollector?.collector?.obstacleCount < 3 || finalCollector?.collector?.hazardCount < 3 || finalCollector?.collector?.movingHazardCount < 2 || finalCollector?.collector?.sessionRestore !== true) {
+            throw new Error(`3D 收集模板终章没有形成双检查点与组合压力：${JSON.stringify(finalCollector?.collector)}`);
+          }
+          await page.screenshot({ path: join(root, "_studio", `stage-f-${expectedMode}-${viewport.name}-final-level.png`), fullPage: true });
+        }
         await page.evaluate(() => (window as Window & { __GAME_DEBUG__?: { suspend: (value: boolean) => void } }).__GAME_DEBUG__?.suspend(true));
         const beforeSuspend = await page.evaluate(() => (window as Window & { __GAME_DEBUG__?: { getState: () => { renderCount: number } } }).__GAME_DEBUG__?.getState().renderCount ?? -1);
         await page.waitForTimeout(140);
@@ -1476,7 +1518,6 @@ export async function inspectStageF3DInBrowser(root: string, expectedMode: "coll
   }
   if (!hiddenRenderPaused) throw new Error("3D 后台停渲染探针失败");
   const result: StageF3DQualityResult = { mode: expectedMode, completedRuns, failedRuns, evidence: { viewportsChecked, performanceTier, hiddenRenderPaused } };
-  mkdirSync(join(root, "_studio"), { recursive: true });
   writeFileSync(join(root, "_studio", "STAGE_F_3D_REPORT.json"), `${JSON.stringify({ checkedAt: new Date().toISOString(), ...result }, null, 2)}\n`, "utf8");
   return result;
 }

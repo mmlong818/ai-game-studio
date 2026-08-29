@@ -6,6 +6,7 @@ import { visualStyleOptions, type ProjectDetail } from "../shared/contracts.js";
 import { createCampaignLevels } from "../shared/level-progression.js";
 import type { DirectionVerdict } from "./design-contract.js";
 import { getRuntimeDefinition } from "./game-runtimes/index.js";
+import { collectorBestTemplateBlueprints } from "./three-collector-blueprints.js";
 
 const moduleRoot = dirname(fileURLToPath(import.meta.url));
 const signalAssetRoot = resolve(moduleRoot, "..", "..", "assets", "starter", "signal-studio");
@@ -1515,12 +1516,31 @@ const threeMobilePlayFlowStyles = `.three-back{position:absolute;z-index:9;top:m
 @media(max-width:720px){body{display:grid;width:100%;height:100svh;min-height:100svh;overflow:hidden;place-items:center}.three-shell{width:min(100vw,56.25svh);height:min(100svh,177.7778vw);min-height:0;aspect-ratio:9/16}.three-start,.three-result{max-height:calc(100% - 24px);overflow:auto;overscroll-behavior:contain}.three-hud{padding:max(8px,env(safe-area-inset-top)) max(8px,env(safe-area-inset-right)) max(8px,env(safe-area-inset-bottom)) max(8px,env(safe-area-inset-left))}body[data-game-state=playing] .three-topbar{padding-left:52px}body[data-game-state=playing] .three-objective{max-width:calc(100% - 130px)}.three-controls button{min-width:44px;min-height:44px}.three-back{top:max(8px,env(safe-area-inset-top));left:max(8px,env(safe-area-inset-left))}}
 @media(max-width:360px){.three-start,.three-result{width:calc(100% - 14px);padding:16px}.three-start h2,.three-result h2{font-size:34px}.three-start p,.three-result p{font-size:11px}.three-brand h1{font-size:17px}.three-metrics .metric:first-child{display:none}.three-result-actions{grid-template-columns:1fr}}`;
 
+function createThreeCampaignLevels(project: ProjectDetail) {
+  const baseLevels = createCampaignLevels(project.spec.template, project.spec.difficulty);
+  if (project.spec.threeMode !== "collector") return baseLevels;
+  return collectorBestTemplateBlueprints.map((blueprint, index) => ({
+    ...baseLevels[index],
+    label: `${String(index + 1).padStart(2, "0")} · ${blueprint.chapter} · ${blueprint.name}`,
+    tierLabel: blueprint.chapter,
+    ruleModifier: blueprint.name,
+    mission: `依次激活 ${blueprint.checkpoints.length} 个潮灯检查点并抵达出口；星砂只影响探索评价。`,
+    masteryRules: [
+      { id: "collector-stars", label: "至少找到 2 枚探索星砂", target: 2 },
+      { id: "collector-clean", label: "收齐 3 枚星砂且不触发危险复位", target: 3 },
+    ],
+  }));
+}
+
 function threeGameHtml(project: ProjectDetail) {
   const style = visualStyleDirection(project);
   const arenaMode = project.spec.threeMode === "arena";
-  const campaignLevels = createCampaignLevels(project.spec.template, project.spec.difficulty);
+  const campaignLevels = createThreeCampaignLevels(project);
   const campaignOptions = campaignLevels.map((level, index) => `<option value="${index}"${index > 0 ? " disabled" : ""}>${escapeHtml(level.label)}</option>`).join("");
-  return `<!doctype html><html lang="zh-CN"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#080b0e"><title>${escapeHtml(project.title)} · Web 3D</title><link rel="preload" as="image" href="./assets/cover.png"><link rel="preload" as="image" href="./assets/gameplay-atlas.png"><link rel="stylesheet" href="./styles.css"><script type="module" src="./app.js"></script></head><body data-runtime="web-3d" data-three-mode="${arenaMode ? "arena" : "collector"}" data-visual-style="${project.spec.visualStyle}" data-detail-level="${style.detailLevel}"><main class="three-shell"><canvas id="game-canvas" class="three-canvas" aria-label="${arenaMode ? "可战斗的 3D 小型竞技场" : "可探索的 3D 收集遗迹"}"></canvas><button class="three-back" id="back-to-setup" type="button" aria-label="返回启动设置">返回</button><div class="three-hud"><div class="three-topbar"><div class="three-brand"><span id="campaign-hud">WEB 3D · 20 LEVEL CAMPAIGN</span><h1>${escapeHtml(project.title)}</h1></div><div class="three-metrics"><div class="metric"><span>${arenaMode ? "生命 / 波次" : "遗迹碎片"}</span><strong id="fragment-count">${arenaMode ? "100 · 1/3" : "0 / "}<span id="fragment-target">${arenaMode ? "" : "5"}</span></strong></div><div class="metric"><span>剩余时间</span><strong id="time-left">—</strong></div></div></div><div></div><div class="three-bottom"><div class="three-objective"><span id="status-label">任务目标</span><p id="status">${arenaMode ? "移动、瞄准并击退三波敌人。" : "收集遗迹碎片，经过检查点并开启出口。"}</p></div><div class="three-controls" aria-label="移动控制"><button type="button" data-key="up" aria-label="向前">↑</button><button type="button" data-key="left" aria-label="向左">←</button><button type="button" data-key="down" aria-label="向后">↓</button><button type="button" data-key="right" aria-label="向右">→</button><button type="button" data-key="action" aria-label="${arenaMode ? "攻击" : "跳跃"}">${arenaMode ? "击" : "跃"}</button></div></div></div><section class="three-start" id="start-card"><span class="kicker">${style.label} · ${style.detailLabel}</span><h2>${arenaMode ? "进入潮光竞技场" : "进入遗迹"}</h2><p>${escapeHtml(project.spec.vision)} ${arenaMode ? "移动时自动瞄准最近敌人，按空格或“击”攻击。" : "使用 WASD 或屏幕按钮移动，按空格或“跃”跳过低障碍。"}</p><label class="three-level-field"><span>渐进关卡</span><select data-campaign-level aria-label="选择 3D 渐进关卡">${campaignOptions}</select></label><small data-campaign-progress>第 1 / 20 关 · 认识规则</small><button type="button" id="start">${arenaMode ? "开始迎战" : "开始探索"}</button></section><section class="three-result" id="result-card" hidden><span class="kicker" id="result-kicker">${arenaMode ? "竞技记录" : "探索记录"}</span><h2 id="result-title">任务完成</h2><p id="result-detail"></p><div class="three-result-actions"><button type="button" class="secondary-result" id="result-setup">返回设置</button><button type="button" id="restart">${arenaMode ? "再次迎战" : "再次探索"}</button></div></section><div class="webgl-error" id="webgl-error" hidden>此浏览器无法启动 WebGL 2。请启用硬件加速，或换用最新版 Chrome、Edge、Safari。</div></main></body></html>`;
+  const intro = arenaMode
+    ? `${escapeHtml(project.spec.vision)} 移动时自动瞄准最近敌人，按空格或“击”攻击。`
+    : "沿潮痕穿过遗迹，依次点亮检查点并抵达出口。主线无需收齐星砂；越过低障碍、探索三枚星砂可以提高评价。";
+  return `<!doctype html><html lang="zh-CN"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#080b0e"><title>${escapeHtml(project.title)} · Web 3D</title><link rel="preload" as="image" href="./assets/cover.png"><link rel="preload" as="image" href="./assets/gameplay-atlas.png"><link rel="stylesheet" href="./styles.css"><script type="module" src="./app.js"></script></head><body data-runtime="web-3d" data-three-mode="${arenaMode ? "arena" : "collector"}" data-visual-style="${project.spec.visualStyle}" data-detail-level="${style.detailLevel}"><main class="three-shell"><canvas id="game-canvas" class="three-canvas" aria-label="${arenaMode ? "可战斗的 3D 小型竞技场" : "可探索的 3D 收集遗迹"}"></canvas><button class="three-back" id="back-to-setup" type="button" aria-label="返回启动设置">返回</button><div class="three-hud"><div class="three-topbar"><div class="three-brand"><span id="campaign-hud">WEB 3D · 20 LEVEL CAMPAIGN</span><h1>${escapeHtml(project.title)}</h1></div><div class="three-metrics"><div class="metric"><span>${arenaMode ? "生命 / 波次" : "探索星砂"}</span><strong id="fragment-count">${arenaMode ? "100 · 1/3" : "0 / "}<span id="fragment-target">${arenaMode ? "" : "3"}</span></strong></div><div class="metric"><span>剩余时间</span><strong id="time-left">—</strong></div></div></div><div></div><div class="three-bottom"><div class="three-objective"><span id="status-label">任务目标</span><p id="status">${arenaMode ? "移动、瞄准并击退三波敌人。" : "激活沿途检查点并抵达出口；星砂用于提高评价。"}</p></div><div class="three-controls" aria-label="移动控制"><button type="button" data-key="up" aria-label="向前">↑</button><button type="button" data-key="left" aria-label="向左">←</button><button type="button" data-key="down" aria-label="向后">↓</button><button type="button" data-key="right" aria-label="向右">→</button><button type="button" data-key="action" aria-label="${arenaMode ? "攻击" : "跳跃"}">${arenaMode ? "击" : "跃"}</button></div></div></div><section class="three-start" id="start-card"><span class="kicker">${style.label} · ${style.detailLabel}</span><h2>${arenaMode ? "进入潮光竞技场" : "进入遗迹"}</h2><p>${intro}</p><label class="three-level-field"><span>渐进关卡</span><select data-campaign-level aria-label="选择 3D 渐进关卡">${campaignOptions}</select></label><small data-campaign-progress>第 1 / 20 关 · 认识规则</small><button type="button" id="start">${arenaMode ? "开始迎战" : "开始探索"}</button></section><section class="three-result" id="result-card" hidden><span class="kicker" id="result-kicker">${arenaMode ? "竞技记录" : "探索记录"}</span><h2 id="result-title">任务完成</h2><p id="result-detail"></p><div class="three-result-actions"><button type="button" class="secondary-result" id="result-setup">返回设置</button><button type="button" id="restart">${arenaMode ? "再次迎战" : "再次探索"}</button></div></section><div class="webgl-error" id="webgl-error" hidden>此浏览器无法启动 WebGL 2。请启用硬件加速，或换用最新版 Chrome、Edge、Safari。</div></main></body></html>`;
 }
 
 function threeGameScript(project: ProjectDetail) {
@@ -1533,10 +1553,12 @@ function threeGameScript(project: ProjectDetail) {
     inputModes: project.spec.inputModes,
     duration,
     campaign: project.spec.levelProgression,
-    campaignLevels: createCampaignLevels(project.spec.template, project.spec.difficulty),
+    campaignLevels: createThreeCampaignLevels(project),
     campaignStorageKey: `forge-campaign:${project.id}:${project.version.id}`,
+    collectorSessionStorageKey: `forge-collector-session:${project.id}:${project.version.id}`,
     mode: project.spec.threeMode ?? "collector",
     contract: project.spec.threeContract,
+    collectorBlueprints: project.spec.threeMode === "collector" ? collectorBestTemplateBlueprints : [],
   });
   return `import * as THREE from "./vendor/three.module.js";
 ${safeStorageShim}
@@ -1594,13 +1616,14 @@ const playerTexture = loadSpriteTexture(2);
 const gateTexture = loadSpriteTexture(3);
 const environmentTexture = textureLoader.load("./assets/arena-background.png");
 environmentTexture.colorSpace = THREE.SRGBColorSpace;
-const state = { running: false, finished: false, collected: 0, remaining: config.duration, lastTime: 0, mode: config.mode, checkpoint: false, wave: 1, health: 100, upgrade: 0, renderCount: 0, performanceTier: "medium", suspended: false };
+const state = { running: false, finished: false, collected: 0, remaining: config.duration, lastTime: 0, mode: config.mode, checkpoint: false, checkpointsReached: 0, mistakes: 0, grounded: true, wave: 1, health: 100, upgrade: 0, renderCount: 0, performanceTier: "medium", suspended: false };
 let campaignLevelIndex = 0;
 let campaignMaxUnlocked = 0;
 let campaignMastery = {};
 let requiredFragments = 4;
 let activeDuration = config.duration;
 function currentCampaignLevel() { return config.campaignLevels[campaignLevelIndex]; }
+function currentCollectorBlueprint() { return config.collectorBlueprints[campaignLevelIndex] || config.collectorBlueprints[0]; }
 function saveCampaign() {
   try { safeStorage.setItem(config.campaignStorageKey, JSON.stringify({ schemaVersion: 2, current: campaignLevelIndex, maxUnlocked: campaignMaxUnlocked, mastery: campaignMastery })); } catch {}
 }
@@ -1638,7 +1661,7 @@ function loadCampaign() {
 }
 function applyCampaignLevel() {
   const level = currentCampaignLevel();
-  requiredFragments = Math.min(8, 3 + level.tier);
+  requiredFragments = config.mode === "collector" ? 3 : Math.min(8, 3 + level.tier);
   activeDuration = Math.max(52, Math.round(config.duration / (.9 + (level.tier - 1) * .055)));
   fragmentTarget.textContent = String(requiredFragments);
 }
@@ -1672,6 +1695,10 @@ const obstacles = [];
 const fragments = [];
 const enemies = [];
 let jumpVelocity = 0;
+const moveVelocity = new THREE.Vector2();
+let jumpBuffer = 0;
+let coyoteTime = 0;
+let recoveryCooldown = 0;
 let attackCooldown = 0;
 let damageCooldown = 0;
 let renderSuspended = document.hidden;
@@ -1747,11 +1774,11 @@ function addRuin(x, z, index) {
   ruin.castShadow = true;
   ruin.receiveShadow = true;
   world.add(ruin);
-  obstacles.push({ x, z, radius: style.shape === "slab" ? 1.7 : 1.15 });
+  if (config.mode === "arena") obstacles.push({ x, z, radius: style.shape === "slab" ? 1.7 : 1.15, height: 8, shape: "circle" });
 }
 
 const ruinPositions = [[-8,-8],[0,-8],[8,-8],[-8,0],[8,0],[-8,8],[0,8],[8,8],[-14,-4],[14,4],[4,14],[-4,-14]];
-ruinPositions.forEach((position, index) => addRuin(position[0], position[1], index));
+if (config.mode === "arena") ruinPositions.forEach((position, index) => addRuin(position[0], position[1], index));
 for (let index = 0; index < Math.ceil(style.detail * performanceProfiles[performanceTier].detailScale); index += 1) {
   const angle = index * 2.399;
   const radius = 11 + (index % 5) * 2.2;
@@ -1767,12 +1794,13 @@ for (let index = 0; index < Math.ceil(style.detail * performanceProfiles[perform
 const player = new THREE.Group();
 const playerSprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: playerTexture, color: 0xffffff, transparent: true, alphaTest: 0.08, depthWrite: false }));
 playerSprite.position.y = 1.35;
-playerSprite.scale.set(3.15, 3.15, 1);
+playerSprite.scale.set(config.mode === "collector" ? 2.05 : 3.15, config.mode === "collector" ? 2.05 : 3.15, 1);
 player.add(playerSprite);
 const playerLight = new THREE.PointLight(style.accent, 6, 6, 2);
 playerLight.position.y = 1.4;
 player.add(playerLight);
 scene.add(player);
+player.visible = false;
 
 function createFragments() {
   const positions = [[-15,-13],[14,-12],[15,13],[-15,13],[0,3],[-10,5],[11,7],[2,-11]];
@@ -1783,6 +1811,7 @@ function createFragments() {
     mesh.scale.set(1.65, 1.65, 1);
     mesh.userData.baseY = 1;
     mesh.userData.index = index;
+    mesh.visible = false;
     scene.add(mesh);
     fragments.push(mesh);
   });
@@ -1804,6 +1833,7 @@ gateLight.position.set(0, 2.5, 1);
 exit.add(leftGate, rightGate, topGate, gateEmblem, gateLight);
 exit.position.set(0, 0, -21);
 scene.add(exit);
+exit.visible = false;
 
 const checkpoint = new THREE.Group();
 const checkpointRing = new THREE.Mesh(
@@ -1816,8 +1846,147 @@ const checkpointBeacon = new THREE.PointLight(style.accent, 5, 7, 2);
 checkpointBeacon.position.y = 1.2;
 checkpoint.add(checkpointRing, checkpointBeacon);
 checkpoint.position.set(0, 0, 1);
-checkpoint.visible = config.mode === "collector";
+checkpoint.visible = false;
 scene.add(checkpoint);
+
+const checkpointMarkers = [checkpoint];
+const secondCheckpoint = checkpoint.clone(true);
+secondCheckpoint.traverse((node) => { if (node.material) node.material = node.material.clone(); });
+secondCheckpoint.visible = false;
+scene.add(secondCheckpoint);
+checkpointMarkers.push(secondCheckpoint);
+const collectorCourse = new THREE.Group();
+collectorCourse.visible = config.mode === "collector";
+scene.add(collectorCourse);
+const collectorHazards = [];
+let collectorRespawn = new THREE.Vector3(0, 0, 18);
+
+function clearCollectorCourse() {
+  obstacles.splice(0);
+  collectorHazards.splice(0);
+  while (collectorCourse.children.length) {
+    const child = collectorCourse.children.pop();
+    child.geometry?.dispose?.();
+    if (Array.isArray(child.material)) child.material.forEach((material) => material.dispose?.());
+    else child.material?.dispose?.();
+  }
+}
+
+function buildCollectorCourse() {
+  if (config.mode !== "collector") return;
+  const blueprint = currentCollectorBlueprint();
+  clearCollectorCourse();
+  collectorRespawn.set(blueprint.start.x, 0, blueprint.start.z);
+  exit.position.set(blueprint.exit.x, 0, blueprint.exit.z);
+  checkpointMarkers.forEach((marker, index) => {
+    const point = blueprint.checkpoints[index];
+    marker.visible = Boolean(point);
+    if (point) marker.position.set(point.x, 0, point.z);
+    marker.traverse((node) => {
+      if (node.isMesh && node.material?.emissiveIntensity !== undefined) node.material.emissiveIntensity = .7;
+      if (node.isLight) node.intensity = 5;
+    });
+  });
+  blueprint.obstacles.forEach((item) => {
+    const mesh = new THREE.Mesh(
+      new THREE.BoxGeometry(item.width, item.height, item.depth),
+      new THREE.MeshStandardMaterial({ color: style.stone, map: ruinTexture, roughness: .74, metalness: .1, emissive: style.accent, emissiveIntensity: .04 })
+    );
+    mesh.position.set(item.x, item.height / 2, item.z);
+    mesh.castShadow = true; mesh.receiveShadow = true;
+    collectorCourse.add(mesh);
+    obstacles.push({ x: item.x, z: item.z, halfWidth: item.width / 2, halfDepth: item.depth / 2, height: item.height, shape: "box" });
+  });
+  blueprint.hazards.forEach((item) => {
+    const mesh = new THREE.Mesh(
+      new THREE.CylinderGeometry(item.radius, item.radius, .08, 40),
+      new THREE.MeshStandardMaterial({ color: 0x6f2430, emissive: 0xe44f57, emissiveIntensity: .65, transparent: true, opacity: .82, roughness: .48 })
+    );
+    mesh.position.set(item.x, .045, item.z);
+    mesh.receiveShadow = true;
+    collectorCourse.add(mesh);
+    collectorHazards.push({ ...item, baseX: item.x, baseZ: item.z, mesh });
+  });
+  fragments.forEach((fragment, index) => {
+    const point = blueprint.stars[index];
+    fragment.visible = Boolean(point);
+    if (point) {
+      fragment.position.set(point.x, 1, point.z);
+      fragment.userData.baseY = 1;
+      fragment.userData.index = index;
+    }
+  });
+}
+
+let collectorSessionSaveClock = 0;
+function clearCollectorSession() {
+  if (config.mode !== "collector") return;
+  try { safeStorage.removeItem(config.collectorSessionStorageKey); } catch {}
+}
+function saveCollectorSession() {
+  if (config.mode !== "collector" || !state.running || state.finished) return;
+  try {
+    safeStorage.setItem(config.collectorSessionStorageKey, JSON.stringify({
+      schemaVersion: 1,
+      level: campaignLevelIndex,
+      blueprintId: currentCollectorBlueprint()?.id,
+      remaining: state.remaining,
+      collected: state.collected,
+      checkpointsReached: state.checkpointsReached,
+      mistakes: state.mistakes,
+      player: { x: player.position.x, y: player.position.y, z: player.position.z },
+      respawn: { x: collectorRespawn.x, y: collectorRespawn.y, z: collectorRespawn.z },
+      collectedStarIndexes: fragments.flatMap((fragment, index) => fragment.visible ? [] : [index]),
+    }));
+  } catch {}
+}
+function restoreCollectorSession() {
+  if (config.mode !== "collector") return false;
+  try {
+    const saved = JSON.parse(safeStorage.getItem(config.collectorSessionStorageKey) || "null");
+    const blueprint = currentCollectorBlueprint();
+    if (saved?.schemaVersion !== 1 || saved.level !== campaignLevelIndex || saved.blueprintId !== blueprint?.id || Number(saved.remaining) <= 0) return false;
+    state.remaining = Math.min(activeDuration, Math.max(1, Number(saved.remaining) || activeDuration));
+    state.collected = Math.max(0, Math.min(requiredFragments, Number(saved.collected) || 0));
+    state.checkpointsReached = Math.max(0, Math.min(blueprint.checkpoints.length, Number(saved.checkpointsReached) || 0));
+    state.checkpoint = state.checkpointsReached > 0;
+    state.mistakes = Math.max(0, Number(saved.mistakes) || 0);
+    const withinWorld = (value) => Number.isFinite(Number(value)) && Math.abs(Number(value)) <= 24;
+    if (withinWorld(saved.player?.x) && withinWorld(saved.player?.z)) player.position.set(Number(saved.player.x), Math.max(0, Math.min(5, Number(saved.player.y) || 0)), Number(saved.player.z));
+    if (withinWorld(saved.respawn?.x) && withinWorld(saved.respawn?.z)) collectorRespawn.set(Number(saved.respawn.x), 0, Number(saved.respawn.z));
+    const collectedStarIndexes = new Set(Array.isArray(saved.collectedStarIndexes) ? saved.collectedStarIndexes.map(Number) : []);
+    fragments.forEach((fragment, index) => { fragment.visible = index < requiredFragments && !collectedStarIndexes.has(index); });
+    checkpointMarkers.forEach((marker, index) => {
+      if (index >= state.checkpointsReached) return;
+      marker.traverse((node) => {
+        if (node.isMesh && node.material?.emissiveIntensity !== undefined) node.material.emissiveIntensity = 2.2;
+        if (node.isLight) node.intensity = 10;
+      });
+    });
+    if (state.checkpointsReached >= blueprint.checkpoints.length) {
+      gateMaterial.emissive.setHex(style.accent); gateMaterial.emissiveIntensity = 1.25;
+      gateEmblem.material.color.setHex(0xffffff); gateLight.intensity = 12;
+    }
+    state.restoredSession = true;
+    return true;
+  } catch { return false; }
+}
+
+function updateCollectorCourse(time) {
+  if (config.mode !== "collector") return;
+  collectorHazards.forEach((hazard, index) => {
+    const motion = hazard.motion;
+    if (motion) {
+      const offset = Math.sin(time * .001 * motion.speed + (motion.phase || index * 1.7)) * motion.range;
+      hazard.x = hazard.baseX + (motion.axis === "x" ? offset : 0);
+      hazard.z = hazard.baseZ + (motion.axis === "z" ? offset : 0);
+      hazard.mesh.position.x = hazard.x;
+      hazard.mesh.position.z = hazard.z;
+    }
+    const pulse = 1 + Math.sin(time * .004 + index) * .08;
+    hazard.mesh.scale.set(pulse, 1, pulse);
+  });
+}
 
 function clearEnemies() {
   enemies.splice(0).forEach((enemy) => scene.remove(enemy));
@@ -1875,10 +2044,16 @@ function startEnvironmentAudio() {
 }
 function stopEnvironmentAudio() { sounds.music.pause(); sounds.ambient.pause(); }
 
-function resetGame() {
+function resetGame(options = {}) {
+  const restoreSession = Boolean(options.restoreSession);
   applyCampaignLevel();
-  setGameSessionState("playing"); state.finished = false; state.collected = 0; state.remaining = activeDuration; state.checkpoint = false; state.wave = 1; state.health = 100; state.upgrade = 0;
-  player.position.set(0, 0, 18);
+  buildCollectorCourse();
+  exit.visible = config.mode === "collector";
+  player.visible = true;
+  setGameSessionState("playing"); state.finished = false; state.collected = 0; state.remaining = activeDuration; state.checkpoint = false; state.checkpointsReached = 0; state.mistakes = 0; state.grounded = true; state.wave = 1; state.health = 100; state.upgrade = 0; state.restoredSession = false;
+  const collectorStart = currentCollectorBlueprint()?.start || { x: 0, z: 18 };
+  player.position.set(collectorStart.x, 0, collectorStart.z);
+  collectorRespawn.copy(player.position);
   jumpVelocity = 0; attackCooldown = 0; damageCooldown = 0;
   checkpointRing.material.emissiveIntensity = .7;
   checkpointBeacon.intensity = 5;
@@ -1887,21 +2062,30 @@ function resetGame() {
   gateMaterial.emissive.setHex(0x000000);
   gateEmblem.material.color.setHex(0xc3aaa0);
   gateLight.intensity = 0;
-  if (config.mode === "collector") fragmentCount.firstChild.textContent = "0 / ";
+  collectorSessionSaveClock = 0;
+  const restored = restoreSession && restoreCollectorSession();
+  if (config.mode === "collector") fragmentCount.firstChild.textContent = state.collected + " / ";
   else fragmentCount.textContent = "100 · 1/3";
-  timeLeft.textContent = String(activeDuration);
-  statusLabel.textContent = "任务目标";
+  timeLeft.textContent = String(Math.ceil(state.remaining));
+  statusLabel.textContent = restored ? "已恢复探索" : "任务目标";
   status.textContent = config.mode === "arena"
     ? "第 " + currentCampaignLevel().number + " 关 · " + currentCampaignLevel().ruleModifier + "；完成三波敌人并选择升级。"
-    : "第 " + currentCampaignLevel().number + " 关 · " + currentCampaignLevel().ruleModifier + "；收集 " + requiredFragments + " 枚碎片、经过检查点后抵达出口。";
+    : restored
+      ? "已回到上次离开的位置；检查点与星砂进度均已保留。"
+      : "第 " + currentCampaignLevel().number + " 关 · " + currentCollectorBlueprint().name + "；激活 " + currentCollectorBlueprint().checkpoints.length + " 个检查点后抵达出口，三枚星砂用于评价。";
   startCard.hidden = true; resultCard.hidden = true;
   startEnvironmentAudio();
   previousFrame = performance.now();
 }
 
 function returnToSetup() {
+  saveCollectorSession();
   keys.clear();
   stopEnvironmentAudio();
+  player.visible = false;
+  exit.visible = false;
+  checkpointMarkers.forEach((marker) => { marker.visible = false; });
+  fragments.forEach((fragment) => { fragment.visible = false; });
   setGameSessionState("idle");
   state.finished = false;
   statusLabel.textContent = "启动设置";
@@ -1912,37 +2096,75 @@ function returnToSetup() {
 
 function blocked(nextX, nextZ) {
   if (Math.abs(nextX) > 24 || Math.abs(nextZ) > 24) return true;
-  const pressure = (currentCampaignLevel().tier - 1) * .07;
-  return obstacles.some((obstacle) => Math.hypot(nextX - obstacle.x, nextZ - obstacle.z) < obstacle.radius + 0.55 + pressure);
+  const pressure = (currentCampaignLevel().tier - 1) * .025;
+  return obstacles.some((obstacle) => {
+    if (player.position.y > obstacle.height - .12) return false;
+    if (obstacle.shape === "box") return Math.abs(nextX - obstacle.x) < obstacle.halfWidth + .5 + pressure && Math.abs(nextZ - obstacle.z) < obstacle.halfDepth + .5 + pressure;
+    return Math.hypot(nextX - obstacle.x, nextZ - obstacle.z) < obstacle.radius + .55 + pressure;
+  });
+}
+
+function recoverCollector(reason) {
+  if (config.mode !== "collector" || recoveryCooldown > 0) return;
+  recoveryCooldown = 1.1;
+  state.mistakes += 1;
+  state.remaining = Math.max(1, state.remaining - 4);
+  player.position.copy(collectorRespawn);
+  moveVelocity.set(0, 0);
+  jumpVelocity = 0;
+  state.grounded = true;
+  statusLabel.textContent = "返回最近检查点";
+  status.textContent = reason + " · 扣除 4 秒，短暂无敌后继续。";
+  playSound("warning");
+  saveCollectorSession();
 }
 
 function updatePlayer(delta) {
   if (!state.running) return;
+  recoveryCooldown = Math.max(0, recoveryCooldown - delta);
   if (config.mode === "collector") {
+    jumpBuffer = Math.max(0, jumpBuffer - delta);
+    coyoteTime = state.grounded ? .12 : Math.max(0, coyoteTime - delta);
+    if (jumpBuffer > 0 && coyoteTime > 0) {
+      jumpVelocity = 7.8;
+      jumpBuffer = 0;
+      coyoteTime = 0;
+      state.grounded = false;
+      playSound("ui");
+    }
     jumpVelocity -= 18 * delta;
     player.position.y = Math.max(0, player.position.y + jumpVelocity * delta);
-    if (player.position.y === 0 && jumpVelocity < 0) jumpVelocity = 0;
+    if (player.position.y === 0 && jumpVelocity < 0) { jumpVelocity = 0; state.grounded = true; }
   }
   let x = 0; let z = 0;
   if (keys.has("ArrowUp") || keys.has("KeyW")) z -= 1;
   if (keys.has("ArrowDown") || keys.has("KeyS")) z += 1;
   if (keys.has("ArrowLeft") || keys.has("KeyA")) x -= 1;
   if (keys.has("ArrowRight") || keys.has("KeyD")) x += 1;
-  if (!x && !z) return;
-  const length = Math.hypot(x, z);
-  x /= length; z /= length;
-  const speed = (config.difficulty === "challenging" ? 8.2 : 7.2) * delta;
-  const nextX = player.position.x + x * speed;
-  const nextZ = player.position.z + z * speed;
+  if (x || z) { const length = Math.hypot(x, z); x /= length; z /= length; }
+  const topSpeed = config.difficulty === "challenging" ? 8.2 : 7.2;
+  const response = x || z ? 11 : 15;
+  moveVelocity.x += (x * topSpeed - moveVelocity.x) * Math.min(1, response * delta);
+  moveVelocity.y += (z * topSpeed - moveVelocity.y) * Math.min(1, response * delta);
+  if (Math.abs(moveVelocity.x) < .015) moveVelocity.x = 0;
+  if (Math.abs(moveVelocity.y) < .015) moveVelocity.y = 0;
+  const nextX = player.position.x + moveVelocity.x * delta;
+  const nextZ = player.position.z + moveVelocity.y * delta;
   if (!blocked(nextX, player.position.z)) player.position.x = nextX;
+  else moveVelocity.x = 0;
   if (!blocked(player.position.x, nextZ)) player.position.z = nextZ;
-  playerSprite.material.rotation = Math.atan2(x, -z) * 0.08;
+  else moveVelocity.y = 0;
+  if (x || z) playerSprite.material.rotation = Math.atan2(x, -z) * 0.08;
+  if (config.mode === "collector" && recoveryCooldown <= 0 && player.position.y < .35) {
+    const hazard = collectorHazards.find((item) => Math.hypot(player.position.x - item.x, player.position.z - item.z) < item.radius + .35);
+    if (hazard) recoverCollector("触碰危险潮面");
+  }
 }
 
 function triggerAction() {
   if (!state.running) return;
   if (config.mode === "collector") {
-    if (player.position.y <= .01) { jumpVelocity = 7.6; playSound("ui"); }
+    jumpBuffer = .14;
     return;
   }
   if (attackCooldown > 0) return;
@@ -1995,14 +2217,28 @@ function updateArena(delta, time) {
 
 function collectFragments(time) {
   if (!state.running || config.mode !== "collector") return;
-  checkpointRing.rotation.z = time * .0008;
-  if (!state.checkpoint && player.position.distanceTo(checkpoint.position) < 1.8) {
+  const blueprint = currentCollectorBlueprint();
+  checkpointMarkers.forEach((marker) => { if (marker.visible) marker.rotation.y = time * .00045; });
+  const nextCheckpoint = checkpointMarkers[state.checkpointsReached];
+  if (nextCheckpoint?.visible && player.position.distanceTo(nextCheckpoint.position) < 1.8) {
+    const checkpointNumber = state.checkpointsReached + 1;
+    state.checkpointsReached = checkpointNumber;
     state.checkpoint = true;
-    checkpointRing.material.emissiveIntensity = 2.2;
-    checkpointBeacon.intensity = 10;
-    statusLabel.textContent = "检查点已记录";
-    status.textContent = "继续收集碎片，出口会在任务条件全部满足后开启。";
+    collectorRespawn.copy(nextCheckpoint.position);
+    nextCheckpoint.traverse((node) => {
+      if (node.isMesh && node.material?.emissiveIntensity !== undefined) node.material.emissiveIntensity = 2.2;
+      if (node.isLight) node.intensity = 10;
+    });
+    statusLabel.textContent = "检查点 " + checkpointNumber + " / " + blueprint.checkpoints.length;
+    status.textContent = checkpointNumber === blueprint.checkpoints.length ? "主路线已确认，出口开启；星砂仍可用于提高评价。" : "复位位置已更新，继续前往下一座潮灯。";
     playSound("reward");
+    saveCollectorSession();
+    if (checkpointNumber === blueprint.checkpoints.length) {
+      gateMaterial.emissive.setHex(style.accent);
+      gateMaterial.emissiveIntensity = 1.25;
+      gateEmblem.material.color.setHex(0xffffff);
+      gateLight.intensity = 12;
+    }
   }
   fragments.forEach((fragment) => {
     if (!fragment.visible) return;
@@ -2013,14 +2249,9 @@ function collectFragments(time) {
       state.collected += 1;
       fragmentCount.firstChild.textContent = state.collected + " / ";
       playSound("collect");
-      if (state.collected === requiredFragments && state.checkpoint) {
-        gateMaterial.emissive.setHex(style.accent);
-        gateMaterial.emissiveIntensity = 1.25;
-        gateEmblem.material.color.setHex(0xffffff);
-        gateLight.intensity = 12;
-        statusLabel.textContent = "出口已开启";
-        status.textContent = "检查点与碎片条件均已完成，前往北侧发光遗迹门。";
-      }
+      statusLabel.textContent = "星砂 " + state.collected + " / " + requiredFragments;
+      status.textContent = state.collected === requiredFragments ? "三枚星砂已收齐；完成主路线后前往出口。" : "星砂用于提高本关评价，不会阻断主线。";
+      saveCollectorSession();
     }
   });
 }
@@ -2030,16 +2261,20 @@ function showResult(won) {
   let masteryText = "";
   if (won) {
     const completedLevel = currentCampaignLevel();
-    const stars = 1 + completedLevel.masteryRules.filter((rule) => state.remaining >= rule.target).length;
+    const stars = config.mode === "collector"
+      ? Math.min(3, 1 + Number(state.collected >= 2) + Number(state.collected === requiredFragments && state.mistakes === 0))
+      : 1 + completedLevel.masteryRules.filter((rule) => state.remaining >= rule.target).length;
     campaignMastery[completedLevel.id] = Math.max(Number(campaignMastery[completedLevel.id]) || 0, stars);
     masteryText = " 本关评价 " + "★".repeat(stars) + "☆".repeat(3 - stars) + "。";
   }
   setGameSessionState(won ? (finalWin ? "won" : "stage-complete") : "lost"); state.finished = true;
+  player.visible = false;
+  clearCollectorSession();
   stopEnvironmentAudio();
   document.querySelector("#result-kicker").textContent = config.mode === "arena" ? (won ? "竞技场净空" : "潮光熄灭") : (won ? "遗迹已响应" : "探索中止");
   document.querySelector("#result-title").textContent = won ? (finalWin ? "20 关全部完成" : "第 " + (campaignLevelIndex + 1) + " 关完成") : (state.health <= 0 ? "战斗失败" : "时间耗尽");
   document.querySelector("#result-detail").textContent = won
-    ? (config.mode === "arena" ? "你完成了三波作战，并让潮印升级持续生效。" : "你收集了全部碎片、经过检查点并抵达出口。") + masteryText
+    ? (config.mode === "arena" ? "你完成了三波作战，并让潮印升级持续生效。" : "你完成了主路线，激活全部检查点并抵达出口；本局收集 " + state.collected + " / 3 枚星砂。") + masteryText
     : (config.mode === "arena" ? "已抵达第 " + state.wave + " 波，保留走位空间后再试一次。" : "已收集 " + state.collected + " / " + requiredFragments + " 枚碎片。重新规划路线再试一次。");
   resultCard.hidden = false;
   if (won && !finalWin) {
@@ -2075,9 +2310,13 @@ function updateCamera(delta) {
 function updateTimer(delta) {
   if (!state.running) return;
   state.remaining = Math.max(0, state.remaining - delta);
+  if (config.mode === "collector") {
+    collectorSessionSaveClock += delta;
+    if (collectorSessionSaveClock >= 1) { collectorSessionSaveClock = 0; saveCollectorSession(); }
+  }
   timeLeft.textContent = String(Math.ceil(state.remaining));
   if (state.remaining <= 0) showResult(false);
-  if (config.mode === "collector" && state.checkpoint && state.collected === requiredFragments && player.position.distanceTo(exit.position) < 3.4) showResult(true);
+  if (config.mode === "collector" && state.checkpointsReached >= currentCollectorBlueprint().checkpoints.length && player.position.distanceTo(exit.position) < 3.4) showResult(true);
 }
 
 let slowFrames = 0;
@@ -2085,6 +2324,7 @@ function animate(time) {
   if (renderSuspended) return;
   const delta = Math.min(Math.max(0, time - previousFrame) / 1000, 0.05);
   previousFrame = time;
+  updateCollectorCourse(time);
   updatePlayer(delta);
   collectFragments(time);
   updateArena(delta, time);
@@ -2125,8 +2365,8 @@ document.querySelectorAll("[data-key]").forEach((button) => {
   button.addEventListener("pointerup", release);
   button.addEventListener("pointercancel", release);
 });
-document.querySelector("#start").addEventListener("click", resetGame);
-document.querySelector("#restart").addEventListener("click", resetGame);
+document.querySelector("#start").addEventListener("click", () => resetGame({ restoreSession: true }));
+document.querySelector("#restart").addEventListener("click", () => { clearCollectorSession(); resetGame(); });
 backToSetupButton.addEventListener("click", returnToSetup);
 pauseButton.addEventListener("click", togglePause);
 resultSetupButton.addEventListener("click", returnToSetup);
@@ -2139,10 +2379,36 @@ applyCampaignLevel();
 
 const gameDebugApi = {
   state,
-  getState() { return { ...state, campaign: { level: currentCampaignLevel(), maxUnlocked: campaignMaxUnlocked + 1, total: config.campaignLevels.length, mastery: { ...campaignMastery }, stars: Object.values(campaignMastery).reduce((sum, value) => sum + Number(value || 0), 0) }, requiredFragments, enemyCount: enemies.filter((enemy) => enemy.visible).length, contract: config.contract }; },
+  getState() {
+    const blueprint = currentCollectorBlueprint();
+    return { ...state, player: { x: player.position.x, y: player.position.y, z: player.position.z }, campaign: { level: currentCampaignLevel(), maxUnlocked: campaignMaxUnlocked + 1, total: config.campaignLevels.length, mastery: { ...campaignMastery }, stars: Object.values(campaignMastery).reduce((sum, value) => sum + Number(value || 0), 0) }, requiredFragments, enemyCount: enemies.filter((enemy) => enemy.visible).length, contract: config.contract, runtime: config.mode === "collector" ? { tier: currentCampaignLevel().tier, checkpointTarget: blueprint?.checkpoints.length || 0, obstacleCount: blueprint?.obstacles.length || 0, hazardCount: blueprint?.hazards.length || 0, movingHazardCount: blueprint?.hazards.filter((item) => item.motion).length || 0, duration: activeDuration } : { tier: currentCampaignLevel().tier, requiredFragments, waveEnemyCount: 2 + state.wave + currentCampaignLevel().tier, duration: activeDuration }, collector: config.mode === "collector" ? { blueprintCount: config.collectorBlueprints.length, uniqueSignatures: new Set(config.collectorBlueprints.map((item) => JSON.stringify(item))).size, chapterCount: new Set(config.collectorBlueprints.map((item) => item.chapter)).size, blueprintId: blueprint?.id, blueprintName: blueprint?.name, checkpointTarget: blueprint?.checkpoints.length || 0, obstacleCount: blueprint?.obstacles.length || 0, hazardCount: blueprint?.hazards.length || 0, movingHazardCount: blueprint?.hazards.filter((item) => item.motion).length || 0, optionalCollectibles: true, sessionRestore: true, movementModel: "accelerated-camera-plane", collisionModel: "height-aware-capsule-proxy", jumpBufferSeconds: .14, coyoteSeconds: .12, respawn: { x: collectorRespawn.x, y: collectorRespawn.y, z: collectorRespawn.z } } : null };
+  },
   collectAll() { fragments.forEach((fragment) => { fragment.visible = false; }); state.collected = requiredFragments; fragmentCount.firstChild.textContent = requiredFragments + " / "; gateMaterial.emissive.setHex(style.accent); gateEmblem.material.color.setHex(0xffffff); gateLight.intensity = 12; },
   moveToExit() { player.position.copy(exit.position); },
-  reachCheckpoint() { state.checkpoint = true; checkpointRing.material.emissiveIntensity = 2.2; },
+  reachCheckpoint() {
+    const blueprint = currentCollectorBlueprint();
+    state.checkpoint = true;
+    state.checkpointsReached = blueprint?.checkpoints.length || 1;
+    const marker = checkpointMarkers[Math.max(0, state.checkpointsReached - 1)] || checkpoint;
+    collectorRespawn.copy(marker.position);
+    gateMaterial.emissive.setHex(style.accent); gateEmblem.material.color.setHex(0xffffff); gateLight.intensity = 12;
+  },
+  prepareJumpObstacle() {
+    const obstacle = obstacles.find((item) => item.shape === "box");
+    if (!obstacle) return null;
+    player.position.set(obstacle.x, 0, obstacle.z + obstacle.halfDepth + 1.1);
+    moveVelocity.set(0, 0); jumpVelocity = 0; state.grounded = true;
+    return { obstacle: { ...obstacle }, player: { x: player.position.x, y: player.position.y, z: player.position.z } };
+  },
+  triggerHazardRecovery() {
+    const hazard = collectorHazards[0];
+    if (!hazard) return false;
+    player.position.set(hazard.x, 0, hazard.z);
+    recoveryCooldown = 0;
+    recoverCollector("危险恢复探针");
+    return true;
+  },
+  persistSession: saveCollectorSession,
   clearWave() { enemies.forEach((enemy) => { enemy.visible = false; }); },
   attack: triggerAction,
   forceDamage(amount = 20) { state.health = Math.max(0, state.health - Number(amount)); fragmentCount.textContent = state.health + " · " + state.wave + "/3"; if (state.health <= 0) showResult(false); },
@@ -2167,7 +2433,7 @@ function writeThreeArtifact(root: string, project: ProjectDetail) {
     '<link rel="preload" as="image" href="./assets/sprites/sprite-02.png"><link rel="preload" as="image" href="./assets/sprites/sprite-03.png"><link rel="preload" as="image" href="./assets/sprites/sprite-04.png">',
   );
   writeFileSync(join(root, "index.html"), html, "utf8");
-  writeFileSync(join(root, "styles.css"), `${threeGameStyles}${threeCampaignStyles}${threeMasteryStyles}${threeMobilePlayFlowStyles}\n.three-controls [data-key=action]{grid-row:1;grid-column:3;background:color-mix(in srgb,var(--accent,#d6b968) 24%,#0d1618)}body[data-game-state=paused] .three-back{display:block}.three-pause{left:max(64px,calc(env(safe-area-inset-left) + 64px))!important}\n@media(max-width:720px){.three-controls{grid-template-columns:repeat(3,44px);grid-template-rows:repeat(2,44px)}body[data-game-state=playing] .three-objective,body[data-game-state=paused] .three-objective{max-width:calc(100% - 148px)}body[data-game-state=playing] .three-brand,body[data-game-state=paused] .three-brand{display:none}body[data-game-state=playing] .three-topbar,body[data-game-state=paused] .three-topbar{justify-content:flex-end;padding-left:0}}`, "utf8");
+  writeFileSync(join(root, "styles.css"), `${threeGameStyles}${threeCampaignStyles}${threeMasteryStyles}${threeMobilePlayFlowStyles}\n.three-controls [data-key=action]{grid-row:1;grid-column:3;background:color-mix(in srgb,var(--accent,#d6b968) 24%,#0d1618)}body:is([data-game-state=idle],[data-game-state=stage-complete],[data-game-state=won],[data-game-state=lost]) .three-bottom,body:is([data-game-state=idle],[data-game-state=stage-complete],[data-game-state=won],[data-game-state=lost]) .three-metrics{display:none}body[data-game-state=paused] .three-back{display:block}.three-pause{left:max(64px,calc(env(safe-area-inset-left) + 64px))!important}\n@media(max-width:720px){.three-controls{grid-template-columns:repeat(3,44px);grid-template-rows:repeat(2,44px)}body[data-game-state=playing] .three-objective,body[data-game-state=paused] .three-objective{max-width:calc(100% - 148px)}body[data-game-state=playing] .three-brand,body[data-game-state=paused] .three-brand{display:none}body[data-game-state=playing] .three-topbar,body[data-game-state=paused] .three-topbar{justify-content:flex-end;padding-left:0}}`, "utf8");
   writeFileSync(join(root, "app.js"), `${threeGameScript(project)}${gameTelemetryScript(project)}`, "utf8");
   const provenanceRoot = join(root, "_studio");
   mkdirSync(provenanceRoot, { recursive: true });

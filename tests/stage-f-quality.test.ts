@@ -48,6 +48,12 @@ test("阶段 F 两类 3D 黄金模板含完整合同、性能分级和资产来�
       if (scenario.mode === "collector") {
         assert.match(script, /jumpVelocity/);
         assert.match(script, /state\.checkpoint/);
+        assert.match(script, /uniqueSignatures/);
+        assert.match(script, /function recoverCollector/);
+        assert.match(script, /function restoreCollectorSession/);
+        assert.match(script, /function updateCollectorCourse/);
+        assert.match(script, /movingHazardCount/);
+        assert.match(script, /optionalCollectibles: true/);
       } else {
         assert.match(script, /function spawnWave/);
         assert.match(script, /function applyArenaUpgrade/);
