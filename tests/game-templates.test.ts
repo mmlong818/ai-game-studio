@@ -289,16 +289,20 @@ test("十三类艺术化游戏都会产出可解析脚本、角色拆分位图�
         const script = readFileSync(join(output, "app.js"), "utf8");
         const html = readFileSync(join(output, "index.html"), "utf8");
         const styles = readFileSync(join(output, "styles.css"), "utf8");
+        const manifest = JSON.parse(readFileSync(join(output, "game-manifest.json"), "utf8")) as { artPipeline?: { assetCompositionVersion?: number; tileBodySource?: string; spriteContent?: string } };
         assert.match(script, /function isMahjongTileFree/);
         assert.match(script, /function getAvailableMahjongPairs/);
         assert.match(script, /function createSolvableMahjongBoard/);
         assert.match(script, /function chooseMahjongRelic/);
         assert.match(script, /function syncMahjongControls/);
         assert.match(script, /function mahjongTileVisualState/);
+        assert.match(script, /function drawMahjongMotif/);
         assert.match(script, /function moveMahjongKeyboardCursor/);
         assert.match(script, /亮面为自由牌/);
         assert.match(script, /visualCueVersion: 3/);
         assert.match(script, /selectionChangesGeometry: false/);
+        assert.match(script, /assetCompositionVersion: 2/);
+        assert.match(script, /spriteContent: "transparent-motif-only"/);
         assert.match(script, /再找一张图案与角标都相同的牌/);
         assert.match(script, /first\.pairId !== tile\.pairId/);
         assert.match(script, /mahjongRelicStacks/);
@@ -306,6 +310,9 @@ test("十三类艺术化游戏都会产出可解析脚本、角色拆分位图�
         assert.match(script, /mahjongRemaining\(\) === 0/);
         assert.match(html, /id="game-canvas"[^>]+tabindex="0"[^>]+aria-describedby="status"/);
         assert.match(styles, /body\[data-template=mahjong-roguelite\] \.canvas-frame::before/);
+        assert.equal(manifest.artPipeline?.assetCompositionVersion, 2);
+        assert.equal(manifest.artPipeline?.tileBodySource, "canvas-single-layer");
+        assert.equal(manifest.artPipeline?.spriteContent, "transparent-motif-only");
       }
       if (["merge-2048", "platformer", "space-shooter", "polyomino-fit", "block-place", "region-logic", "mahjong-roguelite"].includes(template)) {
         const source = project.spec.templateSource;

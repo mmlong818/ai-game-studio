@@ -1,7 +1,8 @@
 Use case: stylized-concept
-Asset type: 3×3 game sprite atlas
-Primary request: Exact row-major 3x3 atlas for a cute roguelite mahjong solitaire game. Each cell contains one complete isolated chunky ivory ceramic mahjong-style tile, identical dimensions and front-facing three-quarter camera angle, with a unique large embossed harbor emblem: Cell 1 moonfish, Cell 2 cloud cat, Cell 3 lantern berry, Cell 4 tea leaf, Cell 5 spiral shell, Cell 6 smiling star bun, Cell 7 fox mask, Cell 8 wave bell, Cell 9 sun seed. Every emblem must be clearly different and readable at mobile size.
-Style/medium: premium contemporary ceramic toy tiles, tactile glaze, editorial storybook emblems, crisp mobile-game readability, no purple
-Composition/framing: strict 3x3 equal-cell contact sheet, exactly one centered complete rectangular tile per cell, identical scale and angle, generous separation
-Lighting/mood: soft coastal product light with restrained highlights and visible ceramic depth
-Constraints: solid uniform chroma-green #00FF00 background; no grid lines, traditional characters, text, letters, numbers, logos, watermark, copied mahjong artwork, full board, scene, overlap, crop, cast shadows crossing cells or green-family colors on tile silhouettes
+Asset type: 3×3 transparent game motif atlas
+Primary request: Exact row-major 3×3 motif atlas for a cute roguelite mahjong solitaire game. Cell 1 moon pufferfish, Cell 2 cloud cat, Cell 3 lantern berry, Cell 4 tea leaves, Cell 5 pearl shell, Cell 6 smiling starfish, Cell 7 fox mask, Cell 8 wave bell, Cell 9 sun seed.
+Style/medium: premium contemporary ceramic-toy and enamel motifs, tactile glaze, editorial storybook detail, crisp mobile-game readability, consistent visual weight
+Composition/framing: exactly one centered complete motif per cell, 62-72% subject scale, at least 14% clear safe area, no grid lines
+Lighting/mood: soft coastal product light with restrained internal highlights; no external cast shadows
+Constraints: motif-only; no tile body, card, rounded rectangle, border, thickness, pedestal, text, letters, numbers, UI, logos, watermark, scene, overlap or crop
+Generation: gpt-image-2 text-only generation on chroma-magenta #FF00FF; local hard-key extraction with edge contraction and feathering; no project image was uploaded

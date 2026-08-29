@@ -352,8 +352,31 @@ function drawMahjongTileBody(rect, tile, free, sealed) {
   ctx.strokeStyle = free ? "rgba(91,76,52,.46)" : "rgba(42,48,48,.58)";
   ctx.lineWidth = Math.max(2, rect.width * .018);
   ctx.stroke();
+  const faceGradient = ctx.createLinearGradient(rect.x, rect.y, rect.x + rect.width * .82, rect.y + rect.height);
+  faceGradient.addColorStop(0, sealed ? "#ead9cf" : free ? "#fffaf0" : "#ded5c5");
+  faceGradient.addColorStop(.62, sealed ? "#d8bfb3" : free ? "#f5e9cc" : "#c9c0af");
+  faceGradient.addColorStop(1, sealed ? "#c8aa9e" : free ? "#e7d5b2" : "#ada494");
+  ctx.fillStyle = faceGradient;
+  ctx.beginPath();
+  ctx.roundRect(rect.x, rect.y, rect.width, rect.height, radius);
+  ctx.fill();
+  ctx.strokeStyle = free ? "rgba(111,88,53,.58)" : "rgba(60,63,59,.58)";
+  ctx.lineWidth = Math.max(2, rect.width * .02);
+  ctx.stroke();
+  ctx.strokeStyle = free ? "rgba(255,255,248,.88)" : "rgba(246,241,226,.44)";
+  ctx.lineWidth = Math.max(1.5, rect.width * .014);
+  ctx.beginPath();
+  ctx.roundRect(rect.x + 5, rect.y + 5, rect.width - 10, rect.height - 10, Math.max(10, radius - 5));
+  ctx.stroke();
   ctx.restore();
   return depth;
+}
+
+function drawMahjongMotif(symbol, rect) {
+  const size = rect.width * .72;
+  const x = rect.x + (rect.width - size) / 2;
+  const y = rect.y + (rect.height - size) / 2 + rect.height * .018;
+  drawBitmapSprite(symbol, x, y, size, size, { fallback: "#d6a554", scale: 1 });
 }
 
 function drawMahjongCornerMarks(rect, color, lineWidth = 5) {
@@ -445,7 +468,7 @@ function drawMahjongRoguelite() {
     const tileDepth = drawMahjongTileBody(rect, tile, free, sealed);
     ctx.globalAlpha = free ? 1 : .76;
     ctx.filter = free ? "none" : "saturate(.5) brightness(.84)";
-    drawBitmapSprite(tile.symbol, rect.x, rect.y, rect.width, rect.height, { fallback: "#fff6de", scale: 1 });
+    drawMahjongMotif(tile.symbol, rect);
     ctx.filter = "none";
     if (!free) {
       ctx.globalAlpha = 1;
@@ -854,6 +877,9 @@ runtimeDebugState = () => ({
   boardLayout: mahjongLayout(),
   visualCueVersion: 3,
   layerCueVersion: 1,
+  assetCompositionVersion: 2,
+  tileBodySource: "canvas-single-layer",
+  spriteContent: "transparent-motif-only",
   selectionChangesGeometry: false,
   keyboardNavigation: mahjongKeyboardNavigation,
   hitAreas: mahjongHitAreas.map(({ tile, rect, depth }) => ({ id: tile.id, pairId: tile.pairId, z: tile.z, free: isMahjongTileFree(tile), depth, rect })),

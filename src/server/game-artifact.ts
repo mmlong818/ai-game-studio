@@ -1445,6 +1445,11 @@ function writeTemplateArtifact(root: string, project: ProjectDetail) {
       gameplayBackground: "./assets/background.png",
       sprites: Array.from({ length: 9 }, (_, index) => `./assets/sprites/sprite-${String(index + 1).padStart(2, "0")}.png`),
       cover: "./assets/cover.png",
+      ...(project.spec.template === "mahjong-roguelite" ? {
+        assetCompositionVersion: 2,
+        tileBodySource: "canvas-single-layer",
+        spriteContent: "transparent-motif-only",
+      } : {}),
     },
     userCustomization: project.spec.template === "puzzle"
       ? ["runtime-image-upload", "creation-image-upload"]

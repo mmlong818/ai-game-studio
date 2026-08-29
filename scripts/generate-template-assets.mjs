@@ -34,7 +34,7 @@ const spriteRoles = {
   "polyomino-fit": ["primary-piece-a", "primary-piece-b", "primary-piece-c", "primary-piece-d", "primary-piece-e", "primary-piece-f", "legal-feedback", "hint-feedback", "completion-feedback"],
   "block-place": ["primary-piece-a", "primary-piece-b", "primary-piece-c", "primary-piece-d", "primary-piece-e", "score-feedback", "combo-feedback", "illegal-feedback", "completion-feedback"],
   "region-logic": ["primary-token-a", "primary-token-b", "primary-token-c", "primary-token-d", "primary-token-e", "rule-marker", "hint-feedback", "illegal-feedback", "completion-feedback"],
-  "mahjong-roguelite": ["primary-tile-a", "primary-tile-b", "primary-tile-c", "primary-tile-d", "primary-tile-e", "primary-tile-f", "primary-tile-g", "primary-tile-h", "primary-tile-i"],
+  "mahjong-roguelite": ["primary-motif-a", "primary-motif-b", "primary-motif-c", "primary-motif-d", "primary-motif-e", "primary-motif-f", "primary-motif-g", "primary-motif-h", "primary-motif-i"],
 };
 
 const soundProfiles = {
@@ -233,8 +233,8 @@ for (const job of promptJobs) {
     assets: [
       visualAsset(root, "cover.png", "cover", "openai-image-api", { model: "gpt-image-2", width: 1024, height: 1536, promptFile: "prompt.txt" }),
       visualAsset(root, "background.png", "gameplay-background", "openai-image-api+local-derivative", { model: "gpt-image-2", width: 1024, height: 1536, promptFile: "prompt.txt", derivative: "reduced-frequency-background" }),
-      tracedAsset(root, "gameplay-atlas.png", "source-atlas", "openai-image-api+local-chroma-key", { model: "gpt-image-2", width: 1024, height: 1024, promptFile: "gameplay-atlas.txt", alphaChannel: true, layout: "3x3", deliveryUse: false }),
-      ...spriteRoles[template].map((role, index) => visualAsset(root, `sprites/sprite-${String(index + 1).padStart(2, "0")}.png`, `sprite-${role}`, "openai-image-api+local-role-extraction", { model: "gpt-image-2", width: 384, height: 384, promptFile: "gameplay-atlas.txt", alphaChannel: true, sourceCell: index + 1 })),
+      tracedAsset(root, "gameplay-atlas.png", "source-atlas", "openai-image-api+local-chroma-key", { model: "gpt-image-2", width: 1024, height: 1024, promptFile: "gameplay-atlas.txt", alphaChannel: true, layout: "3x3", deliveryUse: false, ...(template === "mahjong-roguelite" ? { generationMode: "text-only", backgroundRemoval: "local-hard-key-contract-feather", spriteContent: "transparent-motif-only", sourceVersion: 2 } : {}) }),
+      ...spriteRoles[template].map((role, index) => visualAsset(root, `sprites/sprite-${String(index + 1).padStart(2, "0")}.png`, `sprite-${role}`, "openai-image-api+local-role-extraction", { model: "gpt-image-2", width: 384, height: 384, promptFile: "gameplay-atlas.txt", alphaChannel: true, sourceCell: index + 1, ...(template === "mahjong-roguelite" ? { sourceVersion: 2, spriteContent: "transparent-motif-only" } : {}) })),
       ...(template === "puzzle" ? [
         ...Array.from({ length: 20 }, (_, index) => {
           const levelNumber = String(index + 1).padStart(2, "0");

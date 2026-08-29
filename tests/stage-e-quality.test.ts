@@ -61,6 +61,9 @@ test("阶段 E 逻辑、迷宫和长局模板具备计划要求的运行时能�
         assert.match(script, /boardLayout/);
         assert.match(script, /visualCueVersion: 3/);
         assert.match(script, /layerCueVersion: 1/);
+        assert.match(script, /assetCompositionVersion: 2/);
+        assert.match(script, /tileBodySource: "canvas-single-layer"/);
+        assert.match(script, /spriteContent: "transparent-motif-only"/);
         assert.match(script, /selectionChangesGeometry: false/);
         assert.match(script, /mahjongKeyboardNavigation = false/);
         assert.match(script, /function drawMahjongTileBody/);

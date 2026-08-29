@@ -473,6 +473,7 @@ export async function inspectStageEInBrowser(root: string, template: StageETempl
     if (template === "mahjong-roguelite" && (routeOffer?.runtime?.routePoolSize ?? 0) < 5) throw new Error("月港雀旅路线池不足 5 条。 ");
     if (template === "mahjong-roguelite" && (initial?.runtime?.visualCueVersion ?? 0) < 3) throw new Error("月港雀旅没有用固定几何区分自由牌、被压牌、选中牌和配对目标。 ");
     if (template === "mahjong-roguelite" && ((initial?.runtime?.layerCueVersion ?? 0) < 1 || initial?.runtime?.selectionChangesGeometry !== false)) throw new Error("月港雀旅没有把牌堆层级与选中反馈分离。 ");
+    if (template === "mahjong-roguelite" && ((initial?.runtime?.assetCompositionVersion ?? 0) < 2 || initial?.runtime?.tileBodySource !== "canvas-single-layer" || initial?.runtime?.spriteContent !== "transparent-motif-only")) throw new Error("月港雀旅仍把牌坯烘焙在图案位图中，存在双重厚度风险。 ");
     if (template === "mahjong-roguelite" && (initial?.runtime?.boardLayout?.boardWidth ?? 0) < 600) throw new Error("月港雀旅牌桌仍未充分利用手机横向空间。 ");
     if (template === "mahjong-roguelite" && ((initial?.runtime?.freeCount ?? 0) < 2 || (initial?.runtime?.blockedCount ?? 0) < 1)) throw new Error("月港雀旅开局没有同时呈现可选牌与被压牌。 ");
     if (template === "mahjong-roguelite" && (!selectedCue?.runtime?.selectedId || (selectedCue.runtime.compatibleFreeCount ?? 0) < 1)) throw new Error("月港雀旅选牌后没有形成可辨认的配对目标。 ");
