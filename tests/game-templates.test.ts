@@ -181,6 +181,12 @@ test("十三类艺术化游戏都会产出可解析脚本、角色拆分位图�
         assert.match(script, /function pieceSourceRect\(piece\)/);
         assert.match(script, /sourceRect: pieceSourceRect\(piece\)/);
         assert.match(script, /function drawBoardGrid\(originX, originY, cell\)/);
+        assert.match(script, /const klotskiBlueprints =/);
+        assert.match(script, /function solveKlotski\(/);
+        assert.match(script, /hintDistance: klotskiHintDistance/);
+        assert.match(script, /canvas\.addEventListener\("pointerdown"/);
+        assert.match(script, /dragProbe/);
+        assert.match(script, /function redoKlotskiMove\(/);
         assert.match(script, /pieceOutlineWidth: 6/);
         assert.match(script, /incompleteArtIsCropped: true/);
         assert.match(script, /Number\(piece\.id\.slice\(-1\)\) % 2/);

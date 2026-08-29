@@ -1,4 +1,5 @@
 from collections import deque
+import json
 
 
 INITIAL = [
@@ -104,9 +105,35 @@ def campaign_layout(number):
 def main():
     component = enumerate_component()
     distances = goal_distances(component)
-    values = [distances[campaign_layout(number)] for number in range(1, 21)]
+    target_distances = [8, 12, 16, 20, 24, 30, 36, 42, 48, 54, 60, 66, 72, 78, 84, 90, 96, 104, 112, 120]
+    names = [
+        "初开朱门", "双兵让道", "横梁移位", "回廊换肩",
+        "侧门借位", "二空接力", "长将归边", "中心腾挪",
+        "折返三隙", "双列换位", "横刀解扣", "门前清障",
+        "深庭回旋", "四角调兵", "错层借道", "窄门转轴",
+        "长廊逆行", "层层设防", "水泄不通", "横刀立马",
+    ]
+    blueprints = []
+    for index, distance in enumerate(target_distances):
+        candidates = sorted(state for state, value in distances.items() if value == distance)
+        state = candidates[(index * 7919) % len(candidates)]
+        pieces = []
+        counters = {"guard-v": 0, "soldier": 0}
+        for kind, width, height, x, y in state:
+            if kind == "hero":
+                piece_id = "cao"
+            elif width == 2:
+                piece_id = "guan"
+            elif kind == "guard":
+                counters["guard-v"] += 1
+                piece_id = f"z{counters['guard-v']}"
+            else:
+                counters["soldier"] += 1
+                piece_id = f"s{counters['soldier']}"
+            pieces.append({"id": piece_id, "x": x, "y": y})
+        blueprints.append({"name": names[index], "optimal": distance, "pieces": pieces})
     print(f"states={len(component)} goals={sum(1 for value in distances.values() if value == 0)}")
-    print(values)
+    print(json.dumps(blueprints, ensure_ascii=False, separators=(",", ":")))
 
 
 if __name__ == "__main__":

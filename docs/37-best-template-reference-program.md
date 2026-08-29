@@ -1,6 +1,6 @@
 # 最佳模板游戏持续改造计划
 
-更新日期：2026-08-29
+更新日期：2026-08-30
 
 ## 基准与边界
 
@@ -28,7 +28,7 @@
 | 3 | 星环突围 | `space-shooter` | 已完成第一轮，见 `40-space-shooter-best-template-reference.md` | v19 已发布；同步清弹竞态、三波、机体、主动能力与 Boss 合同均已验收 |
 | 4 | 云脊跃迁 | `platformer` | 已完成第一轮，见 `41-platformer-best-template-reference.md` | v20 已发布；20 套独立蓝图、10 类机制、前视镜头、复合触控、冲刺与 430ms 检查点恢复均已验收 |
 | 5 | 数织矩阵 | `merge-2048` | 已完成并发布 v34，见 `42-merge-2048-best-template-reference.md` | 20 个独立任务、下一块预告、连续位移动画、直接滑动、回溯与新位图资产均已落实；稳定网址已指向 `aa382c32-fc8c-497a-8e7f-e57c6f26b4a1` |
-| 6 | 朱门华容 | `klotski` | 已完成研究，见 `43-klotski-best-template-reference.md` | 待按 20 个求解器验证布局、真实距离带、直接拖动、逐步提示、撤销/重做和可控演示合同重构 |
+| 6 | 朱门华容 | `klotski` | 已完成并发布 v34，见 `43-klotski-best-template-reference.md` | 20 个求解器验证布局、8–120 步真实距离带、直接拖动、逐步提示、撤销/重做和路径回放均已落实；稳定网址已指向 `119aae67-cd04-4c68-8c5f-bbeb41b6a0b0` |
 | 7 | 青玉长游 | `snake` | 待专门研究 | 待开始 |
 | 8 | 苔径迷庭 | `maze` | 待专门研究 | 待开始 |
 | 9 | 植光拼图 | `puzzle` | 待专门研究 | 待开始 |

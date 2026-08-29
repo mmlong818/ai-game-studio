@@ -12,32 +12,40 @@ const initialPieces = [
   { id: "s4", label: "小猫包裹", x: 2, y: 3, w: 1, h: 1, kind: "soldier" },
 ];
 
-let scrambleMoveCount = 0;
+const klotskiPieceOrder = ["z1","z2","z3","z4","guan","cao","s1","s2","s3","s4"];
+const klotskiBlueprints = [
+  ["初开朱门",8,[[0,0],[1,0],[2,0],[3,0],[0,3],[2,3],[0,2],[1,2],[0,4],[1,4]]],
+  ["双兵让道",12,[[2,0],[3,0],[0,1],[1,1],[0,3],[2,3],[0,0],[1,0],[0,4],[1,4]]],
+  ["横梁移位",16,[[2,0],[1,1],[0,3],[1,3],[2,2],[2,3],[0,0],[1,0],[3,0],[0,2]]],
+  ["回廊换肩",20,[[0,0],[1,0],[2,0],[3,1],[2,4],[0,2],[3,0],[3,3],[0,4],[1,4]]],
+  ["侧门借位",24,[[0,0],[1,0],[3,0],[3,2],[2,4],[1,2],[2,0],[2,1],[0,4],[1,4]]],
+  ["二空接力",30,[[2,0],[3,0],[0,1],[0,3],[1,4],[1,2],[0,0],[1,1],[3,3],[3,4]]],
+  ["长将归边",36,[[1,0],[3,0],[2,1],[3,2],[2,4],[0,3],[0,0],[0,1],[1,2],[2,3]]],
+  ["中心腾挪",42,[[0,0],[2,0],[3,0],[1,2],[2,4],[2,2],[1,1],[0,2],[0,3],[1,4]]],
+  ["折返三隙",48,[[0,0],[3,1],[2,2],[3,3],[0,4],[0,2],[1,0],[3,0],[1,1],[2,4]]],
+  ["双列换位",54,[[1,0],[0,1],[2,1],[3,1],[2,4],[0,3],[0,0],[2,0],[1,2],[2,3]]],
+  ["横刀解扣",60,[[2,0],[1,3],[2,3],[3,3],[1,2],[0,0],[3,0],[0,2],[3,2],[0,4]]],
+  ["门前清障",66,[[2,0],[3,1],[1,3],[3,3],[1,2],[0,0],[3,0],[0,2],[0,4],[2,4]]],
+  ["深庭回旋",72,[[3,1],[0,2],[1,2],[2,3],[0,4],[1,0],[0,0],[0,1],[2,2],[3,3]]],
+  ["四角调兵",78,[[0,0],[2,0],[3,1],[0,3],[2,4],[1,2],[1,0],[1,1],[3,3],[1,4]]],
+  ["错层借道",84,[[2,0],[3,0],[0,2],[2,3],[0,4],[0,0],[1,2],[1,3],[3,3],[3,4]]],
+  ["窄门转轴",90,[[3,0],[2,1],[0,2],[3,3],[0,4],[0,0],[2,0],[1,2],[2,3],[2,4]]],
+  ["长廊逆行",96,[[2,0],[1,2],[2,2],[3,2],[0,4],[0,0],[3,0],[3,1],[0,3],[2,4]]],
+  ["层层设防",104,[[3,0],[3,2],[0,3],[1,3],[1,2],[0,0],[2,1],[0,2],[2,4],[3,4]]],
+  ["水泄不通",112,[[1,0],[0,1],[1,2],[0,3],[2,4],[2,0],[2,2],[3,2],[3,3],[1,4]]],
+  ["横刀立马",120,[[0,0],[3,1],[0,3],[2,3],[0,2],[1,0],[3,0],[1,3],[1,4],[3,4]]],
+];
+
+function activeKlotskiBlueprint() {
+  return klotskiBlueprints[Math.max(0, Math.min(klotskiBlueprints.length - 1, currentCampaignLevel().number - 1))];
+}
 
 function createCampaignKlotskiPieces() {
-  const result = initialPieces.map((piece) => ({ ...piece }));
-  const scrambleSteps = 4 + currentCampaignLevel().tier * 7 + currentCampaignLevel().variant * 2;
-  let previousMove = null;
-  for (let step = 0; step < scrambleSteps; step += 1) {
-    const legal = [];
-    result.forEach((piece) => {
-      [[-1, 0], [1, 0], [0, -1], [0, 1]].forEach(([dx, dy]) => {
-        if (previousMove && previousMove.id === piece.id && previousMove.dx === -dx && previousMove.dy === -dy) return;
-        const next = { ...piece, x: piece.x + dx, y: piece.y + dy };
-        if (next.x < 0 || next.y < 0 || next.x + next.w > 4 || next.y + next.h > 5) return;
-        if (piece.id === "cao" && next.x === 1 && next.y === 3) return;
-        const blocked = result.some((other) => other.id !== piece.id && next.x < other.x + other.w && next.x + next.w > other.x && next.y < other.y + other.h && next.y + next.h > other.y);
-        if (!blocked) legal.push({ piece, dx, dy });
-      });
-    });
-    if (!legal.length) { previousMove = null; continue; }
-    const move = legal[Math.floor(campaignRandom() * legal.length)];
-    move.piece.x += move.dx;
-    move.piece.y += move.dy;
-    previousMove = { id: move.piece.id, dx: move.dx, dy: move.dy };
-  }
-  scrambleMoveCount = scrambleSteps;
-  return result;
+  const blueprint = activeKlotskiBlueprint();
+  return klotskiPieceOrder.map((id, index) => {
+    const base = initialPieces.find((piece) => piece.id === id);
+    return { ...base, x: blueprint[2][index][0], y: blueprint[2][index][1] };
+  });
 }
 const courtyardArt = new Image();
 courtyardArt.decoding = "async";
@@ -53,12 +61,13 @@ let exitOpen = false;
 let winAt = 0;
 let selectedAt = performance.now();
 let klotskiHistory = [];
+let klotskiRedo = [];
 let replayPath = [];
 let initialLayoutSnapshot = [];
 let replaying = false;
 let optimalReference = null;
-// 由 scripts/compute-klotski-optimal.py 对 25,955 个可达状态反向广搜得到；一步等于棋子移动一格。
-const klotskiOptimalByLevel = [115, 113, 111, 113, 112, 112, 115, 114, 114, 117, 107, 115, 117, 113, 117, 113, 111, 111, 114, 115];
+let klotskiHint = null;
+let klotskiHintDistance = null;
 
 function klotskiLayout() {
   const cell = config.aspectRatio === "9:16" ? 144 : 112;
@@ -78,6 +87,65 @@ function canMove(piece, dx, dy) {
   if (next.x < 0 || next.y < 0 || next.x + next.w > 4 || next.y + next.h > 5) return false;
   return !pieces.some((other) => other.id !== piece.id &&
     next.x < other.x + other.w && next.x + next.w > other.x && next.y < other.y + other.h && next.y + next.h > other.y);
+}
+
+function klotskiStateKey(state) {
+  return state.map((piece) => [piece.kind, piece.w, piece.h, piece.x, piece.y].join(":" )).sort().join("|");
+}
+
+function klotskiStateCanMove(state, piece, dx, dy) {
+  const nextX = piece.x + dx;
+  const nextY = piece.y + dy;
+  if (nextX < 0 || nextY < 0 || nextX + piece.w > 4 || nextY + piece.h > 5) return false;
+  return !state.some((other) => other.id !== piece.id && nextX < other.x + other.w && nextX + piece.w > other.x && nextY < other.y + other.h && nextY + piece.h > other.y);
+}
+
+function solveKlotski(source = pieces) {
+  const start = source.map(({ id, kind, w, h, x, y }) => ({ id, kind, w, h, x, y }));
+  const startKey = klotskiStateKey(start);
+  const queue = [start];
+  const parents = new Map([[startKey, null]]);
+  const parentMoves = new Map();
+  let goalKey = null;
+  for (let cursor = 0; cursor < queue.length && cursor < 26000; cursor += 1) {
+    const state = queue[cursor];
+    const stateKey = klotskiStateKey(state);
+    const hero = state.find((piece) => piece.id === "cao");
+    if (hero?.x === 1 && hero?.y === 3) { goalKey = stateKey; break; }
+    for (const piece of state) for (const [dx, dy] of [[-1,0],[1,0],[0,-1],[0,1]]) {
+      if (!klotskiStateCanMove(state, piece, dx, dy)) continue;
+      const next = state.map((item) => item.id === piece.id ? { ...item, x: item.x + dx, y: item.y + dy } : { ...item });
+      const nextKey = klotskiStateKey(next);
+      if (parents.has(nextKey)) continue;
+      parents.set(nextKey, stateKey);
+      parentMoves.set(nextKey, { id: piece.id, dx, dy });
+      queue.push(next);
+    }
+  }
+  if (!goalKey) return null;
+  let cursorKey = goalKey;
+  let first = null;
+  let distance = 0;
+  while (parents.get(cursorKey)) {
+    first = parentMoves.get(cursorKey);
+    cursorKey = parents.get(cursorKey);
+    distance += 1;
+  }
+  return { first, distance };
+}
+
+function requestKlotskiHint() {
+  if (!running || moveAnimation || replaying) return;
+  const solution = solveKlotski();
+  klotskiHint = solution?.first ?? null;
+  klotskiHintDistance = solution?.distance ?? null;
+  if (!klotskiHint) { setStatus("当前状态没有可验证解法，请重开本关。"); return; }
+  selectedId = klotskiHint.id;
+  selectedAt = performance.now();
+  const arrows = { "-1,0": "左", "1,0": "右", "0,-1": "上", "0,1": "下" };
+  const piece = pieces.find((candidate) => candidate.id === klotskiHint.id);
+  setStatus("提示：拖动“" + piece.label + "”向" + arrows[klotskiHint.dx + "," + klotskiHint.dy] + "一格。 ");
+  spawnParticles(piece, "select", 10);
 }
 
 function pieceCenter(piece, x = piece.renderX, y = piece.renderY) {
@@ -133,13 +201,28 @@ function restoreKlotski(snapshot) {
 function undoKlotskiMove() {
   if (!running || moveAnimation || replaying || !klotskiHistory.length) return;
   const last = klotskiHistory.pop();
+  const replayMove = replayPath.pop() ?? null;
+  klotskiRedo.push({ snapshot: snapshotKlotski(), selectedId, replayMove });
   restoreKlotski(last.snapshot);
-  replayPath.pop();
   moves = Math.max(0, moves - 1);
   selectedId = last.selectedId;
   selectedAt = performance.now();
   setMetric(String(moves));
-  setStatus("已撤销一步 · 当前 " + moves + " 步 · 参考解法约 " + scrambleMoveCount + " 步。 ");
+  setStatus("已撤销一步 · 当前 " + moves + " 步 · 最优 " + optimalReference + " 步。 ");
+  playSound("move");
+}
+
+function redoKlotskiMove() {
+  if (!running || moveAnimation || replaying || !klotskiRedo.length) return;
+  const next = klotskiRedo.pop();
+  klotskiHistory.push({ snapshot: snapshotKlotski(), selectedId });
+  restoreKlotski(next.snapshot);
+  if (next.replayMove) replayPath.push(next.replayMove);
+  selectedId = next.selectedId;
+  selectedAt = performance.now();
+  moves += 1;
+  setMetric(String(moves));
+  setStatus("已重做一步 · 当前 " + moves + " 步 · 最优 " + optimalReference + " 步。 ");
   playSound("move");
 }
 
@@ -162,19 +245,22 @@ async function replayKlotskiMoves() {
   setStatus("回放完成 · 可继续操作或撤销。 ");
 }
 
-function moveSelected(dx, dy, fromReplay = false) {
-  if (!running || moveAnimation) return;
+function moveSelected(dx, dy, fromReplay = false, preserveRedo = false) {
+  if (!running || moveAnimation) return false;
   const piece = pieces.find((candidate) => candidate.id === selectedId);
   if (!piece || !canMove(piece, dx, dy)) {
     blockedUntil = performance.now() + 280;
     if (piece) spawnParticles(piece, "blocked", 6);
     setStatus("这条方向被挡住了；发光箭头表示当前可以移动的位置。");
     playSound("fail");
-    return;
+    return false;
   }
   const fromX = piece.renderX;
   const fromY = piece.renderY;
+  klotskiHint = null;
+  klotskiHintDistance = null;
   if (!fromReplay) {
+    if (!preserveRedo) klotskiRedo = [];
     klotskiHistory.push({ snapshot: snapshotKlotski(), selectedId });
     replayPath.push({ id: piece.id, dx, dy });
   } else klotskiHistory.push({ snapshot: snapshotKlotski(), selectedId });
@@ -194,6 +280,7 @@ function moveSelected(dx, dy, fromReplay = false) {
   setStatus("正在移动“" + piece.label + "”；目标是让队长机器人抵达发光出口。");
   spawnParticles(piece, "move", 5);
   playSound("move");
+  return true;
 }
 
 function completeMove(animation) {
@@ -417,7 +504,49 @@ function animationLoop(timestamp) {
   requestAnimationFrame(animationLoop);
 }
 
+let klotskiDrag = null;
+let suppressKlotskiClick = false;
+canvas.addEventListener("pointerdown", (event) => {
+  if (!running || moveAnimation || replaying) return;
+  const { x: px, y: py } = eventScenePoint(event);
+  const { cell, originX, originY } = klotskiLayout();
+  const gridX = Math.floor((px - originX) / cell);
+  const gridY = Math.floor((py - originY) / cell);
+  const piece = pieces.find((candidate) => occupiedBy(candidate, gridX, gridY));
+  if (!piece) return;
+  selectedId = piece.id;
+  selectedAt = performance.now();
+  klotskiDrag = { id: event.pointerId, x: event.clientX, y: event.clientY };
+  canvas.setPointerCapture?.(event.pointerId);
+});
+
+canvas.addEventListener("pointerup", async (event) => {
+  if (!klotskiDrag || klotskiDrag.id !== event.pointerId) return;
+  const drag = klotskiDrag;
+  klotskiDrag = null;
+  canvas.releasePointerCapture?.(event.pointerId);
+  const rect = canvas.getBoundingClientRect();
+  const scale = canvas.width / Math.max(1, rect.width);
+  const deltaX = (event.clientX - drag.x) * scale;
+  const deltaY = (event.clientY - drag.y) * scale;
+  if (Math.max(Math.abs(deltaX), Math.abs(deltaY)) < 24) return;
+  const horizontal = Math.abs(deltaX) >= Math.abs(deltaY);
+  const dx = horizontal ? Math.sign(deltaX) : 0;
+  const dy = horizontal ? 0 : Math.sign(deltaY);
+  const distance = horizontal ? Math.abs(deltaX) : Math.abs(deltaY);
+  const steps = Math.max(1, Math.min(4, Math.round(distance / klotskiLayout().cell)));
+  suppressKlotskiClick = true;
+  for (let index = 0; index < steps; index += 1) {
+    if (!moveSelected(dx, dy, false, index > 0)) break;
+    await new Promise((resolve) => setTimeout(resolve, 220));
+  }
+  setTimeout(() => { suppressKlotskiClick = false; }, 0);
+});
+canvas.addEventListener("pointercancel", () => { klotskiDrag = null; });
+canvas.addEventListener("lostpointercapture", () => { klotskiDrag = null; });
+
 canvas.addEventListener("click", (event) => {
+  if (suppressKlotskiClick) return;
   if (moveAnimation) return;
   const { x: px, y: py } = eventScenePoint(event);
   const { cell, originX, originY } = klotskiLayout();
@@ -435,7 +564,7 @@ canvas.addEventListener("click", (event) => {
 function resetPieces() {
   resetCampaignRandom();
   pieces = createCampaignKlotskiPieces().map((piece) => ({ ...piece, renderX: piece.x, renderY: piece.y }));
-  optimalReference = klotskiOptimalByLevel[currentCampaignLevel().number - 1] ?? null;
+  optimalReference = activeKlotskiBlueprint()[1];
   selectedId = "cao";
   moves = 0;
   moveAnimation = null;
@@ -445,8 +574,11 @@ function resetPieces() {
   winAt = 0;
   selectedAt = performance.now();
   klotskiHistory = [];
+  klotskiRedo = [];
   replayPath = [];
   replaying = false;
+  klotskiHint = null;
+  klotskiHintDistance = null;
   initialLayoutSnapshot = snapshotKlotski();
 }
 
@@ -455,7 +587,7 @@ function startGame() {
   running = true;
   hideOverlay();
   setMetric("0");
-  setStatus("第 " + currentCampaignLevel().number + " 关 · 布局 " + currentCampaignLevel().number + "/20 · 最优参考 " + (optimalReference ?? "—") + " 步；让队长机器人抵达出口。");
+  setStatus("第 " + currentCampaignLevel().number + " 关 · " + activeKlotskiBlueprint()[0] + " · 最优 " + optimalReference + " 步；拖动棋子让队长机器人抵达出口。");
   startAmbient();
 }
 
@@ -463,21 +595,32 @@ function handleControl(value) {
   const vectors = { left: [-1, 0], right: [1, 0], up: [0, -1], down: [0, 1] };
   if (vectors[value]) moveSelected(vectors[value][0], vectors[value][1]);
   if (value === "undo") undoKlotskiMove();
+  if (value === "redo") redoKlotskiMove();
+  if (value === "hint") requestKlotskiHint();
   if (value === "replay") replayKlotskiMoves();
 }
 
 function handleKey(key) {
-  const map = { ArrowLeft: "left", ArrowRight: "right", ArrowUp: "up", ArrowDown: "down", z: "undo", Z: "undo", r: "replay", R: "replay" };
+  const map = { ArrowLeft: "left", ArrowRight: "right", ArrowUp: "up", ArrowDown: "down", z: "undo", Z: "undo", y: "redo", Y: "redo", h: "hint", H: "hint", r: "replay", R: "replay" };
   if (map[key]) handleControl(map[key]);
 }
 
 resetPieces();
 runtimeDebugState = () => {
   const layout = klotskiLayout();
-  return { level: currentCampaignLevel().number, tier: currentCampaignLevel().tier, layoutCount: config.campaignLevels.length, moves, canUndo: klotskiHistory.length > 0, replayLength: replayPath.length, replaying, optimalReference, optimalExact: Number.isInteger(optimalReference), scrambleMoveCount, transitionMs: 210, boardWidthRatio: Number(((layout.cell * 4 + 44) / 720 * 100).toFixed(1)), identityUsesShapeAndBitmap: true, pieceGap: 10, pieceOutlineWidth: 6, incompleteArtIsCropped: true, pieceState: pieces.map(({ id, x, y }) => ({ id, x, y })) };
+  const dragEntry = pieces.map((piece) => ({ piece, move: validMoves(piece)[0] })).find((entry) => entry.move);
+  const dragProbe = dragEntry ? {
+    id: dragEntry.piece.id,
+    from: { x: layout.originX + (dragEntry.piece.x + dragEntry.piece.w / 2) * layout.cell, y: layout.originY + (dragEntry.piece.y + dragEntry.piece.h / 2) * layout.cell },
+    to: { x: layout.originX + (dragEntry.piece.x + dragEntry.piece.w / 2 + dragEntry.move.dx) * layout.cell, y: layout.originY + (dragEntry.piece.y + dragEntry.piece.h / 2 + dragEntry.move.dy) * layout.cell },
+  } : null;
+  const hintedPiece = klotskiHint ? pieces.find((piece) => piece.id === klotskiHint.id) : null;
+  return { level: currentCampaignLevel().number, tier: currentCampaignLevel().tier, blueprintName: activeKlotskiBlueprint()[0], layoutCount: klotskiBlueprints.length, uniqueBlueprints: new Set(klotskiBlueprints.map((item) => JSON.stringify(item[2]))).size, moves, canUndo: klotskiHistory.length > 0, canRedo: klotskiRedo.length > 0, replayLength: replayPath.length, replaying, optimalReference, optimalExact: Number.isInteger(optimalReference), transitionMs: 210, directDrag: true, dragProbe, canvasSize: { width: canvas.width, height: canvas.height }, hint: klotskiHint, hintDistance: klotskiHintDistance, hintLegal: Boolean(hintedPiece && klotskiStateCanMove(pieces, hintedPiece, klotskiHint.dx, klotskiHint.dy)), boardWidthRatio: Number(((layout.cell * 4 + 44) / 720 * 100).toFixed(1)), identityUsesShapeAndBitmap: true, pieceGap: 10, pieceOutlineWidth: 6, incompleteArtIsCropped: true, pieceState: pieces.map(({ id, x, y }) => ({ id, x, y })) };
 };
 runtimeDebugActions = {
   undo: undoKlotskiMove,
+  redo: redoKlotskiMove,
+  hint: requestKlotskiHint,
   replay: replayKlotskiMoves,
   legalMove() {
     const movable = pieces.map((piece) => ({ piece, moves: validMoves(piece) })).find((entry) => entry.moves.length);

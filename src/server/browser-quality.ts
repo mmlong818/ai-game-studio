@@ -650,11 +650,27 @@ export async function inspectStageDClassicInBrowser(root: string, template: Stag
 
     if (template === "klotski") {
       const initial = await stageCDebugState(page);
+      const canvasBox = await page.locator("#game-canvas").boundingBox();
+      if (!canvasBox || !initial.runtime.dragProbe) throw new Error("华容道棋盘没有提供可执行的直接拖动目标。 ");
+      const scaleX = canvasBox.width / initial.runtime.canvasSize.width;
+      const scaleY = canvasBox.height / initial.runtime.canvasSize.height;
+      await page.mouse.move(canvasBox.x + initial.runtime.dragProbe.from.x * scaleX, canvasBox.y + initial.runtime.dragProbe.from.y * scaleY);
+      await page.mouse.down();
+      await page.mouse.move(canvasBox.x + initial.runtime.dragProbe.to.x * scaleX, canvasBox.y + initial.runtime.dragProbe.to.y * scaleY, { steps: 6 });
+      await page.mouse.up();
+      await page.waitForTimeout(340);
+      const dragged = await stageCDebugState(page);
+      await stageCDebugAction(page, "undo");
+      await stageCDebugAction(page, "hint");
+      const hinted = await stageCDebugState(page);
       await stageCDebugAction(page, "legalMove");
       await page.waitForTimeout(340);
       const moved = await stageCDebugState(page);
       await stageCDebugAction(page, "undo");
       const undone = await stageCDebugState(page);
+      await stageCDebugAction(page, "redo");
+      const redone = await stageCDebugState(page);
+      await stageCDebugAction(page, "undo");
       await stageCDebugAction(page, "legalMove");
       await page.waitForTimeout(340);
       await stageCDebugAction(page, "legalMove");
@@ -662,14 +678,22 @@ export async function inspectStageDClassicInBrowser(root: string, template: Stag
       const beforeReplay = await stageCDebugState(page);
       await stageCDebugAction(page, "replay");
       const replayed = await stageCDebugState(page);
-      if (initial.runtime.layoutCount < 20 || initial.runtime.boardWidthRatio < 82 || initial.runtime.boardWidthRatio > 90) throw new Error("华容道布局数或棋盘占比不达标。 ");
+      await page.evaluate(() => { const debug = (window as any).__GAME_DEBUG__; debug.setLevel(20); debug.restart(); });
+      await stageCDebugAction(page, "hint");
+      const finalLevel = await stageCDebugState(page);
+      if (initial.runtime.layoutCount !== 20 || initial.runtime.uniqueBlueprints !== 20 || initial.runtime.boardWidthRatio < 82 || initial.runtime.boardWidthRatio > 90) throw new Error("华容道独立布局数或棋盘占比不达标。 ");
       if (initial.runtime.transitionMs < 160 || initial.runtime.transitionMs > 220 || !initial.runtime.identityUsesShapeAndBitmap) throw new Error("华容道过渡或棋子识别方式不达标。 ");
       if (initial.runtime.pieceGap < 8 || initial.runtime.pieceOutlineWidth < 4 || !initial.runtime.incompleteArtIsCropped) throw new Error("华容道棋子边界或残缺素材裁切不达标。 ");
-      if (!initial.runtime.optimalExact || initial.runtime.optimalReference < 1) throw new Error("华容道没有计算当前牌局的精确最优步参考。 ");
+      if (!initial.runtime.optimalExact || initial.runtime.optimalReference !== 8 || finalLevel.runtime.optimalReference !== 120) throw new Error("华容道没有使用求解器验证的分档最优步参考。 ");
+      if (!initial.runtime.directDrag) throw new Error("华容道没有启用棋盘直接拖动。 ");
+      if (dragged.runtime.moves !== 1 || !dragged.runtime.canUndo) throw new Error("华容道真实指针拖动没有完成一步移动。 ");
+      if (!hinted.runtime.hint?.id || Math.abs(hinted.runtime.hint.dx) + Math.abs(hinted.runtime.hint.dy) !== 1 || !hinted.runtime.hintLegal || hinted.runtime.hintDistance !== 8) throw new Error("华容道首关没有给出可执行的最短路径下一步。 ");
+      if (!finalLevel.runtime.hintLegal || finalLevel.runtime.hintDistance !== 120) throw new Error("华容道末关没有给出求解器验证的 120 步路径。 ");
       if (moved.runtime.moves !== 1 || !moved.runtime.canUndo || undone.runtime.moves !== 0) throw new Error("华容道移动与撤销不可用。 ");
+      if (!undone.runtime.canRedo || redone.runtime.moves !== 1 || redone.runtime.canRedo) throw new Error("华容道重做没有恢复移动状态。 ");
       if (beforeReplay.runtime.replayLength < 2 || replayed.runtime.replaying || replayed.runtime.moves !== beforeReplay.runtime.replayLength) throw new Error("华容道操作回放没有完整复现。 ");
-      checks.push("20 个牌局", "82%–90% 棋盘占比", "形状与位图双重识别", "清晰棋子边界与完整素材裁切", "160–220ms 移动", "撤销、参考步数与回放");
-      evidence.initial = initial.runtime; evidence.moved = moved.runtime; evidence.undone = undone.runtime; evidence.replayed = replayed.runtime;
+      checks.push("20 个求解器验证牌局", "8–120 步分档", "棋盘直接拖动", "82%–90% 棋盘占比", "形状与位图双重识别", "清晰棋子边界与完整素材裁切", "160–220ms 移动", "撤销、重做与回放");
+      evidence.initial = initial.runtime; evidence.dragged = dragged.runtime; evidence.hinted = hinted.runtime; evidence.moved = moved.runtime; evidence.undone = undone.runtime; evidence.redone = redone.runtime; evidence.replayed = replayed.runtime; evidence.finalLevel = finalLevel.runtime;
     }
 
     if (template === "puzzle") {

@@ -446,7 +446,7 @@ const templateDefaults: Record<GameTemplate, { title: string; perspective: GameS
   tetris: { title: "折光堆叠", perspective: "ui", controls: ["方向键移动", "上键旋转", "触控按钮"], style: "pop" },
   puzzle: { title: "植光拼图", perspective: "ui", controls: ["拖拽拼块并吸附", "上传自定义图片"], style: "playful" },
   breakout: { title: "漆海碎星", perspective: "side", controls: ["指针或方向键移动挡板", "触控按钮"], style: "pop" },
-  klotski: { title: "朱门华容", perspective: "ui", controls: ["点击木块再选择方向", "触控方向键"], style: "playful" },
+  klotski: { title: "朱门华容", perspective: "ui", controls: ["直接拖动棋子", "方向键", "Z 撤销 / Y 重做"], style: "playful" },
   maze: { title: "苔径迷庭", perspective: "top-down", controls: ["方向键移动", "触控方向键"], style: "dreamy" },
   snake: { title: "青玉长游", perspective: "top-down", controls: ["方向键改变方向", "触控方向键"], style: "playful" },
   "merge-2048": { title: "数织矩阵", perspective: "ui", controls: ["棋盘直接滑动", "方向键或 WASD", "Z 键回溯"], style: "pop" },
@@ -513,6 +513,7 @@ export function recommendedCameraMode(template: GameTemplate, dimensions: "2d" |
 export function recommendedInputModes(template: GameTemplate, dimensions: "2d" | "3d"): InputMode[] {
   if (dimensions === "3d") return ["keyboard", "virtual-stick"];
   if (template === "puzzle") return ["drag", "pointer", "keyboard"];
+  if (template === "klotski") return ["drag", "pointer", "keyboard"];
   if (template === "merge-2048") return ["swipe", "keyboard"];
   if (template === "space-shooter") return ["drag", "keyboard", "touch-buttons"];
   if (["tetris", "merge-2048", "maze", "snake"].includes(template)) return ["swipe", "keyboard", "touch-buttons"];
