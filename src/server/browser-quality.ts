@@ -1420,6 +1420,8 @@ export async function inspectStageF3DInBrowser(root: string, expectedMode: "coll
   const viewportsChecked: string[] = [];
   let performanceTier = "";
   let hiddenRenderPaused = false;
+  let arenaProjectileVerified = false;
+  let arenaUpgradeVerified = false;
   mkdirSync(join(root, "_studio"), { recursive: true });
   try {
     browser = await chromium.launch({ executablePath, headless: true, args: ["--enable-unsafe-swiftshader", "--use-angle=swiftshader"] });
@@ -1479,6 +1481,30 @@ export async function inspectStageF3DInBrowser(root: string, expectedMode: "coll
             throw new Error(`3D 收集模板终章没有形成双检查点与组合压力：${JSON.stringify(finalCollector?.collector)}`);
           }
           await page.screenshot({ path: join(root, "_studio", `stage-f-${expectedMode}-${viewport.name}-final-level.png`), fullPage: true });
+        } else {
+          const arena = initial.state?.arena as Record<string, unknown> | undefined;
+          if (arena?.blueprintCount !== 20 || arena.uniqueSignatures !== 20 || arena.chapterCount !== 5 || arena.projectileModel !== "visible-travel-hit") {
+            throw new Error(`3D 竞技场没有形成 20 个唯一蓝图、五章与可见弹体模型：${JSON.stringify(arena)}`);
+          }
+          const shotStart = await page.evaluate(() => {
+            const debug = (window as any).__GAME_DEBUG__;
+            const prepared = debug?.prepareArenaShot?.();
+            debug?.attack?.();
+            return { prepared, state: debug?.getState?.() };
+          });
+          if (!shotStart?.prepared || shotStart.state?.arena?.playerProjectileCount !== 1 || shotStart.state?.projectileHits !== shotStart.prepared.projectileHits) {
+            throw new Error(`3D 竞技场攻击没有先生成可见弹体：${JSON.stringify(shotStart)}`);
+          }
+          await page.waitForFunction((hits) => (window as any).__GAME_DEBUG__?.getState?.().projectileHits > hits, shotStart.prepared.projectileHits, { timeout: 2_000 });
+          const shotEnd = await page.evaluate(() => (window as any).__GAME_DEBUG__?.getState?.());
+          if (shotEnd.renderCount <= shotStart.prepared.renderCount + 1) throw new Error("3D 竞技场弹体未经过可见飞行帧就结算命中。");
+          arenaProjectileVerified = true;
+          await page.evaluate(() => { const debug = (window as any).__GAME_DEBUG__; debug?.setLevel?.(20); debug?.restart?.(); });
+          const finalArena = await page.evaluate(() => (window as any).__GAME_DEBUG__?.getState?.());
+          if (finalArena?.arena?.obstacleCount < 5 || finalArena?.arena?.enemyTypes?.length !== 4 || finalArena?.arena?.hasEliteWave !== true) {
+            throw new Error(`3D 竞技场终章没有形成四类敌人、复杂掩体和精英波：${JSON.stringify(finalArena?.arena)}`);
+          }
+          await page.screenshot({ path: join(root, "_studio", `stage-f-${expectedMode}-${viewport.name}-final-level.png`), fullPage: true });
         }
         await page.evaluate(() => (window as Window & { __GAME_DEBUG__?: { suspend: (value: boolean) => void } }).__GAME_DEBUG__?.suspend(true));
         const beforeSuspend = await page.evaluate(() => (window as Window & { __GAME_DEBUG__?: { getState: () => { renderCount: number } } }).__GAME_DEBUG__?.getState().renderCount ?? -1);
@@ -1493,9 +1519,21 @@ export async function inspectStageF3DInBrowser(root: string, expectedMode: "coll
             debug?.reachCheckpoint(); debug?.collectAll(); debug?.moveToExit();
           });
         } else {
-          for (let wave = 0; wave < 3; wave += 1) {
+          for (let wave = 1; wave <= 3; wave += 1) {
             await page.evaluate(() => (window as Window & { __GAME_DEBUG__?: { clearWave: () => void } }).__GAME_DEBUG__?.clearWave());
-            await page.waitForTimeout(90);
+            if (wave < 3) {
+              await page.waitForFunction(() => document.body.dataset.gameState === "upgrade", undefined, { timeout: 2_000 });
+              const upgrade = await page.evaluate(() => {
+                const debug = (window as any).__GAME_DEBUG__;
+                return { before: debug?.getState?.(), optionCount: document.querySelectorAll("[data-upgrade-index]").length, build: document.querySelector("#arena-build")?.textContent };
+              });
+              if (!upgrade.before?.arena?.pendingUpgrade || upgrade.optionCount !== 3) throw new Error(`3D 竞技场波次间没有三个强化选择：${JSON.stringify(upgrade)}`);
+              await page.evaluate(() => (window as any).__GAME_DEBUG__?.chooseUpgrade?.(0));
+              await page.waitForFunction(() => document.body.dataset.gameState === "playing", undefined, { timeout: 2_000 });
+              const selected = await page.evaluate(() => ({ state: (window as any).__GAME_DEBUG__?.getState?.(), build: document.querySelector("#arena-build")?.textContent }));
+              if (selected.state?.upgradeChoices !== wave || !selected.build || selected.build.includes("尚未选择")) throw new Error(`3D 竞技场强化没有持续展示或生效：${JSON.stringify(selected)}`);
+              arenaUpgradeVerified = true;
+            }
           }
         }
         await page.waitForFunction(() => ["stage-complete", "won"].includes(document.body.dataset.gameState ?? ""), undefined, { timeout: 4_000 });
@@ -1517,7 +1555,7 @@ export async function inspectStageF3DInBrowser(root: string, expectedMode: "coll
     await closeServer(server);
   }
   if (!hiddenRenderPaused) throw new Error("3D 后台停渲染探针失败");
-  const result: StageF3DQualityResult = { mode: expectedMode, completedRuns, failedRuns, evidence: { viewportsChecked, performanceTier, hiddenRenderPaused } };
+  const result: StageF3DQualityResult = { mode: expectedMode, completedRuns, failedRuns, evidence: { viewportsChecked, performanceTier, hiddenRenderPaused, ...(expectedMode === "arena" ? { arenaProjectileVerified, arenaUpgradeVerified } : {}) } };
   writeFileSync(join(root, "_studio", "STAGE_F_3D_REPORT.json"), `${JSON.stringify({ checkedAt: new Date().toISOString(), ...result }, null, 2)}\n`, "utf8");
   return result;
 }

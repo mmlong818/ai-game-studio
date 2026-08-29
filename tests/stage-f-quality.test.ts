@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import test from "node:test";
@@ -56,7 +56,17 @@ test("阶段 F 两类 3D 黄金模板含完整合同、性能分级和资产来�
         assert.match(script, /optionalCollectibles: true/);
       } else {
         assert.match(script, /function spawnWave/);
-        assert.match(script, /function applyArenaUpgrade/);
+        assert.match(script, /function chooseArenaUpgrade/);
+        assert.match(script, /function updateProjectiles/);
+        assert.match(script, /visible-travel-hit/);
+        assert.match(script, /arenaBlueprints/);
+        assert.match(script, /hasEliteWave/);
+        for (const filename of ["arena-player.png", "arena-enemy-chaser.png", "arena-enemy-runner.png", "arena-enemy-tank.png", "arena-enemy-ranged.png"]) {
+          const assetPath = join(artifactRoot, "assets", filename);
+          assert.equal(existsSync(assetPath), true);
+          assert.ok(statSync(assetPath).size > 80_000);
+        }
+        assert.equal(existsSync(join(artifactRoot, "_studio", "ARENA_ASSET_PROMPTS.md")), true);
       }
     }
   } finally {
@@ -74,6 +84,10 @@ test("阶段 F 两类 3D 模板在手机和桌面各完成一局并触发失败"
       assert.equal(result.completedRuns, 2);
       assert.equal(result.failedRuns, 2);
       assert.equal(result.evidence.hiddenRenderPaused, true);
+      if (scenario.mode === "arena") {
+        assert.equal(result.evidence.arenaProjectileVerified, true);
+        assert.equal(result.evidence.arenaUpgradeVerified, true);
+      }
     }
   } finally {
     const safeRoot = resolve(root);

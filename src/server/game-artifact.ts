@@ -6,10 +6,12 @@ import { visualStyleOptions, type ProjectDetail } from "../shared/contracts.js";
 import { createCampaignLevels } from "../shared/level-progression.js";
 import type { DirectionVerdict } from "./design-contract.js";
 import { getRuntimeDefinition } from "./game-runtimes/index.js";
+import { arenaBestTemplateBlueprints } from "./three-arena-blueprints.js";
 import { collectorBestTemplateBlueprints } from "./three-collector-blueprints.js";
 
 const moduleRoot = dirname(fileURLToPath(import.meta.url));
 const signalAssetRoot = resolve(moduleRoot, "..", "..", "assets", "starter", "signal-studio");
+const threeArenaAssetRoot = resolve(moduleRoot, "..", "..", "assets", "starter", "three-arena");
 const templateAssetRoot = resolve(moduleRoot, "..", "..", "assets", "templates", "packs");
 const threeModuleSource = resolve(moduleRoot, "..", "..", "node_modules", "three", "build", "three.module.js");
 const threeCoreSource = resolve(moduleRoot, "..", "..", "node_modules", "three", "build", "three.core.js");
@@ -138,6 +140,12 @@ function copySignalAssetPack(root: string) {
   for (const filename of ["cover.txt", "arena-background.txt", "gameplay-atlas.txt"]) {
     copyFileSync(join(signalAssetRoot, "prompts", filename), join(targetRoot, "prompts", filename));
   }
+}
+
+function copyThreeArenaAssetPack(root: string) {
+  const targetRoot = join(root, "assets");
+  const filenames = ["arena-player.png", "arena-enemy-chaser.png", "arena-enemy-runner.png", "arena-enemy-tank.png", "arena-enemy-ranged.png"];
+  for (const filename of filenames) copyFileSync(join(threeArenaAssetRoot, filename), join(targetRoot, filename));
 }
 
 function copyTemplateAssetPack(root: string, project: ProjectDetail) {
@@ -1516,8 +1524,21 @@ const threeMobilePlayFlowStyles = `.three-back{position:absolute;z-index:9;top:m
 @media(max-width:720px){body{display:grid;width:100%;height:100svh;min-height:100svh;overflow:hidden;place-items:center}.three-shell{width:min(100vw,56.25svh);height:min(100svh,177.7778vw);min-height:0;aspect-ratio:9/16}.three-start,.three-result{max-height:calc(100% - 24px);overflow:auto;overscroll-behavior:contain}.three-hud{padding:max(8px,env(safe-area-inset-top)) max(8px,env(safe-area-inset-right)) max(8px,env(safe-area-inset-bottom)) max(8px,env(safe-area-inset-left))}body[data-game-state=playing] .three-topbar{padding-left:52px}body[data-game-state=playing] .three-objective{max-width:calc(100% - 130px)}.three-controls button{min-width:44px;min-height:44px}.three-back{top:max(8px,env(safe-area-inset-top));left:max(8px,env(safe-area-inset-left))}}
 @media(max-width:360px){.three-start,.three-result{width:calc(100% - 14px);padding:16px}.three-start h2,.three-result h2{font-size:34px}.three-start p,.three-result p{font-size:11px}.three-brand h1{font-size:17px}.three-metrics .metric:first-child{display:none}.three-result-actions{grid-template-columns:1fr}}`;
 
+const threeArenaStyles = `.arena-upgrade{position:absolute;z-index:12;inset:50% auto auto 50%;transform:translate(-50%,-50%);width:min(620px,calc(100vw - 32px));padding:28px;background:color-mix(in srgb,var(--surface,#10191a) 96%,transparent);border:1px solid var(--line,#415153);box-shadow:0 34px 90px #000c;pointer-events:auto}.arena-upgrade[hidden]{display:none}.arena-upgrade .kicker{color:var(--accent,#d6b968);font-size:10px;font-weight:850;letter-spacing:.18em}.arena-upgrade h2{margin:8px 0 4px;font:500 clamp(28px,5vw,46px)/1 Georgia,serif}.arena-upgrade>p{margin:0 0 18px;color:#b9c5c1;font-size:12px}.arena-upgrade-options{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}.arena-upgrade-options button{display:grid;gap:7px;min-height:112px;padding:16px;border:1px solid color-mix(in srgb,var(--accent,#d6b968) 55%,var(--line,#415153));background:color-mix(in srgb,var(--accent,#d6b968) 8%,#0b1111);color:#eef4ed;text-align:left;cursor:pointer}.arena-upgrade-options button:hover,.arena-upgrade-options button:focus-visible{border-color:var(--accent,#d6b968);background:color-mix(in srgb,var(--accent,#d6b968) 16%,#0b1111);outline:none}.arena-upgrade-options strong{font-size:14px}.arena-upgrade-options span{color:#aebdb7;font-size:11px;line-height:1.45}.arena-build{display:block;margin-top:7px;color:var(--accent,#d6b968);font-size:10px;font-weight:750;line-height:1.35}.arena-build[hidden]{display:none}@media(max-width:720px){.arena-upgrade{width:calc(100% - 24px);padding:20px}.arena-upgrade-options{grid-template-columns:1fr}.arena-upgrade-options button{min-height:68px;padding:12px}.arena-upgrade h2{font-size:34px}}`;
+
 function createThreeCampaignLevels(project: ProjectDetail) {
   const baseLevels = createCampaignLevels(project.spec.template, project.spec.difficulty);
+  if (project.spec.threeMode === "arena") return arenaBestTemplateBlueprints.map((blueprint, index) => ({
+    ...baseLevels[index],
+    label: `${String(index + 1).padStart(2, "0")} · ${blueprint.chapter} · ${blueprint.name}`,
+    tierLabel: blueprint.chapter,
+    ruleModifier: blueprint.name,
+    mission: "清空三波敌人，并在波次之间完成两次强化选择。",
+    masteryRules: [
+      { id: "arena-health", label: "完成时保留至少 60 点生命", target: 60 },
+      { id: "arena-clean", label: "完成时保留至少 85 点生命", target: 85 },
+    ],
+  }));
   if (project.spec.threeMode !== "collector") return baseLevels;
   return collectorBestTemplateBlueprints.map((blueprint, index) => ({
     ...baseLevels[index],
@@ -1538,9 +1559,10 @@ function threeGameHtml(project: ProjectDetail) {
   const campaignLevels = createThreeCampaignLevels(project);
   const campaignOptions = campaignLevels.map((level, index) => `<option value="${index}"${index > 0 ? " disabled" : ""}>${escapeHtml(level.label)}</option>`).join("");
   const intro = arenaMode
-    ? `${escapeHtml(project.spec.vision)} 移动时自动瞄准最近敌人，按空格或“击”攻击。`
+    ? "保持移动并观察锁定环，按空格或“击”发射潮光弹。清空每波后，从三个强化中选择一个再继续。"
     : "沿潮痕穿过遗迹，依次点亮检查点并抵达出口。主线无需收齐星砂；越过低障碍、探索三枚星砂可以提高评价。";
-  return `<!doctype html><html lang="zh-CN"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#080b0e"><title>${escapeHtml(project.title)} · Web 3D</title><link rel="preload" as="image" href="./assets/cover.png"><link rel="preload" as="image" href="./assets/gameplay-atlas.png"><link rel="stylesheet" href="./styles.css"><script type="module" src="./app.js"></script></head><body data-runtime="web-3d" data-three-mode="${arenaMode ? "arena" : "collector"}" data-visual-style="${project.spec.visualStyle}" data-detail-level="${style.detailLevel}"><main class="three-shell"><canvas id="game-canvas" class="three-canvas" aria-label="${arenaMode ? "可战斗的 3D 小型竞技场" : "可探索的 3D 收集遗迹"}"></canvas><button class="three-back" id="back-to-setup" type="button" aria-label="返回启动设置">返回</button><div class="three-hud"><div class="three-topbar"><div class="three-brand"><span id="campaign-hud">WEB 3D · 20 LEVEL CAMPAIGN</span><h1>${escapeHtml(project.title)}</h1></div><div class="three-metrics"><div class="metric"><span>${arenaMode ? "生命 / 波次" : "探索星砂"}</span><strong id="fragment-count">${arenaMode ? "100 · 1/3" : "0 / "}<span id="fragment-target">${arenaMode ? "" : "3"}</span></strong></div><div class="metric"><span>剩余时间</span><strong id="time-left">—</strong></div></div></div><div></div><div class="three-bottom"><div class="three-objective"><span id="status-label">任务目标</span><p id="status">${arenaMode ? "移动、瞄准并击退三波敌人。" : "激活沿途检查点并抵达出口；星砂用于提高评价。"}</p></div><div class="three-controls" aria-label="移动控制"><button type="button" data-key="up" aria-label="向前">↑</button><button type="button" data-key="left" aria-label="向左">←</button><button type="button" data-key="down" aria-label="向后">↓</button><button type="button" data-key="right" aria-label="向右">→</button><button type="button" data-key="action" aria-label="${arenaMode ? "攻击" : "跳跃"}">${arenaMode ? "击" : "跃"}</button></div></div></div><section class="three-start" id="start-card"><span class="kicker">${style.label} · ${style.detailLabel}</span><h2>${arenaMode ? "进入潮光竞技场" : "进入遗迹"}</h2><p>${intro}</p><label class="three-level-field"><span>渐进关卡</span><select data-campaign-level aria-label="选择 3D 渐进关卡">${campaignOptions}</select></label><small data-campaign-progress>第 1 / 20 关 · 认识规则</small><button type="button" id="start">${arenaMode ? "开始迎战" : "开始探索"}</button></section><section class="three-result" id="result-card" hidden><span class="kicker" id="result-kicker">${arenaMode ? "竞技记录" : "探索记录"}</span><h2 id="result-title">任务完成</h2><p id="result-detail"></p><div class="three-result-actions"><button type="button" class="secondary-result" id="result-setup">返回设置</button><button type="button" id="restart">${arenaMode ? "再次迎战" : "再次探索"}</button></div></section><div class="webgl-error" id="webgl-error" hidden>此浏览器无法启动 WebGL 2。请启用硬件加速，或换用最新版 Chrome、Edge、Safari。</div></main></body></html>`;
+  const arenaPreloads = arenaMode ? '<link rel="preload" as="image" href="./assets/arena-player.png"><link rel="preload" as="image" href="./assets/arena-enemy-chaser.png">' : "";
+  return `<!doctype html><html lang="zh-CN"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#080b0e"><title>${escapeHtml(project.title)} · Web 3D</title><link rel="preload" as="image" href="./assets/cover.png"><link rel="preload" as="image" href="./assets/gameplay-atlas.png">${arenaPreloads}<link rel="stylesheet" href="./styles.css"><script type="module" src="./app.js"></script></head><body data-runtime="web-3d" data-three-mode="${arenaMode ? "arena" : "collector"}" data-visual-style="${project.spec.visualStyle}" data-detail-level="${style.detailLevel}"><main class="three-shell"><canvas id="game-canvas" class="three-canvas" aria-label="${arenaMode ? "可战斗的 3D 小型竞技场" : "可探索的 3D 收集遗迹"}"></canvas><button class="three-back" id="back-to-setup" type="button" aria-label="返回启动设置">返回</button><div class="three-hud"><div class="three-topbar"><div class="three-brand"><span id="campaign-hud">WEB 3D · 20 LEVEL CAMPAIGN</span><h1>${escapeHtml(project.title)}</h1></div><div class="three-metrics"><div class="metric"><span>${arenaMode ? "生命 / 波次" : "探索星砂"}</span><strong id="fragment-count">${arenaMode ? "100 · 1/3" : "0 / "}<span id="fragment-target">${arenaMode ? "" : "3"}</span></strong></div><div class="metric"><span>剩余时间</span><strong id="time-left">—</strong></div></div></div><div></div><div class="three-bottom"><div class="three-objective"><span id="status-label">任务目标</span><p id="status">${arenaMode ? "移动、锁定并清空三波敌人；每波后选择强化。" : "激活沿途检查点并抵达出口；星砂用于提高评价。"}</p><small class="arena-build" id="arena-build"${arenaMode ? "" : " hidden"}>潮印：尚未选择</small></div><div class="three-controls" aria-label="移动控制"><button type="button" data-key="up" aria-label="向前">↑</button><button type="button" data-key="left" aria-label="向左">←</button><button type="button" data-key="down" aria-label="向后">↓</button><button type="button" data-key="right" aria-label="向右">→</button><button type="button" data-key="action" aria-label="${arenaMode ? "攻击" : "跳跃"}">${arenaMode ? "击" : "跃"}</button></div></div></div><section class="three-start" id="start-card"><span class="kicker">${style.label} · ${style.detailLabel}</span><h2>${arenaMode ? "进入潮光竞技场" : "进入遗迹"}</h2><p>${intro}</p><label class="three-level-field"><span>渐进关卡</span><select data-campaign-level aria-label="选择 3D 渐进关卡">${campaignOptions}</select></label><small data-campaign-progress>第 1 / 20 关 · 认识规则</small><button type="button" id="start">${arenaMode ? "开始迎战" : "开始探索"}</button></section><section class="arena-upgrade" id="arena-upgrade" hidden><span class="kicker">波次完成</span><h2>选择潮印</h2><p>本次强化会持续到本关结束。</p><div class="arena-upgrade-options" id="arena-upgrade-options"></div></section><section class="three-result" id="result-card" hidden><span class="kicker" id="result-kicker">${arenaMode ? "竞技记录" : "探索记录"}</span><h2 id="result-title">任务完成</h2><p id="result-detail"></p><div class="three-result-actions"><button type="button" class="secondary-result" id="result-setup">返回设置</button><button type="button" id="restart">${arenaMode ? "再次迎战" : "再次探索"}</button></div></section><div class="webgl-error" id="webgl-error" hidden>此浏览器无法启动 WebGL 2。请启用硬件加速，或换用最新版 Chrome、Edge、Safari。</div></main></body></html>`;
 }
 
 function threeGameScript(project: ProjectDetail) {
@@ -1559,6 +1581,7 @@ function threeGameScript(project: ProjectDetail) {
     mode: project.spec.threeMode ?? "collector",
     contract: project.spec.threeContract,
     collectorBlueprints: project.spec.threeMode === "collector" ? collectorBestTemplateBlueprints : [],
+    arenaBlueprints: project.spec.threeMode === "arena" ? arenaBestTemplateBlueprints : [],
   });
   return `import * as THREE from "./vendor/three.module.js";
 ${safeStorageShim}
@@ -1568,6 +1591,8 @@ document.body.dataset.cameraMode = config.cameraMode;
 const canvas = document.querySelector("#game-canvas");
 const startCard = document.querySelector("#start-card");
 const resultCard = document.querySelector("#result-card");
+const arenaUpgradeCard = document.querySelector("#arena-upgrade");
+const arenaUpgradeOptions = document.querySelector("#arena-upgrade-options");
 const backToSetupButton = document.querySelector("#back-to-setup");
 const resultSetupButton = document.querySelector("#result-setup");
 const pauseButton = document.createElement("button");
@@ -1582,6 +1607,7 @@ const fragmentTarget = document.querySelector("#fragment-target");
 const timeLeft = document.querySelector("#time-left");
 const status = document.querySelector("#status");
 const statusLabel = document.querySelector("#status-label");
+const arenaBuild = document.querySelector("#arena-build");
 const errorPanel = document.querySelector("#webgl-error");
 const campaignSelect = document.querySelector("[data-campaign-level]");
 const campaignProgress = document.querySelector("[data-campaign-progress]");
@@ -1609,14 +1635,19 @@ function loadSpriteTexture(index) {
   texture.colorSpace = THREE.SRGBColorSpace;
   return texture;
 }
+function loadArenaTexture(name) {
+  const texture = textureLoader.load("./assets/" + name);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  return texture;
+}
 const groundTexture = loadTiledTexture("./assets/cover.png", 3, 3);
 const ruinTexture = loadTiledTexture("./assets/arena-background.png", 1.5, 2.5);
 const fragmentTexture = loadSpriteTexture(1);
-const playerTexture = loadSpriteTexture(2);
+const playerTexture = config.mode === "arena" ? loadArenaTexture("arena-player.png") : loadSpriteTexture(2);
 const gateTexture = loadSpriteTexture(3);
 const environmentTexture = textureLoader.load("./assets/arena-background.png");
 environmentTexture.colorSpace = THREE.SRGBColorSpace;
-const state = { running: false, finished: false, collected: 0, remaining: config.duration, lastTime: 0, mode: config.mode, checkpoint: false, checkpointsReached: 0, mistakes: 0, grounded: true, wave: 1, health: 100, upgrade: 0, renderCount: 0, performanceTier: "medium", suspended: false };
+const state = { running: false, finished: false, collected: 0, remaining: config.duration, lastTime: 0, mode: config.mode, checkpoint: false, checkpointsReached: 0, mistakes: 0, grounded: true, wave: 1, health: 100, shield: 0, upgrade: 0, upgradeChoices: 0, shotsFired: 0, projectileHits: 0, renderCount: 0, performanceTier: "medium", suspended: false };
 let campaignLevelIndex = 0;
 let campaignMaxUnlocked = 0;
 let campaignMastery = {};
@@ -1624,6 +1655,7 @@ let requiredFragments = 4;
 let activeDuration = config.duration;
 function currentCampaignLevel() { return config.campaignLevels[campaignLevelIndex]; }
 function currentCollectorBlueprint() { return config.collectorBlueprints[campaignLevelIndex] || config.collectorBlueprints[0]; }
+function currentArenaBlueprint() { return config.arenaBlueprints[campaignLevelIndex] || config.arenaBlueprints[0]; }
 function saveCampaign() {
   try { safeStorage.setItem(config.campaignStorageKey, JSON.stringify({ schemaVersion: 2, current: campaignLevelIndex, maxUnlocked: campaignMaxUnlocked, mastery: campaignMastery })); } catch {}
 }
@@ -1694,6 +1726,25 @@ const keys = new Set();
 const obstacles = [];
 const fragments = [];
 const enemies = [];
+const playerProjectiles = [];
+const enemyProjectiles = [];
+const arenaEnemyProfiles = {
+  chaser: { health: 3, speed: 1.7, scale: 2.35, asset: "arena-enemy-chaser.png", damage: 11, label: "追击者" },
+  runner: { health: 2, speed: 2.75, scale: 1.85, asset: "arena-enemy-runner.png", damage: 9, label: "疾行者" },
+  tank: { health: 8, speed: 1.05, scale: 3.15, asset: "arena-enemy-tank.png", damage: 18, label: "重装者" },
+  ranged: { health: 4, speed: 1.25, scale: 2.45, asset: "arena-enemy-ranged.png", damage: 13, label: "远程者" },
+};
+const arenaUpgradePool = [
+  { id: "power", label: "脉冲增幅", detail: "弹体伤害 +1", apply: () => { arenaStats.damage += 1; } },
+  { id: "rapid", label: "快频核心", detail: "攻击间隔 -16%", apply: () => { arenaStats.fireInterval *= .84; } },
+  { id: "range", label: "远距棱镜", detail: "射程 +2.5 米", apply: () => { arenaStats.range += 2.5; } },
+  { id: "move", label: "轻身推进", detail: "移动速度 +12%", apply: () => { arenaStats.moveSpeed *= 1.12; } },
+  { id: "shield", label: "潮盾", detail: "获得 24 点护盾", apply: () => { state.shield += 24; } },
+  { id: "nova", label: "星爆", detail: "弹体命中产生范围伤害", apply: () => { arenaStats.nova += 1; } },
+];
+let arenaStats = { damage: 2, fireInterval: .52, range: 15, moveSpeed: 1, nova: 0 };
+let activeUpgradeChoices = [];
+let selectedUpgradeLabels = [];
 let jumpVelocity = 0;
 const moveVelocity = new THREE.Vector2();
 let jumpBuffer = 0;
@@ -1765,7 +1816,9 @@ function ruinGeometry(index) {
   return new THREE.CylinderGeometry(0.65, 0.8, 3 + index % 3, style.shape === "line" ? 6 : 12);
 }
 
-function addRuin(x, z, index) {
+const arenaCourse = new THREE.Group();
+world.add(arenaCourse);
+function addRuin(x, z, index, radius = 1.4) {
   const height = 2 + index % 3;
   const material = new THREE.MeshStandardMaterial({ color: style.stone, map: ruinTexture, roughness: 0.78, metalness: 0.12, wireframe: style.wireframe });
   const ruin = new THREE.Mesh(ruinGeometry(index), material);
@@ -1773,12 +1826,10 @@ function addRuin(x, z, index) {
   ruin.rotation.y = index * 0.71;
   ruin.castShadow = true;
   ruin.receiveShadow = true;
-  world.add(ruin);
-  if (config.mode === "arena") obstacles.push({ x, z, radius: style.shape === "slab" ? 1.7 : 1.15, height: 8, shape: "circle" });
+  arenaCourse.add(ruin);
+  if (config.mode === "arena") obstacles.push({ x, z, radius, height: 8, shape: "circle" });
 }
 
-const ruinPositions = [[-8,-8],[0,-8],[8,-8],[-8,0],[8,0],[-8,8],[0,8],[8,8],[-14,-4],[14,4],[4,14],[-4,-14]];
-if (config.mode === "arena") ruinPositions.forEach((position, index) => addRuin(position[0], position[1], index));
 for (let index = 0; index < Math.ceil(style.detail * performanceProfiles[performanceTier].detailScale); index += 1) {
   const angle = index * 2.399;
   const radius = 11 + (index % 5) * 2.2;
@@ -1794,7 +1845,7 @@ for (let index = 0; index < Math.ceil(style.detail * performanceProfiles[perform
 const player = new THREE.Group();
 const playerSprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: playerTexture, color: 0xffffff, transparent: true, alphaTest: 0.08, depthWrite: false }));
 playerSprite.position.y = 1.35;
-playerSprite.scale.set(config.mode === "collector" ? 2.05 : 3.15, config.mode === "collector" ? 2.05 : 3.15, 1);
+playerSprite.scale.set(config.mode === "collector" ? 2.05 : 2.2, config.mode === "collector" ? 2.05 : 2.2, 1);
 player.add(playerSprite);
 const playerLight = new THREE.PointLight(style.accent, 6, 6, 2);
 playerLight.position.y = 1.4;
@@ -1918,6 +1969,18 @@ function buildCollectorCourse() {
   });
 }
 
+function buildArenaCourse() {
+  if (config.mode !== "arena") return;
+  obstacles.splice(0);
+  while (arenaCourse.children.length) {
+    const child = arenaCourse.children.pop();
+    child.geometry?.dispose?.();
+    if (Array.isArray(child.material)) child.material.forEach((material) => material.dispose?.());
+    else child.material?.dispose?.();
+  }
+  currentArenaBlueprint().obstacles.forEach((item, index) => addRuin(item.x, item.z, index, item.radius));
+}
+
 let collectorSessionSaveClock = 0;
 function clearCollectorSession() {
   if (config.mode !== "collector") return;
@@ -1990,30 +2053,50 @@ function updateCollectorCourse(time) {
 
 function clearEnemies() {
   enemies.splice(0).forEach((enemy) => scene.remove(enemy));
+  playerProjectiles.splice(0).forEach((projectile) => scene.remove(projectile.mesh));
+  enemyProjectiles.splice(0).forEach((projectile) => scene.remove(projectile.mesh));
 }
 function spawnWave(wave) {
   clearEnemies();
-  const count = 2 + wave + currentCampaignLevel().tier;
-  for (let index = 0; index < count; index += 1) {
-    const angle = index / count * Math.PI * 2 + wave * .37;
+  const blueprint = currentArenaBlueprint();
+  const plan = blueprint.waves[wave - 1];
+  const types = Object.entries(plan).flatMap(([type, count]) => type === "elite" ? [] : Array.from({ length: Number(count) }, () => type));
+  types.forEach((type, index) => {
+    const profile = arenaEnemyProfiles[type];
+    const arc = types.length === 1 ? 0 : (index / (types.length - 1) - .5) * 1.55;
+    const angle = arc + (blueprint.spawnRotation % .5) - .25 + wave * .06;
     const enemy = new THREE.Group();
-    const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: loadSpriteTexture(4 + index % 4), color: 0xffffff, transparent: true, alphaTest: .08, depthWrite: false }));
+    const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: loadArenaTexture(profile.asset), color: 0xffffff, transparent: true, alphaTest: .08, depthWrite: false }));
     sprite.position.y = 1.25;
-    sprite.scale.set(2.5, 2.5, 1);
-    const halo = new THREE.Mesh(new THREE.RingGeometry(.65, .82, 24), new THREE.MeshBasicMaterial({ color: wave === 3 ? 0xff6d62 : style.accent, transparent: true, opacity: .7, side: THREE.DoubleSide }));
+    sprite.scale.set(profile.scale, profile.scale, 1);
+    const halo = new THREE.Mesh(new THREE.RingGeometry(profile.scale * .25, profile.scale * .34, 24), new THREE.MeshBasicMaterial({ color: type === "ranged" ? 0xff8c73 : style.accent, transparent: true, opacity: .72, side: THREE.DoubleSide }));
     halo.rotation.x = -Math.PI / 2;
     halo.position.y = .08;
-    enemy.add(sprite, halo);
-    enemy.position.set(Math.cos(angle) * (12 + index % 3), 0, Math.sin(angle) * (12 + index % 3));
-    enemy.userData.health = 1 + Math.floor((wave + currentCampaignLevel().tier - 1) / 3);
-    enemy.userData.speed = 1.3 + wave * .28 + currentCampaignLevel().tier * .08;
+    const healthWidth = profile.scale * .58;
+    const healthBack = new THREE.Sprite(new THREE.SpriteMaterial({ color: 0x11181a, transparent: true, opacity: .88, depthTest: false }));
+    healthBack.position.y = profile.scale * .62 + .52; healthBack.scale.set(healthWidth + .12, .16, 1);
+    const healthFill = new THREE.Sprite(new THREE.SpriteMaterial({ color: type === "tank" ? 0xff9a62 : 0x7de6ff, depthTest: false }));
+    healthFill.position.y = healthBack.position.y; healthFill.position.z = .01; healthFill.scale.set(healthWidth, .09, 1);
+    enemy.add(sprite, halo, healthBack, healthFill);
+    const radius = 7.4 + index % 3 * .65;
+    enemy.position.set(player.position.x + Math.sin(angle) * radius, 0, player.position.z - Math.cos(angle) * radius);
+    const eliteMultiplier = plan.elite && index === types.length - 1 ? 1.8 : 1;
+    enemy.userData.type = type;
+    enemy.userData.health = Math.ceil((profile.health + currentCampaignLevel().tier - 1) * eliteMultiplier);
+    enemy.userData.maxHealth = enemy.userData.health;
+    enemy.userData.speed = profile.speed + wave * .12 + currentCampaignLevel().tier * .05;
+    enemy.userData.damage = Math.ceil(profile.damage * eliteMultiplier);
     enemy.userData.phase = index;
+    enemy.userData.shotCooldown = 1.2 + index * .13;
+    enemy.userData.warning = 0;
+    enemy.userData.healthFill = healthFill;
+    enemy.userData.healthWidth = healthWidth;
     scene.add(enemy);
     enemies.push(enemy);
-  }
+  });
   statusLabel.textContent = "第 " + wave + " / 3 波";
-  status.textContent = "自动瞄准最近敌人，按空格或攻击键释放潮光脉冲。";
-  fragmentCount.textContent = state.health + " · " + wave + "/3";
+  status.textContent = "锁定环指向当前目标；保持走位并发射可见潮光弹。";
+  syncArenaHud();
 }
 
 const sounds = {
@@ -2048,9 +2131,14 @@ function resetGame(options = {}) {
   const restoreSession = Boolean(options.restoreSession);
   applyCampaignLevel();
   buildCollectorCourse();
+  buildArenaCourse();
   exit.visible = config.mode === "collector";
   player.visible = true;
-  setGameSessionState("playing"); state.finished = false; state.collected = 0; state.remaining = activeDuration; state.checkpoint = false; state.checkpointsReached = 0; state.mistakes = 0; state.grounded = true; state.wave = 1; state.health = 100; state.upgrade = 0; state.restoredSession = false;
+  setGameSessionState("playing"); state.finished = false; state.collected = 0; state.remaining = activeDuration; state.checkpoint = false; state.checkpointsReached = 0; state.mistakes = 0; state.grounded = true; state.wave = 1; state.health = 100; state.shield = 0; state.upgrade = 0; state.upgradeChoices = 0; state.shotsFired = 0; state.projectileHits = 0; state.restoredSession = false;
+  arenaStats = { damage: 2, fireInterval: .52, range: 15, moveSpeed: 1, nova: 0 };
+  selectedUpgradeLabels = [];
+  arenaBuild.textContent = "潮印：尚未选择";
+  arenaUpgradeCard.hidden = true;
   const collectorStart = currentCollectorBlueprint()?.start || { x: 0, z: 18 };
   player.position.set(collectorStart.x, 0, collectorStart.z);
   collectorRespawn.copy(player.position);
@@ -2065,7 +2153,7 @@ function resetGame(options = {}) {
   collectorSessionSaveClock = 0;
   const restored = restoreSession && restoreCollectorSession();
   if (config.mode === "collector") fragmentCount.firstChild.textContent = state.collected + " / ";
-  else fragmentCount.textContent = "100 · 1/3";
+  else syncArenaHud();
   timeLeft.textContent = String(Math.ceil(state.remaining));
   statusLabel.textContent = restored ? "已恢复探索" : "任务目标";
   status.textContent = config.mode === "arena"
@@ -2091,6 +2179,7 @@ function returnToSetup() {
   statusLabel.textContent = "启动设置";
   status.textContent = config.mode === "arena" ? "已返回启动页，可选择关卡后重新迎战。" : "已返回启动页，可选择关卡后重新进入遗迹。";
   resultCard.hidden = true;
+  arenaUpgradeCard.hidden = true;
   startCard.hidden = false;
 }
 
@@ -2142,7 +2231,7 @@ function updatePlayer(delta) {
   if (keys.has("ArrowLeft") || keys.has("KeyA")) x -= 1;
   if (keys.has("ArrowRight") || keys.has("KeyD")) x += 1;
   if (x || z) { const length = Math.hypot(x, z); x /= length; z /= length; }
-  const topSpeed = config.difficulty === "challenging" ? 8.2 : 7.2;
+  const topSpeed = (config.difficulty === "challenging" ? 8.2 : 7.2) * (config.mode === "arena" ? arenaStats.moveSpeed : 1);
   const response = x || z ? 11 : 15;
   moveVelocity.x += (x * topSpeed - moveVelocity.x) * Math.min(1, response * delta);
   moveVelocity.y += (z * topSpeed - moveVelocity.y) * Math.min(1, response * delta);
@@ -2168,50 +2257,128 @@ function triggerAction() {
     return;
   }
   if (attackCooldown > 0) return;
-  attackCooldown = Math.max(.28, .62 - state.upgrade * .08);
+  attackCooldown = Math.max(.18, arenaStats.fireInterval);
   const living = enemies.filter((enemy) => enemy.visible);
   living.sort((a, b) => player.position.distanceTo(a.position) - player.position.distanceTo(b.position));
   const target = living[0];
-  if (!target || player.position.distanceTo(target.position) > 7 + state.upgrade * .7) { playSound("warning"); return; }
-  target.userData.health -= 1 + Math.floor(state.upgrade / 2);
-  target.scale.setScalar(1.18);
-  playSound("hit");
-  if (target.userData.health <= 0) target.visible = false;
+  if (!target || player.position.distanceTo(target.position) > arenaStats.range) { playSound("warning"); statusLabel.textContent = "目标过远"; return; }
+  const mesh = new THREE.Mesh(new THREE.SphereGeometry(.28, 12, 10), new THREE.MeshBasicMaterial({ color: style.accent }));
+  mesh.position.copy(player.position); mesh.position.y = 1.2;
+  const targetPoint = target.position.clone(); targetPoint.y = 1.1;
+  const direction = targetPoint.sub(mesh.position).normalize();
+  scene.add(mesh);
+  playerProjectiles.push({ mesh, direction, speed: 16, damage: arenaStats.damage, life: arenaStats.range / 16 + .2 });
+  state.shotsFired += 1;
+  playSound("ui");
 }
 
-function applyArenaUpgrade() {
-  state.upgrade += 1;
-  state.health = Math.min(100, state.health + 18);
-  statusLabel.textContent = "潮印升级";
-  status.textContent = state.upgrade % 2 ? "脉冲射程提升，生命恢复 18。" : "脉冲威力提升，生命恢复 18。";
-  playSound("reward");
+function syncArenaHud() {
+  fragmentCount.textContent = state.health + (state.shield > 0 ? "+" + state.shield : "") + " · " + state.wave + "/3";
+}
+
+function damagePlayer(amount, reason) {
+  if (damageCooldown > 0 || !state.running) return;
+  let remainingDamage = amount;
+  if (state.shield > 0) {
+    const absorbed = Math.min(state.shield, remainingDamage);
+    state.shield -= absorbed; remainingDamage -= absorbed;
+  }
+  state.health = Math.max(0, state.health - remainingDamage);
+  damageCooldown = .75;
+  playerSprite.material.opacity = .45;
+  statusLabel.textContent = state.shield > 0 ? "潮盾吸收" : "受到伤害";
+  status.textContent = reason;
+  syncArenaHud(); playSound("illegal");
+  if (state.health <= 0) showResult(false);
+}
+
+function createEnemyProjectile(enemy) {
+  const mesh = new THREE.Mesh(new THREE.SphereGeometry(.24, 10, 8), new THREE.MeshBasicMaterial({ color: 0xff705f }));
+  mesh.position.copy(enemy.position); mesh.position.y = 1.1;
+  const targetPoint = player.position.clone(); targetPoint.y = 1;
+  scene.add(mesh);
+  enemyProjectiles.push({ mesh, direction: targetPoint.sub(mesh.position).normalize(), speed: 7.5, damage: enemy.userData.damage, life: 3 });
+}
+
+function updateProjectiles(delta) {
+  for (const projectile of [...playerProjectiles]) {
+    projectile.life -= delta; projectile.mesh.position.addScaledVector(projectile.direction, projectile.speed * delta);
+    const hit = enemies.find((enemy) => enemy.visible && Math.hypot(enemy.position.x - projectile.mesh.position.x, enemy.position.z - projectile.mesh.position.z) < 1.05);
+    if (hit) {
+      hit.userData.health -= projectile.damage; hit.scale.setScalar(1.18); state.projectileHits += 1; playSound("hit");
+      const healthRatio = Math.max(0, hit.userData.health / hit.userData.maxHealth);
+      hit.userData.healthFill.scale.x = hit.userData.healthWidth * healthRatio;
+      hit.userData.healthFill.position.x = -(hit.userData.healthWidth - hit.userData.healthFill.scale.x) / 2;
+      if (arenaStats.nova > 0) enemies.filter((enemy) => enemy.visible && enemy !== hit && enemy.position.distanceTo(hit.position) < 3).forEach((enemy) => { enemy.userData.health -= arenaStats.nova; if (enemy.userData.health <= 0) enemy.visible = false; });
+      if (hit.userData.health <= 0) hit.visible = false;
+      projectile.life = 0;
+    }
+    if (projectile.life <= 0) { scene.remove(projectile.mesh); playerProjectiles.splice(playerProjectiles.indexOf(projectile), 1); }
+  }
+  for (const projectile of [...enemyProjectiles]) {
+    projectile.life -= delta; projectile.mesh.position.addScaledVector(projectile.direction, projectile.speed * delta);
+    if (Math.hypot(player.position.x - projectile.mesh.position.x, player.position.z - projectile.mesh.position.z) < .9) { damagePlayer(projectile.damage, "远程潮弹命中；观察红色蓄力环并横向移动。"); projectile.life = 0; }
+    if (projectile.life <= 0) { scene.remove(projectile.mesh); enemyProjectiles.splice(enemyProjectiles.indexOf(projectile), 1); }
+  }
+}
+
+function showArenaUpgrade() {
+  setGameSessionState("upgrade");
+  const offset = (campaignLevelIndex + state.wave - 1) % arenaUpgradePool.length;
+  activeUpgradeChoices = [0, 2, 4].map((step) => arenaUpgradePool[(offset + step) % arenaUpgradePool.length]);
+  arenaUpgradeOptions.replaceChildren(...activeUpgradeChoices.map((choice, index) => {
+    const button = document.createElement("button"); button.type = "button"; button.dataset.upgradeIndex = String(index);
+    button.innerHTML = "<strong>" + choice.label + "</strong><span>" + choice.detail + "</span>"; return button;
+  }));
+  arenaUpgradeCard.hidden = false;
+  statusLabel.textContent = "选择潮印"; status.textContent = "选择后开始下一波，强化会持续到本关结束。";
+}
+
+function chooseArenaUpgrade(index = 0) {
+  if (config.mode !== "arena" || arenaUpgradeCard.hidden) return false;
+  const choice = activeUpgradeChoices[Math.max(0, Math.min(activeUpgradeChoices.length - 1, Number(index) || 0))];
+  choice.apply(); state.upgrade += 1; state.upgradeChoices += 1; state.health = Math.min(100, state.health + 10);
+  selectedUpgradeLabels.push(choice.label);
+  arenaBuild.textContent = "潮印：" + selectedUpgradeLabels.join(" · ");
+  arenaUpgradeCard.hidden = true; state.wave += 1; setGameSessionState("playing"); spawnWave(state.wave); playSound("reward");
+  return true;
 }
 
 function updateArena(delta, time) {
   if (!state.running || config.mode !== "arena") return;
   attackCooldown = Math.max(0, attackCooldown - delta);
   damageCooldown = Math.max(0, damageCooldown - delta);
+  playerSprite.material.opacity += (1 - playerSprite.material.opacity) * Math.min(1, delta * 7);
+  updateProjectiles(delta);
   const living = enemies.filter((enemy) => enemy.visible);
+  living.forEach((enemy) => { enemy.children[1].material.color.setHex(style.accent); enemy.children[1].scale.setScalar(1); });
+  const locked = living.sort((a, b) => player.position.distanceTo(a.position) - player.position.distanceTo(b.position))[0];
+  if (locked) { locked.children[1].material.color.setHex(0xffffff); locked.children[1].scale.setScalar(1.25 + Math.sin(time * .006) * .08); }
   for (const enemy of living) {
     const direction = player.position.clone().sub(enemy.position);
     direction.y = 0;
     const distance = direction.length();
-    if (distance > 1.15) enemy.position.addScaledVector(direction.normalize(), enemy.userData.speed * delta);
+    const type = enemy.userData.type;
+    if (type === "ranged") {
+      enemy.userData.shotCooldown -= delta;
+      if (enemy.userData.warning > 0) {
+        enemy.userData.warning -= delta; enemy.children[1].material.color.setHex(0xff5f57); enemy.children[1].scale.setScalar(1.45);
+        if (enemy.userData.warning <= 0) { createEnemyProjectile(enemy); enemy.userData.shotCooldown = 2.2; }
+      } else if (enemy.userData.shotCooldown <= 0 && distance < 15) enemy.userData.warning = .75;
+      if (distance < 7) enemy.position.addScaledVector(direction.normalize(), -enemy.userData.speed * delta);
+      else if (distance > 11) enemy.position.addScaledVector(direction.normalize(), enemy.userData.speed * delta);
+    } else if (distance > 1.15) {
+      const movement = direction.normalize();
+      if (type === "runner") movement.add(new THREE.Vector3(-movement.z, 0, movement.x).multiplyScalar(Math.sin(time * .004 + enemy.userData.phase) * .7)).normalize();
+      enemy.position.addScaledVector(movement, enemy.userData.speed * delta);
+    }
     enemy.children[1].rotation.z = time * .001 + enemy.userData.phase;
     enemy.scale.lerp(new THREE.Vector3(1, 1, 1), Math.min(1, delta * 8));
-    if (distance < 1.45 && damageCooldown <= 0) {
-      state.health = Math.max(0, state.health - Math.max(7, 13 - state.upgrade * 2));
-      damageCooldown = .8;
-      fragmentCount.textContent = state.health + " · " + state.wave + "/3";
-      playSound("illegal");
-      if (state.health <= 0) { showResult(false); return; }
-    }
+    if (type !== "ranged" && distance < 1.45) damagePlayer(enemy.userData.damage, enemy.userData.type === "tank" ? "重装者撞击；绕开大体型敌人的推进线。" : "敌人贴身命中；保持移动并避免被包夹。");
   }
   if (living.length === 0) {
     if (state.wave >= 3) { showResult(true); return; }
-    applyArenaUpgrade();
-    state.wave += 1;
-    spawnWave(state.wave);
+    showArenaUpgrade();
   }
 }
 
@@ -2263,18 +2430,19 @@ function showResult(won) {
     const completedLevel = currentCampaignLevel();
     const stars = config.mode === "collector"
       ? Math.min(3, 1 + Number(state.collected >= 2) + Number(state.collected === requiredFragments && state.mistakes === 0))
-      : 1 + completedLevel.masteryRules.filter((rule) => state.remaining >= rule.target).length;
+      : Math.min(3, 1 + Number(state.health >= 60) + Number(state.health >= 85));
     campaignMastery[completedLevel.id] = Math.max(Number(campaignMastery[completedLevel.id]) || 0, stars);
     masteryText = " 本关评价 " + "★".repeat(stars) + "☆".repeat(3 - stars) + "。";
   }
   setGameSessionState(won ? (finalWin ? "won" : "stage-complete") : "lost"); state.finished = true;
   player.visible = false;
   clearCollectorSession();
+  arenaUpgradeCard.hidden = true;
   stopEnvironmentAudio();
   document.querySelector("#result-kicker").textContent = config.mode === "arena" ? (won ? "竞技场净空" : "潮光熄灭") : (won ? "遗迹已响应" : "探索中止");
   document.querySelector("#result-title").textContent = won ? (finalWin ? "20 关全部完成" : "第 " + (campaignLevelIndex + 1) + " 关完成") : (state.health <= 0 ? "战斗失败" : "时间耗尽");
   document.querySelector("#result-detail").textContent = won
-    ? (config.mode === "arena" ? "你完成了三波作战，并让潮印升级持续生效。" : "你完成了主路线，激活全部检查点并抵达出口；本局收集 " + state.collected + " / 3 枚星砂。") + masteryText
+    ? (config.mode === "arena" ? "你完成了三波作战、" + state.upgradeChoices + " 次潮印选择，并以 " + state.health + " 点生命结束。" : "你完成了主路线，激活全部检查点并抵达出口；本局收集 " + state.collected + " / 3 枚星砂。") + masteryText
     : (config.mode === "arena" ? "已抵达第 " + state.wave + " 波，保留走位空间后再试一次。" : "已收集 " + state.collected + " / " + requiredFragments + " 枚碎片。重新规划路线再试一次。");
   resultCard.hidden = false;
   if (won && !finalWin) {
@@ -2367,6 +2535,7 @@ document.querySelectorAll("[data-key]").forEach((button) => {
 });
 document.querySelector("#start").addEventListener("click", () => resetGame({ restoreSession: true }));
 document.querySelector("#restart").addEventListener("click", () => { clearCollectorSession(); resetGame(); });
+arenaUpgradeOptions.addEventListener("click", (event) => { const button = event.target.closest("[data-upgrade-index]"); if (button) chooseArenaUpgrade(button.dataset.upgradeIndex); });
 backToSetupButton.addEventListener("click", returnToSetup);
 pauseButton.addEventListener("click", togglePause);
 resultSetupButton.addEventListener("click", returnToSetup);
@@ -2381,7 +2550,10 @@ const gameDebugApi = {
   state,
   getState() {
     const blueprint = currentCollectorBlueprint();
-    return { ...state, player: { x: player.position.x, y: player.position.y, z: player.position.z }, campaign: { level: currentCampaignLevel(), maxUnlocked: campaignMaxUnlocked + 1, total: config.campaignLevels.length, mastery: { ...campaignMastery }, stars: Object.values(campaignMastery).reduce((sum, value) => sum + Number(value || 0), 0) }, requiredFragments, enemyCount: enemies.filter((enemy) => enemy.visible).length, contract: config.contract, runtime: config.mode === "collector" ? { tier: currentCampaignLevel().tier, checkpointTarget: blueprint?.checkpoints.length || 0, obstacleCount: blueprint?.obstacles.length || 0, hazardCount: blueprint?.hazards.length || 0, movingHazardCount: blueprint?.hazards.filter((item) => item.motion).length || 0, duration: activeDuration } : { tier: currentCampaignLevel().tier, requiredFragments, waveEnemyCount: 2 + state.wave + currentCampaignLevel().tier, duration: activeDuration }, collector: config.mode === "collector" ? { blueprintCount: config.collectorBlueprints.length, uniqueSignatures: new Set(config.collectorBlueprints.map((item) => JSON.stringify(item))).size, chapterCount: new Set(config.collectorBlueprints.map((item) => item.chapter)).size, blueprintId: blueprint?.id, blueprintName: blueprint?.name, checkpointTarget: blueprint?.checkpoints.length || 0, obstacleCount: blueprint?.obstacles.length || 0, hazardCount: blueprint?.hazards.length || 0, movingHazardCount: blueprint?.hazards.filter((item) => item.motion).length || 0, optionalCollectibles: true, sessionRestore: true, movementModel: "accelerated-camera-plane", collisionModel: "height-aware-capsule-proxy", jumpBufferSeconds: .14, coyoteSeconds: .12, respawn: { x: collectorRespawn.x, y: collectorRespawn.y, z: collectorRespawn.z } } : null };
+    const arenaBlueprint = currentArenaBlueprint();
+    const livingEnemies = enemies.filter((enemy) => enemy.visible);
+    const arenaState = config.mode === "arena" ? { blueprintCount: config.arenaBlueprints.length, uniqueSignatures: new Set(config.arenaBlueprints.map((item) => JSON.stringify({ spawnRotation: item.spawnRotation, obstacles: item.obstacles, waves: item.waves }))).size, chapterCount: new Set(config.arenaBlueprints.map((item) => item.chapter)).size, blueprintId: arenaBlueprint?.id, blueprintName: arenaBlueprint?.name, obstacleCount: arenaBlueprint?.obstacles.length || 0, enemyTypes: [...new Set(livingEnemies.map((enemy) => enemy.userData.type))], wavePlan: arenaBlueprint?.waves[state.wave - 1], hasEliteWave: arenaBlueprint?.waves.some((wave) => wave.elite) || false, projectileModel: "visible-travel-hit", playerProjectileCount: playerProjectiles.length, enemyProjectileCount: enemyProjectiles.length, pendingUpgrade: !arenaUpgradeCard.hidden, selectedUpgrades: [...selectedUpgradeLabels], stats: { ...arenaStats } } : null;
+    return { ...state, player: { x: player.position.x, y: player.position.y, z: player.position.z }, campaign: { level: currentCampaignLevel(), maxUnlocked: campaignMaxUnlocked + 1, total: config.campaignLevels.length, mastery: { ...campaignMastery }, stars: Object.values(campaignMastery).reduce((sum, value) => sum + Number(value || 0), 0) }, requiredFragments, enemyCount: livingEnemies.length, contract: config.contract, arena: arenaState, runtime: config.mode === "collector" ? { tier: currentCampaignLevel().tier, checkpointTarget: blueprint?.checkpoints.length || 0, obstacleCount: blueprint?.obstacles.length || 0, hazardCount: blueprint?.hazards.length || 0, movingHazardCount: blueprint?.hazards.filter((item) => item.motion).length || 0, duration: activeDuration } : { tier: currentCampaignLevel().tier, enemyTypes: arenaState?.enemyTypes.length || 0, obstacleCount: arenaBlueprint?.obstacles.length || 0, waveEnemyCount: livingEnemies.length, duration: activeDuration }, collector: config.mode === "collector" ? { blueprintCount: config.collectorBlueprints.length, uniqueSignatures: new Set(config.collectorBlueprints.map((item) => JSON.stringify(item))).size, chapterCount: new Set(config.collectorBlueprints.map((item) => item.chapter)).size, blueprintId: blueprint?.id, blueprintName: blueprint?.name, checkpointTarget: blueprint?.checkpoints.length || 0, obstacleCount: blueprint?.obstacles.length || 0, hazardCount: blueprint?.hazards.length || 0, movingHazardCount: blueprint?.hazards.filter((item) => item.motion).length || 0, optionalCollectibles: true, sessionRestore: true, movementModel: "accelerated-camera-plane", collisionModel: "height-aware-capsule-proxy", jumpBufferSeconds: .14, coyoteSeconds: .12, respawn: { x: collectorRespawn.x, y: collectorRespawn.y, z: collectorRespawn.z } } : null };
   },
   collectAll() { fragments.forEach((fragment) => { fragment.visible = false; }); state.collected = requiredFragments; fragmentCount.firstChild.textContent = requiredFragments + " / "; gateMaterial.emissive.setHex(style.accent); gateEmblem.material.color.setHex(0xffffff); gateLight.intensity = 12; },
   moveToExit() { player.position.copy(exit.position); },
@@ -2410,8 +2582,18 @@ const gameDebugApi = {
   },
   persistSession: saveCollectorSession,
   clearWave() { enemies.forEach((enemy) => { enemy.visible = false; }); },
+  prepareArenaShot() {
+    if (config.mode !== "arena") return null;
+    const target = enemies.find((enemy) => enemy.visible);
+    if (!target) return null;
+    target.position.set(player.position.x, 0, player.position.z - 4.5);
+    target.userData.speed = 0;
+    target.userData.shotCooldown = 99;
+    return { target: { x: target.position.x, z: target.position.z }, renderCount: state.renderCount, projectileHits: state.projectileHits };
+  },
+  chooseUpgrade: chooseArenaUpgrade,
   attack: triggerAction,
-  forceDamage(amount = 20) { state.health = Math.max(0, state.health - Number(amount)); fragmentCount.textContent = state.health + " · " + state.wave + "/3"; if (state.health <= 0) showResult(false); },
+  forceDamage(amount = 20) { damageCooldown = 0; damagePlayer(Number(amount), "伤害探针"); },
   forceFail() { showResult(false); },
   suspend(value = true) { renderSuspended = Boolean(value); state.suspended = renderSuspended; if (!renderSuspended) previousFrame = performance.now(); },
   forceWin() { showResult(true); },
@@ -2425,6 +2607,7 @@ if (new URLSearchParams(location.search).has("probe")) window.__GAME_DEBUG__ = g
 function writeThreeArtifact(root: string, project: ProjectDetail) {
   if (!existsSync(threeModuleSource) || !existsSync(threeCoreSource)) throw new Error("Three.js 浏览器运行时缺失，请先安装项目依赖。");
   copySignalAssetPack(root);
+  if (project.spec.threeMode === "arena") copyThreeArenaAssetPack(root);
   mkdirSync(join(root, "vendor"), { recursive: true });
   copyFileSync(threeModuleSource, join(root, "vendor", "three.module.js"));
   copyFileSync(threeCoreSource, join(root, "vendor", "three.core.js"));
@@ -2433,16 +2616,18 @@ function writeThreeArtifact(root: string, project: ProjectDetail) {
     '<link rel="preload" as="image" href="./assets/sprites/sprite-02.png"><link rel="preload" as="image" href="./assets/sprites/sprite-03.png"><link rel="preload" as="image" href="./assets/sprites/sprite-04.png">',
   );
   writeFileSync(join(root, "index.html"), html, "utf8");
-  writeFileSync(join(root, "styles.css"), `${threeGameStyles}${threeCampaignStyles}${threeMasteryStyles}${threeMobilePlayFlowStyles}\n.three-controls [data-key=action]{grid-row:1;grid-column:3;background:color-mix(in srgb,var(--accent,#d6b968) 24%,#0d1618)}body:is([data-game-state=idle],[data-game-state=stage-complete],[data-game-state=won],[data-game-state=lost]) .three-bottom,body:is([data-game-state=idle],[data-game-state=stage-complete],[data-game-state=won],[data-game-state=lost]) .three-metrics{display:none}body[data-game-state=paused] .three-back{display:block}.three-pause{left:max(64px,calc(env(safe-area-inset-left) + 64px))!important}\n@media(max-width:720px){.three-controls{grid-template-columns:repeat(3,44px);grid-template-rows:repeat(2,44px)}body[data-game-state=playing] .three-objective,body[data-game-state=paused] .three-objective{max-width:calc(100% - 148px)}body[data-game-state=playing] .three-brand,body[data-game-state=paused] .three-brand{display:none}body[data-game-state=playing] .three-topbar,body[data-game-state=paused] .three-topbar{justify-content:flex-end;padding-left:0}}`, "utf8");
+  writeFileSync(join(root, "styles.css"), `${threeGameStyles}${threeCampaignStyles}${threeMasteryStyles}${threeMobilePlayFlowStyles}${threeArenaStyles}\n.three-controls [data-key=action]{grid-row:1;grid-column:3;background:color-mix(in srgb,var(--accent,#d6b968) 24%,#0d1618)}body:is([data-game-state=idle],[data-game-state=upgrade],[data-game-state=stage-complete],[data-game-state=won],[data-game-state=lost]) .three-bottom,body:is([data-game-state=idle],[data-game-state=upgrade],[data-game-state=stage-complete],[data-game-state=won],[data-game-state=lost]) .three-metrics{display:none}body[data-game-state=paused] .three-back{display:block}.three-pause{left:max(64px,calc(env(safe-area-inset-left) + 64px))!important}\n@media(max-width:720px){.three-controls{grid-template-columns:repeat(3,44px);grid-template-rows:repeat(2,44px)}body[data-game-state=playing] .three-objective,body[data-game-state=paused] .three-objective{max-width:calc(100% - 148px)}body[data-game-state=playing] .three-brand,body[data-game-state=paused] .three-brand{display:none}body[data-game-state=playing] .three-topbar,body[data-game-state=paused] .three-topbar{justify-content:flex-end;padding-left:0}}`, "utf8");
   writeFileSync(join(root, "app.js"), `${threeGameScript(project)}${gameTelemetryScript(project)}`, "utf8");
   const provenanceRoot = join(root, "_studio");
   mkdirSync(provenanceRoot, { recursive: true });
-  const trackedAssets = ["cover.png", "arena-background.png", "music.wav", "ambient.wav", "hit.wav", "reward.wav", "victory.wav", "defeat.wav", "sprites/sprite-03.png", "sprites/sprite-05.png"];
+  if (project.spec.threeMode === "arena") copyFileSync(join(threeArenaAssetRoot, "generation-prompts.md"), join(provenanceRoot, "ARENA_ASSET_PROMPTS.md"));
+  const trackedAssets = ["cover.png", "arena-background.png", "music.wav", "ambient.wav", "hit.wav", "reward.wav", "victory.wav", "defeat.wav", ...(project.spec.threeMode === "arena" ? ["arena-player.png", "arena-enemy-chaser.png", "arena-enemy-runner.png", "arena-enemy-tank.png", "arena-enemy-ranged.png"] : ["sprites/sprite-03.png", "sprites/sprite-05.png"])];
   writeFileSync(join(provenanceRoot, "THREE_ASSET_PROVENANCE.json"), JSON.stringify({
     schemaVersion: 1,
     runtime: "three.js 0.185.1",
     mode: project.spec.threeMode ?? "collector",
     contract: project.spec.threeContract,
+    assetGeneration: project.spec.threeMode === "arena" ? { model: "gpt-image-2", sourceSize: "1024x1024", deliveredSize: "512x512", backgroundRemoval: "local-edge-connected-chroma-key", promptRecord: "_studio/ARENA_ASSET_PROMPTS.md" } : null,
     models: [
       { id: "player-billboard", format: "bitmap-plane", use: "player-avatar", approximateTriangles: 2 },
       { id: "ruin-kit", format: "procedural-three-geometry", use: "collision-landmarks", approximateTriangles: 960 },
@@ -2450,7 +2635,7 @@ function writeThreeArtifact(root: string, project: ProjectDetail) {
     ],
     glbAssets: [],
     note: "本版本未伪造 GLB 来源；角色、敌人和环境使用明确登记的位图平面与 Three.js 程序化网格。",
-    files: trackedAssets.map((filename) => ({ filename: `assets/${filename}`, bytes: statSync(join(root, "assets", filename)).size, use: filename.includes(".wav") ? "audio" : filename.includes("sprite") ? "role-bitmap" : "environment-texture" })),
+    files: trackedAssets.map((filename) => ({ filename: `assets/${filename}`, bytes: statSync(join(root, "assets", filename)).size, use: filename.includes(".wav") ? "audio" : filename.includes("sprite") || filename === "arena-player.png" || filename.startsWith("arena-enemy-") ? "role-bitmap" : "environment-texture" })),
   }, null, 2), "utf8");
   writeFileSync(join(root, "game-manifest.json"), JSON.stringify({
     title: project.title,
