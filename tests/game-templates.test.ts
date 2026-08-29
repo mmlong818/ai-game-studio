@@ -223,17 +223,26 @@ test("十三类艺术化游戏都会产出可解析脚本、角色拆分位图�
       if (template === "maze") {
         const script = readFileSync(join(output, "app.js"), "utf8");
         const html = readFileSync(join(output, "index.html"), "utf8");
-        assert.match(script, /const portraitSizes = \[\[9, 15\], \[9, 15\], \[13, 21\], \[13, 21\], \[15, 25\]\]/);
-        assert.match(script, /currentCampaignLevel\(\)\.tier - 1/);
+        const styles = readFileSync(join(output, "styles.css"), "utf8");
+        assert.match(script, /const mazeBlueprints = \[/);
+        assert.match(script, /"苔庭归星","暮钟综合","grand-maze"/);
         assert.match(script, /function braidMaze\(\)/);
         assert.match(script, /function mazeAlternativeSegments\(/);
-        assert.match(script, /function drawMazeJunctions\(/);
-        assert.match(script, /hasMultipleRoutes: mazeAlternativeSegments\(mazeShortestPath\) > 0/);
+        assert.match(script, /function prepareObjectives\(\)/);
+        assert.match(script, /hasMultipleRoutes:mazeAlternativeSegments\(mazeShortestPath\)>0/);
+        assert.match(script, /function showHint\(\)/);
+        assert.match(script, /hintPath=path\.slice\(1,5\)/);
+        assert.match(script, /fogRadius:blueprint\(\)\.fogRadius/);
+        assert.match(script, /iceCount:iceKeys\.size/);
+        assert.match(script, /keyCount:starKeys\.size/);
         assert.match(script, /function gestureDirection\(/);
-        assert.match(script, /pointermove/);
+        assert.match(script, /pointerup/);
+        assert.match(script, />=18/);
         assert.match(script, /holdRepeat/);
         assert.match(html, /touch-controls maze-pad/);
-        assert.match(html, /滑动迷宫或使用方向键/);
+        assert.match(html, /data-maze-control-mode="swipe"/);
+        assert.match(html, /竞径星章/);
+        assert.match(styles, /data-maze-control-mode=swipe/);
       }
       if (template === "snake") {
         const script = readFileSync(join(output, "app.js"), "utf8");

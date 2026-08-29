@@ -404,6 +404,62 @@ export async function inspectStageEInBrowser(root: string, template: StageETempl
     }
     await page.waitForFunction(() => document.body.dataset.gameState === "playing", undefined, { timeout: 4_000 });
     const initial = await stageEDebugState(page);
+    let mazeSurvey: any[] | null = null;
+    let mazeInteraction: any = null;
+    if (template === "maze") {
+      mazeSurvey = [];
+      mkdirSync(join(root, "_studio", "quality"), { recursive: true });
+      await stageEDebugAction(page, "unlockAllLevels");
+      for (let level = 1; level <= 20; level += 1) {
+        const state = await page.evaluate((number) => {
+          const debug = (window as any).__GAME_DEBUG__;
+          debug.setLevel(number);
+          debug.restart();
+          return debug.getState().runtime;
+        }, level);
+        mazeSurvey.push(state);
+        if ([9, 13, 15, 20].includes(level)) await page.screenshot({ path: join(root, "_studio", "quality", `maze-level-${String(level).padStart(2, "0")}.png`), fullPage: true });
+      }
+      if (new Set(mazeSurvey.map((state) => state.name)).size !== 20 || new Set(mazeSurvey.map((state) => state.layoutSignature)).size !== 20) throw new Error("苔径迷庭没有形成 20 个唯一名称与布局签名。 ");
+      if (new Set(mazeSurvey.map((state) => state.chapter)).size !== 5) throw new Error("苔径迷庭没有形成五章机制进程。 ");
+      if (mazeSurvey.some((state) => !state.validation?.goalReachable || !state.validation?.objectivesReachable || state.loopCount < 5 || state.alternativeSegments < 3)) throw new Error("苔径迷庭存在不可解目标或退化成单路径的关卡。 ");
+      if (mazeSurvey.some((state) => state.optimalSteps < state.directOptimalSteps || state.challengeTarget <= state.optimalSteps)) throw new Error("苔径迷庭竞径目标没有计入星钥任务路线。 ");
+      if (mazeSurvey[8].fogRadius < 1 || mazeSurvey[12].iceCount < 1 || mazeSurvey[14].keyCount < 1 || mazeSurvey[16].timeLimit < 1) throw new Error("苔径迷庭的雾、冰、星钥门或暮钟机制没有按章节出现。 ");
+      await page.evaluate(() => { const debug = (window as any).__GAME_DEBUG__; debug.setLevel(1); debug.restart(); });
+      await page.waitForTimeout(720);
+      await stageEDebugAction(page, "useMazeHint");
+      const hinted = await stageEDebugState(page);
+      if (hinted.runtime.hintUses !== 2 || hinted.runtime.hintPathLength < 1 || hinted.runtime.hintPathLength > 4) throw new Error("苔径迷庭的有限下一段提示没有生效。 ");
+      await stageEDebugAction(page, "pauseMaze");
+      const paused = await stageEDebugState(page);
+      const pausedSessionState = await page.locator("body").getAttribute("data-game-state");
+      if (!paused.runtime.paused || pausedSessionState !== "paused") throw new Error("苔径迷庭暂停状态没有锁定。 ");
+      await page.keyboard.press("p");
+      const resumed = await stageEDebugState(page);
+      if (resumed.runtime.paused) throw new Error("苔径迷庭按 P 后没有恢复。 ");
+      const direction = resumed.runtime.openDirections[0];
+      const before = resumed.runtime.player;
+      const box = await page.locator("#game-canvas").boundingBox();
+      if (!direction || !box) throw new Error("苔径迷庭没有可测试的开局方向或画布。 ");
+      const startX = box.x + box.width / 2;
+      const startY = box.y + box.height / 2;
+      await page.mouse.move(startX, startY);
+      await page.mouse.down();
+      await page.mouse.move(startX + direction.dx * 48, startY + direction.dy * 48, { steps: 3 });
+      await page.mouse.up();
+      await page.waitForTimeout(160);
+      const swiped = await stageEDebugState(page);
+      if (swiped.runtime.player.x === before.x && swiped.runtime.player.y === before.y) throw new Error("苔径迷庭真实画布滑动没有移动玩家。 ");
+      await page.locator("#back-to-setup").click();
+      await page.locator("[data-maze-control-mode=buttons]").click();
+      await page.locator("#start").click();
+      const buttons = await stageEDebugState(page);
+      if (buttons.runtime.controlMode !== "buttons") throw new Error("苔径迷庭启动页四键模式没有生效。 ");
+      await page.locator("#back-to-setup").click();
+      await page.locator("[data-maze-control-mode=swipe]").click();
+      await page.locator("#start").click();
+      mazeInteraction = { hinted: hinted.runtime, paused: paused.runtime, resumed: resumed.runtime, swiped: swiped.runtime, buttons: buttons.runtime };
+    }
     let restored: any = null;
     let advanced: any = null;
     let selectedCue: any = null;
@@ -467,7 +523,7 @@ export async function inspectStageEInBrowser(root: string, template: StageETempl
     if (template === "region-logic" && (initial.runtime.searchNodes < initial.runtime.complexityTarget.minSearchNodes || initial.runtime.branchPoints < initial.runtime.complexityTarget.minBranchPoints)) throw new Error("星灵巡格首关推理链仍然过短。 ");
     if (template === "region-logic" && (advanced?.runtime?.size < 8 || advanced.runtime.hints !== 0 || advanced.runtime.directAnswerEnabled)) throw new Error("星灵巡格后期关没有形成 8×8、零提示的进阶难度。 ");
     if (template === "region-logic" && (advanced.runtime.searchNodes < advanced.runtime.complexityTarget.minSearchNodes || advanced.runtime.branchPoints < advanced.runtime.complexityTarget.minBranchPoints)) throw new Error("星灵巡格后期关推理复杂度不足。 ");
-    if (template === "maze" && (!initial?.runtime?.challenge || initial.runtime.optimalSteps < 1)) throw new Error("苔径迷庭最短径挑战没有生效。 ");
+    if (template === "maze" && (!initial?.runtime?.challenge || initial.runtime.optimalSteps < 1 || initial.runtime.challengeTarget <= initial.runtime.optimalSteps)) throw new Error("苔径迷庭竞径目标没有形成有效的可选挑战。 ");
     if (template === "maze" && (initial.runtime.loopCount < 5 || initial.runtime.junctionCount < 3 || initial.runtime.alternativeSegments < 3 || !initial.runtime.hasMultipleRoutes)) throw new Error("苔径迷庭仍然只有单一路线，没有形成环路与有效岔口。 ");
     if (template === "mahjong-roguelite" && (initial?.runtime?.relicPoolSize ?? 0) < 12) throw new Error("月港雀旅遗物池不足 12 件。 ");
     if (template === "mahjong-roguelite" && (routeOffer?.runtime?.routePoolSize ?? 0) < 5) throw new Error("月港雀旅路线池不足 5 条。 ");
@@ -485,7 +541,7 @@ export async function inspectStageEInBrowser(root: string, template: StageETempl
     }
     if (template === "mahjong-roguelite" && ((completedState?.runtime?.routeHistory?.length ?? 0) < 3 || !completedState?.runtime?.ending)) throw new Error("月港雀旅完成长局后没有路线历史或差异化结局。 ");
     if (runtimeErrors.length) throw new Error(`阶段 E 浏览器错误：${runtimeErrors.join(" | ")}`);
-    const result: StageEQualityResult = { template, completedRuns: 3, failedRuns: 2, evidence: { routeOffer: routeOffer?.runtime ?? null, initial: initial?.runtime, selectedCue: selectedCue?.runtime ?? null, advanced: advanced?.runtime ?? null, restored: restored?.runtime ?? null, completed: completedState?.runtime ?? null } };
+    const result: StageEQualityResult = { template, completedRuns: 3, failedRuns: 2, evidence: { routeOffer: routeOffer?.runtime ?? null, initial: initial?.runtime, mazeSurvey, mazeInteraction, selectedCue: selectedCue?.runtime ?? null, advanced: advanced?.runtime ?? null, restored: restored?.runtime ?? null, completed: completedState?.runtime ?? null } };
     mkdirSync(join(root, "_studio"), { recursive: true });
     writeFileSync(join(root, "_studio", "STAGE_E_QUALITY_REPORT.json"), `${JSON.stringify({ checkedAt: new Date().toISOString(), ...result }, null, 2)}\n`, "utf8");
     return result;

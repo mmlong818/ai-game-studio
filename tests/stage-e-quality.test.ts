@@ -43,9 +43,12 @@ test("阶段 E 逻辑、迷宫和长局模板具备计划要求的运行时能�
       }
       if (template === "maze") {
         assert.match(html, /data-maze-shortest/);
+        assert.match(html, /data-maze-control-mode="swipe"/);
         assert.match(script, /solveMazeShortestPath/);
-        assert.match(script, /mazeCheckpointKeys/);
-        assert.match(script, /setInterval\(\(\) => handleControl/);
+        assert.match(script, /lanternKeys=new Set/);
+        assert.match(script, /starKeys=new Set/);
+        assert.match(script, /function missionOptimalSteps/);
+        assert.match(script, /setInterval\(\(\)=>handleControl/);
       }
       if (template === "mahjong-roguelite") {
         assert.match(html, /data-mahjong-mode/);
