@@ -31,7 +31,7 @@
 | 6 | 朱门华容 | `klotski` | 已完成并发布 v34，见 `43-klotski-best-template-reference.md` | 20 个求解器验证布局、8–120 步真实距离带、直接拖动、逐步提示、撤销/重做和路径回放均已落实；稳定网址已指向 `119aae67-cd04-4c68-8c5f-bbeb41b6a0b0` |
 | 7 | 青玉长游 | `snake` | 已完成并发布 v34，见 `44-snake-best-template-reference.md` | 20 个固定场型与五章、双转向缓冲、真实滑动、100 次可达食物、暂停恢复、金果与结算统计均已落实；稳定网址已指向 `da0a6b12-df3a-4791-a234-ccf04e4e7d7b` |
 | 8 | 苔径迷庭 | `maze` | 已完成并发布 v34，见 `45-maze-best-template-reference.md` | 20 个唯一可解关、五章机制、支路萤灯、雾/冰/星钥门/暮钟、有限提示、滑动与四键均已落实；稳定网址已指向 `860dc65f-4c62-4061-aafb-b0bdba3face5` |
-| 9 | 植光拼图 | `puzzle` | 待专门研究 | 待开始 |
+| 9 | 植光拼图 | `puzzle` | 已完成研究合同，见 `46-puzzle-best-template-reference.md` | 实现中；锁定 20 图、6–50 块、四区外围整理、缩放/预览/提示、邻接成组和上传图自适应 |
 | 10 | 果冻填阵 | `block-place` | 待专门研究 | 待开始 |
 | 11 | 软糖拼岛 | `polyomino-fit` | 待专门研究 | 待开始 |
 | 12 | 星灵巡格 | `region-logic` | 待专门研究 | 待开始 |
