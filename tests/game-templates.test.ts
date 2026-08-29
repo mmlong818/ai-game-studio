@@ -268,8 +268,17 @@ test("十三类艺术化游戏都会产出可解析脚本、角色拆分位图�
       }
       if (template === "space-shooter") {
         const script = readFileSync(join(output, "app.js"), "utf8");
+        const html = readFileSync(join(output, "index.html"), "utf8");
         assert.match(script, /function shooterSceneHeight\(\)/);
-        assert.match(script, /learningPhase/);
+        assert.match(script, /const shooterWaveCount = 3/);
+        assert.match(script, /const shooterEnemyKinds = \["scout", "weaver", "charger", "turret", "shield"\]/);
+        assert.match(script, /function shooterLevelBlueprints\(\)/);
+        assert.match(script, /function spawnShooterEnemy\(kind, timestamp\)/);
+        assert.match(script, /function fireShooterEnemy\(enemy, timestamp\)/);
+        assert.match(script, /function activateShooterPulse\(\)/);
+        assert.match(script, /function drawShooterHud\(timestamp\)/);
+        assert.match(script, /bossPhase: shooterBossPhase/);
+        assert.match(script, /enemyBulletVisual: \{ warmSolidCore: true, shapeDistinctFromPlayer: true/);
         assert.match(script, /warningUntil/);
         assert.match(script, /setPointerCapture/);
         assert.match(script, /shooterCombo/);
@@ -277,6 +286,12 @@ test("十三类艺术化游戏都会产出可解析脚本、角色拆分位图�
         assert.match(script, /function moveShipTowardPointer\(event\)/);
         assert.match(script, /mouse-hover-touch-hold-drag/);
         assert.match(script, /highContrastCore: true/);
+        assert.match(script, /space-f-touch-button/);
+        assert.match(script, /energy-wave-score-boss/);
+        assert.match(html, /data-shooter-loadout="interceptor"/);
+        assert.match(html, /data-shooter-loadout="bulwark"/);
+        assert.match(html, /data-shooter-loadout="lancer"/);
+        assert.match(html, /data-control="pulse"/);
       }
       if (template === "polyomino-fit") {
         const script = readFileSync(join(output, "app.js"), "utf8");

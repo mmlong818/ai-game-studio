@@ -771,6 +771,9 @@ export async function inspectStageCRealtimeInBrowser(root: string, template: Sta
       const box = await canvas.boundingBox();
       if (!box) throw new Error("射击游戏画布不可见。 ");
       const pointerStart = await stageCDebugState(page);
+      if (pointerStart.runtime.waveCount !== 3 || pointerStart.runtime.currentWave !== 1) throw new Error("射击任务没有从三波结构的第一波开始。 ");
+      if (pointerStart.runtime.enemyArchetypeCount < 5 || pointerStart.runtime.loadoutCount !== 3) throw new Error("射击模板的敌机类型或可选机体不足。 ");
+      if (pointerStart.runtime.hudContract !== "energy-wave-score-boss" || pointerStart.runtime.abilityControl !== "space-f-touch-button") throw new Error("射击模板缺少战斗 HUD 或主动能力输入合同。 ");
       await page.mouse.move(box.x + box.width * .72, box.y + box.height * .61);
       await page.waitForTimeout(180);
       const hoverState = await stageCDebugState(page);
@@ -798,7 +801,23 @@ export async function inspectStageCRealtimeInBrowser(root: string, template: Sta
       if (heldState.runtime.bulletVisual.width < 10 || heldState.runtime.bulletVisual.height < 28 || !heldState.runtime.bulletVisual.highContrastCore) {
         throw new Error("玩家弹体的尺寸或高对比核心不足。 ");
       }
+      if (!heldState.runtime.enemyBulletVisual?.warmSolidCore || !heldState.runtime.enemyBulletVisual?.shapeDistinctFromPlayer) throw new Error("敌弹没有与玩家弹形成多重视觉区分。 ");
       if (heldState.runtime.estimatedSessionSeconds < 90 || heldState.runtime.estimatedSessionSeconds > 150) throw new Error(`标准局估算时长不在 90–150 秒：${heldState.runtime.estimatedSessionSeconds} 秒。`);
+      await stageCDebugAction(page, "spawnThreatWave");
+      const threatenedState = await stageCDebugState(page);
+      if (threatenedState.runtime.enemyBulletCount < 5) throw new Error("敌机攻击没有形成可验证的弹幕压力。 ");
+      await stageCDebugAction(page, "chargePulse");
+      const chargedState = await stageCDebugState(page);
+      if (!chargedState.runtime.pulseReady || chargedState.runtime.pulseCharge !== 100) throw new Error("脉冲能力无法充满。 ");
+      await stageCDebugAction(page, "triggerPulse");
+      const pulsedState = await stageCDebugState(page);
+      if (pulsedState.runtime.pulseCharge !== 0 || !pulsedState.runtime.pulseEffectActive || pulsedState.runtime.enemyBulletCount >= threatenedState.runtime.enemyBulletCount) throw new Error("脉冲没有消耗能量、产生效果并清除敌弹。 ");
+      await stageCDebugAction(page, "previewBoss");
+      const bossState = await stageCDebugState(page);
+      if (!bossState.runtime.bossActive || bossState.runtime.bossHp <= 0 || bossState.runtime.currentWave !== 3) throw new Error("守关 Boss 分支不可达。 ");
+      await stageCDebugAction(page, "damageBossHalf");
+      const bossPhaseState = await stageCDebugState(page);
+      if (bossPhaseState.runtime.bossPhase !== 2 || bossPhaseState.runtime.bossHp >= bossPhaseState.runtime.bossMaxHp * .5) throw new Error("Boss 半血后没有进入第二阶段。 ");
       const livesBefore = heldState.runtime.lives;
       await stageCDebugAction(page, "damageOnce");
       const damagedState = await stageCDebugState(page);
@@ -812,8 +831,11 @@ export async function inspectStageCRealtimeInBrowser(root: string, template: Sta
       if (await page.locator("body").getAttribute("data-game-state") !== "playing") throw new Error("失败后重开没有恢复 playing。 ");
       await stageCDebugAction(page, "forceWin");
       if (await page.locator("body").getAttribute("data-game-state") !== "stage-complete") throw new Error("胜利分支没有进入关卡完成状态。 ");
-      checks.push("高对比弹体", "桌面鼠标悬停跟随", "手机按住拖动", "连续指针捕获", "90–150 秒标准局", "受击与无敌", "修复掉落", "失败、胜利与重开");
+      checks.push("三波任务", "五类敌机", "三种机体", "高对比双向弹体", "桌面鼠标悬停跟随", "手机按住拖动", "连续指针捕获", "主动脉冲清弹", "分阶段守关 Boss", "90–150 秒标准局", "受击与无敌", "修复掉落", "失败、胜利与重开");
       evidence.session = heldState.runtime;
+      evidence.threat = threatenedState.runtime;
+      evidence.pulse = pulsedState.runtime;
+      evidence.boss = bossPhaseState.runtime;
       evidence.hoverPosition = hoverState.runtime.shipPosition;
       evidence.touchHeldPosition = touchHeldState.runtime.shipPosition;
       evidence.touchReleased = !touchReleasedState.runtime.pointerCaptured;

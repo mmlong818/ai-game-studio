@@ -47,7 +47,13 @@ const templateModifiers: Record<GameTemplate, readonly string[]> = {
   snake: ["开放边界", "围墙规则", "庭石障碍", "高速长身"],
   "merge-2048": ["小目标合成", "空间保留", "连锁规划", "高阶目标"],
   platformer: ["安全起跳", "节奏落点", "移动平台", "终点连跳"],
-  "space-shooter": ["单线来敌", "交错航线", "装甲编队", "密集预警"],
+  "space-shooter": [
+    "校准航道", "双翼接敌", "脉冲试炼", "曙光守环",
+    "碎星回廊", "交错火网", "护盾护航", "赤潮守环",
+    "彗尾追击", "三向炮台", "能量禁区", "裂隙守环",
+    "磁暴穿行", "精英夹击", "弹幕回廊", "寂光守环",
+    "最后补给", "全型编队", "极限突围", "终焉守环",
+  ],
   "polyomino-fit": ["对称轮廓", "凹槽轮廓", "窄道轮廓", "多岛轮廓"],
   "block-place": ["基础消行", "长条规划", "转角组合", "高密棋盘"],
   "region-logic": ["对称区域", "折线区域", "窄域推理", "复合排除"],
@@ -125,7 +131,7 @@ const commercialLevelDesigns: Record<GameTemplate, CommercialLevelDesign> = {
     ],
   },
   "space-shooter": {
-    mission: "在密集航线中维持输出，并用精准移动保存能量。",
+    mission: "完成三波星环任务，在弹幕中维持输出并用脉冲保存能量。",
     masteryRules: [
       { id: "efficiency", label: "击破数量达到关卡目标", metric: "kills", comparison: "ratio-gte", referenceMetric: "killTarget", target: 1 },
       { id: "control", label: "完成时至少保留 2 点能量", metric: "lives", comparison: "gte", target: 2 },
