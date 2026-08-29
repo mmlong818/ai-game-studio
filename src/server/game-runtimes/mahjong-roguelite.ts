@@ -412,17 +412,111 @@ function drawMahjongMotif(symbol, rect) {
   drawBitmapSprite(symbol, x, y, size, size, { fallback: "#d6a554", scale: 1 });
 }
 
-function drawMahjongCornerMarks(rect, color, lineWidth = 5) {
-  const inset = Math.max(8, rect.width * .075);
-  const length = Math.max(14, rect.width * .18);
-  const left = rect.x + inset; const right = rect.x + rect.width - inset;
-  const top = rect.y + inset; const bottom = rect.y + rect.height - inset;
+function mahjongPrimaryCue(state) {
+  if (state.selected) return "selected";
+  if (state.matching) return "matching";
+  if (state.hinted) return "hinted";
+  if (state.newlyFree) return "newly-free";
+  return "none";
+}
+
+function drawMahjongSelectionCue(rect) {
+  const radius = Math.max(11, rect.width * .12);
+  const railWidth = rect.width * .4;
   ctx.save();
-  ctx.strokeStyle = color; ctx.lineWidth = lineWidth; ctx.lineCap = "round";
-  [[left + length, top, left, top, left, top + length], [right - length, top, right, top, right, top + length], [left + length, bottom, left, bottom, left, bottom - length], [right - length, bottom, right, bottom, right, bottom - length]].forEach((points) => {
-    ctx.beginPath(); ctx.moveTo(points[0], points[1]); ctx.lineTo(points[2], points[3]); ctx.lineTo(points[4], points[5]); ctx.stroke();
-  });
+  ctx.fillStyle = "rgba(20,111,120,.13)";
+  ctx.beginPath();
+  ctx.roundRect(rect.x + 7, rect.y + 7, rect.width - 14, rect.height - 14, radius);
+  ctx.fill();
+  ctx.shadowColor = "rgba(20,111,120,.36)";
+  ctx.shadowBlur = 8;
+  ctx.strokeStyle = "#146f78";
+  ctx.lineWidth = Math.max(5, rect.width * .052);
+  ctx.lineCap = "round";
+  ctx.beginPath();
+  ctx.moveTo(rect.x + (rect.width - railWidth) / 2, rect.y + rect.height * .81);
+  ctx.lineTo(rect.x + (rect.width + railWidth) / 2, rect.y + rect.height * .81);
+  ctx.stroke();
   ctx.restore();
+}
+
+function drawMahjongMatchingCue(rect) {
+  const centerX = rect.x + rect.width / 2;
+  const centerY = rect.y + rect.height * .81;
+  const dotRadius = Math.max(4, rect.width * .045);
+  const gap = dotRadius * 1.75;
+  ctx.save();
+  const glow = ctx.createRadialGradient(centerX, centerY, 0, centerX, centerY, rect.width * .42);
+  glow.addColorStop(0, "rgba(230,164,44,.2)");
+  glow.addColorStop(1, "rgba(230,164,44,0)");
+  ctx.fillStyle = glow;
+  ctx.beginPath(); ctx.ellipse(centerX, centerY - rect.height * .26, rect.width * .43, rect.height * .34, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.strokeStyle = "rgba(230,164,44,.96)";
+  ctx.lineWidth = Math.max(3, rect.width * .03);
+  ctx.lineCap = "round";
+  ctx.beginPath(); ctx.moveTo(centerX - gap + dotRadius, centerY); ctx.lineTo(centerX + gap - dotRadius, centerY); ctx.stroke();
+  ctx.fillStyle = "#e6a42c";
+  ctx.beginPath(); ctx.arc(centerX - gap, centerY, dotRadius, 0, Math.PI * 2); ctx.fill();
+  ctx.beginPath(); ctx.arc(centerX + gap, centerY, dotRadius, 0, Math.PI * 2); ctx.fill();
+  ctx.restore();
+}
+
+function drawMahjongHintCue(rect) {
+  const x = rect.x + Math.max(16, rect.width * .17);
+  const y = rect.y + Math.max(19, rect.height * .17);
+  const radius = Math.max(7, rect.width * .075);
+  ctx.save();
+  ctx.shadowColor = "rgba(230,164,44,.62)";
+  ctx.shadowBlur = 12;
+  ctx.fillStyle = "rgba(255,246,205,.96)";
+  ctx.strokeStyle = "#d99222";
+  ctx.lineWidth = Math.max(2, rect.width * .022);
+  ctx.beginPath();
+  for (let index = 0; index < 8; index += 1) {
+    const angle = -Math.PI / 2 + index * Math.PI / 4;
+    const distance = index % 2 === 0 ? radius : radius * .4;
+    const px = x + Math.cos(angle) * distance;
+    const py = y + Math.sin(angle) * distance;
+    if (index === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+  }
+  ctx.closePath(); ctx.fill(); ctx.stroke();
+  ctx.restore();
+}
+
+function drawMahjongNewlyFreeCue(rect) {
+  const centerX = rect.x + rect.width / 2;
+  const y = rect.y + rect.height * .81;
+  const half = rect.width * .19;
+  ctx.save();
+  ctx.strokeStyle = "rgba(47,154,141,.86)";
+  ctx.lineWidth = Math.max(3, rect.width * .032);
+  ctx.lineCap = "round";
+  ctx.beginPath();
+  ctx.moveTo(centerX - half, y);
+  ctx.quadraticCurveTo(centerX - half * .5, y - 7, centerX, y);
+  ctx.quadraticCurveTo(centerX + half * .5, y + 7, centerX + half, y);
+  ctx.stroke();
+  ctx.restore();
+}
+
+function drawMahjongKeyboardCue(rect) {
+  ctx.save();
+  ctx.strokeStyle = "rgba(11,96,112,.9)";
+  ctx.lineWidth = Math.max(3, rect.width * .03);
+  ctx.setLineDash([6, 7]);
+  ctx.beginPath();
+  ctx.roundRect(rect.x + 7, rect.y + 7, rect.width - 14, rect.height - 14, Math.max(11, rect.width * .12));
+  ctx.stroke();
+  ctx.restore();
+}
+
+function drawMahjongTileCues(rect, state) {
+  const primary = mahjongPrimaryCue(state);
+  if (primary === "selected") drawMahjongSelectionCue(rect);
+  if (primary === "matching") drawMahjongMatchingCue(rect);
+  if (primary === "hinted") drawMahjongHintCue(rect);
+  if (primary === "newly-free") drawMahjongNewlyFreeCue(rect);
+  if (state.keyboardFocused && primary !== "selected") drawMahjongKeyboardCue(rect);
 }
 
 function drawMahjongRelicDock(now) {
@@ -457,15 +551,15 @@ function drawMahjongRelicDock(now) {
     const active = activeIds.has(relic.id) && mahjongRelicActivation && now < mahjongRelicActivation.until;
     const progress = active ? Math.min(1, Math.max(0, (now - mahjongRelicActivation.startedAt) / (mahjongRelicActivation.until - mahjongRelicActivation.startedAt))) : 0;
     ctx.save();
-    ctx.fillStyle = active ? "rgba(230,164,44," + (.22 + (1 - progress) * .2) + ")" : "rgba(255,250,236,.56)";
-    ctx.strokeStyle = active ? "rgba(230,164,44," + (.95 - progress * .28) + ")" : "rgba(74,105,108,.28)";
-    ctx.lineWidth = active ? 4 : 2;
+    ctx.fillStyle = active ? "rgba(255,247,218," + (.66 + (1 - progress) * .18) + ")" : "rgba(255,250,236,.56)";
+    ctx.strokeStyle = "rgba(74,105,108,.28)";
+    ctx.lineWidth = 2;
     ctx.beginPath(); ctx.roundRect(x, 166, chipWidth, 54, 17); ctx.fill(); ctx.stroke();
     if (active) {
-      const pulse = 4 + progress * 11;
-      ctx.strokeStyle = "rgba(230,164,44," + (.66 * (1 - progress)) + ")";
-      ctx.lineWidth = 3;
-      ctx.beginPath(); ctx.roundRect(x - pulse, 166 - pulse, chipWidth + pulse * 2, 54 + pulse * 2, 17 + pulse); ctx.stroke();
+      const pulse = 22 + progress * 10;
+      ctx.strokeStyle = "rgba(230,164,44," + (.78 * (1 - progress)) + ")";
+      ctx.lineWidth = 4 - progress * 2;
+      ctx.beginPath(); ctx.arc(x + 28, 193, pulse, 0, Math.PI * 2); ctx.stroke();
     }
     drawBitmapSprite(relic.sprite, x + 7, 172, 42, 42, { fallback: palette.highlight, scale: 1 });
     if (stacks > 1) {
@@ -505,10 +599,15 @@ function drawMahjongFeedback(now) {
     }
   } else {
     ctx.strokeStyle = "rgba(213,91,72," + (.9 * alpha) + ")";
-    ctx.lineWidth = 5;
-    ctx.setLineDash([12, 8]);
-    ctx.beginPath(); ctx.arc(0, 0, 24 + progress * 30, 0, Math.PI * 2); ctx.stroke();
-    ctx.setLineDash([]);
+    ctx.lineWidth = 5 - progress * 2;
+    ctx.lineCap = "round";
+    [-1, 0, 1].forEach((direction) => {
+      const x = direction * (12 + progress * 8);
+      ctx.beginPath();
+      ctx.moveTo(x - direction * 2, 18 + progress * 5);
+      ctx.lineTo(x + direction * 4, 30 + progress * 12);
+      ctx.stroke();
+    });
   }
   ctx.restore();
 }
@@ -610,30 +709,14 @@ function drawMahjongRoguelite() {
     ctx.fillStyle = "#fffaf0"; ctx.font = "800 " + Math.max(14, rect.width * .14) + "px Inter, sans-serif";
     ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.fillText(String(tile.variant + 1), markerX, markerY + .5);
     ctx.textBaseline = "alphabetic";
-    if (free) {
-      ctx.strokeStyle = selected ? "#146f78" : keyboardFocused ? "#0b6070" : "rgba(78,65,44,.48)";
-      ctx.lineWidth = selected ? 6 : keyboardFocused ? 4 : 2;
-      if (keyboardFocused && !selected) ctx.setLineDash([10, 8]);
-      ctx.beginPath(); ctx.roundRect(rect.x + 5, rect.y + 5, rect.width - 10, rect.height - 10, Math.max(12, rect.width * .13)); ctx.stroke();
-      ctx.setLineDash([]);
-      if (hinted || matching) drawMahjongCornerMarks(rect, "#e6a42c", matching ? 6 : 5);
-      if (newlyFree && !hinted && !matching) drawMahjongCornerMarks(rect, "#2f9a8d", 4);
-      if (selected) {
-        const badgeRadius = Math.max(10, rect.width * .09);
-        const badgeX = rect.x + rect.width * .19; const badgeY = rect.y + rect.height * .18;
-        ctx.fillStyle = "#146f78"; ctx.beginPath(); ctx.arc(badgeX, badgeY, badgeRadius, 0, Math.PI * 2); ctx.fill();
-        ctx.strokeStyle = "rgba(255,251,235,.96)"; ctx.lineWidth = 3; ctx.stroke();
-        ctx.strokeStyle = "#fffbed"; ctx.lineWidth = 3; ctx.lineCap = "round"; ctx.lineJoin = "round";
-        ctx.beginPath(); ctx.moveTo(badgeX - badgeRadius * .42, badgeY); ctx.lineTo(badgeX - badgeRadius * .08, badgeY + badgeRadius * .34); ctx.lineTo(badgeX + badgeRadius * .48, badgeY - badgeRadius * .36); ctx.stroke();
-      }
-    }
+    if (free) drawMahjongTileCues(rect, { selected, hinted, matching, newlyFree, keyboardFocused });
     ctx.restore();
     mahjongHitAreas.push({ tile, rect: { ...rect }, depth: tileDepth });
   });
   const footerY = Math.min(gameSceneHeight() - 110, layout.boardTop + layout.boardHeight + 78);
   drawPlayfield(91, footerY - 38, 538, 62, { radius: 22, alpha: .86 });
   ctx.fillStyle = palette.text; ctx.font = "700 18px Inter, sans-serif";
-  ctx.fillText("亮面为自由牌   ·   金色角标为配对目标   ·   灰暗牌仍被覆盖", 360, footerY - 5);
+  ctx.fillText("亮面为自由牌   ·   星光为提示   ·   金色连点可配对   ·   青色底线已选", 360, footerY - 5);
   ctx.fillStyle = palette.textSoft; ctx.font = "600 14px Inter, sans-serif";
   const buildText = activeMahjongSynergies().length ? "协同 " + activeMahjongSynergies().map((item) => item.name).join("、") : mahjongRelicCount() ? "继续收集遗物以激活协同" : "首段完成后可选择遗物";
   ctx.fillText("提示 " + mahjongHints + "   ·   洗牌 " + mahjongShuffles + "   ·   " + buildText, 360, footerY + 18);
@@ -1010,10 +1093,11 @@ runtimeDebugState = () => ({
   blockedCount: mahjongBoard.filter((tile) => !tile.deleted && !isMahjongTileFree(tile)).length,
   compatibleFreeCount: mahjongSelectedId ? mahjongBoard.filter((tile) => tile.id !== mahjongSelectedId && isMahjongTileFree(tile) && tile.pairId === mahjongBoard.find((candidate) => candidate.id === mahjongSelectedId)?.pairId).length : 0,
   boardLayout: mahjongLayout(),
-  visualCueVersion: 3,
+  visualCueVersion: 4,
   layerCueVersion: 1,
   assetCompositionVersion: 2,
-  feedbackVersion: 2,
+  feedbackVersion: 3,
+  cuePrecedence: "selected-matching-hinted-newly-free",
   persistentRelicDock: true,
   activeRelicEffect: mahjongRelicActivation ? { ids: mahjongRelicActivation.ids, label: mahjongRelicActivation.label } : null,
   tileBodySource: "canvas-single-layer",
