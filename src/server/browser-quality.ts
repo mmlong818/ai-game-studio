@@ -958,22 +958,54 @@ export async function inspectStageCRealtimeInBrowser(root: string, template: Sta
       if (relaxed.wrapWalls !== true || standard.wrapWalls !== false || challenging.obstacleCount <= standard.obstacleCount) throw new Error("三档难度没有同时改变边界与障碍密度。 ");
       if (new Set(standard.assetRoles).size !== 9 || !standard.assetRoles.includes("body-corner")) throw new Error("蛇身方向资产角色不完整。 ");
       await page.locator('[data-snake-difficulty="standard"]:visible').first().click();
-      await stageCDebugAction(page, "restart");
-      const keyboardStart = await stageCDebugState(page);
-      const turnDelay = Math.ceil(keyboardStart.runtime.stepDelay * 1.35);
-      await page.keyboard.press("ArrowUp");
-      await page.waitForTimeout(turnDelay);
-      await page.keyboard.press("ArrowLeft");
-      await page.waitForTimeout(turnDelay);
+      const levels: any[] = [];
+      for (let level = 1; level <= 20; level += 1) {
+        levels.push(await page.evaluate((selectedLevel) => {
+          const debug = (window as any).__GAME_DEBUG__;
+          debug.setLevel(selectedLevel);
+          debug.restart();
+          return debug.getState().runtime;
+        }, level));
+      }
+      if (new Set(levels.map((state) => state.levelName)).size !== 20 || new Set(levels.map((state) => state.layoutSignature)).size !== 20) throw new Error("青玉长游二十关没有形成独立名称与固定场型。 ");
+      if (new Set(levels.filter((_, index) => index % 4 === 0).map((state) => state.chapter)).size !== 5) throw new Error("青玉长游没有形成五个章节。 ");
+      await page.evaluate(() => { const debug = (window as any).__GAME_DEBUG__; debug.setLevel(1); debug.restart(); });
+      await stageCDebugAction(page, "queueTurnSequence");
       const turned = await stageCDebugState(page);
-      if (turned.runtime.direction.x !== -1 || turned.runtime.direction.y !== 0) throw new Error(`四向控制没有形成连续转向：${JSON.stringify(turned.runtime)}。`);
+      if (turned.runtime.direction.x !== -1 || turned.runtime.direction.y !== 0 || turned.runtime.stats.turns !== 2) throw new Error(`双转向缓冲吞掉了第二次合法转向：${JSON.stringify(turned.runtime)}。`);
+      await stageCDebugAction(page, "sampleReachableFood");
+      const foodProbe = await stageCDebugState(page);
+      if (foodProbe.runtime.foodProbe?.count !== 100 || !foodProbe.runtime.foodProbe?.valid) throw new Error("连续 100 次食物生成出现了不可达或占位错误。 ");
+      await stageCDebugAction(page, "restart");
+      await stageCDebugAction(page, "setSwipeMode");
+      const swipeStart = await stageCDebugState(page);
+      const box = await page.locator("#game-canvas").boundingBox();
+      if (!box) throw new Error("未找到青玉长游画布。 ");
+      await page.mouse.move(box.x + box.width * .55, box.y + box.height * .55);
+      await page.mouse.down();
+      await page.mouse.move(box.x + box.width * .55, box.y + box.height * .38, { steps: 4 });
+      await page.mouse.up();
+      const swipeQueued = await stageCDebugState(page);
+      if (swipeQueued.runtime.directionQueue?.[0]?.y !== -1) throw new Error("手机真实滑动没有提交向上转向。 ");
+      await stageCDebugAction(page, "pause");
+      const pausedHead = (await stageCDebugState(page)).runtime.head;
+      await page.waitForTimeout(Math.ceil(swipeStart.runtime.stepDelay * 1.4));
+      const paused = await stageCDebugState(page);
+      if (!paused.runtime.paused || paused.runtime.head.x !== pausedHead.x || paused.runtime.head.y !== pausedHead.y) throw new Error("暂停期间蛇仍在移动。 ");
+      await page.keyboard.press("p");
+      const resumed = await stageCDebugState(page);
+      if (resumed.runtime.paused) throw new Error("键盘 P 没有恢复游戏。 ");
       if (turned.runtime.rendering !== "requestAnimationFrame-interpolation" || turned.runtime.staticLayerCached !== true || turned.runtime.estimatedFps < 45 || turned.runtime.renderedFrames < 8) throw new Error(`青玉长游没有保持逐帧插值或稳定刷新：${JSON.stringify(turned.runtime)}。`);
       await stageCDebugAction(page, "previewCompletion");
       const completion = await stageCDebugState(page);
       if (!completion.runtime.completionActive) throw new Error("目标完成演出没有进入可见时段。 ");
-      checks.push("头身转角尾九类位图", "三档多维难度", "逐帧插值与稳定刷新", "四向连续转向", "碰撞原因", "进食、危险与完成演出");
+      checks.push("头身转角尾九类位图", "20 个固定场型与五章", "三档多维难度", "双转向缓冲", "真实画布滑动", "100 次可达食物", "暂停与恢复", "逐帧插值与稳定刷新", "进食、危险与完成演出");
       evidence.profiles = profiles;
       evidence.turned = turned.runtime;
+      evidence.levels = levels.map((state) => ({ level: state.level, name: state.levelName, chapter: state.chapter, pattern: state.pattern, signature: state.layoutSignature }));
+      evidence.foodProbe = foodProbe.runtime.foodProbe;
+      evidence.swipe = swipeQueued.runtime.directionQueue;
+      evidence.pause = paused.runtime;
     }
 
     if (template === "breakout") {

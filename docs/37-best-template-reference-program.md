@@ -29,7 +29,7 @@
 | 4 | 云脊跃迁 | `platformer` | 已完成第一轮，见 `41-platformer-best-template-reference.md` | v20 已发布；20 套独立蓝图、10 类机制、前视镜头、复合触控、冲刺与 430ms 检查点恢复均已验收 |
 | 5 | 数织矩阵 | `merge-2048` | 已完成并发布 v34，见 `42-merge-2048-best-template-reference.md` | 20 个独立任务、下一块预告、连续位移动画、直接滑动、回溯与新位图资产均已落实；稳定网址已指向 `aa382c32-fc8c-497a-8e7f-e57c6f26b4a1` |
 | 6 | 朱门华容 | `klotski` | 已完成并发布 v34，见 `43-klotski-best-template-reference.md` | 20 个求解器验证布局、8–120 步真实距离带、直接拖动、逐步提示、撤销/重做和路径回放均已落实；稳定网址已指向 `119aae67-cd04-4c68-8c5f-bbeb41b6a0b0` |
-| 7 | 青玉长游 | `snake` | 已完成研究，见 `44-snake-best-template-reference.md` | 待按 20 个固定场型、双转向缓冲、真实滑动、可达食物、暂停与结算统计合同重构 |
+| 7 | 青玉长游 | `snake` | 已完成并发布 v34，见 `44-snake-best-template-reference.md` | 20 个固定场型与五章、双转向缓冲、真实滑动、100 次可达食物、暂停恢复、金果与结算统计均已落实；稳定网址已指向 `da0a6b12-df3a-4791-a234-ccf04e4e7d7b` |
 | 8 | 苔径迷庭 | `maze` | 待专门研究 | 待开始 |
 | 9 | 植光拼图 | `puzzle` | 待专门研究 | 待开始 |
 | 10 | 果冻填阵 | `block-place` | 待专门研究 | 待开始 |

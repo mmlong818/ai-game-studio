@@ -238,12 +238,21 @@ test("十三类艺术化游戏都会产出可解析脚本、角色拆分位图�
       if (template === "snake") {
         const script = readFileSync(join(output, "app.js"), "utf8");
         const html = readFileSync(join(output, "index.html"), "utf8");
+        const styles = readFileSync(join(output, "styles.css"), "utf8");
         assert.match(script, /const difficultyProfiles =/);
+        assert.match(script, /const snakeLevelBlueprints = \[/);
         assert.match(script, /wrapWalls: true/);
         assert.match(script, /const baseDelay = difficultyProfile\.speed \/ campaignScale\("speedMultiplier"\)/);
-        assert.match(script, /Math\.max\(55, baseDelay - score \* 2\.5\)/);
+        assert.match(script, /Math\.max\(55, tuned - score \* 2\.5\)/);
         assert.match(script, /function drawGardenBoard\(/);
+        assert.match(script, /function buildSnakeFormation\(/);
         assert.match(script, /function createSnakeObstacles\(/);
+        assert.match(script, /function reachableSnakeCells\(/);
+        assert.match(script, /function queueSnakeTurn\(/);
+        assert.match(script, /snakeDirectionQueue\.length >= 2/);
+        assert.match(script, /Math\.max\(Math\.abs\(dx\), Math\.abs\(dy\)\) < 18/);
+        assert.match(script, /snakeReadyUntil = performance\.now\(\) \+ 900/);
+        assert.match(script, /document\.addEventListener\("visibilitychange"/);
         assert.match(script, /function renderedSnakeParts\(timestamp\)/);
         assert.match(script, /function rebuildSnakeStaticLayer\(\)/);
         assert.match(script, /staticLayerCached: true/);
@@ -255,6 +264,11 @@ test("十三类艺术化游戏都会产出可解析脚本、角色拆分位图�
         assert.match(html, /data-snake-difficulty="relaxed"/);
         assert.match(html, /data-snake-difficulty="standard"/);
         assert.match(html, /data-snake-difficulty="challenging"/);
+        assert.match(html, /data-snake-control-mode="swipe"/);
+        assert.match(html, /data-snake-control-mode="buttons"/);
+        assert.match(html, /data-control="pause"/);
+        assert.doesNotMatch(html, /data-control="undo"/);
+        assert.match(styles, /data-snake-control-mode=swipe/);
       }
       if (template === "merge-2048") {
         const script = readFileSync(join(output, "app.js"), "utf8");
