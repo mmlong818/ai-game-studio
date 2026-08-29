@@ -27,7 +27,7 @@
 | 2 | 漆海碎星 | `breakout` | 已完成第一轮，见 `39-breakout-best-template-reference.md` | v34 已发布；继续累积真人长局证据 |
 | 3 | 星环突围 | `space-shooter` | 已完成第一轮，见 `40-space-shooter-best-template-reference.md` | v19 已发布；同步清弹竞态、三波、机体、主动能力与 Boss 合同均已验收 |
 | 4 | 云脊跃迁 | `platformer` | 已完成第一轮，见 `41-platformer-best-template-reference.md` | v20 已发布；20 套独立蓝图、10 类机制、前视镜头、复合触控、冲刺与 430ms 检查点恢复均已验收 |
-| 5 | 数织矩阵 | `merge-2048` | 待专门研究 | 待开始 |
+| 5 | 数织矩阵 | `merge-2048` | 已完成第一轮，见 `42-merge-2048-best-template-reference.md` | 待按精确规则、20 个独立任务、下一块预告、连续位移动画和直接滑动合同重构 |
 | 6 | 朱门华容 | `klotski` | 待专门研究 | 待开始 |
 | 7 | 青玉长游 | `snake` | 待专门研究 | 待开始 |
 | 8 | 苔径迷庭 | `maze` | 待专门研究 | 待开始 |
