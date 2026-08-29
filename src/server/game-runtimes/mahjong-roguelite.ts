@@ -50,7 +50,9 @@ let mahjongHintIds = new Set();
 let mahjongHistory = [];
 let mahjongRelicStacks = new Map();
 let mahjongAwaitingRelic = false;
-let mahjongFlash = null;
+let mahjongFeedback = null;
+let mahjongRelicActivation = null;
+let mahjongAnimationFrame = 0;
 let mahjongHitAreas = [];
 let mahjongNewlyFreeIds = new Set();
 let mahjongKeyboardId = null;
@@ -110,6 +112,34 @@ function activeMahjongSynergies() { return mahjongSynergies.filter((synergy) => 
 function activeMahjongConflicts() { return mahjongConflicts.filter((conflict) => conflict.relics.every((id) => mahjongRelicStacks.has(id))); }
 function mahjongHasSynergy(id) { return activeMahjongSynergies().some((synergy) => synergy.id === id); }
 function mahjongHasConflict(id) { return activeMahjongConflicts().some((conflict) => conflict.id === id); }
+function mahjongRelicById(id) { return mahjongRelics.find((relic) => relic.id === id) || null; }
+
+function scheduleMahjongAnimation() {
+  if (mahjongAnimationFrame) return;
+  const tick = () => {
+    mahjongAnimationFrame = 0;
+    const now = performance.now();
+    if (mahjongFeedback && now >= mahjongFeedback.until) mahjongFeedback = null;
+    if (mahjongRelicActivation && now >= mahjongRelicActivation.until) mahjongRelicActivation = null;
+    drawMahjongRoguelite();
+    if (mahjongFeedback || mahjongRelicActivation) mahjongAnimationFrame = requestAnimationFrame(tick);
+  };
+  mahjongAnimationFrame = requestAnimationFrame(tick);
+}
+
+function showMahjongFeedback(type, x, y) {
+  const now = performance.now();
+  mahjongFeedback = { type, x, y, startedAt: now, until: now + (type === "match" ? 420 : 320) };
+  scheduleMahjongAnimation();
+}
+
+function activateMahjongRelics(ids, label) {
+  const visibleIds = [...new Set(ids)].filter((id) => mahjongRelicById(id));
+  if (!visibleIds.length) return;
+  const now = performance.now();
+  mahjongRelicActivation = { ids: visibleIds, label, startedAt: now, until: now + 480 };
+  scheduleMahjongAnimation();
+}
 
 function mahjongRandom(seed) {
   let state = seed >>> 0;
@@ -299,14 +329,17 @@ function syncMahjongControls() {
 function mahjongLayout() {
   const alive = mahjongBoard.length ? mahjongBoard : createMahjongPositions(32);
   const maxX = Math.max(...alive.map((tile) => tile.x));
-  const maxY = Math.max(...alive.map((tile) => tile.y));
   const tileWidth = Math.min(148, 670 / (maxX * .96 + 1.1));
   const tileHeight = tileWidth * 1.24;
   const stepX = tileWidth * .96;
   const stepY = tileHeight * .93;
   const boardWidth = maxX * stepX + tileWidth;
-  const boardHeight = maxY * stepY + tileHeight + 22;
-  return { tileWidth, tileHeight, stepX, stepY, x: (720 - boardWidth) / 2, y: 195, boardWidth, boardHeight };
+  const verticalOffsets = alive.map((tile) => tile.y * stepY - tile.z * 18);
+  const minOffset = Math.min(...verticalOffsets);
+  const maxOffset = Math.max(...verticalOffsets);
+  const boardTop = 244;
+  const boardHeight = maxOffset - minOffset + tileHeight + 22;
+  return { tileWidth, tileHeight, stepX, stepY, x: (720 - boardWidth) / 2, y: boardTop - minOffset, boardTop, boardWidth, boardHeight };
 }
 
 function mahjongTileRect(tile, layout) {
@@ -392,13 +425,101 @@ function drawMahjongCornerMarks(rect, color, lineWidth = 5) {
   ctx.restore();
 }
 
+function drawMahjongRelicDock(now) {
+  const persistentEntries = [...mahjongRelicStacks.entries()]
+    .map(([id, stacks]) => ({ relic: mahjongRelicById(id), stacks }))
+    .filter((entry) => entry.relic);
+  const activatedOnlyEntries = (mahjongRelicActivation?.ids || [])
+    .filter((id) => !mahjongRelicStacks.has(id))
+    .map((id) => ({ relic: mahjongRelicById(id), stacks: 0 }))
+    .filter((entry) => entry.relic);
+  const entries = [...persistentEntries, ...activatedOnlyEntries].slice(0, 3);
+  const activeIds = new Set(mahjongRelicActivation?.ids || []);
+  drawPlayfield(66, 158, 588, 70, { radius: 24, alpha: .9 });
+  ctx.textAlign = "left";
+  ctx.fillStyle = palette.text;
+  ctx.font = "800 17px Inter, sans-serif";
+  ctx.fillText("旅途遗物", 88, 184);
+  ctx.fillStyle = palette.textSoft;
+  ctx.font = "650 13px Inter, sans-serif";
+  ctx.fillText(entries.length ? entries.length + " 件已选" : "尚未获得", 88, 207);
+  if (!entries.length) {
+    ctx.fillStyle = palette.textSoft;
+    ctx.font = "650 16px Inter, sans-serif";
+    ctx.fillText("完成首段后选择；效果会在这里持续展示", 204, 198);
+    return;
+  }
+  const gap = 10;
+  const availableWidth = 438;
+  const chipWidth = Math.min(214, (availableWidth - gap * (entries.length - 1)) / entries.length);
+  entries.forEach(({ relic, stacks }, index) => {
+    const x = 198 + index * (chipWidth + gap);
+    const active = activeIds.has(relic.id) && mahjongRelicActivation && now < mahjongRelicActivation.until;
+    const progress = active ? Math.min(1, Math.max(0, (now - mahjongRelicActivation.startedAt) / (mahjongRelicActivation.until - mahjongRelicActivation.startedAt))) : 0;
+    ctx.save();
+    ctx.fillStyle = active ? "rgba(230,164,44," + (.22 + (1 - progress) * .2) + ")" : "rgba(255,250,236,.56)";
+    ctx.strokeStyle = active ? "rgba(230,164,44," + (.95 - progress * .28) + ")" : "rgba(74,105,108,.28)";
+    ctx.lineWidth = active ? 4 : 2;
+    ctx.beginPath(); ctx.roundRect(x, 166, chipWidth, 54, 17); ctx.fill(); ctx.stroke();
+    if (active) {
+      const pulse = 4 + progress * 11;
+      ctx.strokeStyle = "rgba(230,164,44," + (.66 * (1 - progress)) + ")";
+      ctx.lineWidth = 3;
+      ctx.beginPath(); ctx.roundRect(x - pulse, 166 - pulse, chipWidth + pulse * 2, 54 + pulse * 2, 17 + pulse); ctx.stroke();
+    }
+    drawBitmapSprite(relic.sprite, x + 7, 172, 42, 42, { fallback: palette.highlight, scale: 1 });
+    if (stacks > 1) {
+      ctx.fillStyle = "#146f78"; ctx.beginPath(); ctx.arc(x + 46, 174, 10, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = "#fffaf0"; ctx.font = "800 12px Inter, sans-serif"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+      ctx.fillText(String(stacks), x + 46, 174); ctx.textBaseline = "alphabetic";
+    }
+    ctx.textAlign = "left";
+    ctx.fillStyle = palette.text; ctx.font = "800 15px Inter, sans-serif";
+    ctx.fillText(relic.name, x + 56, 187, chipWidth - 64);
+    ctx.fillStyle = active ? "#a66515" : palette.textSoft; ctx.font = "650 12px Inter, sans-serif";
+    const detail = active ? mahjongRelicActivation.label : relic.detail;
+    ctx.fillText(detail.length > 12 ? detail.slice(0, 12) + "…" : detail, x + 56, 207, chipWidth - 64);
+    ctx.restore();
+  });
+}
+
+function drawMahjongFeedback(now) {
+  if (!mahjongFeedback || now >= mahjongFeedback.until) return;
+  const progress = Math.min(1, Math.max(0, (now - mahjongFeedback.startedAt) / (mahjongFeedback.until - mahjongFeedback.startedAt)));
+  const alpha = 1 - progress;
+  ctx.save();
+  ctx.translate(mahjongFeedback.x, mahjongFeedback.y);
+  if (mahjongFeedback.type === "match") {
+    ctx.strokeStyle = "rgba(230,164,44," + (.9 * alpha) + ")";
+    ctx.lineWidth = 5 - progress * 2;
+    ctx.beginPath(); ctx.arc(0, 0, 18 + progress * 54, 0, Math.PI * 2); ctx.stroke();
+    ctx.strokeStyle = "rgba(47,154,141," + (.72 * alpha) + ")";
+    ctx.lineWidth = 3;
+    ctx.beginPath(); ctx.arc(0, 0, 8 + progress * 34, 0, Math.PI * 2); ctx.stroke();
+    for (let index = 0; index < 8; index += 1) {
+      const angle = index * Math.PI / 4;
+      const radius = 22 + progress * 48;
+      const size = 5 * alpha + 2;
+      ctx.fillStyle = index % 2 ? "rgba(47,154,141," + alpha + ")" : "rgba(230,164,44," + alpha + ")";
+      ctx.beginPath(); ctx.arc(Math.cos(angle) * radius, Math.sin(angle) * radius, size, 0, Math.PI * 2); ctx.fill();
+    }
+  } else {
+    ctx.strokeStyle = "rgba(213,91,72," + (.9 * alpha) + ")";
+    ctx.lineWidth = 5;
+    ctx.setLineDash([12, 8]);
+    ctx.beginPath(); ctx.arc(0, 0, 24 + progress * 30, 0, Math.PI * 2); ctx.stroke();
+    ctx.setLineDash([]);
+  }
+  ctx.restore();
+}
+
 function drawMahjongRelicChoice() {
   ctx.fillStyle = "rgba(13,28,37,.84)";
-  ctx.fillRect(0, 130, 720, Math.min(930, gameSceneHeight() - 170));
+  ctx.fillRect(0, 230, 720, Math.min(830, gameSceneHeight() - 270));
   ctx.textAlign = "center"; ctx.fillStyle = "#fffaf0";
-  ctx.font = "800 34px Inter, sans-serif"; ctx.fillText("选择一件旅途遗物", 360, 240);
+  ctx.font = "800 34px Inter, sans-serif"; ctx.fillText("选择一件旅途遗物", 360, 276);
   ctx.font = "600 19px Inter, sans-serif"; ctx.fillStyle = "rgba(255,250,240,.78)";
-  ctx.fillText("它会陪你进入下一段月港航线", 360, 280);
+  ctx.fillText("它会陪你进入下一段月港航线", 360, 314);
   mahjongRelicChoices.forEach((relic, index) => {
     const x = 42 + index * 226;
     const y = 350;
@@ -417,11 +538,11 @@ function drawMahjongRelicChoice() {
 
 function drawMahjongRouteChoice() {
   ctx.fillStyle = "rgba(13,28,37,.88)";
-  ctx.fillRect(0, 130, 720, Math.min(930, gameSceneHeight() - 170));
+  ctx.fillRect(0, 230, 720, Math.min(830, gameSceneHeight() - 270));
   ctx.textAlign = "center"; ctx.fillStyle = "#fffaf0";
-  ctx.font = "800 34px Inter, sans-serif"; ctx.fillText("选择下一段航线", 360, 228);
+  ctx.font = "800 34px Inter, sans-serif"; ctx.fillText("选择下一段航线", 360, 276);
   ctx.font = "600 20px Inter, sans-serif"; ctx.fillStyle = "rgba(255,250,240,.78)";
-  ctx.fillText("路线改变牌阵、风险与得分，也决定最终归航结局", 360, 267);
+  ctx.fillText("路线改变牌阵、风险与得分，也决定最终归航结局", 360, 312);
   mahjongRouteChoices.forEach((route, index) => {
     const x = 42 + index * 226; const y = 324;
     const elite = route.id === "elite";
@@ -445,6 +566,7 @@ function drawMahjongRouteChoice() {
 function drawMahjongRoguelite() {
   clearCanvas();
   ctx.save(); ctx.translate(0, gameSceneTop());
+  const now = performance.now();
   const layout = mahjongLayout();
   const freeCount = mahjongBoard.filter(isMahjongTileFree).length;
   const pairCount = getAvailableMahjongPairs().length;
@@ -458,7 +580,7 @@ function drawMahjongRoguelite() {
   ctx.fillText("航段 " + (mahjongStage + 1) + " / 3   " + (route?.name || "待选航线") + "   剩余 " + mahjongRemaining() + tideText, 360, 82);
   ctx.fillStyle = palette.textSoft; ctx.font = "700 18px Inter, sans-serif";
   ctx.fillText(rule.label + "   ·   可配对 " + pairCount + "   ·   得分 " + Math.round(mahjongScore) + "   ·   连击 ×" + Math.max(1, mahjongCombo), 360, 123);
-  drawPlayfield(layout.x - 24, layout.y - 30, layout.boardWidth + 48, layout.boardHeight + 60, { radius: 36, alpha: .9 });
+  drawPlayfield(layout.x - 24, layout.boardTop - 12, layout.boardWidth + 48, layout.boardHeight + 42, { radius: 36, alpha: .9 });
   mahjongHitAreas = [];
   const drawOrder = [...mahjongBoard].filter((tile) => !tile.deleted).sort((left, right) => left.z - right.z || left.y - right.y || left.x - right.x);
   drawOrder.forEach((tile) => {
@@ -508,16 +630,15 @@ function drawMahjongRoguelite() {
     ctx.restore();
     mahjongHitAreas.push({ tile, rect: { ...rect }, depth: tileDepth });
   });
-  const footerY = Math.min(gameSceneHeight() - 110, layout.y + layout.boardHeight + 78);
+  const footerY = Math.min(gameSceneHeight() - 110, layout.boardTop + layout.boardHeight + 78);
   drawPlayfield(91, footerY - 38, 538, 62, { radius: 22, alpha: .86 });
   ctx.fillStyle = palette.text; ctx.font = "700 18px Inter, sans-serif";
   ctx.fillText("亮面为自由牌   ·   金色角标为配对目标   ·   灰暗牌仍被覆盖", 360, footerY - 5);
   ctx.fillStyle = palette.textSoft; ctx.font = "600 14px Inter, sans-serif";
   const buildText = activeMahjongSynergies().length ? "协同 " + activeMahjongSynergies().map((item) => item.name).join("、") : mahjongRelicCount() ? "继续收集遗物以激活协同" : "首段完成后可选择遗物";
   ctx.fillText("提示 " + mahjongHints + "   ·   洗牌 " + mahjongShuffles + "   ·   " + buildText, 360, footerY + 18);
-  if (mahjongFlash && performance.now() < mahjongFlash.until) {
-    drawBitmapSprite(mahjongFlash.sprite, mahjongFlash.x - 70, mahjongFlash.y - 70, 140, 140, { fallback: palette.highlight, alpha: .8, scale: 1.16 });
-  }
+  drawMahjongFeedback(now);
+  drawMahjongRelicDock(now);
   if (mahjongAwaitingRelic) drawMahjongRelicChoice();
   if (mahjongAwaitingRoute) drawMahjongRouteChoice();
   ctx.restore(); finishCanvasStyle();
@@ -533,6 +654,7 @@ function chooseMahjongRelic(index) {
   if (relic.id === "pearl") mahjongScore += 120;
   if (relic.id === "anchor" && mahjongDeadline) mahjongDeadline += 30_000;
   if (relic.id === "sail") mahjongScore += 60;
+  activateMahjongRelics([relic.id], relic.detail);
   mahjongAwaitingRelic = false;
   mahjongStage = Math.min(2, mahjongStage + 1);
   presentMahjongRouteChoices();
@@ -588,21 +710,26 @@ function startMahjongStage() {
   const openingPair = getAvailableMahjongPairs()[0] || [];
   const rule = currentMahjongRule();
   const route = currentMahjongRoute();
+  const stageRelicIds = [];
+  const stageRelicNotices = [];
   const crownPenalty = mahjongRelicStacks.has("crown") && !mahjongHasSynergy("storm-crown") ? 15 : 0;
   mahjongDeadline = rule.timeLimit ? Date.now() + Math.max(45, rule.timeLimit + (route?.timeDelta || 0) - crownPenalty) * 1000 : 0;
-  if (mahjongRelicStacks.has("anchor") && mahjongDeadline) mahjongDeadline += 30_000;
-  if (mahjongRelicStacks.has("atlas") && !mahjongHasConflict("lantern-atlas")) mahjongHints += 1;
-  if (mahjongHasSynergy("navigator")) mahjongHints += 2;
-  if (mahjongHasConflict("crown-charm")) mahjongShuffles = Math.max(0, mahjongShuffles - 1);
-  if (mahjongRelicStacks.has("sail")) mahjongScore += 60;
+  if (mahjongRelicStacks.has("lantern") && ["sealed", "elite"].includes(rule.id)) { stageRelicIds.push("lantern"); stageRelicNotices.push("封锁已解除"); }
+  if (mahjongRelicStacks.has("anchor") && mahjongDeadline) { mahjongDeadline += 30_000; stageRelicIds.push("anchor"); stageRelicNotices.push("潮汐 +30秒"); }
+  if (mahjongRelicStacks.has("atlas") && !mahjongHasConflict("lantern-atlas")) { mahjongHints += 1; stageRelicIds.push("atlas"); stageRelicNotices.push("提示 +1"); }
+  if (mahjongHasSynergy("navigator")) { mahjongHints += 2; stageRelicIds.push("compass", "atlas"); stageRelicNotices.push("星潮领航 +2提示"); }
+  if (mahjongHasConflict("crown-charm")) { mahjongShuffles = Math.max(0, mahjongShuffles - 1); stageRelicIds.push("crown", "charm"); stageRelicNotices.push("逆风税 -1洗牌"); }
+  if (mahjongRelicStacks.has("sail")) { mahjongScore += 60; stageRelicIds.push("sail"); stageRelicNotices.push("开局 +60分"); }
+  if (crownPenalty) { stageRelicIds.push("crown"); stageRelicNotices.push("潮汐 -15秒"); }
   mahjongSelectedId = null;
   mahjongHintIds = new Set(openingPair.map((tile) => tile.id));
-  mahjongHistory = []; mahjongCombo = 0; mahjongFlash = null; mahjongNewlyFreeIds = new Set();
+  mahjongHistory = []; mahjongCombo = 0; mahjongFeedback = null; mahjongNewlyFreeIds = new Set();
   mahjongKeyboardId = openingPair[0]?.id || mahjongBoard.find(isMahjongTileFree)?.id || null;
   setMetric(mahjongRemaining() + " 张");
   const buildNotice = activeMahjongSynergies().length ? " · 已激活 " + activeMahjongSynergies().map((item) => item.name).join("、") : "";
   setStatus("第 " + currentCampaignLevel().number + " 关 · " + route.name + " · " + rule.label + "：" + rule.detail + buildNotice + "。已点亮第一对自由牌。 ");
   saveMahjongRun();
+  if (stageRelicIds.length) activateMahjongRelics(stageRelicIds, stageRelicNotices.join(" · "));
   drawMahjongRoguelite();
 }
 
@@ -642,7 +769,8 @@ function checkMahjongContinuity() {
 
 function selectMahjongTile(tile) {
   if (!isMahjongTileFree(tile)) {
-    mahjongFlash = { x: mahjongTileRect(tile, mahjongLayout()).x + 45, y: mahjongTileRect(tile, mahjongLayout()).y + 55, sprite: 7, until: performance.now() + 360 };
+    const blockedRect = mahjongTileRect(tile, mahjongLayout());
+    showMahjongFeedback("blocked", blockedRect.x + blockedRect.width / 2, blockedRect.y + blockedRect.height / 2);
     setStatus(mahjongBlockReason(tile)); playSound("fail"); drawMahjongRoguelite(); return;
   }
   mahjongHintIds = new Set();
@@ -657,6 +785,7 @@ function selectMahjongTile(tile) {
   if (first.pairId !== tile.pairId) {
     first.selected = false; tile.selected = true; mahjongSelectedId = tile.id;
     if (!mahjongRelicStacks.has("reef")) mahjongCombo = 0;
+    else activateMahjongRelics(["reef"], "配错仍保留连击");
     setStatus("这两张不是同一对；已保留第二张继续寻找。 "); playSound("fail"); drawMahjongRoguelite(); return;
   }
   const freeBeforeMatch = new Set(mahjongBoard.filter(isMahjongTileFree).map((candidate) => candidate.id));
@@ -666,12 +795,16 @@ function selectMahjongTile(tile) {
   mahjongKeyboardId = null;
   mahjongNewlyFreeIds = new Set(mahjongBoard.filter(isMahjongTileFree).map((candidate) => candidate.id).filter((id) => !freeBeforeMatch.has(id)));
   const routeMultiplier = currentMahjongRoute()?.scoreMultiplier || 1;
+  const matchRelicIds = [];
+  if ((mahjongRelicStacks.get("thread") || 0) > 0) matchRelicIds.push("thread");
+  if ((mahjongRelicStacks.get("crown") || 0) > 0) matchRelicIds.push("crown");
   let multiplier = (1 + (mahjongRelicStacks.get("thread") || 0) + (mahjongRelicStacks.get("crown") || 0) * 1.5) * routeMultiplier;
-  if (mahjongHasConflict("crown-charm")) multiplier *= 1.25;
+  if (mahjongHasConflict("crown-charm")) { multiplier *= 1.25; matchRelicIds.push("charm"); }
   if (currentMahjongRoute()?.id === "archive" && activeMahjongSynergies().length) multiplier *= 1 + activeMahjongSynergies().length * .25;
-  if (mahjongHasSynergy("moon-thread") && mahjongMatches === 0) multiplier *= 2;
+  if (mahjongHasSynergy("moon-thread") && mahjongMatches === 0) { multiplier *= 2; matchRelicIds.push("thread", "mirror"); }
   if ((mahjongRelicStacks.get("mirror") || 0) > 0) {
     multiplier *= 2;
+    matchRelicIds.push("mirror");
     const remainingMirrors = (mahjongRelicStacks.get("mirror") || 0) - 1;
     if (remainingMirrors > 0) mahjongRelicStacks.set("mirror", remainingMirrors); else mahjongRelicStacks.delete("mirror");
   }
@@ -684,7 +817,8 @@ function selectMahjongTile(tile) {
     setStatus("封锁层已经解除；新开放的牌正在发光。 ");
   }
   const rect = mahjongTileRect(tile, mahjongLayout());
-  mahjongFlash = { x: rect.x + rect.width / 2, y: rect.y + rect.height / 2, sprite: 8, until: performance.now() + 420 };
+  showMahjongFeedback("match", rect.x + rect.width / 2, rect.y + rect.height / 2);
+  if (matchRelicIds.length) activateMahjongRelics(matchRelicIds, "本次配对 +" + earned + "分");
   setMetric(mahjongRemaining() + " 张");
   setStatus("配对成功 · 连击 ×" + mahjongCombo + " · +" + earned + " 分");
   saveMahjongRun(); playSound("move"); drawMahjongRoguelite(); checkMahjongContinuity();
@@ -719,6 +853,7 @@ function undoMahjongPair() {
   mahjongMatches = state.matches; mahjongSealedIds = state.sealedIds;
   mahjongHintIds = new Set(); mahjongNewlyFreeIds = new Set();
   mahjongKeyboardId = mahjongBoard.find(isMahjongTileFree)?.id || null;
+  if (mahjongRelicStacks.has("shell")) activateMahjongRelics(["shell"], "撤销仍保留连击");
   setMetric(mahjongRemaining() + " 张"); setStatus("已撤销上一对。 "); saveMahjongRun(); drawMahjongRoguelite();
 }
 
@@ -878,6 +1013,9 @@ runtimeDebugState = () => ({
   visualCueVersion: 3,
   layerCueVersion: 1,
   assetCompositionVersion: 2,
+  feedbackVersion: 2,
+  persistentRelicDock: true,
+  activeRelicEffect: mahjongRelicActivation ? { ids: mahjongRelicActivation.ids, label: mahjongRelicActivation.label } : null,
   tileBodySource: "canvas-single-layer",
   spriteContent: "transparent-motif-only",
   selectionChangesGeometry: false,

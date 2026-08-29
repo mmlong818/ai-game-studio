@@ -68,6 +68,10 @@ test("阶段 E 逻辑、迷宫和长局模板具备计划要求的运行时能�
         assert.match(script, /mahjongKeyboardNavigation = false/);
         assert.match(script, /function drawMahjongTileBody/);
         assert.match(script, /function drawMahjongCornerMarks/);
+        assert.match(script, /function drawMahjongRelicDock/);
+        assert.match(script, /function drawMahjongFeedback/);
+        assert.match(script, /activateMahjongRelics/);
+        assert.doesNotMatch(script, /drawBitmapSprite\(mahjongFlash\.sprite/);
         assert.doesNotMatch(script, /scale: selected \? 1\.09/);
         assert.doesNotMatch(script, /rect\.y - \(selected \? 7/);
         assert.match(script, /mahjongEndingForRun/);

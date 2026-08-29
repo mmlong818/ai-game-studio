@@ -297,6 +297,13 @@ test("十三类艺术化游戏都会产出可解析脚本、角色拆分位图�
         assert.match(script, /function syncMahjongControls/);
         assert.match(script, /function mahjongTileVisualState/);
         assert.match(script, /function drawMahjongMotif/);
+        assert.match(script, /function drawMahjongRelicDock/);
+        assert.match(script, /function drawMahjongFeedback/);
+        assert.match(script, /const minOffset = Math\.min\(\.\.\.verticalOffsets\)/);
+        assert.match(script, /y: boardTop - minOffset/);
+        assert.match(script, /persistentRelicDock: true/);
+        assert.match(script, /feedbackVersion: 2/);
+        assert.doesNotMatch(script, /drawBitmapSprite\(mahjongFlash\.sprite/);
         assert.match(script, /function moveMahjongKeyboardCursor/);
         assert.match(script, /亮面为自由牌/);
         assert.match(script, /visualCueVersion: 3/);
