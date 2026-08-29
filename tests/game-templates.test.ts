@@ -111,17 +111,23 @@ test("十三类艺术化游戏都会产出可解析脚本、角色拆分位图�
         assert.match(script, /new Path2D\(\)/);
         assert.match(script, /addEventListener\("pointerdown"/);
         assert.match(script, /image\.naturalWidth \/ image\.naturalHeight/);
-        assert.match(script, /config\.puzzleRules \? config\.puzzleRules\.snapTolerance : \.26/);
-        assert.match(script, /还没到正确位置；参考底层淡化原图继续调整/);
+        assert.match(script, /config\.puzzleRules\?config\.puzzleRules\.snapTolerance:\.26/);
+        assert.match(script, /这里还没有可连接的拼缝/);
         assert.match(script, /function perimeterSlots\(\)/);
+        assert.match(script, /function tryConnectSelected\(\)/);
+        assert.match(script, /function setPuzzleZoom\(next\)/);
+        assert.match(script, /function persistPuzzleSession\(\)/);
         assert.match(script, /function beginPuzzleImageLoad\(\)/);
-        assert.match(script, /requestId !== puzzleImageRequestId/);
-        assert.match(script, /builtInLevels\[\(level\.number - 1\) % builtInLevels\.length\]/);
+        assert.match(script, /requestId!==puzzleImageRequestId/);
+        assert.match(script, /builtIns\[\(level\.number-1\)%builtIns\.length\]/);
         const html = readFileSync(join(output, "index.html"), "utf8");
         assert.match(html, /data-puzzle-count/);
         assert.match(html, /data-puzzle-level/);
+        assert.match(html, /data-puzzle-mode="classic"/);
+        assert.match(html, /data-puzzle-mode="timed"/);
+        assert.match(html, /data-puzzle-rotation/);
         assert.match(html, /50 块/);
-        assert.match(html, /画板外围/);
+        assert.match(html, /画板四周/);
         const galleryFiles = Array.from({ length: 20 }, (_, index) => `level-gallery-${String(index + 1).padStart(2, "0")}.png`);
         const galleryHashes = new Set(galleryFiles.map((filename) => {
           const content = readFileSync(join(output, "assets", filename));

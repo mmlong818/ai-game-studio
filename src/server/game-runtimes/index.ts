@@ -7,7 +7,7 @@ import { mahjongRogueliteScript } from "./mahjong-roguelite.js";
 import { merge2048Script } from "./merge-2048.js";
 import { platformerScript } from "./platformer.js";
 import { polyominoFitScript } from "./polyomino-fit.js";
-import { puzzleScript } from "./puzzle.js";
+import { puzzleScript } from "./puzzle-commercial.js";
 import { snakeScript } from "./snake.js";
 import { spaceShooterScript } from "./space-shooter.js";
 import { regionLogicScript } from "./region-logic.js";
@@ -40,12 +40,21 @@ const runtimes: Record<Exclude<GameTemplate, "signal-hunt" | "generated">, Runti
     label: "植光拼图",
     eyebrow: "PICTURE GARDEN / 图像重组",
     intro: "选择喜欢的图案与拼图数量，再亲手恢复完整画面。",
-    objective: "拖动任意拼块，靠近正确位置时会自动吸附；可切换关卡或上传自己的图片。",
+    objective: "从四周整理拼块，先连接相邻轮廓再整组归位；可缩放、筛边、预览或上传自己的图片。",
     primaryMetric: "已归位",
-    controls: [],
+    controls: [
+      { value: "zoom-in", label: "放大", ariaLabel: "放大拼图画板" },
+      { value: "zoom-out", label: "缩小", ariaLabel: "缩小拼图画板" },
+      { value: "arrange", label: "整理", ariaLabel: "重新整理外围拼块" },
+      { value: "edge", label: "只看边块", ariaLabel: "只显示边缘拼块" },
+      { value: "preview", label: "预览", ariaLabel: "短暂预览完成图" },
+      { value: "hint", label: "提示 3", ariaLabel: "提示一块与目标区域" },
+      { value: "rotate", label: "旋转", ariaLabel: "旋转当前拼块组" },
+      { value: "pause", label: "暂停", ariaLabel: "暂停拼图" },
+    ],
     script: puzzleScript,
     redrawFunction: "drawPuzzle",
-    probeTokens: ["function createPieces()", "function perimeterSlots()", "function snapSelectedPiece()", "#puzzle-upload", "data-puzzle-count", "data-puzzle-level"],
+    probeTokens: ["const puzzleBlueprints = [", "function createPieces()", "function perimeterSlots()", "function tryConnectSelected()", "function setPuzzleZoom", "#puzzle-upload", "data-puzzle-count", "data-puzzle-level"],
   },
   breakout: {
     id: "breakout",

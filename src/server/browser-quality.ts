@@ -754,20 +754,47 @@ export async function inspectStageDClassicInBrowser(root: string, template: Stag
 
     if (template === "puzzle") {
       const tierOne = await stageCDebugState(page);
+      const pointerProbe = await stageCDebugAction(page, "pointerProbe") as { from: { x: number; y: number }; to: { x: number; y: number }; canvas: { width: number; height: number } } | null;
+      const puzzleCanvas = await page.locator("#game-canvas").boundingBox();
+      if (!pointerProbe || !puzzleCanvas) throw new Error("拼图没有提供可执行的真实拖动目标。 ");
+      const puzzleScaleX = puzzleCanvas.width / pointerProbe.canvas.width;
+      const puzzleScaleY = puzzleCanvas.height / pointerProbe.canvas.height;
+      await page.mouse.move(puzzleCanvas.x + pointerProbe.from.x * puzzleScaleX, puzzleCanvas.y + pointerProbe.from.y * puzzleScaleY);
+      await page.mouse.down();
+      await page.mouse.move(puzzleCanvas.x + pointerProbe.to.x * puzzleScaleX, puzzleCanvas.y + pointerProbe.to.y * puzzleScaleY, { steps: 8 });
+      await page.mouse.up();
+      await page.waitForTimeout(80);
+      const dragged = await stageCDebugState(page);
       await stageCDebugAction(page, "selectNext");
       await page.keyboard.press("ArrowRight");
       await stageCDebugAction(page, "placeSelectedAtHome");
       const placed = await stageCDebugState(page);
+      await stageCDebugAction(page, "connectPair");
+      const connected = await stageCDebugState(page);
+      await stageCDebugAction(page, "hint");
+      const hinted = await stageCDebugState(page);
+      await stageCDebugAction(page, "zoomIn");
+      const zoomed = await stageCDebugState(page);
+      await stageCDebugAction(page, "pause");
+      const paused = await stageCDebugState(page);
+      await stageCDebugAction(page, "pause");
       await page.evaluate(() => { const debug = (window as any).__GAME_DEBUG__; debug.setLevel(20); debug.restart(); });
       await page.waitForTimeout(150);
       const tierFive = await stageCDebugState(page);
+      await page.locator("#puzzle-upload").setInputFiles(join(root, "assets", "level-gallery-02.png"));
+      await page.waitForFunction(() => (window as any).__GAME_DEBUG__?.getState?.()?.runtime?.imageLevel === "custom", undefined, { timeout: 4_000 });
+      const uploaded = await stageCDebugState(page);
       if (tierOne.runtime.imageLevelCount < 20 || tierOne.runtime.perimeterZones !== 4) throw new Error("拼图没有 20 个内置图案或四区外围托盘。 ");
       if (tierOne.runtime.imageLevel === tierFive.runtime.imageLevel) throw new Error("拼图首关与末关复用了同一张图片。 ");
       if (Math.abs(tierOne.runtime.boardAspect - tierOne.runtime.imageAspect) > .02) throw new Error("拼图画板没有适配图像比例。 ");
-      if (!tierOne.runtime.clickPlacement || !tierOne.runtime.keyboardPlacement || placed.runtime.placedCount !== 1 || !placed.runtime.snapFeedback) throw new Error("拼图点击、键盘或吸附反馈不可用。 ");
-      if (!(tierFive.runtime.pieceCount > tierOne.runtime.pieceCount) || tierFive.runtime.pieceCount > 50) throw new Error("拼图关卡块数没有在 50 上限内渐进。 ");
-      checks.push("20 个不重复内置位图关卡", "4–50 块渐进", "图像比例自适应", "外围四区托盘", "点击、拖动、键盘与吸附反馈");
-      evidence.tierOne = tierOne.runtime; evidence.placed = placed.runtime; evidence.tierFive = tierFive.runtime;
+      if (dragged.runtime.placedCount !== 1 || !tierOne.runtime.clickPlacement || !tierOne.runtime.keyboardPlacement || placed.runtime.placedCount !== 2) throw new Error(`拼图真实拖动、键盘或吸附不可用：${JSON.stringify({ dragged: dragged.runtime, placed: placed.runtime })}。`);
+      if (!tierOne.runtime.complementaryEdges || tierOne.runtime.grid.product !== tierOne.runtime.pieceCount || tierOne.runtime.outsideCount !== tierOne.runtime.pieceCount || tierOne.runtime.uniqueCenters !== tierOne.runtime.pieceCount) throw new Error(`拼图几何、互补接口或无重叠外围排布不达标：${JSON.stringify(tierOne.runtime)}。`);
+      if (!connected.runtime.groupMovement || connected.runtime.largestGroup < 2 || connected.runtime.connectionCount < 1) throw new Error("相邻拼块没有形成可整体移动的连接组。 ");
+      if (!(hinted.runtime.hintsRemaining < connected.runtime.hintsRemaining) || zoomed.runtime.zoom <= 1 || !zoomed.runtime.panEnabled || !paused.runtime.paused) throw new Error("提示、缩放平移或暂停不可用。 ");
+      if (!(tierFive.runtime.pieceCount > tierOne.runtime.pieceCount) || tierFive.runtime.pieceCount !== 50 || tierFive.runtime.outsideCount !== 50 || tierFive.runtime.uniqueCenters !== 50 || tierFive.runtime.trayScale < .42) throw new Error(`拼图末关没有形成 50 块可选择的四区外围布局：${JSON.stringify(tierFive.runtime)}。`);
+      if (!tierFive.runtime.uploadAdaptive || uploaded.runtime.imageLevel !== "custom" || Math.abs(uploaded.runtime.boardAspect - uploaded.runtime.imageAspect) > .02) throw new Error(`拼图没有真实载入并适配用户上传图片：${JSON.stringify(uploaded.runtime)}。`);
+      checks.push("20 个不重复内置位图关卡", "6–50 块五章渐进", "真实指针拖动与键盘归位", "图像与上传比例自适应", "四区外围无重叠整理", "互补拼缝与成组移动", "缩放平移、筛边、预览、提示和暂停", "经典与限时模式");
+      evidence.tierOne = tierOne.runtime; evidence.dragged = dragged.runtime; evidence.placed = placed.runtime; evidence.connected = connected.runtime; evidence.hinted = hinted.runtime; evidence.zoomed = zoomed.runtime; evidence.paused = paused.runtime; evidence.tierFive = tierFive.runtime; evidence.uploaded = uploaded.runtime;
     }
 
     if (template === "block-place") {
