@@ -5,7 +5,6 @@ import { klotskiScript } from "./klotski.js";
 import { mazeScript } from "./maze.js";
 import { mahjongRogueliteScript } from "./mahjong-roguelite.js";
 import { merge2048Script } from "./merge-2048.js";
-import { platformerScript } from "./platformer.js";
 import { polyominoFitScript } from "./polyomino-fit.js";
 import { puzzleScript } from "./puzzle-commercial.js";
 import { snakeScript } from "./snake.js";
@@ -118,18 +117,6 @@ const runtimes: Record<Exclude<GameTemplate, "signal-hunt" | "generated">, Runti
     script: merge2048Script,
     redrawFunction: "drawMergeBoard",
     probeTokens: ["const mergeBlueprints = [", "function resolveMergeMove(source, direction)", "const mergeMoveDuration = 168", "prepareDoubleMerge", "directSwipe: true", "merge-session-v2"],
-  },
-  platformer: {
-    id: "platformer",
-    label: "云脊跃迁",
-    eyebrow: "SKYLINE PLATFORMER / 浮岛跳跃",
-    intro: "穿越五片云域的二十条独立路线，掌握短跳、长跳、机关与空中冲刺。",
-    objective: "按住方向并用跳跃键控制高度；收集星核、开启天门，从最近检查点抵达信标。",
-    primaryMetric: "星核进度",
-    controls: [...directions.filter((item) => item.value === "left" || item.value === "right"), { value: "jump", label: "跳跃", ariaLabel: "跳跃" }],
-    script: platformerScript,
-    redrawFunction: "drawPlatformer",
-    probeTokens: ["platformerLevelBlueprints", "function buildPlatformerLevel(levelNumber)", "function updatePlatformer(delta, timestamp)", "function landOnPlatforms(previousBottom, timestamp)", "function performDash()", "touchModel: \"simultaneous-hold-and-jump\"", "coinsCollected >= coinTarget"],
   },
   "space-shooter": {
     id: "space-shooter",

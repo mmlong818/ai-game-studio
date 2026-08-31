@@ -70,13 +70,6 @@ const templateModifiers: Record<GameTemplate, readonly string[]> = {
     "密阵开局", "一步回溯", "限步织造", "五百一十二塔",
     "千位角锚", "零撤销局", "连锁三响", "二〇四八核心",
   ],
-  platformer: [
-    "轻羽起步", "长风落点", "星核岔路", "坡顶信标",
-    "往返云台", "弹簧花径", "碎云踏板", "风琴追逐",
-    "脉冲门钥", "逆风横渡", "跃迁冲刺", "雷芽守门",
-    "明灭云阶", "镜像岔道", "巡游星兽", "镜庭逃逸",
-    "四式复习", "零伤星路", "极限云脊", "天门重启",
-  ],
   "space-shooter": [
     "校准航道", "双翼接敌", "脉冲试炼", "曙光守环",
     "碎星回廊", "交错火网", "护盾护航", "赤潮守环",
@@ -157,13 +150,6 @@ const commercialLevelDesigns: Record<GameTemplate, CommercialLevelDesign> = {
     masteryRules: [
       { id: "efficiency", label: "得分达到目标数字的 2 倍", metric: "score", comparison: "ratio-gte", referenceMetric: "target", target: 2 },
       { id: "control", label: "完成时至少保留 4 个空格", metric: "availableCells", comparison: "gte", target: 4 },
-    ],
-  },
-  platformer: {
-    mission: "掌握本关移动机制、收集星核并从最近检查点稳定抵达信标。",
-    masteryRules: [
-      { id: "efficiency", label: "收集数量达到关卡目标", metric: "coinsCollected", comparison: "ratio-gte", referenceMetric: "coinTarget", target: 1 },
-      { id: "control", label: "完成时至少保留 2 次机会", metric: "lives", comparison: "gte", target: 2 },
     ],
   },
   "space-shooter": {

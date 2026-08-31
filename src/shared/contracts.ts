@@ -437,7 +437,6 @@ const templateSignals: ReadonlyArray<readonly [GameTemplate, readonly string[]]>
   ["maze", ["走迷宫", "迷宫"]],
   ["puzzle", ["拼图", "滑块拼图"]],
   ["merge-2048", ["2048", "数字合成", "合并数字", "滑动合并"]],
-  ["platformer", ["平台跳跃", "横版跳跃", "跳过障碍"]],
   ["space-shooter", ["太空射击", "飞船射击", "敌机", "清除波次"]],
 ];
 
@@ -450,7 +449,6 @@ const templateDefaults: Record<GameTemplate, { title: string; perspective: GameS
   maze: { title: "苔径迷庭", perspective: "top-down", controls: ["方向键移动", "触控方向键"], style: "dreamy" },
   snake: { title: "青玉长游", perspective: "top-down", controls: ["方向键改变方向", "触控方向键"], style: "playful" },
   "merge-2048": { title: "数织矩阵", perspective: "ui", controls: ["棋盘直接滑动", "方向键或 WASD", "Z 键回溯"], style: "pop" },
-  platformer: { title: "云脊跃迁", perspective: "side", controls: ["左右移动", "跳跃", "触控按钮"], style: "dreamy" },
   "space-shooter": { title: "星环突围", perspective: "top-down", controls: ["左右移动", "持续射击", "触控按钮"], style: "pop" },
   "polyomino-fit": { title: "软糖拼岛", perspective: "ui", controls: ["选择与放置", "旋转", "提示与撤销"], style: "playful" },
   "block-place": { title: "果冻填阵", perspective: "ui", controls: ["选择拼块", "点击棋盘放置", "提示"], style: "playful" },
@@ -468,7 +466,6 @@ const modernVisualStyles: Record<GameTemplate, VisualStyle> = {
   maze: "cute",
   snake: "cute",
   "merge-2048": "color-block",
-  platformer: "cute",
   "space-shooter": "fashion",
   "polyomino-fit": "cute",
   "block-place": "color-block",
@@ -489,7 +486,7 @@ function includesAny(text: string, signals: readonly string[]) {
   return signals.some((signal) => text.includes(signal));
 }
 
-function inferDimensions(input: ParsedProjectInput) {
+function inferDimensions(input: Pick<ParsedProjectInput, "idea" | "dimensions">) {
   if (input.dimensions !== "auto") return input.dimensions;
   return includesAny(input.idea.toLowerCase(), ["3d", "3D", "第一人称", "第三人称"])
     ? "3d"
@@ -504,7 +501,6 @@ export function recommendedAspectRatio(template: GameTemplate, dimensions: "auto
 
 export function recommendedCameraMode(template: GameTemplate, dimensions: "2d" | "3d"): CameraMode {
   if (dimensions === "3d") return template === "signal-hunt" ? "follow-player" : "orbit";
-  if (template === "platformer") return "follow-player";
   if (template === "space-shooter") return "scrolling";
   if (["tetris", "puzzle", "klotski", "maze", "snake", "merge-2048", "polyomino-fit", "block-place", "region-logic", "mahjong-roguelite"].includes(template)) return "board";
   return "fixed-stage";
@@ -517,12 +513,12 @@ export function recommendedInputModes(template: GameTemplate, dimensions: "2d" |
   if (template === "merge-2048") return ["swipe", "keyboard"];
   if (template === "space-shooter") return ["drag", "keyboard", "touch-buttons"];
   if (["tetris", "merge-2048", "maze", "snake"].includes(template)) return ["swipe", "keyboard", "touch-buttons"];
-  if (template === "platformer") return ["keyboard", "touch-buttons"];
   return ["pointer", "keyboard", "touch-buttons"];
 }
 
-export function inferGameTemplate(input: Pick<ParsedProjectInput, "idea" | "template">): GameTemplate {
+export function inferGameTemplate(input: Pick<ParsedProjectInput, "idea" | "template" | "dimensions">): GameTemplate {
   if (input.template !== "auto") return input.template;
+  if (inferDimensions(input) === "2d" && includesAny(input.idea, ["平台跳跃", "横版跳跃", "跳过障碍"])) return "generated";
   return templateSignals.find(([, signals]) => includesAny(input.idea, signals))?.[0] ?? "signal-hunt";
 }
 
@@ -732,20 +728,6 @@ const designBlueprints: Record<GameTemplate, Omit<z.infer<typeof gameDesignProfi
     onboarding: ["第一关在棋盘下方只显示一次滑动提示", "开局保持低密度，随后用不同初始局面教学角落与空位"],
     accessibility: ["手机直接滑动棋盘，桌面使用方向键或 WASD，Z 键和回溯按钮等价", "数字文本始终提供并维持高对比，不只依赖色块"],
     productionRisks: ["一次移动中每个数字块最多合并一次；2、2、2、2 必须得到 4、4", "动画期间只允许缓存一个方向，存档必须保留棋盘、下一块和随机状态"],
-  },
-  platformer: {
-    genre: "横版平台跳跃",
-    targetPlayer: "喜欢短关卡、可掌握移动手感与技巧路线的动作玩家",
-    playerFantasy: "在五片云域中掌握不同跃迁技巧，连续穿越机关并点亮天门",
-    sessionLength: "2–6 分钟",
-    coreLoop: ["读取主路线与安全落点", "用短跳或长跳控制弧线", "空中修正或释放冲刺", "取得星核与钥匙", "通过检查点抵达信标"],
-    winCondition: "完成关卡机制、收集最低要求星核，取得所需钥匙并抵达终点信标",
-    failCondition: "连续跌落或碰撞使能量耗尽",
-    progression: ["二十个独立蓝图分为五章，每四关集中训练一种技巧族", "固定、移动、弹跳、碎裂、相位、风场、冲刺、钥匙门与巡游敌人逐章组合", "最终章要求在多机制链中规划检查点和风险路线"],
-    gameFeel: ["按住决定跳跃高度，离台宽容和输入缓存降低误操作", "落地、弹跳、冲刺、受伤与过关使用不同形变、声音和状态反馈", "镜头采用纵向死区与水平前视，不提前暴露整张关卡"],
-    onboarding: ["第一章在安全平台上分别教学短跳、长跳、岔路与连续落点", "首次出现新机制时在 HUD 显示单一技巧目标", "冲刺核与钥匙直接布置在自然路线中"],
-    accessibility: ["左右键与一个大跳跃键支持同时按住；键盘和触控规则等价", "宽松难度增加土狼时间、平台宽度和能量，不只降低数字目标", "机关以轮廓、运动、纹理和颜色共同表达"],
-    productionRisks: ["低帧率下高速下落必须使用扫掠式落地判定", "移动平台要携带角色且相位、碎裂平台不能留下隐形碰撞", "手机端多指移动和跳跃不能被 click 事件重复触发"],
   },
   "space-shooter": {
     genre: "俯视街机射击",

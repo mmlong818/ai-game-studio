@@ -308,10 +308,10 @@ function drawBlockPlace() {
     if (value) drawBlockCell((value - 1) % 5, x + 3, y + 3, layout.cell - 6, { compact: true });
     else {
       ctx.fillStyle = "#36433f";
-      ctx.strokeStyle = "rgba(209,224,217,.1)";
-      ctx.lineWidth = 1;
+      ctx.strokeStyle = "rgba(220,238,230,.2)";
+      ctx.lineWidth = 1.5;
       ctx.beginPath(); ctx.roundRect(x + 5, y + 5, layout.cell - 10, layout.cell - 10, 12); ctx.fill(); ctx.stroke();
-      ctx.fillStyle = "rgba(11,24,22,.16)";
+      ctx.fillStyle = "rgba(11,24,22,.24)";
       ctx.beginPath(); ctx.roundRect(x + 9, y + 9, layout.cell - 18, layout.cell - 18, 9); ctx.fill();
     }
     if (blockHint && blockHint.cells.has(row + ":" + column)) {

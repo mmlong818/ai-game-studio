@@ -14,10 +14,9 @@
 | 平台模板 | 上游 | 许可证 | 接入方式 | 进入本平台的内容 | 未复制的内容 |
 | --- | --- | --- | --- | --- | --- |
 | 数字合成 | [Gabriele Cirulli / 2048](https://github.com/gabrielecirulli/2048) | MIT | 代码结构移植 | 四向遍历、单次合并、移动后生成新块、无可用移动判定 | HTML/CSS、字体、视觉和声音 |
-| 平台跳跃 | [Phaser Examples](https://github.com/phaserjs/examples) | MIT（代码） | 架构模式适配 | 场景循环、重力、平台落地、收集物和终点状态 | 上游明确排除授权的示例资产；也没有引入 Phaser 依赖 |
 | 太空射击 | [Jack Rugile / Radius Raid js13k](https://github.com/jackrugile/radius-raid-js13k) | MIT | 代码结构移植 | 帧循环、波次生成、弹体碰撞、生命与击破目标 | 图像、音效、压缩构建代码和原版界面 |
 
-三类模板都已适配本平台的玩法合同、难度参数、触控按钮、自动测试探针、gpt-image-2 主视觉、程序化音乐和独立交付网址。
+两类模板都已适配本平台的玩法合同、难度参数、触控按钮、自动测试探针、gpt-image-2 主视觉、程序化音乐和独立交付网址。
 
 ## 已通过初审、等待独立重制的候选
 
@@ -38,7 +37,6 @@
 ## 明确排除的项目
 
 - Clumsy Bird 的旧 `package.json` 曾写 MIT，但仓库当前许可证页面显示 GPL-3.0，元数据存在冲突。本平台不直接复制其代码，也不会把它标成 MIT 模板。
-- Phaser Examples 的 README 明确说明源代码是 MIT，但示例资产不在该许可范围内，因此本平台只借代码模式，所有媒体资产重新制作。
 
 ## 专业游戏设计要求
 

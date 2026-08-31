@@ -1,7 +1,0 @@
-Use case: stylized-concept
-Asset type: 3×3 production game sprite atlas
-Primary request: A premium calm platformer asset set containing two wind-glider traveler poses, one floating stone-and-cloud platform, one luminous star core, sealed and open celestial gates, one armored patrol creature, one dash crystal and one checkpoint pennant.
-Style/medium: refined hand-painted 2.5D contemporary fantasy, restrained and sophisticated, subtle East Asian mineral-pigment texture
-Composition/framing: strict 3×3 equal-cell contact sheet, one centered isolated object per cell with complete silhouettes and no overlap
-Lighting/mood: soft moonlit rim light, quiet and confident
-Constraints: solid chroma-magenta background removed locally; no text, logo, watermark, childish faces, emoji style or thick white outlines

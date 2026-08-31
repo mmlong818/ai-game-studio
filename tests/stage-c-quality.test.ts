@@ -16,7 +16,6 @@ import { StudioRepository } from "../src/server/studio-repository";
 
 const stageCGames: Array<[StageCRealtimeTemplate, string, string]> = [
   ["space-shooter", "星环突围验收", "做一个太空射击游戏，规避敌机并完成目标击破数。"],
-  ["platformer", "云脊跃迁验收", "做一个纵向镜头平台跳跃游戏，收集能量并抵达终点。"],
   ["snake", "青玉长游验收", "做一个青玉花园贪吃蛇，收集朱果并避开障碍。"],
   ["breakout", "漆海碎星验收", "做一个五章二十关的漆艺海面打砖块游戏。"],
 ];
@@ -25,7 +24,7 @@ function digest(path: string) {
   return createHash("sha256").update(readFileSync(path)).digest("hex");
 }
 
-test("阶段 C 四款实时游戏通过模板专属真实浏览器验收", { skip: !browserQualityAvailable(), timeout: 120_000 }, async () => {
+test("阶段 C 三款实时游戏通过模板专属真实浏览器验收", { skip: !browserQualityAvailable(), timeout: 120_000 }, async () => {
   const database = await openTestDatabase();
   const repository = new StudioRepository(database, "http://127.0.0.1:4312");
   const root = mkdtempSync(join(tmpdir(), "studio-stage-c-"));

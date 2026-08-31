@@ -15,7 +15,6 @@ const templateNames: Record<GameTemplate, string> = {
   maze: "走迷宫",
   snake: "贪吃蛇",
   "merge-2048": "数字合成",
-  platformer: "平台跳跃",
   "space-shooter": "太空射击",
   "polyomino-fit": "多格拼块",
   "block-place": "方块填阵",
@@ -26,9 +25,9 @@ const templateNames: Record<GameTemplate, string> = {
 
 export const localizedTemplateNames: Record<ResolvedLocale, Record<GameTemplate, string>> = {
   "zh-CN": templateNames,
-  "zh-TW": { "signal-hunt": "原創玩法", tetris: "俄羅斯方塊", puzzle: "圖片拼圖", breakout: "打磚塊", klotski: "華容道", maze: "走迷宮", snake: "貪食蛇", "merge-2048": "數字合成", platformer: "平台跳躍", "space-shooter": "太空射擊", "polyomino-fit": "多格拼塊", "block-place": "方塊填陣", "region-logic": "區域邏輯", "mahjong-roguelite": "肉鴿麻將", generated: "AI 實驗玩法" },
-  en: { "signal-hunt": "Original Game", tetris: "Block Stacker", puzzle: "Image Puzzle", breakout: "Breakout", klotski: "Sliding Blocks", maze: "Maze", snake: "Snake", "merge-2048": "Number Merge", platformer: "Platformer", "space-shooter": "Space Shooter", "polyomino-fit": "Polyomino Fit", "block-place": "Block Placement", "region-logic": "Region Logic", "mahjong-roguelite": "Mahjong Roguelite", generated: "AI Experimental" },
-  ja: { "signal-hunt": "オリジナル", tetris: "ブロック落とし", puzzle: "画像パズル", breakout: "ブロック崩し", klotski: "華容道", maze: "迷路", snake: "スネーク", "merge-2048": "数字合成", platformer: "プラットフォーマー", "space-shooter": "宇宙シューティング", "polyomino-fit": "ポリオミノ", "block-place": "ブロック配置", "region-logic": "領域ロジック", "mahjong-roguelite": "ローグライク麻雀", generated: "AI実験プレイ" },
+  "zh-TW": { "signal-hunt": "原創玩法", tetris: "俄羅斯方塊", puzzle: "圖片拼圖", breakout: "打磚塊", klotski: "華容道", maze: "走迷宮", snake: "貪食蛇", "merge-2048": "數字合成", "space-shooter": "太空射擊", "polyomino-fit": "多格拼塊", "block-place": "方塊填陣", "region-logic": "區域邏輯", "mahjong-roguelite": "肉鴿麻將", generated: "AI 實驗玩法" },
+  en: { "signal-hunt": "Original Game", tetris: "Block Stacker", puzzle: "Image Puzzle", breakout: "Breakout", klotski: "Sliding Blocks", maze: "Maze", snake: "Snake", "merge-2048": "Number Merge", "space-shooter": "Space Shooter", "polyomino-fit": "Polyomino Fit", "block-place": "Block Placement", "region-logic": "Region Logic", "mahjong-roguelite": "Mahjong Roguelite", generated: "AI Experimental" },
+  ja: { "signal-hunt": "オリジナル", tetris: "ブロック落とし", puzzle: "画像パズル", breakout: "ブロック崩し", klotski: "華容道", maze: "迷路", snake: "スネーク", "merge-2048": "数字合成", "space-shooter": "宇宙シューティング", "polyomino-fit": "ポリオミノ", "block-place": "ブロック配置", "region-logic": "領域ロジック", "mahjong-roguelite": "ローグライク麻雀", generated: "AI実験プレイ" },
 };
 
 const zhCN = {

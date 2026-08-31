@@ -43,6 +43,7 @@ test("黄金游戏会写入数据库并产生稳定网址与版本网址", async
     assert.equal(project.version.artReviewStatus, "passed");
     assert.match(project.publication?.stableUrl ?? "", /\/play\/star-dream-duel\/$/);
     assert.match(project.publication?.versionUrl ?? "", /\/version\/.+\/$/);
+    assert.match(project.coverUrl ?? "", /\/play\/star-dream-duel\/icons\/app-icon-512\.png$/);
     assert.equal(project.publication?.versionId, project.version.id);
     assert.equal(project.publication?.versionNumber, project.version.number);
   } finally {

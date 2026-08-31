@@ -270,11 +270,14 @@ function snakeDangerNearHead() {
 
 function drawGardenBoard(layout) {
   const { originX, originY, boardWidth, boardHeight, cell } = layout;
-  drawPlayfield(originX - 12, originY - 12, boardWidth + 24, boardHeight + 24, { radius: 32, alpha: .98, fill: "rgba(250,255,252,.98)", stroke: "rgba(38,106,83,.78)", lineWidth: 5 });
+  drawPlayfield(originX - 12, originY - 12, boardWidth + 24, boardHeight + 24, { radius: 32, alpha: .99, fill: "rgba(237,248,240,.99)", stroke: "rgba(27,91,70,.9)", lineWidth: 6 });
   ctx.save(); ctx.beginPath(); ctx.roundRect(originX, originY, boardWidth, boardHeight, 24); ctx.clip();
-  ctx.strokeStyle = "rgba(70,118,101,.1)"; ctx.lineWidth = 1.2;
-  for (let index = 0; index <= gridColumns; index += 2) { ctx.beginPath(); ctx.moveTo(originX + index * cell, originY); ctx.lineTo(originX + index * cell, originY + boardHeight); ctx.stroke(); }
-  for (let index = 0; index <= gridRows; index += 2) { ctx.beginPath(); ctx.moveTo(originX, originY + index * cell); ctx.lineTo(originX + boardWidth, originY + index * cell); ctx.stroke(); }
+  for (let row = 0; row < gridRows; row += 1) for (let column = 0; column < gridColumns; column += 1) {
+    if ((row + column) % 2 === 0) { ctx.fillStyle = "rgba(74,132,104,.055)"; ctx.fillRect(originX + column * cell, originY + row * cell, cell, cell); }
+  }
+  ctx.strokeStyle = "rgba(45,104,82,.2)"; ctx.lineWidth = 1.35;
+  for (let index = 0; index <= gridColumns; index += 1) { ctx.beginPath(); ctx.moveTo(originX + index * cell, originY); ctx.lineTo(originX + index * cell, originY + boardHeight); ctx.stroke(); }
+  for (let index = 0; index <= gridRows; index += 1) { ctx.beginPath(); ctx.moveTo(originX, originY + index * cell); ctx.lineTo(originX + boardWidth, originY + index * cell); ctx.stroke(); }
   ctx.restore();
 }
 
@@ -312,11 +315,11 @@ function drawCachedSnakeSprite(index, x, y, width, height, options = {}) {
 function rebuildSnakeStaticLayer() {
   clearCanvas(); ctx.save(); ctx.translate(0, gameSceneTop());
   const layout = snakeLayout(); const { originX, originY, cell } = layout; drawGardenBoard(layout);
-  snakeObstacles.forEach((obstacle) => { const size = cell * 1.28; drawBitmapImage(stageCImages[5], originX + (obstacle.x + .5) * cell - size / 2, originY + (obstacle.y + .5) * cell - size / 2, size, size, { fallback: palette.accent, alpha: .94 }); });
+  snakeObstacles.forEach((obstacle) => { const size = cell * 1.46; drawBitmapImage(stageCImages[5], originX + (obstacle.x + .5) * cell - size / 2, originY + (obstacle.y + .5) * cell - size / 2, size, size, { fallback: palette.accent, alpha: 1 }); });
   const x = originX + (food.x + .5) * cell; const y = originY + (food.y + .5) * cell; const golden = food.kind === "golden";
   const glow = ctx.createRadialGradient(x, y, cell * .15, x, y, cell * (golden ? 1.15 : .78)); glow.addColorStop(0, golden ? "rgba(255,235,121,.78)" : "rgba(255,103,78,.32)"); glow.addColorStop(1, "rgba(255,255,255,0)");
   ctx.fillStyle = glow; ctx.beginPath(); ctx.arc(x, y, cell * (golden ? 1.15 : .78), 0, Math.PI * 2); ctx.fill();
-  const size = cell * (golden ? 2.08 : 1.82); drawBitmapImage(stageCImages[4], x - size / 2, y - size / 2, size, size, { fallback: palette.primary, padding: 8 });
+  const size = cell * (golden ? 2.16 : 1.94); drawBitmapImage(stageCImages[4], x - size / 2, y - size / 2, size, size, { fallback: palette.primary, padding: 2 });
   if (golden) { ctx.strokeStyle = "rgba(212,157,35,.9)"; ctx.lineWidth = Math.max(3, cell * .11); ctx.beginPath(); ctx.arc(x, y, cell * .82, 0, Math.PI * 2); ctx.stroke(); }
   ctx.restore(); finishCanvasStyle(); snakeStaticContext.clearRect(0, 0, snakeStaticLayer.width, snakeStaticLayer.height); snakeStaticContext.drawImage(canvas, 0, 0); snakeStaticDirty = false; snakeStaticRebuilds += 1;
 }
@@ -327,12 +330,14 @@ function drawSnake(timestamp = performance.now()) {
   if (snakeStaticDirty) rebuildSnakeStaticLayer();
   ctx.clearRect(0, 0, canvas.width, canvas.height); ctx.drawImage(snakeStaticLayer, 0, 0); ctx.save(); ctx.translate(0, gameSceneTop());
   const layout = snakeLayout(); const { originX, originY, boardHeight, cell } = layout; const parts = renderedSnakeParts(timestamp);
-  ctx.strokeStyle = "rgba(42,142,102,.96)"; ctx.lineWidth = cell * .58; ctx.lineCap = "round"; ctx.lineJoin = "round"; ctx.beginPath();
+  ctx.strokeStyle = "rgba(20,72,54,.42)"; ctx.lineWidth = cell * .78; ctx.lineCap = "round"; ctx.lineJoin = "round"; ctx.beginPath();
+  parts.forEach((part, index) => { const x = originX + (part.x + .5) * cell; const y = originY + (part.y + .5) * cell; if (!index) ctx.moveTo(x,y); else ctx.lineTo(x,y); }); ctx.stroke();
+  ctx.strokeStyle = "rgba(38,154,108,.98)"; ctx.lineWidth = cell * .56; ctx.beginPath();
   parts.forEach((part, index) => { const x = originX + (part.x + .5) * cell; const y = originY + (part.y + .5) * cell; if (!index) ctx.moveTo(x,y); else ctx.lineTo(x,y); }); ctx.stroke();
   parts.slice().reverse().forEach((part, reverseIndex) => {
     const index = parts.length - 1 - reverseIndex; const look = snakeBodySprite(index); const head = index === 0; const tail = index === snake.length - 1;
-    const scale = (head ? 2 : tail ? 1.58 : 1.5) * look.scale * (timestamp < turnPulseUntil && head ? 1.09 : 1) * (timestamp < growthPulseUntil && index < 2 ? 1.08 : 1); const size = cell * scale;
-    drawCachedSnakeSprite(look.spriteIndex, originX + (part.x + .5) * cell - size / 2, originY + (part.y + .5) * cell - size / 2, size, size, { fallback: head ? palette.highlight : palette.primary, rotation: look.rotation, padding: head ? 6 : 4 });
+    const scale = (head ? 2.18 : tail ? 1.72 : 1.66) * look.scale * (timestamp < turnPulseUntil && head ? 1.09 : 1) * (timestamp < growthPulseUntil && index < 2 ? 1.08 : 1); const size = cell * scale;
+    drawCachedSnakeSprite(look.spriteIndex, originX + (part.x + .5) * cell - size / 2, originY + (part.y + .5) * cell - size / 2, size, size, { fallback: head ? palette.highlight : palette.primary, rotation: look.rotation, padding: head ? 3 : 2 });
   });
   if (snakeDangerNearHead() || collisionMarker) { const marker = collisionMarker || snake[0]; const size = cell * 2.35; drawBitmapImage(stageCImages[7], originX + (marker.x + .5) * cell - size / 2, originY + (marker.y + .5) * cell - size / 2, size, size, { fallback: palette.primary, alpha: collisionMarker ? .94 : .48 }); }
   if (snakeEffect && timestamp < snakeEffect.until) { const size = cell * 2.8; drawBitmapImage(stageCImages[6], originX + (snakeEffect.x + .5) * cell - size / 2, originY + (snakeEffect.y + .5) * cell - size / 2, size, size, { fallback: palette.highlight, alpha: Math.max(0, (snakeEffect.until - timestamp) / 420) }); }

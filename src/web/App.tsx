@@ -89,7 +89,6 @@ const templateOptions: Array<{
   { id: "maze", name: "走迷宫", hint: "每局生成新地图", sample: "做一个苔石庭院迷宫，每局自动生成路线，从左上走到右下的金色灯火。" },
   { id: "snake", name: "贪吃蛇", hint: "收集与成长", sample: "做一个青玉花园贪吃蛇，收集 12 枚朱果获胜，支持键盘和触控。" },
   { id: "merge-2048", name: "数字合成", hint: "滑动、规划与合并", sample: "做一个时尚编辑风格的 2048 数字合成游戏，标准难度目标为 1024，支持滑动、键盘和触控方向键。", source: "2048 · MIT" },
-  { id: "platformer", name: "平台跳跃", hint: "移动、跳跃与落点", sample: "做一个浮岛平台跳跃游戏，收集能量后抵达高处信标，需要键盘和触控都能同时移动与跳跃。", source: "Phaser · MIT" },
   { id: "space-shooter", name: "太空射击", hint: "规避、火力与波次", sample: "做一个俯视太空射击游戏，飞船自动开火，玩家左右规避敌机并完成目标击破数。", source: "Radius Raid · MIT" },
   { id: "polyomino-fit", name: "多格拼块", hint: "旋转、吸附与填形", sample: "做一个软萌软糖岛屿拼块游戏，旋转并安放不同拼块，完整填满目标轮廓。", source: "mkgame-poly · MIT" },
   { id: "block-place", name: "方块填阵", hint: "三选拼块与横竖消行", sample: "做一个果冻材质的方块填阵游戏，从三块中选择并放进 8×8 棋盘，通过横竖消行达到目标分数。", source: "mkgame-blocks · MIT" },
@@ -99,19 +98,16 @@ const templateOptions: Array<{
 
 const translatedSamples: Partial<Record<ResolvedLocale, Partial<Record<GameTemplate, string>>>> = {
   "zh-TW": {
-    platformer: "製作一個浮島平台跳躍遊戲，收集能量後抵達高處信標，需要鍵盤和觸控都能同時移動與跳躍。",
     "space-shooter": "製作一個俯視太空射擊遊戲，飛船自動開火，玩家左右閃避敵機並完成目標擊破數。",
     puzzle: "製作一個植物標本室風格的經典拼圖，玩家可以上傳橫圖、直圖或方圖，拖動拼塊完成後播放慶祝聲。",
     "merge-2048": "製作一個時尚編輯風格的 2048 數字合成遊戲，標準難度目標為 1024，支援滑動、鍵盤和觸控方向鍵。",
   },
   en: {
-    platformer: "Create a floating-island platformer where the player collects energy and reaches a high beacon, with simultaneous keyboard and touch movement and jumping.",
     "space-shooter": "Create a top-down space shooter with automatic fire, left-right dodging, and a clear enemy defeat target.",
     puzzle: "Create a botanical specimen-room jigsaw puzzle that accepts landscape, portrait, or square images and celebrates when every piece is placed.",
     "merge-2048": "Create a fashion-editorial 2048 game targeting 1024 on standard difficulty, with swipe, keyboard, and touch direction controls.",
   },
   ja: {
-    platformer: "浮島でエネルギーを集め、高い場所のビーコンを目指すプラットフォームゲーム。キーボードとタッチで移動とジャンプを同時操作できる。",
     "space-shooter": "自動射撃する宇宙船を左右に動かして敵機を避け、目標数を撃破する見下ろし型シューティングゲーム。",
     puzzle: "横長・縦長・正方形の画像を使える植物標本室風のジグソーパズル。完成時に祝福音を再生する。",
     "merge-2048": "標準難易度の目標を1024にしたファッション誌風の2048。スワイプ、キーボード、タッチ方向キーに対応する。",
@@ -119,7 +115,7 @@ const translatedSamples: Partial<Record<ResolvedLocale, Partial<Record<GameTempl
 };
 
 const aspectRatios: GameAspectRatio[] = ["16:9", "4:3", "1:1", "9:16"];
-const ratioSensitiveTemplates = new Set<GameTemplate>(["signal-hunt", "platformer", "space-shooter", "puzzle"]);
+const ratioSensitiveTemplates = new Set<GameTemplate>(["signal-hunt", "space-shooter", "puzzle"]);
 
 function closestAspectRatio(width: number, height: number): GameAspectRatio {
   const value = width / Math.max(1, height);
@@ -185,7 +181,7 @@ function CreatePanel({ onCreated }: { onCreated: (project: ProjectDetail) => voi
   const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
 
-  const resolvedTemplate = template === "auto" ? inferGameTemplate({ idea, template: "auto" }) : template;
+  const resolvedTemplate = template === "auto" ? inferGameTemplate({ idea, template: "auto", dimensions: dimension ?? "auto" }) : template;
   const isPuzzle = resolvedTemplate === "puzzle";
   const recommendedRatio = recommendedAspectRatio(resolvedTemplate, dimension);
   const shouldAskAspectRatio = idea.trim().length > 0 && (dimension === "3d" || ratioSensitiveTemplates.has(resolvedTemplate));

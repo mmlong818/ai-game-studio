@@ -8,7 +8,6 @@ const showcases = [
   { title: "苔径迷庭", template: "maze", artStyle: "garden", visualStyle: "calm", idea: "做一个苔石庭院迷宫，每局自动生成路线，从左上走到右下的金色灯火。" },
   { title: "青玉长游", template: "snake", artStyle: "jade", visualStyle: "cute", idea: "做一个青玉花园贪吃蛇，收集 12 枚朱果获胜，支持键盘和触控。" },
   { title: "数织矩阵", template: "merge-2048", artStyle: "geometric", visualStyle: "fashion", idea: "做一个时尚编辑风格的 2048 数字合成游戏，标准难度目标为 1024，支持滑动、键盘和触控方向键。" },
-  { title: "云脊跃迁", template: "platformer", artStyle: "garden", visualStyle: "calm", idea: "做一个浮岛平台跳跃游戏，收集能量后抵达高处信标，需要键盘和触控都能同时移动与跳跃。" },
   { title: "星环突围", template: "space-shooter", artStyle: "lacquer", visualStyle: "color-block", idea: "做一个俯视太空射击游戏，飞船自动开火，玩家左右规避敌机并完成目标击破数。" },
   { title: "软糖拼岛", template: "polyomino-fit", artStyle: "botanical", visualStyle: "cute", idea: "做一个软萌软糖岛屿拼块游戏，旋转并安放不同拼块，完整填满目标轮廓。" },
   { title: "果冻填阵", template: "block-place", artStyle: "geometric", visualStyle: "color-block", idea: "做一个果冻材质的方块填阵游戏，从三块中选择并放进 8×8 棋盘，通过横竖消行达到目标分数。" },
@@ -17,13 +16,19 @@ const showcases = [
 ];
 
 async function request(path, init) {
-  const response = await fetch(`${origin}${path}`, {
-    ...init,
-    headers: { "Content-Type": "application/json", ...init?.headers },
-  });
-  const payload = await response.json();
-  if (!response.ok) throw new Error(payload.error ?? `请求失败：${response.status}`);
-  return payload;
+  for (let attempt = 0; attempt < 31; attempt += 1) {
+    const response = await fetch(`${origin}${path}`, {
+      ...init,
+      headers: { "Content-Type": "application/json", ...init?.headers },
+    });
+    const payload = await response.json();
+    if (response.ok) return payload;
+    if (response.status !== 429 || attempt === 30) {
+      throw new Error(payload.error ?? `请求失败：${response.status}`);
+    }
+    await new Promise((resolve) => setTimeout(resolve, 2_000));
+  }
+  throw new Error("请求重试次数已用完。");
 }
 
 async function waitForBuild(projectId) {
@@ -32,7 +37,7 @@ async function waitForBuild(projectId) {
     const { build } = await request(`/api/projects/${projectId}/build`);
     if (build?.status === "succeeded") return build;
     if (build?.status === "failed") throw new Error(`${projectId} 构建失败：${build.error}`);
-    await new Promise((resolve) => setTimeout(resolve, 200));
+    await new Promise((resolve) => setTimeout(resolve, 750));
   }
   throw new Error(`${projectId} 构建超时。`);
 }
@@ -53,11 +58,14 @@ for (const showcase of showcases) {
     ({ project } = await request(`/api/projects/${project.id}`));
     console.log(`已构建：${showcase.title}`);
   }
-  if (project.status === "playable") {
-    ({ project } = await request(`/api/projects/${project.id}/publish`, { method: "POST" }));
-    console.log(`已发布：${showcase.title} ${project.publication.stableUrl}`);
-  } else if (project.status === "published") {
+  const currentVersionPublished = project.publication?.versionId === project.version.id;
+  if (project.version.artReviewStatus === "passed" && !currentVersionPublished) {
+    ({ project } = await request(`/api/projects/${project.id}/publish/${project.version.id}`, { method: "POST" }));
+    console.log(`已发布新版：${showcase.title} v${project.version.number} ${project.publication.stableUrl}`);
+  } else if (project.status === "published" && currentVersionPublished) {
     console.log(`已存在：${showcase.title} ${project.publication.stableUrl}`);
+  } else {
+    console.log(`等待主美复核：${showcase.title}（${project.version.artReviewStatus}）`);
   }
 }
 

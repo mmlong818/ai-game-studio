@@ -51,7 +51,7 @@ test("未指定类型的 2D 描述进入 Web 2D 运行时", () => {
   assert.equal(spec.perspective, "top-down");
 });
 
-test("十三类常见小游戏都能从一句中文描述进入正确生成器", () => {
+test("十二类常见小游戏都能从一句中文描述进入正确生成器", () => {
   const cases: Array<[GameTemplate, string]> = [
     ["tetris", "做一个构成主义俄罗斯方块，完成十条消行后获胜并可以重新开始。"],
     ["puzzle", "做一个植物标本图片拼图，玩家可以上传自己的照片并完成还原。"],
@@ -60,7 +60,6 @@ test("十三类常见小游戏都能从一句中文描述进入正确生成器",
     ["maze", "做一个每局自动生成路线的苔石迷宫，从左上走到右下出口。"],
     ["snake", "做一个青玉花园贪吃蛇，收集十二枚朱果之后完成挑战。"],
     ["merge-2048", "做一个数字合成 2048 游戏，滑动方块并合并到目标数字。"],
-    ["platformer", "做一个横版平台跳跃游戏，收集能量并跳到终点信标。"],
     ["space-shooter", "做一个太空射击游戏，驾驶飞船清除三轮敌机。"],
     ["polyomino-fit", "做一个软糖岛多格拼块游戏，旋转拼块并完整填满目标轮廓。"],
     ["block-place", "做一个果冻方块填阵游戏，从三块中选择并通过横竖消行得分。"],
@@ -86,7 +85,6 @@ test("所有内置玩法采用二十关、每四关一档的渐进难度合同",
     "maze",
     "snake",
     "merge-2048",
-    "platformer",
     "space-shooter",
     "polyomino-fit",
     "block-place",
@@ -189,24 +187,26 @@ test("拼图难度控制默认块数、吸附范围和底图提示，玩家选�
 });
 
 test("玩法合同默认采用手机竖屏比例，并允许创作者明确覆盖", () => {
-  const platformer = generateGameSpec({ idea: "做一个横版平台跳跃游戏，收集能量并抵达远端信标。", template: "platformer" });
   const shooter = generateGameSpec({ idea: "做一个竖屏太空射击游戏，躲避敌机并完成目标击破数。", template: "space-shooter" });
   const puzzle = generateGameSpec({ idea: "做一个拖拽图片拼图，完成全部拼块后播放庆祝声。", template: "puzzle", aspectRatio: "4:3" });
   const invalid = projectInputSchema.safeParse({ idea: "做一个横版平台跳跃游戏，收集能量并抵达远端信标。", aspectRatio: "3:2" });
 
-  assert.equal(platformer.aspectRatio, "9:16");
   assert.equal(shooter.aspectRatio, "9:16");
   assert.equal(puzzle.aspectRatio, "4:3");
-  assert.equal(platformer.presentationVersion, 5);
-  assert.equal(platformer.cameraMode, "follow-player");
-  assert.deepEqual(platformer.inputModes, ["keyboard", "touch-buttons"]);
+  assert.equal(shooter.presentationVersion, 5);
   assert.equal(shooter.cameraMode, "scrolling");
   assert.deepEqual(shooter.inputModes, ["drag", "keyboard", "touch-buttons"]);
-  const { presentationVersion: _presentationVersion, ...legacySpec } = platformer;
+  const { presentationVersion: _presentationVersion, ...legacySpec } = shooter;
   assert.equal(gameSpecSchema.parse(legacySpec).presentationVersion, 1);
-  assert.ok(platformer.acceptanceCriteria.some((criterion) => criterion.id === "AC-ASPECT"));
-  assert.ok(platformer.acceptanceCriteria.some((criterion) => criterion.id === "AC-FOCAL"));
-  assert.ok(platformer.acceptanceCriteria.some((criterion) => criterion.id === "AC-CAMERA"));
-  assert.ok(platformer.acceptanceCriteria.some((criterion) => criterion.id === "AC-STATE"));
+  assert.ok(shooter.acceptanceCriteria.some((criterion) => criterion.id === "AC-ASPECT"));
+  assert.ok(shooter.acceptanceCriteria.some((criterion) => criterion.id === "AC-FOCAL"));
+  assert.ok(shooter.acceptanceCriteria.some((criterion) => criterion.id === "AC-CAMERA"));
+  assert.ok(shooter.acceptanceCriteria.some((criterion) => criterion.id === "AC-STATE"));
   assert.equal(invalid.success, false);
+});
+
+test("平台跳跃不再作为成熟模板提供", () => {
+  const idea = "做一个横版平台跳跃游戏，收集能量并抵达远端信标。";
+  assert.equal(projectInputSchema.safeParse({ idea, template: "platformer" }).success, false);
+  assert.equal(generateGameSpec({ idea }).template, "generated");
 });

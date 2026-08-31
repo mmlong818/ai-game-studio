@@ -339,7 +339,7 @@ function drawSimpleBrick(brick) {
     fallback: color,
     radius,
     fit: "cover",
-    alpha: .16,
+    alpha: .42,
   });
   const sheen = ctx.createLinearGradient(brick.x, brick.y, brick.x, brick.y + brick.height);
   sheen.addColorStop(0, "rgba(255,255,255,.38)");
@@ -348,6 +348,10 @@ function drawSimpleBrick(brick) {
   ctx.fillStyle = sheen;
   ctx.beginPath();
   ctx.roundRect(brick.x + 1, brick.y + 1, brick.width - 2, brick.height - 2, radius - 1);
+  ctx.fill();
+  ctx.fillStyle = "rgba(255,255,255,.18)";
+  ctx.beginPath();
+  ctx.roundRect(brick.x + 8, brick.y + 7, Math.max(12, brick.width - 16), Math.max(7, brick.height * .2), 5);
   ctx.fill();
   ctx.strokeStyle = damage ? "rgba(255,235,190,.92)" : "rgba(223,246,255,.52)";
   ctx.lineWidth = damage ? 2.5 : 1.5;
@@ -414,7 +418,7 @@ function drawBreakout() {
   const layout = breakoutLayout();
   ctx.save();
   ctx.translate(0, gameSceneTop());
-  drawPlayfield(42, layout.top, 636, layout.bottom - layout.top, { radius: 28, alpha: .7, fill: "rgba(7,20,49,.66)", stroke: "rgba(176,232,255,.3)" });
+  drawPlayfield(42, layout.top, 636, layout.bottom - layout.top, { radius: 28, alpha: .82, fill: "rgba(7,20,49,.76)", stroke: "rgba(176,232,255,.46)" });
   drawStageHud(layout);
   drawBombStatus(layout);
   bricks.forEach((brick) => {
@@ -425,7 +429,7 @@ function drawBreakout() {
   drawBrickFragments();
   drawBitmapSprite(4, paddle.x, paddle.y - 10, paddle.width, paddle.height + 20, { fallback: palette.highlight, radius: 14, padding: 8, scale: 1.12 });
   drawBitmapSprite(5, ball.x - ball.radius - 4, ball.y - ball.radius - 4, (ball.radius + 4) * 2, (ball.radius + 4) * 2, { fallback: palette.primary, circle: true, padding: 5, scale: 1.15 });
-  ctx.strokeStyle = palette.textSoft;
+  ctx.strokeStyle = "rgba(235,253,255,.9)";
   ctx.lineWidth = 7;
   ctx.beginPath(); ctx.arc(ball.x, ball.y, ball.radius + 6, 0, Math.PI * 2); ctx.stroke();
   ctx.restore();

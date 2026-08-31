@@ -18,7 +18,6 @@ const examples: Array<[GameTemplate, VisualStyle, string, string]> = [
   ["maze", "calm", "苔径迷庭", "做一个每局自动生成路线的苔石迷宫，从左上走到右下出口。"],
   ["snake", "cute", "青玉长游", "做一个青玉花园贪吃蛇，收集十二枚朱果之后完成挑战。"],
   ["merge-2048", "fashion", "数织矩阵", "做一个时尚数字合成游戏，合并出目标数字后获胜。"],
-  ["platformer", "calm", "云脊跃迁", "做一个浮岛平台跳跃游戏，收集能量后抵达终点信标。"],
   ["space-shooter", "color-block", "星环突围", "做一个太空射击游戏，规避敌机并完成目标击破数。"],
   ["polyomino-fit", "cute", "软糖拼岛", "做一个软萌多格拼块游戏，旋转拼块并完整填满目标轮廓。"],
   ["block-place", "color-block", "果冻填阵", "做一个果冻方块填阵游戏，放置三组候选并完成横竖消行。"],
@@ -26,7 +25,7 @@ const examples: Array<[GameTemplate, VisualStyle, string, string]> = [
   ["mahjong-roguelite", "cute", "月港雀旅", "做一个肉鸽麻将接龙，配对自由牌清空层叠牌阵并选择遗物。"],
 ];
 
-test("十三类艺术化游戏都会产出可解析脚本、角色拆分位图、四轨声音和专业设计探针", async () => {
+test("十二类艺术化游戏都会产出可解析脚本、角色拆分位图、四轨声音和专业设计探针", async () => {
   const database = await openTestDatabase();
   const repository = new StudioRepository(database, "http://127.0.0.1:4312");
   const artifactRoot = mkdtempSync(join(tmpdir(), "studio-templates-"));
@@ -202,6 +201,12 @@ test("十三类艺术化游戏都会产出可解析脚本、角色拆分位图�
       }
       if (template === "tetris") {
         const script = readFileSync(join(output, "app.js"), "utf8");
+        const html = readFileSync(join(output, "index.html"), "utf8");
+        const styles = readFileSync(join(output, "styles.css"), "utf8");
+        assert.match(html, /<span class="game-help-title">操作指南<\/span>/);
+        assert.match(html, /<kbd>Space<\/kbd>直接落下/);
+        assert.doesNotMatch(html, /<details class="game-help"><summary>任务与玩法<\/summary>/);
+        assert.match(styles, /body\[data-template=tetris\] \.game-help\{display:none!important\}/);
         assert.match(script, /\? 50 : 29/);
         assert.match(script, /y: 0, color: shapeIndex \+ 1/);
         assert.match(script, /const shape = shapes\[shapeIndex\]/);
@@ -301,20 +306,6 @@ test("十三类艺术化游戏都会产出可解析脚本、角色拆分位图�
         assert.match(script, /ctx\.roundRect\(layout\.originX/);
         assert.match(styles, /body\[data-template=merge-2048\]\[data-game-state=playing\] \[data-control=up\]/);
         assert.doesNotMatch(script, /mergeFlashUntil/);
-      }
-      if (template === "platformer") {
-        const script = readFileSync(join(output, "app.js"), "utf8");
-        assert.match(script, /height: portraitPlatformer \? 1280 : 720/);
-        assert.match(script, /const platformerLevelBlueprints = \[/);
-        assert.match(script, /function buildPlatformerLevel\(levelNumber\)/);
-        assert.match(script, /"bounce","crumble","phase","wind","dash","key-gate","patrol"/);
-        assert.match(script, /function performDash\(\)/);
-        assert.match(script, /jumpBufferedUntil/);
-        assert.match(script, /variableHeight: true/);
-        assert.match(script, /simultaneous-hold-and-jump/);
-        assert.match(script, /platformCameraY/);
-        assert.match(script, /dead-zone-look-ahead/);
-        assert.match(script, /recoveryMs: 430/);
       }
       if (template === "space-shooter") {
         const script = readFileSync(join(output, "app.js"), "utf8");
@@ -436,7 +427,7 @@ test("十三类艺术化游戏都会产出可解析脚本、角色拆分位图�
         assert.equal(manifest.artPipeline?.tileBodySource, "canvas-single-layer");
         assert.equal(manifest.artPipeline?.spriteContent, "transparent-motif-only");
       }
-      if (["merge-2048", "platformer", "space-shooter", "polyomino-fit", "block-place", "region-logic", "mahjong-roguelite"].includes(template)) {
+      if (["merge-2048", "space-shooter", "polyomino-fit", "block-place", "region-logic", "mahjong-roguelite"].includes(template)) {
         const source = project.spec.templateSource;
         assert.equal(source?.license, "MIT");
         assert.match(readFileSync(join(output, "index.html"), "utf8"), /OPEN-SOURCE TEMPLATE/);

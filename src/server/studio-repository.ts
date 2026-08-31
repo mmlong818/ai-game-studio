@@ -178,8 +178,8 @@ function toSummary(row: ProjectRow, gameOrigin: string): ProjectSummary {
     inputModes: spec?.inputModes ?? ["keyboard", "touch"],
     status: row.status,
     fixtureKind: row.fixture_kind,
-    coverUrl: row.publication_status && row.stable_path && !row.fixture_kind
-      ? `${origin}${row.stable_path}assets/cover.png`
+    coverUrl: row.publication_status && row.stable_path
+      ? `${origin}${row.stable_path}${row.fixture_kind === "star-dream-duel" ? "icons/app-icon-512.png" : "assets/cover.png"}`
       : null,
     createdAt: iso(row.created_at),
     archivedAt: iso(row.archived_at),

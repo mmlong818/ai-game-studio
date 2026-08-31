@@ -358,7 +358,7 @@ function drawTileNumber(value, x, y, size, alpha = 1) {
   ctx.strokeStyle = "rgba(255,252,242,.94)";
   ctx.lineWidth = Math.max(4, size * .045);
   ctx.strokeText(String(value), x + size / 2, y + size / 2 + 2);
-  ctx.fillStyle = value >= 256 ? "#171a1f" : "#2b2825";
+  ctx.fillStyle = value >= 256 ? "#fffaf0" : "#28231f";
   ctx.fillText(String(value), x + size / 2, y + size / 2 + 2);
   ctx.restore();
 }
@@ -370,7 +370,21 @@ function drawMergeTile(value, x, y, size, options = {}) {
   const actual = size * scale;
   const dx = x + (size - actual) / 2;
   const dy = y + (size - actual) / 2;
-  drawBitmapSprite(sprite, dx, dy, actual, actual, { fallback: tileColor(value), radius: 22, padding: 0, scale: 1.08, alpha: options.alpha ?? (value ? 1 : .38) });
+  const alpha = options.alpha ?? 1;
+  ctx.save();
+  ctx.globalAlpha = alpha;
+  ctx.fillStyle = value ? tileColor(value) : "rgba(22,36,43,.94)";
+  ctx.strokeStyle = value ? "rgba(255,255,255,.7)" : "rgba(152,190,196,.28)";
+  ctx.lineWidth = value ? 3 : 2;
+  ctx.shadowColor = value ? "rgba(2,9,13,.48)" : "transparent";
+  ctx.shadowBlur = value ? 14 : 0;
+  ctx.shadowOffsetY = value ? 6 : 0;
+  ctx.beginPath(); ctx.roundRect(dx, dy, actual, actual, 22); ctx.fill(); ctx.stroke();
+  ctx.shadowColor = "transparent";
+  ctx.fillStyle = value ? "rgba(255,255,255,.16)" : "rgba(255,255,255,.035)";
+  ctx.beginPath(); ctx.roundRect(dx + 7, dy + 7, actual - 14, Math.max(12, actual * .24), 14); ctx.fill();
+  ctx.restore();
+  drawBitmapSprite(sprite, dx + 3, dy + 3, actual - 6, actual - 6, { fallback: tileColor(value), radius: 19, padding: 0, scale: 1.08, alpha: alpha * (value ? .72 : .2) });
   if (value) drawTileNumber(value, dx, dy, actual, options.alpha ?? 1);
 }
 
@@ -439,7 +453,7 @@ function drawMergeBoard() {
   ctx.translate(boardOffsetX, 0);
   ctx.beginPath();
   ctx.roundRect(layout.originX, layout.originY, layout.frameSize, layout.frameSize, 34);
-  ctx.fillStyle = "rgba(25,31,39,.64)";
+  ctx.fillStyle = "rgba(15,23,30,.94)";
   ctx.fill();
   ctx.strokeStyle = "rgba(255,252,241,.7)";
   ctx.lineWidth = 3;

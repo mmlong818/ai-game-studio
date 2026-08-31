@@ -33,9 +33,6 @@ const roleArtPlan: Partial<Record<GameTemplate, RoleArtSpec[]>> = {
   maze: [
     { file: "assets/sprites/sprite-04.png", role: "出口目标", hint: "迷宫终点的目标物,单个主体、发光醒目、值得奔赴" },
   ],
-  platformer: [
-    { file: "assets/sprites/sprite-05.png", role: "收集能量", hint: "平台跳跃中要收集的能量物,单个主体、悬浮发光" },
-  ],
 };
 
 export function roleArtPlanFor(template: GameTemplate): RoleArtSpec[] {

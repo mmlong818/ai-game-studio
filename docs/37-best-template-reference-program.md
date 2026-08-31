@@ -26,18 +26,17 @@
 | 1 | 折光堆叠 | `tetris` | 已完成第一轮，见 `38-tetris-best-template-reference.md` | v41 已发布；继续累积真人长局证据 |
 | 2 | 漆海碎星 | `breakout` | 已完成第一轮，见 `39-breakout-best-template-reference.md` | v34 已发布；继续累积真人长局证据 |
 | 3 | 星环突围 | `space-shooter` | 已完成第一轮，见 `40-space-shooter-best-template-reference.md` | v19 已发布；同步清弹竞态、三波、机体、主动能力与 Boss 合同均已验收 |
-| 4 | 云脊跃迁 | `platformer` | 已完成第一轮，见 `41-platformer-best-template-reference.md` | v20 已发布；20 套独立蓝图、10 类机制、前视镜头、复合触控、冲刺与 430ms 检查点恢复均已验收 |
-| 5 | 数织矩阵 | `merge-2048` | 已完成并发布 v34，见 `42-merge-2048-best-template-reference.md` | 20 个独立任务、下一块预告、连续位移动画、直接滑动、回溯与新位图资产均已落实；稳定网址已指向 `aa382c32-fc8c-497a-8e7f-e57c6f26b4a1` |
-| 6 | 朱门华容 | `klotski` | 已完成并发布 v34，见 `43-klotski-best-template-reference.md` | 20 个求解器验证布局、8–120 步真实距离带、直接拖动、逐步提示、撤销/重做和路径回放均已落实；稳定网址已指向 `119aae67-cd04-4c68-8c5f-bbeb41b6a0b0` |
-| 7 | 青玉长游 | `snake` | 已完成并发布 v34，见 `44-snake-best-template-reference.md` | 20 个固定场型与五章、双转向缓冲、真实滑动、100 次可达食物、暂停恢复、金果与结算统计均已落实；稳定网址已指向 `da0a6b12-df3a-4791-a234-ccf04e4e7d7b` |
-| 8 | 苔径迷庭 | `maze` | 已完成并发布 v34，见 `45-maze-best-template-reference.md` | 20 个唯一可解关、五章机制、支路萤灯、雾/冰/星钥门/暮钟、有限提示、滑动与四键均已落实；稳定网址已指向 `860dc65f-4c62-4061-aafb-b0bdba3face5` |
-| 9 | 植光拼图 | `puzzle` | 已完成并发布 v35，见 `46-puzzle-best-template-reference.md` | 20 图、6–50 块、四区外围整理、真实指针拖动、缩放/预览/提示、邻接成组和真实上传图自适应均已验收；稳定网址已指向 `8e550150-c71f-46ef-a864-e6445dba4e5b` |
-| 10 | 果冻填阵 | `block-place` | 已完成研究合同，见 `47-block-place-best-template-reference.md` | 已发布 v22；20 个开局、五章、旅程/无尽/每日、无尽最佳、每日同日复现、100 批可连续放完验证、手指上方拖放、局内恢复与主美真检均通过 |
-| 11 | 软糖拼岛 | `polyomino-fit` | 已完成并发布 v18，见 `48-polyomino-fit-best-template-reference.md` | 20 个原创可解轮廓、五章 4–8 块递进、直接拖放、非法回弹、分层提示、恢复/撤销/重置和主美真检均通过 |
-| 12 | 星灵巡格 | `region-logic` | 已完成并发布 v19，见 `49-region-logic-best-template-reference.md` | 20 个原创唯一解关卡、一星到二星五章、8 套不同双星答案、无猜测推理轨迹、解释型提示、恢复/撤销/重做与手机/桌面真检均已通过；稳定网址已指向 `e6250710-cc9f-4aa8-a220-e2339f25f99a` |
-| 13 | 星梦对决 | 独立对战模板 | 已完成并发布 v9，见 `50-star-dream-duel-best-template-reference.md` | 六类棋子战术角色、四/五/LT 特殊构形、三技能、可解释两层 AI、20 个独立机制关、后期封印障碍、局内恢复与手机/桌面真检均已通过；稳定网址已指向 `e2542f9a-fa9e-41d7-a149-6be467228a62` |
-| 14 | 3D 收集闯关 | `generated-3d` | 已完成并发布 v9，见 `51-3d-collector-best-template-reference.md` | 20 个唯一空间蓝图、五章分层、真实走跳与高度碰撞、检查点复位、主线终点与可选星砂评价、动态危险、刷新续玩、手机/桌面真检均已通过；稳定网址已指向 `2418cbb4-23ed-445c-abc2-be9ac20c3f0b` |
-| 15 | 3D 小型竞技场 | `signal-hunt` | 已完成并发布 v8，见 `52-3d-arena-best-template-reference.md` | 20 个唯一竞技蓝图、五章、四类独立位图敌人、真实飞行弹体、目标锁定、受击血条、远程预警、两次波次强化三选一、强化常驻 HUD 与手机/桌面真检均已通过；稳定网址已指向 `879a78ee-4c43-4386-8a3f-dde794a785ba` |
+| 4 | 数织矩阵 | `merge-2048` | 已完成并发布 v34，见 `42-merge-2048-best-template-reference.md` | 20 个独立任务、下一块预告、连续位移动画、直接滑动、回溯与新位图资产均已落实；稳定网址已指向 `aa382c32-fc8c-497a-8e7f-e57c6f26b4a1` |
+| 5 | 朱门华容 | `klotski` | 已完成并发布 v34，见 `43-klotski-best-template-reference.md` | 20 个求解器验证布局、8–120 步真实距离带、直接拖动、逐步提示、撤销/重做和路径回放均已落实；稳定网址已指向 `119aae67-cd04-4c68-8c5f-bbeb41b6a0b0` |
+| 6 | 青玉长游 | `snake` | 已完成并发布 v34，见 `44-snake-best-template-reference.md` | 20 个固定场型与五章、双转向缓冲、真实滑动、100 次可达食物、暂停恢复、金果与结算统计均已落实；稳定网址已指向 `da0a6b12-df3a-4791-a234-ccf04e4e7d7b` |
+| 7 | 苔径迷庭 | `maze` | 已完成并发布 v34，见 `45-maze-best-template-reference.md` | 20 个唯一可解关、五章机制、支路萤灯、雾/冰/星钥门/暮钟、有限提示、滑动与四键均已落实；稳定网址已指向 `860dc65f-4c62-4061-aafb-b0bdba3face5` |
+| 8 | 植光拼图 | `puzzle` | 已完成并发布 v35，见 `46-puzzle-best-template-reference.md` | 20 图、6–50 块、四区外围整理、真实指针拖动、缩放/预览/提示、邻接成组和真实上传图自适应均已验收；稳定网址已指向 `8e550150-c71f-46ef-a864-e6445dba4e5b` |
+| 9 | 果冻填阵 | `block-place` | 已完成研究合同，见 `47-block-place-best-template-reference.md` | 已发布 v22；20 个开局、五章、旅程/无尽/每日、无尽最佳、每日同日复现、100 批可连续放完验证、手指上方拖放、局内恢复与主美真检均通过 |
+| 10 | 软糖拼岛 | `polyomino-fit` | 已完成并发布 v18，见 `48-polyomino-fit-best-template-reference.md` | 20 个原创可解轮廓、五章 4–8 块递进、直接拖放、非法回弹、分层提示、恢复/撤销/重置和主美真检均通过 |
+| 11 | 星灵巡格 | `region-logic` | 已完成并发布 v19，见 `49-region-logic-best-template-reference.md` | 20 个原创唯一解关卡、一星到二星五章、8 套不同双星答案、无猜测推理轨迹、解释型提示、恢复/撤销/重做与手机/桌面真检均已通过；稳定网址已指向 `e6250710-cc9f-4aa8-a220-e2339f25f99a` |
+| 12 | 星梦对决 | 独立对战模板 | 已完成并发布 v9，见 `50-star-dream-duel-best-template-reference.md` | 六类棋子战术角色、四/五/LT 特殊构形、三技能、可解释两层 AI、20 个独立机制关、后期封印障碍、局内恢复与手机/桌面真检均已通过；稳定网址已指向 `e2542f9a-fa9e-41d7-a149-6be467228a62` |
+| 13 | 3D 收集闯关 | `generated-3d` | 已完成并发布 v9，见 `51-3d-collector-best-template-reference.md` | 20 个唯一空间蓝图、五章分层、真实走跳与高度碰撞、检查点复位、主线终点与可选星砂评价、动态危险、刷新续玩、手机/桌面真检均已通过；稳定网址已指向 `2418cbb4-23ed-445c-abc2-be9ac20c3f0b` |
+| 14 | 3D 小型竞技场 | `signal-hunt` | 已完成并发布 v8，见 `52-3d-arena-best-template-reference.md` | 20 个唯一竞技蓝图、五章、四类独立位图敌人、真实飞行弹体、目标锁定、受击血条、远程预警、两次波次强化三选一、强化常驻 HUD 与手机/桌面真检均已通过；稳定网址已指向 `879a78ee-4c43-4386-8a3f-dde794a785ba` |
 
 “待专门研究”不是占位式授权：该行在完成可追溯研究文档前不得进入视觉模仿或机制重构。
 

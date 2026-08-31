@@ -70,10 +70,10 @@ const iKickTests = {
 };
 const blockColors = palette.pieces;
 const tetrisCellGeometry = Object.freeze({
-  inset: 3,
+  inset: 2,
   radiusRatio: .15,
-  textureScale: 1.34,
-  outlineWidth: 2,
+  textureScale: 1.46,
+  outlineWidth: 2.5,
   axisAlignedCells: true,
   protrusion: 0,
 });
@@ -354,10 +354,16 @@ function drawBlock(x, y, colorIndex, size, originX, originY, _edges, options = {
   const radius = Math.max(2, Math.round(blockSize * tetrisCellGeometry.radiusRatio));
   ctx.save();
   ctx.globalAlpha = alpha;
+  if (!options.ghost) {
+    ctx.shadowColor = "rgba(14,8,22,.46)";
+    ctx.shadowBlur = Math.max(4, size * .12);
+    ctx.shadowOffsetY = Math.max(2, size * .05);
+  }
   ctx.fillStyle = color;
   ctx.beginPath();
   ctx.roundRect(blockX, blockY, blockSize, blockSize, radius);
   ctx.fill();
+  ctx.shadowColor = "transparent";
   if (!options.ghost) {
     ctx.save();
     ctx.beginPath();
@@ -376,7 +382,7 @@ function drawBlock(x, y, colorIndex, size, originX, originY, _edges, options = {
     ctx.fillRect(blockX, blockY, blockSize, blockSize);
     ctx.restore();
   }
-  ctx.strokeStyle = options.ghost ? "rgba(103,77,93,.42)" : "rgba(255,255,255,.82)";
+  ctx.strokeStyle = options.ghost ? "rgba(255,202,222,.66)" : "rgba(255,255,255,.9)";
   ctx.lineWidth = options.ghost ? 3 : tetrisCellGeometry.outlineWidth;
   ctx.lineJoin = "round";
   ctx.beginPath();
@@ -453,15 +459,15 @@ function drawTetris() {
   }
   ctx.save();
   ctx.globalAlpha = .96;
-  ctx.fillStyle = "rgba(255,250,245,.9)";
-  ctx.strokeStyle = "rgba(247,137,128,.56)";
+  ctx.fillStyle = "rgba(29,25,38,.96)";
+  ctx.strokeStyle = "rgba(255,157,188,.72)";
   ctx.lineWidth = 3;
   ctx.beginPath();
   ctx.roundRect(originX - 14, originY - 14, columns * size + 28, rows * size + 28, 22);
   ctx.fill();
   ctx.stroke();
   ctx.restore();
-  ctx.strokeStyle = "rgba(99,73,88,.12)";
+  ctx.strokeStyle = "rgba(255,238,246,.12)";
   ctx.lineWidth = 1;
   for (let x = 0; x <= columns; x += 1) {
     ctx.beginPath(); ctx.moveTo(originX + x * size, originY); ctx.lineTo(originX + x * size, originY + rows * size); ctx.stroke();

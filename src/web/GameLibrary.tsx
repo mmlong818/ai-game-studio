@@ -28,9 +28,7 @@ function formatPublishedAt(value: string, locale: ResolvedLocale) {
 function GameArtwork({ game, featured }: { game: ProjectSummary; featured: boolean }) {
   const { t } = usePreferences();
   const [failed, setFailed] = useState(false);
-  const artworkUrl = game.fixtureKind === "star-dream-duel"
-    ? `${game.publication!.stableUrl}icons/app-icon-512.png`
-    : game.coverUrl ?? `/media/template-art/${game.template}/cover.png`;
+  const artworkUrl = game.coverUrl ?? `/media/template-art/${game.template}/cover.png`;
   return (
     <div className={`library-art ${game.fixtureKind ? "is-square-art" : ""}`}>
       {failed ? <div className="library-art-fallback" role="img" aria-label={t("library.coverUnavailable")}><Box size={30} aria-hidden="true" /><span>{game.title}</span><small>{t("library.coverUnavailable")}</small></div> : <img

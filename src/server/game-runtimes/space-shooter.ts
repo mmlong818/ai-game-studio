@@ -115,12 +115,12 @@ function shooterEnemyStats(kind) {
   const tier = currentCampaignLevel().tier;
   const speedScale = campaignScale("speedMultiplier");
   const stats = {
-    scout: { width: 48, height: 42, hp: 2 + Math.floor((tier - 1) / 3), speed: 112, score: 110, delay: 720 },
-    weaver: { width: 58, height: 46, hp: 3 + Math.floor(tier / 3), speed: 96, score: 150, delay: 640 },
-    charger: { width: 44, height: 56, hp: 3 + Math.floor(tier / 2), speed: 210, score: 180, delay: 820 },
-    turret: { width: 72, height: 58, hp: 6 + tier, speed: 58, score: 260, delay: 520 },
-    shield: { width: 62, height: 54, hp: 4 + tier, speed: 78, score: 230, delay: 610, shield: 1 + Math.floor(tier / 4) },
-    boss: { width: 156, height: 118, hp: 25 + tier * 9, speed: 44, score: 2500, delay: 380 },
+    scout: { width: 60, height: 52, hp: 2 + Math.floor((tier - 1) / 3), speed: 112, score: 110, delay: 720 },
+    weaver: { width: 68, height: 56, hp: 3 + Math.floor(tier / 3), speed: 96, score: 150, delay: 640 },
+    charger: { width: 56, height: 68, hp: 3 + Math.floor(tier / 2), speed: 210, score: 180, delay: 820 },
+    turret: { width: 82, height: 68, hp: 6 + tier, speed: 58, score: 260, delay: 520 },
+    shield: { width: 74, height: 66, hp: 4 + tier, speed: 78, score: 230, delay: 610, shield: 1 + Math.floor(tier / 4) },
+    boss: { width: 180, height: 136, hp: 25 + tier * 9, speed: 44, score: 2500, delay: 380 },
   }[kind] || { width: 48, height: 42, hp: 2, speed: 100, score: 100, delay: 720 };
   return { ...stats, speed: stats.speed * speedScale };
 }
@@ -473,6 +473,11 @@ function drawShooterWarning(enemy, timestamp) {
   ctx.save(); ctx.globalAlpha = pulse; ctx.strokeStyle = enemy.kind === "charger" || enemy.boss ? "#ff665c" : "#ffba62"; ctx.fillStyle = ctx.strokeStyle; ctx.lineWidth = enemy.boss ? 4 : 3;
   ctx.setLineDash([10, 9]); ctx.beginPath(); ctx.moveTo(center, 118); ctx.lineTo(center, enemy.kind === "charger" ? shooterSceneHeight() - 180 : 184); ctx.stroke(); ctx.setLineDash([]);
   ctx.beginPath(); ctx.moveTo(center, 118); ctx.lineTo(center - 14, 92); ctx.lineTo(center + 14, 92); ctx.closePath(); ctx.fill();
+  const ghostY = enemy.boss ? 184 : 148;
+  ctx.globalAlpha = pulse * .42;
+  ctx.beginPath(); ctx.arc(center, ghostY, Math.max(28, enemy.width * .58), 0, Math.PI * 2); ctx.fill();
+  ctx.globalAlpha = pulse * .72;
+  drawBitmapSprite(enemy.boss || enemy.kind === "turret" || enemy.kind === "charger" ? 2 : 1, center - enemy.width * .62, ghostY - enemy.height * .52, enemy.width * 1.24, enemy.height * 1.04, { fallback: ctx.fillStyle, alpha: pulse * .72 });
   if (enemy.boss) { ctx.font = "800 18px ui-monospace, Consolas, monospace"; ctx.textAlign = "center"; ctx.fillText("GUARDIAN INBOUND", 360, 146); }
   ctx.restore();
 }

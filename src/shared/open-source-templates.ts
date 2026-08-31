@@ -1,6 +1,5 @@
 export const sourceBackedTemplateIds = [
   "merge-2048",
-  "platformer",
   "space-shooter",
   "polyomino-fit",
   "block-place",
@@ -32,17 +31,6 @@ export const openSourceTemplateCatalog: Record<SourceBackedTemplateId, OpenSourc
     integrationMode: "code-port",
     importedElements: ["四向遍历顺序", "单次合并标记", "移动后生成新数字块", "无可用移动判定"],
     assetPolicy: "只移植玩法结构；画面、声音和界面由本平台独立制作。",
-    verifiedAt: "2026-08-26",
-  },
-  platformer: {
-    template: "platformer",
-    sourceName: "Phaser Examples",
-    sourceUrl: "https://github.com/phaserjs/examples",
-    license: "MIT",
-    licenseUrl: "https://github.com/phaserjs/examples#license",
-    integrationMode: "architecture-adaptation",
-    importedElements: ["场景循环拆分", "平台碰撞", "重力与落地跳跃", "收集物和终点状态"],
-    assetPolicy: "仅参考 MIT 源代码模式；上游明确排除的示例资产没有进入交付。",
     verifiedAt: "2026-08-26",
   },
   "space-shooter": {

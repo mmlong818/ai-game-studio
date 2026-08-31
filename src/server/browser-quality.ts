@@ -38,7 +38,7 @@ export type CampaignQualityResult = {
   finalState: string;
 };
 
-export type StageCRealtimeTemplate = "space-shooter" | "platformer" | "snake" | "breakout";
+export type StageCRealtimeTemplate = "space-shooter" | "snake" | "breakout";
 export type StageDClassicTemplate = "tetris" | "merge-2048" | "klotski" | "puzzle" | "block-place" | "polyomino-fit";
 export type StageETemplate = "region-logic" | "maze" | "mahjong-roguelite";
 
@@ -1143,72 +1143,6 @@ export async function inspectStageCRealtimeInBrowser(root: string, template: Sta
       evidence.touchReleased = !touchReleasedState.runtime.pointerCaptured;
       evidence.damagedLives = damagedState.runtime.lives;
       evidence.repairedLives = repairedState.runtime.lives;
-    }
-
-    if (template === "platformer") {
-      await stageCDebugAction(page, "restart");
-      await page.waitForTimeout(240);
-      const tierOne = await stageCDebugState(page);
-      if (tierOne.runtime.stageCount !== 4 || tierOne.runtime.stageLabels.length !== 4) throw new Error("平台关卡没有四个明确段落。 ");
-      if (tierOne.runtime.playerVisibleWidthRatio < 7 || tierOne.runtime.playerVisibleWidthRatio > 10) throw new Error(`角色显示宽度占比不在 7%–10%：${tierOne.runtime.playerVisibleWidthRatio}%。`);
-      if (tierOne.runtime.safeLandingCount < 1) throw new Error("9:16 开局没有安全落脚预览。 ");
-      if (tierOne.runtime.mechanicCatalog.length < 10 || tierOne.runtime.jumpModel.variableHeight !== true || tierOne.runtime.camera.mode !== "dead-zone-look-ahead") throw new Error("平台模板缺少完整机制、可变跳跃高度或前视镜头合同。 ");
-      if (tierOne.runtime.touchModel !== "simultaneous-hold-and-jump" || tierOne.runtime.recoveryMs > 550) throw new Error("手机复合输入或快速检查点恢复合同不成立。 ");
-      const names = new Set<string>();
-      const layouts = new Set<string>();
-      const mechanics = new Set<string>();
-      for (let level = 1; level <= 20; level += 1) {
-        await page.evaluate((targetLevel) => { const debug = (window as any).__GAME_DEBUG__; debug.setLevel(targetLevel); debug.restart(); }, level);
-        await page.waitForTimeout(35);
-        const state = await stageCDebugState(page);
-        names.add(state.runtime.blueprintName);
-        layouts.add(state.runtime.layoutSignature);
-        state.runtime.mechanics.forEach((mechanic: string) => mechanics.add(mechanic));
-      }
-      if (names.size !== 20 || layouts.size !== 20) throw new Error(`二十关没有形成独立名称与几何蓝图：${names.size} 名 / ${layouts.size} 形。`);
-      for (const mechanic of ["moving-h", "moving-v", "bounce", "crumble", "phase", "wind", "dash", "key-gate", "patrol"]) {
-        if (!mechanics.has(mechanic)) throw new Error(`二十关缺少可玩的 ${mechanic} 机制。`);
-      }
-      await page.evaluate(() => { const debug = (window as any).__GAME_DEBUG__; debug.setLevel(11); debug.restart(); });
-      await page.waitForTimeout(150);
-      const touchStart = await stageCDebugState(page);
-      await stageCDebugAction(page, "holdRightAndJump");
-      await page.waitForTimeout(120);
-      const touchState = await stageCDebugState(page);
-      if (touchState.runtime.player.x <= touchStart.runtime.player.x || touchState.runtime.player.vy >= 0) throw new Error("手机方向按住与跳跃没有同时生效。 ");
-      await stageCDebugAction(page, "grantDash");
-      await stageCDebugAction(page, "useDash");
-      const dashedState = await stageCDebugState(page);
-      if (dashedState.runtime.dashCharges !== 0 || Math.abs(dashedState.runtime.player.vx) < 400) throw new Error("空中再次跳跃没有释放冲刺。 ");
-      await stageCDebugAction(page, "restart");
-      await page.waitForTimeout(80);
-      const keyboardStart = await stageCDebugState(page);
-      await page.keyboard.down("ArrowRight");
-      await page.waitForTimeout(180);
-      await page.keyboard.up("ArrowRight");
-      await page.waitForTimeout(40);
-      const keyboardState = await stageCDebugState(page);
-      const touchDelta = touchState.runtime.player.x - touchStart.runtime.player.x;
-      const keyboardDelta = keyboardState.runtime.player.x - keyboardStart.runtime.player.x;
-      if (touchDelta <= 0 || keyboardDelta <= 0) throw new Error("触控或键盘向右移动没有产生一致方向的结果。 ");
-      await page.evaluate(() => { const debug = (window as any).__GAME_DEBUG__; debug.setLevel(17); debug.restart(); });
-      await page.waitForTimeout(240);
-      const tierFive = await stageCDebugState(page);
-      if (tierFive.runtime.safeLandingCount > tierOne.runtime.safeLandingCount) throw new Error("高阶关卡的安全预览没有收紧。 ");
-      const livesBefore = tierFive.runtime.lives;
-      await stageCDebugAction(page, "damageOnce");
-      const damaged = await stageCDebugState(page);
-      if (damaged.runtime.lives !== livesBefore - 1) throw new Error("平台受击没有扣除一点能量。 ");
-      await page.waitForTimeout(500);
-      const recovered = await stageCDebugState(page);
-      if (recovered.runtime.player.y > 1230) throw new Error("平台受击后没有在 0.55 秒内恢复到检查点。 ");
-      checks.push("二十个独立蓝图", "九类递进机制", "四段关卡", "前视跟随镜头", "7%–10% 角色占比", "安全落脚预览", "短长跳合同", "复合触控输入", "空中冲刺", "快速检查点恢复", "触控与键盘同向一致");
-      evidence.tierOne = tierOne.runtime;
-      evidence.tierFive = tierFive.runtime;
-      evidence.blueprints = { names: names.size, layouts: layouts.size, mechanics: [...mechanics] };
-      evidence.dash = dashedState.runtime;
-      evidence.recovery = recovered.runtime;
-      evidence.inputDeltas = { touch: touchDelta, keyboard: keyboardDelta };
     }
 
     if (template === "snake") {

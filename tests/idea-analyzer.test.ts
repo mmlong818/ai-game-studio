@@ -37,10 +37,10 @@ test("用户显式选择模板时跳过 LLM，直接尊重用户选择", async (
       throw new Error("不应该发起请求");
     },
   });
-  const analysis = await analyzer.analyze({ idea: "一只柴犬在浮岛之间收集星星的悠闲小游戏。", template: "platformer" });
+  const analysis = await analyzer.analyze({ idea: "驾驶飞船躲避敌机并完成击破目标。", template: "space-shooter" });
   assert.equal(calls, 0);
   assert.equal(analysis.source, "heuristic");
-  assert.equal(analysis.template, "platformer");
+  assert.equal(analysis.template, "space-shooter");
 });
 
 test("LLM 正常返回时产出 llm 来源的结构化分析，并进入玩法合同", async () => {

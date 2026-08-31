@@ -186,28 +186,34 @@ function drawPiece(piece) {
   const deltaX = drawX - piece.homeX;
   const deltaY = drawY - piece.homeY;
   ctx.save();
+  ctx.shadowColor = piece === selectedPiece ? "rgba(155,83,121,.42)" : "rgba(50,37,55,.26)";
+  ctx.shadowBlur = piece === selectedPiece ? 22 : 12;
+  ctx.shadowOffsetY = piece === selectedPiece ? 8 : 5;
+  ctx.fillStyle = "rgba(255,255,255,.98)";
+  ctx.fill(path);
+  ctx.shadowColor = "transparent";
   ctx.clip(path);
   ctx.drawImage(image, board.x + deltaX, board.y + deltaY, board.width, board.height);
   if (piece.locked) {
-    ctx.fillStyle = palette.surfaceSoft;
+    ctx.fillStyle = "rgba(255,255,255,.06)";
     ctx.fill(path);
   }
   ctx.restore();
-  ctx.strokeStyle = piece === selectedPiece ? palette.highlight : piece.locked ? palette.secondary : palette.textSoft;
-  ctx.lineWidth = piece === selectedPiece ? 4 : 2;
+  ctx.strokeStyle = piece === selectedPiece ? palette.highlight : piece.locked ? "rgba(255,255,255,.82)" : "rgba(70,48,68,.74)";
+  ctx.lineWidth = piece === selectedPiece ? 5 : piece.locked ? 2.5 : 3;
   ctx.stroke(path);
 }
 
 function drawPuzzle() {
   clearPuzzleCanvas();
   if (!image.naturalWidth) return;
-  drawPlayfield(board.x - 18, board.y - 18, board.width + 36, board.height + 36, { radius: 24, alpha: .9 });
+  drawPlayfield(board.x - 22, board.y - 22, board.width + 44, board.height + 44, { radius: 28, alpha: .96, fill: "rgba(255,253,249,.98)", stroke: "rgba(91,62,87,.52)", lineWidth: 4 });
   ctx.save();
-  ctx.globalAlpha = config.puzzleRules ? config.puzzleRules.guideOpacity : .14;
+  ctx.globalAlpha = Math.max(.24, config.puzzleRules ? config.puzzleRules.guideOpacity : .14);
   ctx.drawImage(image, board.x, board.y, board.width, board.height);
   ctx.restore();
-  ctx.strokeStyle = palette.grid;
-  ctx.lineWidth = 2;
+  ctx.strokeStyle = "rgba(83,58,82,.52)";
+  ctx.lineWidth = 3;
   ctx.strokeRect(board.x, board.y, board.width, board.height);
   pieces.filter((piece) => piece.locked && piece !== selectedPiece).forEach(drawPiece);
   pieces.filter((piece) => !piece.locked && piece !== selectedPiece).forEach(drawPiece);

@@ -278,7 +278,6 @@ interface RuntimeAdapter {
 - grid-logic
 - match3-rules
 - top-down-action
-- platformer-physics
 - 3d-scene-composition
 - first-person-controller
 - third-person-controller

@@ -10,7 +10,6 @@ VERSIONS = [
     ("block-place", "1c8d315a-7172-4490-b87b-9915a8f720da"),
     ("polyomino-fit", "1f596b4c-a9e4-4dce-a89d-90851535ddb0"),
     ("space-shooter", "b4c6a5c7-f0f2-48df-87f9-c80db5fd50d5"),
-    ("platformer", "5a82c2bf-1a7d-4293-bc56-7f2f6661c510"),
     ("merge-2048", "767b4ede-0109-4ae3-b205-8f4f5a18ed8c"),
     ("snake", "2303778b-d844-4862-bc98-6c2bba60851b"),
     ("maze", "358a00ed-1a3c-487b-889f-0175c14abf6d"),
