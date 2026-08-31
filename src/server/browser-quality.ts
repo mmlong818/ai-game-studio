@@ -1,5 +1,6 @@
 import { createServer, type Server } from "node:http";
 import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { homedir } from "node:os";
 import { extname, join, normalize, relative, resolve } from "node:path";
 import { chromium, type Browser, type Page } from "playwright";
 import type { QualityCheck } from "../shared/contracts.js";
@@ -80,23 +81,27 @@ export type ShooterLongRunResult = {
 function findBrowserExecutable() {
   const configured = process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH;
   const managed = chromium.executablePath();
-  const programFiles = process.env.ProgramFiles ?? "C:\\Program Files";
-  const programFilesX86 = process.env["ProgramFiles(x86)"] ?? "C:\\Program Files (x86)";
-  const localAppData = process.env.LOCALAPPDATA;
   const candidates = [
     configured,
     managed,
-    join(programFiles, "Google", "Chrome", "Application", "chrome.exe"),
-    join(programFilesX86, "Google", "Chrome", "Application", "chrome.exe"),
-    join(programFiles, "Microsoft", "Edge", "Application", "msedge.exe"),
-    join(programFilesX86, "Microsoft", "Edge", "Application", "msedge.exe"),
-    localAppData ? join(localAppData, "Google", "Chrome", "Application", "chrome.exe") : null,
-    localAppData ? join(localAppData, "Microsoft", "Edge", "Application", "msedge.exe") : null,
-    "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
-    "/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge",
-    "/usr/bin/google-chrome",
-    "/usr/bin/chromium",
-    "/usr/bin/chromium-browser",
+    ...(process.platform === "win32"
+      ? [
+          join(process.env.ProgramFiles ?? "C:\\Program Files", "Google", "Chrome", "Application", "chrome.exe"),
+          join(process.env["ProgramFiles(x86)"] ?? "C:\\Program Files (x86)", "Google", "Chrome", "Application", "chrome.exe"),
+          join(process.env.ProgramFiles ?? "C:\\Program Files", "Microsoft", "Edge", "Application", "msedge.exe"),
+          join(process.env["ProgramFiles(x86)"] ?? "C:\\Program Files (x86)", "Microsoft", "Edge", "Application", "msedge.exe"),
+          process.env.LOCALAPPDATA ? join(process.env.LOCALAPPDATA, "Google", "Chrome", "Application", "chrome.exe") : null,
+          process.env.LOCALAPPDATA ? join(process.env.LOCALAPPDATA, "Microsoft", "Edge", "Application", "msedge.exe") : null,
+        ]
+      : process.platform === "darwin"
+        ? [
+            "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+            "/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge",
+            "/Applications/Chromium.app/Contents/MacOS/Chromium",
+            join(homedir(), "Applications", "Google Chrome.app", "Contents", "MacOS", "Google Chrome"),
+            join(homedir(), "Applications", "Microsoft Edge.app", "Contents", "MacOS", "Microsoft Edge"),
+          ]
+        : ["/usr/bin/google-chrome", "/usr/bin/chromium", "/usr/bin/chromium-browser"]),
   ].filter((value): value is string => Boolean(value));
   return candidates.find((candidate) => existsSync(candidate));
 }

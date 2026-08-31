@@ -91,10 +91,15 @@ flowchart TB
 
 ### 环境要求
 
-- Node.js 24
+- Node.js 24（Intel / AMD 64 位或 ARM64）
 - npm
 - Docker Engine 或 Docker Desktop，并支持 Compose v2
 - `npm ci` 会自动准备与 Playwright 匹配的 Chromium；已有 Chrome 或 Edge 也可以直接使用
+- macOS 使用真实浏览器验收时需要 macOS 14 Sonoma 或更高版本
+
+当前源码支持 Windows、macOS 和 Linux。macOS 的 Intel 芯片（x64）与 Apple 芯片（ARM64）都会在安装时自动选择对应的原生依赖和 Chromium；Docker 镜像也不需要在源码中固定某一种电脑架构。
+
+不同系统之间只传源码和资源，不要复制 `node_modules/`、`dist-web/`、`dist-server/` 或 Playwright 的浏览器缓存。这些目录包含系统相关二进制文件；在目标电脑上重新执行 `npm ci` 才能得到正确版本。
 
 ### 获取和启动
 
@@ -102,11 +107,34 @@ flowchart TB
 git clone https://github.com/mmlong818/ai-game-studio.git
 cd ai-game-studio
 npm ci
+npm run doctor
 npm run db:up
 npm run dev
 ```
 
 Windows PowerShell 可以把 `npm` 替换为 `npm.cmd`。
+
+### macOS 启动
+
+先安装 Node.js 24 和 Docker Desktop，并选择与 Mac 芯片匹配的版本。解压源码后在“终端”中进入项目目录：
+
+```bash
+npm ci
+npm run doctor
+npm run db:up
+npm run dev
+```
+
+`npm run doctor` 会检查芯片架构、Node.js、自动验收浏览器、Docker 和游戏资源是否完整。Mac 第一次执行 `npm ci` 时需要联网下载对应架构的 Chromium；这份浏览器不会与 Windows 版本混用。
+
+如果浏览器下载曾被中断，重新执行：
+
+```bash
+npm run setup:browsers
+npm run doctor
+```
+
+如果已经安装 Chrome 或 Edge，但当前网络无法下载 Playwright 浏览器，可以先运行 `PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1 npm ci`；平台会自动发现 `/Applications` 或当前用户 `Applications` 目录中的浏览器。也可以通过 `PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH` 明确指定浏览器可执行文件。
 
 启动后可访问：
 
@@ -145,6 +173,7 @@ npm run check
 | `npm test` | 合同、规则、数据库、产物和真实浏览器测试 |
 | `npm run build` | 构建前端和服务器 |
 | `npm run check` | 执行全部交付前检查 |
+| `npm run doctor` | 检查当前系统、浏览器、Docker 与资源是否可用 |
 | `npm run db:logs` | 查看 PostgreSQL 日志 |
 | `npm run db:down` | 停止本地 PostgreSQL |
 | `npm run setup:browsers` | 单独安装或修复自动验收使用的 Chromium |

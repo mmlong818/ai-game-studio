@@ -6,6 +6,8 @@ output/
 tmp/
 coverage/
 *.tsbuildinfo
+__pycache__/
+*.py[cod]
 .claude/
 *.log
 .env

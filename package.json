@@ -3,8 +3,12 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
+  "engines": {
+    "node": ">=24 <25"
+  },
   "scripts": {
     "postinstall": "node scripts/ensure-browser.mjs",
+    "doctor": "node scripts/platform-check.mjs",
     "dev": "node scripts/dev.mjs",
     "dev:web": "vite --host 127.0.0.1 --port 4311",
     "dev:api": "tsx watch src/server/index.ts",

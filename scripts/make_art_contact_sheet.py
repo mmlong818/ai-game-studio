@@ -2,7 +2,9 @@ from pathlib import Path
 from urllib.request import urlopen
 import json
 
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageDraw
+
+from font_support import load_cjk_font
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -28,8 +30,7 @@ for project in projects:
 rows = (len(items) + COLUMNS - 1) // COLUMNS
 sheet = Image.new("RGB", (COLUMNS * THUMB_WIDTH, rows * (THUMB_HEIGHT + LABEL_HEIGHT)), "#f4f1eb")
 draw = ImageDraw.Draw(sheet)
-font_path = Path("C:/Windows/Fonts/msyh.ttc")
-font = ImageFont.truetype(str(font_path), 15) if font_path.exists() else ImageFont.load_default()
+font = load_cjk_font(15)
 
 for index, (title, version, screenshot) in enumerate(items):
     column = index % COLUMNS

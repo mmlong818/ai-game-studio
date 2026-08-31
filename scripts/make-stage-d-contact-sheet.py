@@ -1,6 +1,8 @@
 from pathlib import Path
 
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageDraw
+
+from font_support import load_cjk_font
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -16,8 +18,7 @@ ITEMS = [
 thumb_width, thumb_height, label_height = 260, 563, 42
 sheet = Image.new("RGB", (thumb_width * 3, (thumb_height + label_height) * 2), "#f4f1eb")
 draw = ImageDraw.Draw(sheet)
-font_path = Path("C:/Windows/Fonts/msyh.ttc")
-font = ImageFont.truetype(str(font_path), 17) if font_path.exists() else ImageFont.load_default()
+font = load_cjk_font(17)
 
 for index, (label, version_id) in enumerate(ITEMS):
     screenshot = ROOT / "data" / "artifacts" / version_id / "_studio" / "quality" / "phone-standard-playing.png"
