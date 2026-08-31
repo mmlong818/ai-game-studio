@@ -1,7 +1,7 @@
 import { createServer, type Server } from "node:http";
 import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { extname, join, normalize, relative, resolve } from "node:path";
-import { chromium, type Browser, type Page } from "playwright-core";
+import { chromium, type Browser, type Page } from "playwright";
 import type { QualityCheck } from "../shared/contracts.js";
 import { gameContentSecurityPolicy } from "./static-files.js";
 
@@ -79,15 +79,32 @@ export type ShooterLongRunResult = {
 
 function findBrowserExecutable() {
   const configured = process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH;
+  const managed = chromium.executablePath();
+  const programFiles = process.env.ProgramFiles ?? "C:\\Program Files";
+  const programFilesX86 = process.env["ProgramFiles(x86)"] ?? "C:\\Program Files (x86)";
+  const localAppData = process.env.LOCALAPPDATA;
   const candidates = [
     configured,
-    "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe",
-    "C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe",
+    managed,
+    join(programFiles, "Google", "Chrome", "Application", "chrome.exe"),
+    join(programFilesX86, "Google", "Chrome", "Application", "chrome.exe"),
+    join(programFiles, "Microsoft", "Edge", "Application", "msedge.exe"),
+    join(programFilesX86, "Microsoft", "Edge", "Application", "msedge.exe"),
+    localAppData ? join(localAppData, "Google", "Chrome", "Application", "chrome.exe") : null,
+    localAppData ? join(localAppData, "Microsoft", "Edge", "Application", "msedge.exe") : null,
+    "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+    "/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge",
     "/usr/bin/google-chrome",
     "/usr/bin/chromium",
     "/usr/bin/chromium-browser",
   ].filter((value): value is string => Boolean(value));
   return candidates.find((candidate) => existsSync(candidate));
+}
+
+function requireBrowserExecutable(purpose = "自动验收") {
+  const executablePath = findBrowserExecutable();
+  if (executablePath) return executablePath;
+  throw new Error(`没有找到可用于${purpose}的 Chromium。请在项目目录运行 npm run setup:browsers；也可以安装 Chrome/Edge，或设置 PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH。`);
 }
 
 export function browserQualityAvailable() {
@@ -265,8 +282,7 @@ async function inspectMobilePlayFlow(page: Page) {
 }
 
 export async function inspectCampaignInBrowser(root: string): Promise<CampaignQualityResult> {
-  const executablePath = findBrowserExecutable();
-  if (!executablePath) throw new Error("没有找到可用于自动验收的 Chrome 或 Edge。可设置 PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH。 ");
+  const executablePath = requireBrowserExecutable();
   const { server, url } = await startArtifactServer(root);
   let browser: Browser | null = null;
   try {
@@ -376,8 +392,7 @@ async function stageEDebugAction(page: Page, action: string) {
 }
 
 export async function inspectStageEInBrowser(root: string, template: StageETemplate): Promise<StageEQualityResult> {
-  const executablePath = findBrowserExecutable();
-  if (!executablePath) throw new Error("没有找到可用于阶段 E 验收的 Chrome 或 Edge。 ");
+  const executablePath = requireBrowserExecutable("阶段 E 验收");
   const { server, url } = await startArtifactServer(root);
   let browser: Browser | null = null;
   const runtimeErrors: string[] = [];
@@ -590,8 +605,7 @@ export async function inspectStageEInBrowser(root: string, template: StageETempl
 }
 
 export async function inspectStarDreamStageEInBrowser(root: string): Promise<StageEQualityResult> {
-  const executablePath = findBrowserExecutable();
-  if (!executablePath) throw new Error("没有找到可用于星梦对决阶段 E 验收的 Chrome 或 Edge。 ");
+  const executablePath = requireBrowserExecutable("星梦对决阶段 E 验收");
   const { server, url } = await startArtifactServer(root);
   let browser: Browser | null = null;
   const runtimeErrors: string[] = [];
@@ -708,8 +722,7 @@ async function stageCDebugAction(page: Page, action: string) {
 }
 
 export async function inspectStageDClassicInBrowser(root: string, template: StageDClassicTemplate): Promise<StageDQualityResult> {
-  const executablePath = findBrowserExecutable();
-  if (!executablePath) throw new Error("没有找到可用于阶段 D 验收的 Chrome 或 Edge。 ");
+  const executablePath = requireBrowserExecutable("阶段 D 验收");
   const { server, url } = await startArtifactServer(root);
   let browser: Browser | null = null;
   const checks: string[] = [];
@@ -1045,8 +1058,7 @@ export async function inspectStageDClassicInBrowser(root: string, template: Stag
 }
 
 export async function inspectStageCRealtimeInBrowser(root: string, template: StageCRealtimeTemplate): Promise<StageCQualityResult> {
-  const executablePath = findBrowserExecutable();
-  if (!executablePath) throw new Error("没有找到可用于阶段 C 验收的 Chrome 或 Edge。 ");
+  const executablePath = requireBrowserExecutable("阶段 C 验收");
   const { server, url } = await startArtifactServer(root);
   let browser: Browser | null = null;
   const checks: string[] = [];
@@ -1283,8 +1295,7 @@ export async function inspectShooterContinuousInput(
   durationMs = 600_000,
   onProgress?: (elapsedMs: number, state: unknown) => void,
 ): Promise<ShooterLongRunResult> {
-  const executablePath = findBrowserExecutable();
-  if (!executablePath) throw new Error("没有找到可用于十分钟持续输入验收的 Chrome 或 Edge。 ");
+  const executablePath = requireBrowserExecutable("十分钟持续输入验收");
   const { server, url } = await startArtifactServer(root);
   let browser: Browser | null = null;
   try {
@@ -1345,8 +1356,7 @@ export async function inspectShooterContinuousInput(
 }
 
 export async function inspectStageF3DInBrowser(root: string, expectedMode: "collector" | "arena"): Promise<StageF3DQualityResult> {
-  const executablePath = findBrowserExecutable();
-  if (!executablePath) throw new Error("没有找到可用于 3D 真检的 Chrome 或 Edge。");
+  const executablePath = requireBrowserExecutable("3D 真检");
   const { server, url } = await startArtifactServer(root);
   let browser: Browser | null = null;
   let completedRuns = 0;
@@ -1515,8 +1525,7 @@ async function clickObstructionDiagnosis(page: Page, selector: string): Promise<
 // 无模板生成游戏的通用验收:不懂具体玩法规则,只验证平台运行时契约——
 // 状态机、开始/重开控件、probe 门禁的胜负探针、布局与浏览器错误。
 export async function inspectGeneratedGameInBrowser(root: string): Promise<BrowserQualityResult> {
-  const executablePath = findBrowserExecutable();
-  if (!executablePath) throw new Error("没有找到可用于自动验收的 Chrome 或 Edge。可设置 PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH。 ");
+  const executablePath = requireBrowserExecutable();
   const qualityRoot = join(root, "_studio", "quality");
   mkdirSync(qualityRoot, { recursive: true });
   const screenshotPaths: string[] = [];
@@ -1612,8 +1621,7 @@ export async function inspectGeneratedGameInBrowser(root: string): Promise<Brows
 }
 
 export async function inspectGameInBrowser(root: string): Promise<BrowserQualityResult> {
-  const executablePath = findBrowserExecutable();
-  if (!executablePath) throw new Error("没有找到可用于自动验收的 Chrome 或 Edge。可设置 PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH。 ");
+  const executablePath = requireBrowserExecutable();
   const qualityRoot = join(root, "_studio", "quality");
   mkdirSync(qualityRoot, { recursive: true });
   const screenshotPaths: string[] = [];

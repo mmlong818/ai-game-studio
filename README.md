@@ -94,7 +94,7 @@ flowchart TB
 - Node.js 24
 - npm
 - Docker Engine 或 Docker Desktop，并支持 Compose v2
-- Chrome、Edge 或 Chromium；真实浏览器质量检查需要它
+- `npm ci` 会自动准备与 Playwright 匹配的 Chromium；已有 Chrome 或 Edge 也可以直接使用
 
 ### 获取和启动
 
@@ -147,6 +147,13 @@ npm run check
 | `npm run check` | 执行全部交付前检查 |
 | `npm run db:logs` | 查看 PostgreSQL 日志 |
 | `npm run db:down` | 停止本地 PostgreSQL |
+| `npm run setup:browsers` | 单独安装或修复自动验收使用的 Chromium |
+
+如果安装依赖时使用了 `--ignore-scripts`，浏览器不会自动下载。首次构建前需要补跑：
+
+```bash
+npm run setup:browsers
+```
 
 ## 不配置 AI 密钥时能做什么
 
@@ -207,6 +214,8 @@ AI 密钥不是启动成熟模板的前置条件。
 | `OPENAI_API_KEY` | 未设置 | 可选的 OpenAI API 密钥 |
 | `OPENAI_API_KEY_FILE` | `./data/secrets/openai-api-key.txt` | 可选的本机密钥文件 |
 | `NODE_USE_ENV_PROXY` | 未设置 | Node 通过系统 HTTP(S) 代理访问外部 API 时设为 `1` |
+| `PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH` | 自动发现 | 手动指定 Chrome、Edge 或 Chromium 可执行文件 |
+| `PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD` | 未设置 | 设为 `1` 时跳过 `npm ci` 后的自动浏览器安装；Docker 镜像使用此设置并安装系统 Chromium |
 
 如果设置了 `STUDIO_ACCESS_TOKEN`，浏览器工作台需要在同一来源下保存该令牌：
 
