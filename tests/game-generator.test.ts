@@ -154,6 +154,29 @@ test("产物写入+静态探针:拆分为外链三件套(生产 CSP 禁内联),�
   }
 });
 
+test("静态探针接受运行时生成的开始控件，但拒绝只有查询语句而没有控件声明", () => {
+  const dynamicStartHtml = contractHtml
+    .replace('<button id="start">开始</button>', '<div id="start-slot"></div>')
+    .replace(
+      'let state = "idle";',
+      `document.querySelector("#start-slot").innerHTML = '<button id="start">开始</button>';
+let state = "idle";`,
+    );
+  const dynamicRoot = mkdtempSync(join(tmpdir(), "forge-gen-dynamic-control-"));
+  const missingRoot = mkdtempSync(join(tmpdir(), "forge-gen-missing-control-"));
+  try {
+    writeGeneratedArtifact(dynamicRoot, fakeProject(), { html: dynamicStartHtml, designNotes: "动态开始按钮", rounds: 1 });
+    assert.ok(inspectGeneratedArtifact(dynamicRoot).includes("开始与重开控件"));
+
+    const missingStartHtml = contractHtml.replace('<button id="start">开始</button>', '<div id="start-slot"></div>');
+    writeGeneratedArtifact(missingRoot, fakeProject(), { html: missingStartHtml, designNotes: "缺少开始按钮", rounds: 1 });
+    assert.throws(() => inspectGeneratedArtifact(missingRoot), /缺少可在运行时生成的 #start/);
+  } finally {
+    rmSync(dynamicRoot, { recursive: true, force: true });
+    rmSync(missingRoot, { recursive: true, force: true });
+  }
+});
+
 const contract3dHtml = contractHtml
   .replace("<script>", `<script type="module">\nimport * as THREE from "./vendor/three.module.js";\nvoid THREE;`)
   .replace("safeStorage.setItem", "// three scene omitted\nsafeStorage.setItem");

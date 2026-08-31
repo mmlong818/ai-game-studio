@@ -286,6 +286,15 @@ export function stripPlatformSegments(source: string): string {
   return stripBetween(stripBetween(source, PLATFORM_BEGIN, PLATFORM_END), LEGACY_BEGIN, LEGACY_END);
 }
 
+function declaresElementId(source: string, id: string) {
+  const quotedId = `["']${id.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}["']`;
+  return [
+    new RegExp(`(?:^|[\\s<])id\\s*=\\s*${quotedId}`),
+    new RegExp(`\\.id\\s*=\\s*${quotedId}`),
+    new RegExp(`setAttribute\\(\\s*["']id["']\\s*,\\s*${quotedId}`),
+  ].some((pattern) => pattern.test(source));
+}
+
 const threeModuleSource = resolve(moduleRoot, "..", "..", "node_modules", "three", "build", "three.module.js");
 const threeCoreSource = resolve(moduleRoot, "..", "..", "node_modules", "three", "build", "three.core.js");
 
@@ -399,7 +408,7 @@ export function inspectGeneratedArtifact(root: string): string[] {
     { label: "运行时状态机", ok: appScript.includes("data-game-state") || appScript.includes("dataset.gameState"), detail: "缺少 data-game-state 状态机" },
     { label: "状态变化事件", ok: appScript.includes("game:state-change"), detail: "缺少 game:state-change 事件派发" },
     { label: "探针门禁", ok: appScript.includes("__GAME_DEBUG__") && appScript.includes("probe"), detail: "缺少 probe 门禁的 __GAME_DEBUG__ 钩子" },
-    { label: "开始与重开控件", ok: /id\s*=\s*["']start["']/.test(html) && /id\s*=\s*["']restart["']/.test(html), detail: "缺少 #start 或 #restart 控件" },
+    { label: "开始与重开控件", ok: declaresElementId(generatedCode, "start") && declaresElementId(generatedCode, "restart"), detail: "缺少可在运行时生成的 #start 或 #restart 控件" },
     { label: "移动端视口", ok: /<meta[^>]+viewport/i.test(html), detail: "缺少 viewport meta" },
     { label: "试玩遥测注入", ok: appScript.includes("/api/play-events"), detail: "平台遥测脚本未注入" },
     { label: "安全扫描", ok: scanGeneratedHtml(generatedCode, { allowThreeModule: is3d }).length === 0, detail: "复扫发现违规 API" },

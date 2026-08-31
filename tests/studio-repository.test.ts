@@ -398,6 +398,9 @@ test("并行完成两个构建时版本号不会冲突", async () => {
     ]);
     assert.ok(firstCompleted);
     assert.ok(secondCompleted);
+    const recoveredBuild = await repository.buildById(firstBuild.id);
+    assert.equal(recoveredBuild.status, "succeeded");
+    assert.equal(recoveredBuild.error, null, "恢复成功的构建不应继续携带旧失败原因");
 
     const versions = await repository.listVersions(project.id);
     assert.equal(versions.length, 3);

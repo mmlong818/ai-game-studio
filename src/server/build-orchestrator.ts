@@ -223,17 +223,19 @@ export class BuildOrchestrator {
     let feedback: string[] = [];
     let generation = await generator.generate(project, feedback, previous);
     writeGeneratedArtifact(root, project, generation);
-    if (this.options.browserAudit === false) return { generation, audit: null, iterated: previous !== null };
     for (let round = 1; ; round += 1) {
       try {
-        await inspectGeneratedGameInBrowser(root);
+        // 静态与真实浏览器检查都属于生成契约；任何一项失败都应在进入生图等后续步骤前交回模型修复。
+        inspectGeneratedArtifact(root);
+        if (this.options.browserAudit !== false) await inspectGeneratedGameInBrowser(root);
       } catch (error) {
         const reason = error instanceof Error ? error.message : String(error);
-        if (round >= 2) throw new Error(`生成代码两轮均未通过浏览器契约验收：${reason}`);
+        if (round >= 2) throw new Error(`生成代码两轮均未通过产物契约验收：${reason}`);
         generation = await generator.generate(project, [reason], previous);
         writeGeneratedArtifact(root, project, generation);
         continue;
       }
+      if (this.options.browserAudit === false) return { generation, audit: null, iterated: previous !== null };
       const audit = this.options.designContracts
         ? await this.options.designContracts.auditRuleFidelity(project.spec.designProfile, generation.html)
         : null;

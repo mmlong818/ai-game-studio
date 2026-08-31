@@ -676,7 +676,7 @@ export class StudioRepository {
           [project.id],
         );
         await transaction.query(
-          "UPDATE builds SET status = 'succeeded', version_id = $1, completed_at = $2 WHERE id = $1",
+          "UPDATE builds SET status = 'succeeded', version_id = $1, error_message = NULL, completed_at = $2 WHERE id = $1",
           [buildId, now],
         );
       });
