@@ -81,7 +81,7 @@ function themeLines(project: ProjectDetail): string[] {
   ];
 }
 
-function coverPrompt(project: ProjectDetail): string {
+export function coverPrompt(project: ProjectDetail): string {
   const design = project.spec.designProfile;
   return [
     `为一款网页小游戏绘制主视觉封面插画。`,
@@ -140,7 +140,7 @@ export class CoverArtGenerator {
     this.timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   }
 
-  /** 返回 PNG 封面字节;没有密钥或生成失败时返回 null,调用方保留模板预设主视觉。 */
+  /** 返回 PNG 封面字节；没有密钥或生成失败时返回 null，由构建门禁中断本次构建。 */
   async generate(project: ProjectDetail): Promise<Buffer | null> {
     return this.tryImage("封面", {
       prompt: coverPrompt(project),
@@ -148,7 +148,7 @@ export class CoverArtGenerator {
     });
   }
 
-  /** 局内场景背景(低对比氛围图);失败返回 null 保留模板背景。 */
+  /** 局内场景背景（低对比氛围图）；失败返回 null，由构建门禁中断本次构建。 */
   async generateBackground(project: ProjectDetail): Promise<Buffer | null> {
     return this.tryImage("局内背景", {
       prompt: backgroundPrompt(project),
@@ -207,7 +207,7 @@ export class CoverArtGenerator {
       return await this.requestImage(request, apiKey);
     } catch (error) {
       const reason = error instanceof Error ? error.message : "生成失败。";
-      console.warn(`${label} gpt-image-2 生成失败，保留模板预设：${reason}`);
+      console.warn(`${label} gpt-image-2 生成失败：${reason}`);
       return null;
     }
   }

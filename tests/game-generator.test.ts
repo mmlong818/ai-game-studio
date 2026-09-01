@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -11,6 +11,7 @@ import {
   stripPlatformSegments,
   writeGeneratedArtifact,
 } from "../src/server/game-generator";
+import { inspectRasterAiArt } from "../src/server/art-policy";
 import { OpenAISettings } from "../src/server/openai-settings";
 
 const validKey = "sk-test_1234567890abcdef";
@@ -21,7 +22,7 @@ const contractHtml = `<!DOCTYPE html>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>灯塔守夜人</title>
-<style>#start,#restart{min-width:44px;min-height:44px}</style>
+<style>body{background-image:url("./assets/background.png")}#start,#restart{min-width:44px;min-height:44px}</style>
 </head>
 <body>
 <button id="start">开始</button>
@@ -58,14 +59,31 @@ function llmResponse(answer: Record<string, unknown>) {
   return new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify(answer) } }] }), { status: 200 });
 }
 
-test("安全扫描:拦截网络、外链、存储偷渡;放行合规代码与 w3.org 命名空间", () => {
+function writeAiArtProvenance(root: string) {
+  mkdirSync(join(root, "assets"), { recursive: true });
+  mkdirSync(join(root, "_studio"), { recursive: true });
+  const png = Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), Buffer.alloc(600)]);
+  writeFileSync(join(root, "assets", "cover.png"), png);
+  writeFileSync(join(root, "assets", "background.png"), png);
+  writeFileSync(join(root, "_studio", "DYNAMIC_ART.json"), JSON.stringify({
+    schemaVersion: 2,
+    model: "gpt-image-2",
+    generatedAt: "2026-08-31T00:00:00.000Z",
+    entries: [
+      { file: "assets/cover.png", role: "封面", bytes: png.length, prompt: "为测试游戏生成一张不含文字的主视觉封面位图。" },
+      { file: "assets/background.png", role: "局内背景", bytes: png.length, prompt: "为测试游戏生成一张不含文字的局内场景背景位图。" },
+    ],
+  }));
+}
+
+test("安全扫描:拦截网络、外链、存储偷渡与 SVG", () => {
   assert.deepEqual(scanGeneratedHtml(contractHtml), []);
   assert.ok(scanGeneratedHtml(`<script>fetch("/x")</script>`).some((item) => item.includes("fetch")));
   assert.ok(scanGeneratedHtml(`<script src="https://cdn.example.com/x.js"></script>`).length > 0);
   assert.ok(scanGeneratedHtml(`<script>localStorage.setItem("a","b")</script>`).some((item) => item.includes("localStorage")));
   assert.ok(scanGeneratedHtml(`<script>new Function("alert(1)")</script>`).some((item) => item.includes("Function")));
   assert.ok(scanGeneratedHtml(`<img src="https://evil.example.com/x.png">`).some((item) => item.includes("外部地址")));
-  assert.deepEqual(scanGeneratedHtml(`<svg xmlns="http://www.w3.org/2000/svg"></svg>`), []);
+  assert.ok(scanGeneratedHtml(`<svg xmlns="http://www.w3.org/2000/svg"></svg>`).some((item) => item.includes("SVG")));
 });
 
 test("没有密钥时生成器直接抛错,不静默兜底", async () => {
@@ -130,6 +148,10 @@ test("产物写入+静态探针:拆分为外链三件套(生产 CSP 禁内联),�
   const root = mkdtempSync(join(tmpdir(), "forge-gen-"));
   try {
     writeGeneratedArtifact(root, fakeProject(), { html: contractHtml, designNotes: "测试实现", rounds: 1 });
+    const preArtLabels = inspectGeneratedArtifact(root, { requireAiArt: false });
+    assert.ok(preArtLabels.includes("AI 背景接入"), "代码阶段应检查背景接入，但不应提前要求尚未生成的位图溯源");
+    assert.throws(() => inspectGeneratedArtifact(root), /缺少 AI 生图溯源/, "最终验收仍必须要求真实 AI 位图溯源");
+    writeAiArtProvenance(root);
     const labels = inspectGeneratedArtifact(root);
     assert.ok(labels.includes("外链交付结构"));
     assert.ok(labels.includes("运行时状态机"));
@@ -154,6 +176,19 @@ test("产物写入+静态探针:拆分为外链三件套(生产 CSP 禁内联),�
   }
 });
 
+test("AI 位图门禁要求游戏实际加载背景，并拒绝产物中的 SVG", () => {
+  const root = mkdtempSync(join(tmpdir(), "studio-ai-art-policy-"));
+  try {
+    writeAiArtProvenance(root);
+    assert.deepEqual(inspectRasterAiArt(root, 'background-image:url("./assets/background.png")'), []);
+    assert.ok(inspectRasterAiArt(root, "const canvas = document.querySelector('canvas')").some((item) => item.includes("实际加载")));
+    writeFileSync(join(root, "assets", "forbidden.svg"), '<svg xmlns="http://www.w3.org/2000/svg"></svg>');
+    assert.ok(inspectRasterAiArt(root, 'background-image:url("./assets/background.png")').some((item) => item.includes("SVG")));
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test("静态探针接受运行时生成的开始控件，但拒绝只有查询语句而没有控件声明", () => {
   const dynamicStartHtml = contractHtml
     .replace('<button id="start">开始</button>', '<div id="start-slot"></div>')
@@ -166,10 +201,12 @@ let state = "idle";`,
   const missingRoot = mkdtempSync(join(tmpdir(), "forge-gen-missing-control-"));
   try {
     writeGeneratedArtifact(dynamicRoot, fakeProject(), { html: dynamicStartHtml, designNotes: "动态开始按钮", rounds: 1 });
+    writeAiArtProvenance(dynamicRoot);
     assert.ok(inspectGeneratedArtifact(dynamicRoot).includes("开始与重开控件"));
 
     const missingStartHtml = contractHtml.replace('<button id="start">开始</button>', '<div id="start-slot"></div>');
     writeGeneratedArtifact(missingRoot, fakeProject(), { html: missingStartHtml, designNotes: "缺少开始按钮", rounds: 1 });
+    writeAiArtProvenance(missingRoot);
     assert.throws(() => inspectGeneratedArtifact(missingRoot), /缺少可在运行时生成的 #start/);
   } finally {
     rmSync(dynamicRoot, { recursive: true, force: true });
@@ -202,6 +239,7 @@ test("3D 产物:module 外链、vendor three 落盘、语法校验剥 import 后
     assert.equal(project.spec.runtimeTarget, "web-3d");
     assert.equal(project.spec.threeContract, null, "generated 3D 不应套模板 threeContract");
     writeGeneratedArtifact(root, project, { html: contract3dHtml, designNotes: "3D 测试", rounds: 1 });
+    writeAiArtProvenance(root);
     const labels = inspectGeneratedArtifact(root);
     assert.ok(labels.includes("本地 3D 引擎"));
     assert.ok(labels.includes("安全扫描"));

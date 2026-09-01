@@ -13,7 +13,8 @@ import { inspectGameInBrowser, inspectGeneratedGameInBrowser } from "./browser-q
 import type { DesignContractGenerator } from "./design-contract.js";
 import { inspectGameArtifact, writeDesignDocuments, writeGameArtifact } from "./game-artifact.js";
 import { inspectGeneratedArtifact, stripPlatformSegments, writeGeneratedArtifact, type GameCodeGenerator, type PreviousGeneration } from "./game-generator.js";
-import type { CoverArtGenerator } from "./image-generator.js";
+import { assertRasterAiArt } from "./art-policy.js";
+import { coverPrompt, type CoverArtGenerator } from "./image-generator.js";
 import type { StudioRepository } from "./studio-repository.js";
 
 const wait = (milliseconds: number) => new Promise((resolve) => setTimeout(resolve, milliseconds));
@@ -30,7 +31,7 @@ export class BuildOrchestrator {
     private readonly options: {
       browserAudit?: boolean;
       designContracts?: DesignContractGenerator;
-      coverArt?: CoverArtGenerator;
+      coverArt?: Pick<CoverArtGenerator, "generate" | "generateDynamicArt">;
       codeGenerator?: GameCodeGenerator;
       maxConcurrentBuilds?: number;
     } = {},
@@ -122,38 +123,39 @@ export class BuildOrchestrator {
       sequence += 1;
       await this.step(buildId, sequence, async () => {
         const style = visualStyleOptions.find((option) => option.id === project.spec.visualStyle)!;
-        let coverNote = "";
-        if (this.options.coverArt) {
-          const skipCover = project.spec.template === "puzzle" && Boolean(project.spec.customImageDataUrl);
-          // 封面与动态美术(局内背景+角色位图)全部并行生成,墙钟时间等于最慢一张。
-          const [cover, dynamicArt] = await Promise.all([
-            skipCover ? Promise.resolve(null) : this.options.coverArt.generate(project),
-            this.options.coverArt.generateDynamicArt(project),
-          ]);
-          if (cover) {
-            writeFileSync(join(root, "assets", "cover.png"), cover);
-            coverNote = "主视觉封面已由 gpt-image-2 按本作创意实时生成并替换模板预设；";
-          } else if (!skipCover) {
-            coverNote = "生图模型不可用或生成失败，本版保留模板预设主视觉；";
-          }
-          for (const entry of dynamicArt) {
-            const target = join(root, entry.file);
-            mkdirSync(dirname(target), { recursive: true });
-            writeFileSync(target, entry.bytes);
-          }
-          if (dynamicArt.length > 0) {
-            const provenanceRoot = join(root, "_studio");
-            mkdirSync(provenanceRoot, { recursive: true });
-            writeFileSync(join(provenanceRoot, "DYNAMIC_ART.json"), JSON.stringify({
-              schemaVersion: 1,
-              model: "gpt-image-2",
-              generatedAt: new Date().toISOString(),
-              entries: dynamicArt.map((entry) => ({ file: entry.file, role: entry.role, bytes: entry.bytes.length, prompt: entry.prompt })),
-            }, null, 2), "utf8");
-            coverNote += `${dynamicArt.map((entry) => entry.role).join("、")}已按本作题材动态生成并替换模板预设，提示词归档于 DYNAMIC_ART.json；`;
-          }
+        if (!this.options.coverArt) throw new Error("AI 生图服务未配置，构建已中断。请先配置 OpenAI API Key。");
+        // 封面与动态美术全部并行生成；任何核心位图缺失都中断构建，禁止退回占位图。
+        const [cover, dynamicArt] = await Promise.all([
+          this.options.coverArt.generate(project),
+          this.options.coverArt.generateDynamicArt(project),
+        ]);
+        if (!cover) throw new Error("AI 封面生成失败，构建已中断；不会使用占位图替代。");
+        const background = dynamicArt.find((entry) => entry.role === "局内背景" && entry.file === "assets/background.png");
+        if (!background) throw new Error("AI 局内背景生成失败，构建已中断；不会使用程序图或 SVG 替代。");
+
+        writeFileSync(join(root, "assets", "cover.png"), cover);
+        for (const entry of dynamicArt) {
+          const target = join(root, entry.file);
+          mkdirSync(dirname(target), { recursive: true });
+          writeFileSync(target, entry.bytes);
         }
-        return `页面公开：${coverNote}${style.label}视觉系统已应用到页面编排、组件造型、字体层级、${style.detailLabel}、画布细节和反馈动效；采用${style.layout}，不是单纯换配色。${project.spec.artStyle} 主视觉与 4 个程序化 WAV 已集成，来源和哈希已写入清单。${project.spec.template === "puzzle" ? `拼图支持创作时图片和试玩时图片替换；默认 ${project.spec.puzzleRules?.pieceCount} 块、上限 50 块，开局外围排布。` : ""}`;
+        const provenanceRoot = join(root, "_studio");
+        mkdirSync(provenanceRoot, { recursive: true });
+        const entries = [
+          { file: "assets/cover.png", role: "封面", bytes: cover.length, prompt: coverPrompt(project) },
+          ...dynamicArt.map((entry) => ({ file: entry.file, role: entry.role, bytes: entry.bytes.length, prompt: entry.prompt })),
+        ];
+        writeFileSync(join(provenanceRoot, "DYNAMIC_ART.json"), JSON.stringify({
+          schemaVersion: 2,
+          model: "gpt-image-2",
+          generatedAt: new Date().toISOString(),
+          entries,
+        }, null, 2), "utf8");
+        const visualSource = ["index.html", "styles.css", "app.js"]
+          .map((file) => readFileSync(join(root, file), "utf8"))
+          .join("\n");
+        assertRasterAiArt(root, visualSource);
+        return `页面公开：封面与${dynamicArt.map((entry) => entry.role).join("、")}均由 gpt-image-2 生成，提示词与来源已归档；SVG 禁用门禁通过。${style.label}视觉系统已应用到页面编排、组件造型、字体层级、${style.detailLabel}、画布细节和反馈动效。`;
       });
       sequence += 1;
       await this.step(buildId, sequence, () => {
@@ -225,8 +227,8 @@ export class BuildOrchestrator {
     writeGeneratedArtifact(root, project, generation);
     for (let round = 1; ; round += 1) {
       try {
-        // 静态与真实浏览器检查都属于生成契约；任何一项失败都应在进入生图等后续步骤前交回模型修复。
-        inspectGeneratedArtifact(root);
+        // 代码阶段只检查结构、运行时与 AI 背景接入声明；真实位图和溯源在下一资产阶段落盘后统一验收。
+        inspectGeneratedArtifact(root, { requireAiArt: false });
         if (this.options.browserAudit !== false) await inspectGeneratedGameInBrowser(root);
       } catch (error) {
         const reason = error instanceof Error ? error.message : String(error);

@@ -3,6 +3,7 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { Script } from "node:vm";
 import { visualStyleOptions, type ProjectDetail } from "../shared/contracts.js";
+import { inspectRasterAiArt } from "./art-policy.js";
 import { createCampaignLevels } from "../shared/level-progression.js";
 import type { DirectionVerdict } from "./design-contract.js";
 import { getRuntimeDefinition } from "./game-runtimes/index.js";
@@ -1643,11 +1644,11 @@ function loadArenaTexture(name) {
   return texture;
 }
 const groundTexture = loadTiledTexture("./assets/cover.png", 3, 3);
-const ruinTexture = loadTiledTexture("./assets/arena-background.png", 1.5, 2.5);
+const ruinTexture = loadTiledTexture("./assets/background.png", 1.5, 2.5);
 const fragmentTexture = loadSpriteTexture(1);
 const playerTexture = config.mode === "arena" ? loadArenaTexture("arena-player.png") : loadSpriteTexture(2);
 const gateTexture = loadSpriteTexture(3);
-const environmentTexture = textureLoader.load("./assets/arena-background.png");
+const environmentTexture = textureLoader.load("./assets/background.png");
 environmentTexture.colorSpace = THREE.SRGBColorSpace;
 const state = { running: false, finished: false, collected: 0, remaining: config.duration, lastTime: 0, mode: config.mode, checkpoint: false, checkpointsReached: 0, mistakes: 0, grounded: true, wave: 1, health: 100, shield: 0, upgrade: 0, upgradeChoices: 0, shotsFired: 0, projectileHits: 0, renderCount: 0, performanceTier: "medium", suspended: false };
 let campaignLevelIndex = 0;
@@ -2679,7 +2680,7 @@ export function writeGameArtifact(root: string, project: ProjectDetail) {
     '<link rel="preload" as="image" href="./assets/sprites/sprite-01.png">',
   );
   writeFileSync(join(root, "index.html"), html, "utf8");
-  writeFileSync(join(root, "styles.css"), `${gameStyles}${signalVisualStyles}${stageBSignalStyles}${signalMasteryStyles}${signalAspectStyles(project)}${signalMobilePlayFlowStyles}`, "utf8");
+  writeFileSync(join(root, "styles.css"), `${gameStyles}${signalVisualStyles}${stageBSignalStyles}${signalMasteryStyles}${signalAspectStyles(project)}${signalMobilePlayFlowStyles}\n.arena{background-image:url("./assets/background.png")}`, "utf8");
   writeFileSync(join(root, "app.js"), `${gameScript(project)}${gameTelemetryScript(project)}`, "utf8");
   writeFileSync(
     join(root, "game-manifest.json"),
@@ -2742,6 +2743,9 @@ export function inspectGameArtifact(root: string) {
     inputModes?: ProjectDetail["spec"]["inputModes"];
     levelProgression?: ProjectDetail["spec"]["levelProgression"];
   };
+  const artFailures = inspectRasterAiArt(root, `${html}\n${styles}\n${script}`);
+  const svgFailures = artFailures.filter((failure) => failure.includes("SVG"));
+  const aiFailures = artFailures.filter((failure) => !failure.includes("SVG"));
   if (manifest.runtimeTarget === "web-3d") {
     const vendor = join(root, "vendor", "three.module.js");
     const vendorCore = join(root, "vendor", "three.core.js");
@@ -2767,6 +2771,8 @@ export function inspectGameArtifact(root: string) {
         && existsSync(join(root, "_studio", "ART_REVIEW.md"))
         && readFileSync(join(root, "_studio", "GAME_DESIGN.md"), "utf8").includes("## 核心循环")
         && readFileSync(join(root, "_studio", "ART_REVIEW.md"), "utf8").includes("主体占据可用面积约 82%–94%")],
+      ["AI 生图位图", aiFailures.length === 0],
+      ["禁用 SVG", svgFailures.length === 0],
     ] as const;
     const failed = probes.filter(([, passed]) => !passed);
     if (failed.length) throw new Error(`3D 试玩探针失败：${failed.map(([name]) => name).join("、")}`);
@@ -2801,6 +2807,8 @@ export function inspectGameArtifact(root: string) {
         && existsSync(join(root, "_studio", "ART_REVIEW.md"))
         && readFileSync(join(root, "_studio", "GAME_DESIGN.md"), "utf8").includes("## 核心循环")
         && readFileSync(join(root, "_studio", "ART_REVIEW.md"), "utf8").includes("主体占据可用面积约 82%–94%")],
+      ["AI 生图位图", aiFailures.length === 0],
+      ["禁用 SVG", svgFailures.length === 0],
     ] as const;
     const failed = probes.filter(([, passed]) => !passed);
     if (failed.length) throw new Error(`试玩探针失败：${failed.map(([name]) => name).join("、")}`);
@@ -2824,6 +2832,8 @@ export function inspectGameArtifact(root: string) {
       && existsSync(join(root, "_studio", "ART_REVIEW.md"))
       && readFileSync(join(root, "_studio", "GAME_DESIGN.md"), "utf8").includes("## 核心循环")
       && readFileSync(join(root, "_studio", "ART_REVIEW.md"), "utf8").includes("主体占据可用面积约 82%–94%")],
+    ["AI 生图位图", aiFailures.length === 0],
+    ["禁用 SVG", svgFailures.length === 0],
   ] as const;
   const failed = probes.filter(([, passed]) => !passed);
   if (failed.length) throw new Error(`试玩探针失败：${failed.map(([name]) => name).join("、")}`);

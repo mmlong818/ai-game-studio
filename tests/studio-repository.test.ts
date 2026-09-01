@@ -28,6 +28,17 @@ async function waitForBuild(repository: StudioRepository, projectId: string) {
   throw new Error(`等待构建完成超时：${JSON.stringify(lastBuild)}`);
 }
 
+const testAiPng = Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), Buffer.alloc(600)]);
+const testCoverArt = {
+  generate: async () => testAiPng,
+  generateDynamicArt: async () => [{
+    file: "assets/background.png",
+    role: "局内背景",
+    bytes: testAiPng,
+    prompt: "为自动化测试游戏生成一张不含文字的局内场景背景位图。",
+  }],
+};
+
 test("黄金游戏会写入数据库并产生稳定网址与版本网址", async () => {
   const { database, repository } = await createRepository();
   try {
@@ -119,7 +130,7 @@ test("2D 项目会留下公开步骤、真实文件和可玩不可变版本", as
       dimensions: "2d",
       idea: "玩家在俯视角港口中收集八个移动信号，需要在倒计时结束前完成并可以重新开始。",
     });
-    const orchestrator = new BuildOrchestrator(repository, artifactRoot, { browserAudit: false });
+    const orchestrator = new BuildOrchestrator(repository, artifactRoot, { browserAudit: false, coverArt: testCoverArt });
     const queued = await orchestrator.start(project.id);
     const build = await waitForBuild(repository, project.id);
     const completed = await repository.get(project.id);
@@ -128,12 +139,12 @@ test("2D 项目会留下公开步骤、真实文件和可玩不可变版本", as
     assert.equal(build.status, "succeeded");
     assert.equal(build.steps.length, 6);
     assert.ok(build.steps.every((step) => step.status === "succeeded"));
-    assert.match(build.steps[4]?.output ?? "", /14\/14 静态探针通过/);
+    assert.match(build.steps[4]?.output ?? "", /16\/16 静态探针通过/);
     assert.equal(completed?.status, "playable");
     assert.equal(completed?.version.number, 2);
     assert.equal(completed?.version.qualityStatus, "passed");
     assert.equal(completed?.version.artReviewStatus, "pending");
-    assert.match(completed?.version.qualitySummary ?? "", /14\/14/);
+    assert.match(completed?.version.qualitySummary ?? "", /16\/16/);
     assert.ok(build.versionId);
     assert.equal(existsSync(join(artifactRoot, build.id, "index.html")), true);
     assert.equal(existsSync(join(artifactRoot, build.id, "_studio", "GAME_DESIGN.md")), true);
@@ -164,7 +175,7 @@ test("重新构建会套用最新玩法合同，同时保留用户已选的风�
       aspectRatio: "4:3",
     });
 
-    await new BuildOrchestrator(repository, artifactRoot, { browserAudit: false }).start(project.id);
+    await new BuildOrchestrator(repository, artifactRoot, { browserAudit: false, coverArt: testCoverArt }).start(project.id);
     const build = await waitForBuild(repository, project.id);
     const completed = await repository.get(project.id);
 
@@ -196,7 +207,7 @@ test("发布闸门拒绝未验收版本，并能把稳定网址回滚到历史�
       idea: "玩家在限时内收集光点并返回入口，需要支持键盘、触控和重新开始。",
     });
     const contractVersionId = project.version.id;
-    const orchestrator = new BuildOrchestrator(repository, artifactRoot, { browserAudit: false });
+    const orchestrator = new BuildOrchestrator(repository, artifactRoot, { browserAudit: false, coverArt: testCoverArt });
 
     await orchestrator.start(project.id);
     const firstBuild = await waitForBuild(repository, project.id);
@@ -246,12 +257,12 @@ test("3D 项目会生成真实 Three.js 场景并通过独立试玩探针", asyn
       dimensions: "3d",
       idea: "玩家以第三人称在 3D 遗迹中收集五块碎片，必须在出口关闭前返回。",
     });
-    await new BuildOrchestrator(repository, artifactRoot, { browserAudit: false }).start(project.id);
+    await new BuildOrchestrator(repository, artifactRoot, { browserAudit: false, coverArt: testCoverArt }).start(project.id);
     const build = await waitForBuild(repository, project.id);
 
     assert.equal(build.status, "succeeded");
     assert.ok(build.steps.every((step) => step.status === "succeeded"));
-    assert.match(build.steps[4]?.output ?? "", /18\/18 静态探针通过/);
+    assert.match(build.steps[4]?.output ?? "", /20\/20 静态探针通过/);
     assert.equal((await repository.get(project.id))?.status, "playable");
     assert.equal(existsSync(join(artifactRoot, build.id, "vendor", "three.module.js")), true);
     assert.equal(existsSync(join(artifactRoot, build.id, "assets", "ambient-loop.wav")), true);

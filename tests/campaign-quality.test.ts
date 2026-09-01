@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { cpSync, existsSync, mkdtempSync, rmSync } from "node:fs";
+import { copyFileSync, cpSync, existsSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import test from "node:test";
@@ -25,6 +25,11 @@ const campaigns: Array<[GameTemplate, string]> = [
   ["mahjong-roguelite", "做一个肉鸽麻将接龙，配对自由牌并在航段之间选择遗物。"],
 ];
 
+function injectTestAiBackground(root: string) {
+  // 浏览器合同测试不调用外部 API；复制本地位图模拟构建阶段已注入的 AI 背景。
+  copyFileSync(join(root, "assets", "cover.png"), join(root, "assets", "background.png"));
+}
+
 test("全部 2D 模板与通用玩法真实通过二十关解锁、持久化、分档增压和终局验收", { skip: !browserQualityAvailable(), timeout: 120_000 }, async () => {
   const database = await openTestDatabase();
   const repository = new StudioRepository(database, "http://127.0.0.1:4312");
@@ -35,6 +40,7 @@ test("全部 2D 模板与通用玩法真实通过二十关解锁、持久化、�
       const artifactRoot = join(root, template);
       writeDesignDocuments(artifactRoot, project);
       writeGameArtifact(artifactRoot, project);
+      injectTestAiBackground(artifactRoot);
       const result = await inspectCampaignInBrowser(artifactRoot);
       assert.equal(result.initialLevel, 1);
       assert.ok(result.unlockedAfterFirstWin >= 2);
@@ -63,6 +69,7 @@ test("3D 游戏真实通过二十关解锁、持久化、分档增压和终局�
     });
     writeDesignDocuments(root, project);
     writeGameArtifact(root, project);
+    injectTestAiBackground(root);
     const result = await inspectCampaignInBrowser(root);
     assert.equal(result.initialLevel, 1);
     assert.ok(result.restoredUnlockedLevel >= 2);

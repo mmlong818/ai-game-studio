@@ -1,0 +1,20 @@
+{
+  "title": "虫虫攀枝",
+  "template": "generated",
+  "experimental": true,
+  "runtimeTarget": "web-2d",
+  "generator": "gpt-5.6",
+  "generationRounds": 1,
+  "difficulty": "standard",
+  "visualStyle": "cute-woodland",
+  "aspectRatio": "4:3",
+  "inputModes": [
+    "pointer",
+    "keyboard",
+    "touch-buttons"
+  ],
+  "generatedAt": "2026-08-31T10:58:39.934Z",
+  "refinedAt": "2026-09-01T11:40:04.958Z",
+  "refinedFrom": "87885ec1-8d44-428d-ac91-1629868a3450",
+  "refinement": "legless-body-sprite-and-anatomical-six-leg-rig"
+}

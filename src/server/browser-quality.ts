@@ -726,6 +726,14 @@ async function stageCDebugAction(page: Page, action: string) {
   }, action);
 }
 
+async function stageCDebugActionAndState(page: Page, action: string) {
+  return page.evaluate((actionName) => {
+    const debug = (window as Window & { __GAME_DEBUG__?: Record<string, (() => unknown) | undefined> }).__GAME_DEBUG__;
+    debug?.[actionName]?.();
+    return debug?.getState?.();
+  }, action) as Promise<any>;
+}
+
 export async function inspectStageDClassicInBrowser(root: string, template: StageDClassicTemplate): Promise<StageDQualityResult> {
   const executablePath = requireBrowserExecutable("阶段 D 验收");
   const { server, url } = await startArtifactServer(root);
@@ -783,15 +791,13 @@ export async function inspectStageDClassicInBrowser(root: string, template: Stag
       await page.keyboard.press("ArrowLeft");
       await page.waitForTimeout(40);
       const moving = await stageCDebugState(page);
-      await stageCDebugAction(page, "finishAnimation");
-      const merged = await stageCDebugState(page);
+      const merged = await stageCDebugActionAndState(page, "finishAnimation");
       await stageCDebugAction(page, "undo");
       const undone = await stageCDebugState(page);
       await stageCDebugAction(page, "prepareDoubleMerge");
       await page.keyboard.press("ArrowLeft");
       await page.waitForTimeout(40);
-      await stageCDebugAction(page, "finishAnimation");
-      const doubleMerged = await stageCDebugState(page);
+      const doubleMerged = await stageCDebugActionAndState(page, "finishAnimation");
       await stageCDebugAction(page, "prepareDanger");
       const danger = await stageCDebugState(page);
       await page.evaluate(() => { const debug = (window as any).__GAME_DEBUG__; debug.setLevel(17); debug.restart(); });

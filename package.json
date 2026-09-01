@@ -19,6 +19,7 @@
     "db:logs": "docker compose logs -f postgres",
     "setup:browsers": "playwright install chromium",
     "seed:showcases": "node scripts/seed-showcase-games.mjs",
+    "demo:bug-climb": "vite examples/bug-climb --host 127.0.0.1 --port 4322",
     "release:golden-quality": "tsx scripts/release-golden-quality.ts",
     "baseline:quality": "node scripts/build-quality-baseline.mjs",
     "baseline:quality:force": "node scripts/build-quality-baseline.mjs --force",

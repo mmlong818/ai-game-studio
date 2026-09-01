@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 import { Script } from "node:vm";
 import { z } from "zod";
 import { visualStyleOptions, type ProjectDetail } from "../shared/contracts.js";
+import { inspectRasterAiArt } from "./art-policy.js";
 import { playTelemetryScript, safeStorageShim } from "./game-artifact.js";
 import { OPENAI_TEXT_MODEL, type OpenAISettings } from "./openai-settings.js";
 
@@ -38,6 +39,8 @@ const forbiddenPatterns: Array<{ pattern: RegExp; reason: string }> = [
   { pattern: /postMessage/, reason: "禁止跨窗口通信" },
   { pattern: /<iframe/i, reason: "禁止嵌套 iframe" },
   { pattern: /<object|<embed/i, reason: "禁止 object/embed" },
+  { pattern: /<svg\b/i, reason: "禁止 SVG 元素，游戏美术必须使用 AI 生成位图" },
+  { pattern: /image\/svg\+xml|\.svg(?:[?#"')\s]|$)/i, reason: "禁止 SVG 资源，游戏美术必须使用 AI 生成位图" },
 ];
 
 const THREE_MODULE_SPECIFIER = "./vendor/three.module.js";
@@ -77,7 +80,7 @@ function runtimeContract(is3d: boolean): string {
     "3. 探针钩子:当 new URLSearchParams(location.search).has(\"probe\") 为真时,必须挂载 window.__GAME_DEBUG__ = { getState: () => ({ state, score, level }), forceWin: () => 立即进入 won, forceLose: () => 立即进入 lost };probe 参数不存在时绝不挂载。",
     "4. 输入:键盘与触控/指针都能完成全部操作;触控目标不小于 44x44px;禁止依赖悬停。",
     "5. 布局:必须有 <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">;在 360px 宽的手机与桌面上都不得出现横向滚动;主游戏区域使用 id=\"game-canvas\" 的 <canvas> 或等价交互区。",
-    "6. 资源:全部视觉用内联 CSS/Canvas/内联 SVG/Emoji" + (is3d ? "/程序化几何与纹理" : "") + " 实现;可选用 ./assets/cover.png 与 ./assets/background.png 作装饰背景" + (is3d ? "或纹理" : "") + ",但文件缺失时页面必须依然完整可玩;禁止任何其他外部资源。",
+    "6. 资源:平台会注入 gpt-image-2 生成的 ./assets/cover.png 与 ./assets/background.png;游戏必须实际加载 ./assets/background.png 作为主要视觉背景" + (is3d ? "或场景纹理" : "") + ",可配合 CSS/Canvas" + (is3d ? "/程序化几何" : "") + "完成交互层;禁止 SVG、内联 SVG、Emoji 充当游戏美术，禁止外部资源。",
     "7. 声音:只允许 Web Audio API 程序化合成,且必须在用户首次交互后才创建 AudioContext;禁止音频文件。",
     "8. 存档:如需记录最高分,只使用平台注入的全局 safeStorage(getItem/setItem/removeItem);禁止直接触碰 localStorage。",
     "9. 全部界面文案使用简体中文;不显示任何水印或模型名。",
@@ -115,7 +118,7 @@ function buildSystemPrompt(project: ProjectDetail, iterating: boolean): string {
   const style = visualStyleOptions.find((option) => option.id === project.spec.visualStyle)!;
   const is3d = project.spec.runtimeTarget === "web-3d";
   return [
-    `你是一个游戏创作平台的资深玩法程序员。平台的模板库无法承载这句创意,由你直接生成一个完整、可玩、自包含的单文件 ${is3d ? "three.js 3D" : "HTML"} 小游戏。`,
+    `你是一个游戏创作平台的资深玩法程序员。平台的模板库无法承载这句创意,由你直接生成一个完整、可玩的单文件 ${is3d ? "three.js 3D" : "HTML"} 小游戏逻辑；主视觉必须使用平台提供的 AI 位图资产。`,
     "生成代码将在独立源的沙箱 iframe 中运行,并接受自动化验收;不满足运行时契约会被直接拒收。",
     ...(is3d ? ["注意:自动验收在软件渲染(SwiftShader)下运行,场景必须在低性能 GPU 上也能于 3 秒内出画面。"] : []),
     "== 运行时契约(逐条硬性要求) ==",
@@ -383,7 +386,8 @@ export function writeGeneratedArtifact(root: string, project: ProjectDetail, gen
 }
 
 // ---------- 静态探针 ----------
-export function inspectGeneratedArtifact(root: string): string[] {
+export function inspectGeneratedArtifact(root: string, options: { requireAiArt?: boolean } = {}): string[] {
+  const requireAiArt = options.requireAiArt ?? true;
   const indexPath = join(root, "index.html");
   if (!existsSync(indexPath)) throw new Error("生成产物缺少 index.html。");
   const html = readFileSync(indexPath, "utf8");
@@ -402,6 +406,10 @@ export function inspectGeneratedArtifact(root: string): string[] {
     .replace('<script type="module" src="./app.js"></script>', "")
     .replace('<script src="./app.js"></script>', "");
   const generatedCode = `${markupForScan}\n${styles}\n${stripPlatformSegments(appScript)}`;
+  const artFailures = inspectRasterAiArt(root, generatedCode);
+  const svgFailures = artFailures.filter((failure) => failure.includes("SVG"));
+  const aiFailures = artFailures.filter((failure) => !failure.includes("SVG"));
+  const loadsAiBackground = generatedCode.includes("./assets/background.png");
   const checks: Array<{ label: string; ok: boolean; detail: string }> = [
     { label: "外链交付结构", ok: existsSync(appPath) && existsSync(stylesPath) && !/<script(?![^>]*\bsrc)[^>]*>[\s\S]*?<\/script>/i.test(html) && !/<style/i.test(html), detail: "交付源 CSP 禁内联:index.html 必须外链 styles.css 与 app.js" },
     ...(is3d ? [{ label: "本地 3D 引擎", ok: existsSync(join(root, "vendor", "three.module.js")) && existsSync(join(root, "vendor", "three.core.js")), detail: "3D 产物缺少本地 three.js 模块" }] : []),
@@ -414,6 +422,9 @@ export function inspectGeneratedArtifact(root: string): string[] {
     { label: "安全扫描", ok: scanGeneratedHtml(generatedCode, { allowThreeModule: is3d }).length === 0, detail: "复扫发现违规 API" },
     { label: "生成溯源", ok: existsSync(join(root, "_studio", "GENERATED_CODE.json")), detail: "缺少 GENERATED_CODE.json" },
     { label: "游戏清单", ok: existsSync(join(root, "game-manifest.json")), detail: "缺少 game-manifest.json" },
+    { label: "AI 背景接入", ok: loadsAiBackground, detail: "游戏代码未加载 AI 局内背景 ./assets/background.png" },
+    ...(requireAiArt ? [{ label: "AI 生图位图", ok: aiFailures.length === 0, detail: aiFailures.join(";") || "缺少有效的 AI 生图位图" }] : []),
+    { label: "禁用 SVG", ok: svgFailures.length === 0, detail: svgFailures.join(";") || "检测到 SVG" },
   ];
   const failed = checks.filter((check) => !check.ok);
   if (failed.length > 0) throw new Error(`生成产物静态探针未通过:${failed.map((check) => check.detail).join(";")}`);

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import test from "node:test";
@@ -25,6 +25,19 @@ const examples: Array<[GameTemplate, VisualStyle, string, string]> = [
   ["mahjong-roguelite", "cute", "月港雀旅", "做一个肉鸽麻将接龙，配对自由牌清空层叠牌阵并选择遗物。"],
 ];
 
+function markTestAiArt(root: string) {
+  mkdirSync(join(root, "_studio"), { recursive: true });
+  writeFileSync(join(root, "_studio", "DYNAMIC_ART.json"), JSON.stringify({
+    schemaVersion: 2,
+    model: "gpt-image-2",
+    generatedAt: "2026-08-31T00:00:00.000Z",
+    entries: [
+      { file: "assets/cover.png", role: "封面", bytes: statSync(join(root, "assets", "cover.png")).size, prompt: "为自动化测试游戏生成一张不含文字的主视觉封面位图。" },
+      { file: "assets/background.png", role: "局内背景", bytes: statSync(join(root, "assets", "background.png")).size, prompt: "为自动化测试游戏生成一张不含文字的局内场景背景位图。" },
+    ],
+  }));
+}
+
 test("十二类艺术化游戏都会产出可解析脚本、角色拆分位图、四轨声音和专业设计探针", async () => {
   const database = await openTestDatabase();
   const repository = new StudioRepository(database, "http://127.0.0.1:4312");
@@ -35,6 +48,7 @@ test("十二类艺术化游戏都会产出可解析脚本、角色拆分位图�
       const output = join(artifactRoot, template);
       writeDesignDocuments(output, project);
       writeGameArtifact(output, project);
+      markTestAiArt(output);
       const probes = inspectGameArtifact(output);
       const manifest = JSON.parse(readFileSync(join(output, "game-manifest.json"), "utf8")) as {
         template: string;
@@ -47,7 +61,7 @@ test("十二类艺术化游戏都会产出可解析脚本、角色拆分位图�
       assert.equal(manifest.visualStyle, visualStyle);
       assert.notEqual(manifest.cameraMode, "auto");
       assert.ok(manifest.inputModes.length > 0);
-      assert.equal(probes.length, 15);
+      assert.equal(probes.length, 17);
       assert.equal(existsSync(join(output, "assets", "cover.png")), true);
       assert.equal(existsSync(join(output, "assets", "gameplay-atlas.png")), true);
       assert.equal(existsSync(join(output, "assets", "background.png")), true);
