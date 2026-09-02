@@ -174,3 +174,27 @@ test.describe("空档接龙固定游戏", () => {
     await expect(page.locator("body")).toHaveAttribute("data-card-back", "default");
   });
 });
+
+test("没有任何合法移动时提醒玩家撤销或重开，重开后恢复正常牌局", async ({ page }) => {
+  // 红黑 Q 压在 A 上、3 压在 2 上、四张 K 占满空档:没有收牌、叠放或空位可用。
+  const stuck = {
+    gameNumber: 1,
+    columns: [[0, 46], [1, 45], [2, 47], [3, 44], [4, 10], [5, 9], [6, 11], [7, 8]],
+    cells: [48, 49, 50, 51],
+    foundations: [0, 0, 0, 0],
+  };
+  await page.addInitScript((state) => {
+    localStorage.setItem("freecell.progress.v1", JSON.stringify({ unlocked: 1, results: {} }));
+    localStorage.setItem("freecell.session.v1", JSON.stringify({ level: 1, state, history: [], moves: 3, elapsed: 1000, won: false }));
+  }, stuck);
+  await page.goto(FREECELL_URL);
+  const banner = page.getByRole("alert");
+  await expect(banner).toBeVisible();
+  await expect(banner).toContainText("没有可以移动的牌了");
+  await expect(page.locator("#stuck-undo")).toBeHidden(); // 没有历史可撤销
+  await page.locator("#stuck-restart").click();
+  await expect(banner).toBeHidden();
+  await expect(page.locator("body")).toHaveAttribute("data-dealing", "false", { timeout: 10_000 });
+  await expect(page.locator(".card")).toHaveCount(52);
+  await expect(page.locator("#moves")).toHaveText("0");
+});

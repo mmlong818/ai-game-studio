@@ -161,3 +161,16 @@ test("固定游戏交付包为纯位图资源并带有 gpt-image-2 溯源", () =
   assert.match(app, /toDataURL/);
   assert.doesNotMatch(app, /fetch\(|XMLHttpRequest/, "牌背图片不得上传");
 });
+
+test("四个空档占满、没有任何合法落点时 legalMoves 返回空数组", () => {
+  // 红黑 Q 分别压在 A 上，3 压在 2 上，四张 K 占满空档：既不能收牌，也没有可叠放的目标或空列。
+  const state = {
+    gameNumber: 0,
+    columns: [[0, 11 * 4 + 2], [1, 11 * 4 + 1], [2, 11 * 4 + 3], [3, 11 * 4 + 0], [1 * 4 + 0, 2 * 4 + 2], [1 * 4 + 1, 2 * 4 + 1], [1 * 4 + 2, 2 * 4 + 3], [1 * 4 + 3, 2 * 4 + 0]],
+    cells: [12 * 4 + 0, 12 * 4 + 1, 12 * 4 + 2, 12 * 4 + 3],
+    foundations: [0, 0, 0, 0],
+  };
+  assert.equal(core.legalMoves(state).length, 0);
+  // 腾出一个空档后就有合法移动了。
+  assert.ok(core.legalMoves({ ...state, cells: [12 * 4 + 0, 12 * 4 + 1, 12 * 4 + 2, null] }).length > 0);
+});

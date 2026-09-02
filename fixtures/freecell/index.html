@@ -59,6 +59,17 @@
 
       <p class="status" id="status" role="status" aria-live="polite">选择一张牌,再点目标位置;再点一次自动放置。</p>
 
+      <div class="stuck-banner" id="stuck-banner" role="alert" hidden>
+        <div class="stuck-banner__copy">
+          <strong>没有可以移动的牌了</strong>
+          <span>可以撤销几步换条路，或者重开本关。</span>
+        </div>
+        <div class="stuck-banner__actions">
+          <button class="tool" id="stuck-undo" type="button">撤销一步</button>
+          <button class="tool tool--primary" id="stuck-restart" type="button">重开本关</button>
+        </div>
+      </div>
+
       <nav class="toolbar" aria-label="操作">
         <button class="tool" id="undo" type="button" aria-keyshortcuts="u">撤销</button>
         <button class="tool" id="hint" type="button" aria-keyshortcuts="h">提示</button>
