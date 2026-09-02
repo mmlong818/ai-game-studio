@@ -37,6 +37,7 @@
 | 12 | 星梦对决 | 独立对战模板 | 已完成并发布 v9，见 `50-star-dream-duel-best-template-reference.md` | 六类棋子战术角色、四/五/LT 特殊构形、三技能、可解释两层 AI、20 个独立机制关、后期封印障碍、局内恢复与手机/桌面真检均已通过；稳定网址已指向 `e2542f9a-fa9e-41d7-a149-6be467228a62` |
 | 13 | 3D 收集闯关 | `generated-3d` | 已完成并发布 v9，见 `51-3d-collector-best-template-reference.md` | 20 个唯一空间蓝图、五章分层、真实走跳与高度碰撞、检查点复位、主线终点与可选星砂评价、动态危险、刷新续玩、手机/桌面真检均已通过；稳定网址已指向 `2418cbb4-23ed-445c-abc2-be9ac20c3f0b` |
 | 14 | 3D 小型竞技场 | `signal-hunt` | 已完成并发布 v8，见 `52-3d-arena-best-template-reference.md` | 20 个唯一竞技蓝图、五章、四类独立位图敌人、真实飞行弹体、目标锁定、受击血条、远程预警、两次波次强化三选一、强化常驻 HUD 与手机/桌面真检均已通过；稳定网址已指向 `879a78ee-4c43-4386-8a3f-dde794a785ba` |
+| 15 | 空档接龙 | 固定游戏 `fixtures/freecell` | 已完成，见 `53-freecell-best-template-reference.md` | 标准 FreeCell 规则、超级移动、安全自动收牌、Microsoft 1–100 号牌局全部经求解器验证、点击/拖拽/键盘、本地进度、自定义牌背、gpt-image-2 位图与溯源、Chromium 真实通关测试均已落实；服务启动时自动注册为官方游戏，稳定网址 `/play/freecell/` |
 
 “待专门研究”不是占位式授权：该行在完成可追溯研究文档前不得进入视觉模仿或机制重构。
 
