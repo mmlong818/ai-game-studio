@@ -1,0 +1,146 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+    <meta name="theme-color" content="#2b3a67">
+    <meta name="description" content="经典空档接龙(FreeCell):8 列牌堆、4 个空档、4 个收牌堆,100 个已知可解的 Microsoft 牌局,支持撤销、超级移动与自定义牌背。">
+    <title>空档接龙 · FreeCell</title>
+    <link rel="icon" href="assets/suits/spade.png" type="image/png">
+    <link rel="preload" as="image" href="assets/card-back.png">
+    <link rel="preload" as="image" href="assets/suits/spade.png">
+    <link rel="preload" as="image" href="assets/suits/heart.png">
+    <link rel="preload" as="image" href="assets/suits/diamond.png">
+    <link rel="preload" as="image" href="assets/suits/club.png">
+    <link rel="stylesheet" href="styles.css?v=1">
+  </head>
+  <body data-game-state="idle">
+    <main class="game" aria-labelledby="game-title">
+      <header class="topbar">
+        <div class="brand">
+          <button class="deck-preview" id="open-back-dialog" type="button" aria-label="更换牌背">
+            <img class="deck-preview__image" id="deck-preview-image" src="assets/card-back.png" width="500" height="700" alt="">
+          </button>
+          <div class="brand__text">
+            <p class="eyebrow">FREECELL / 空档接龙</p>
+            <h1 id="game-title">第 <span id="level-number">1</span> 关</h1>
+          </div>
+        </div>
+        <dl class="stats" aria-label="本局统计">
+          <div><dt>步数</dt><dd id="moves">0</dd></div>
+          <div><dt>用时</dt><dd id="timer">00:00</dd></div>
+          <div><dt>已解锁</dt><dd id="unlocked-count">1</dd></div>
+        </dl>
+      </header>
+
+      <section class="table" id="table" tabindex="0" aria-label="牌桌:方向键移动光标,空格选牌,回车放牌,U 撤销,H 提示" data-dragging="false">
+        <div class="slot-row slot-row--top" aria-hidden="true">
+          <div class="slot slot--cell" data-slot="cell-0"><span class="slot__hint">空档</span></div>
+          <div class="slot slot--cell" data-slot="cell-1"><span class="slot__hint">空档</span></div>
+          <div class="slot slot--cell" data-slot="cell-2"><span class="slot__hint">空档</span></div>
+          <div class="slot slot--cell" data-slot="cell-3"><span class="slot__hint">空档</span></div>
+          <div class="slot slot--foundation" data-slot="foundation-0"><img class="slot__suit" src="assets/suits/club.png" alt=""></div>
+          <div class="slot slot--foundation" data-slot="foundation-1"><img class="slot__suit" src="assets/suits/diamond.png" alt=""></div>
+          <div class="slot slot--foundation" data-slot="foundation-2"><img class="slot__suit" src="assets/suits/heart.png" alt=""></div>
+          <div class="slot slot--foundation" data-slot="foundation-3"><img class="slot__suit" src="assets/suits/spade.png" alt=""></div>
+        </div>
+        <div class="slot-row slot-row--columns" aria-hidden="true">
+          <div class="slot slot--column" data-slot="column-0"></div>
+          <div class="slot slot--column" data-slot="column-1"></div>
+          <div class="slot slot--column" data-slot="column-2"></div>
+          <div class="slot slot--column" data-slot="column-3"></div>
+          <div class="slot slot--column" data-slot="column-4"></div>
+          <div class="slot slot--column" data-slot="column-5"></div>
+          <div class="slot slot--column" data-slot="column-6"></div>
+          <div class="slot slot--column" data-slot="column-7"></div>
+        </div>
+        <div class="cards" id="cards"></div>
+      </section>
+
+      <p class="status" id="status" role="status" aria-live="polite">选择一张牌,再点目标位置;再点一次自动放置。</p>
+
+      <nav class="toolbar" aria-label="操作">
+        <button class="tool" id="undo" type="button" aria-keyshortcuts="u">撤销</button>
+        <button class="tool" id="hint" type="button" aria-keyshortcuts="h">提示</button>
+        <button class="tool" id="restart" type="button" aria-keyshortcuts="r">重开</button>
+        <button class="tool" id="open-levels" type="button">关卡</button>
+        <button class="tool" id="open-back" type="button">牌背</button>
+      </nav>
+    </main>
+
+    <dialog class="sheet" id="win-dialog" aria-labelledby="win-title">
+      <div class="sheet__body">
+        <div class="win-cards" aria-hidden="true">
+          <img class="win-card" src="assets/card-back.png" width="500" height="700" alt="">
+          <img class="win-card" src="assets/card-back.png" width="500" height="700" alt="">
+          <img class="win-card" src="assets/card-back.png" width="500" height="700" alt="">
+        </div>
+        <p class="eyebrow">LEVEL CLEAR</p>
+        <h2 id="win-title">第 <span id="win-level">1</span> 关完成</h2>
+        <dl class="win-stats">
+          <div><dt>步数</dt><dd id="win-moves">0</dd></div>
+          <div><dt>用时</dt><dd id="win-time">00:00</dd></div>
+          <div><dt>最佳步数</dt><dd id="win-best">—</dd></div>
+        </dl>
+        <div class="sheet__actions">
+          <button class="button button--primary" id="next-level" type="button">下一关</button>
+          <button class="button" id="replay-level" type="button">再玩一次</button>
+        </div>
+      </div>
+    </dialog>
+
+    <dialog class="sheet sheet--wide" id="level-dialog" aria-labelledby="level-title">
+      <div class="sheet__body">
+        <div class="sheet__head">
+          <div>
+            <p class="eyebrow">MICROSOFT DEALS 1–100</p>
+            <h2 id="level-title">选择关卡</h2>
+          </div>
+          <button class="button" id="close-levels" type="button">关闭</button>
+        </div>
+        <p class="sheet__note">每一关对应同编号的经典 Microsoft FreeCell 牌局,均已知可解;完成当前关后解锁下一关。</p>
+        <div class="level-grid" id="level-grid" role="list"></div>
+      </div>
+    </dialog>
+
+    <dialog class="sheet" id="back-dialog" aria-labelledby="back-title">
+      <div class="sheet__body">
+        <div class="sheet__head">
+          <div>
+            <p class="eyebrow">CARD BACK</p>
+            <h2 id="back-title">更换牌背</h2>
+          </div>
+          <button class="button" id="close-back" type="button">关闭</button>
+        </div>
+        <p class="sheet__note">从本机选择一张图片,会在浏览器内裁切成 5:7 牌背并只保存在这台设备的浏览器里,不会上传。</p>
+        <div class="back-editor">
+          <div class="back-editor__preview">
+            <canvas id="back-canvas" width="250" height="350" aria-label="牌背预览"></canvas>
+          </div>
+          <div class="back-editor__controls">
+            <label class="button button--primary back-editor__file">
+              选择图片
+              <input id="back-file" type="file" accept="image/*">
+            </label>
+            <label class="range">缩放
+              <input id="back-zoom" type="range" min="1" max="3" step="0.01" value="1" disabled>
+            </label>
+            <label class="range">左右
+              <input id="back-offset-x" type="range" min="-1" max="1" step="0.01" value="0" disabled>
+            </label>
+            <label class="range">上下
+              <input id="back-offset-y" type="range" min="-1" max="1" step="0.01" value="0" disabled>
+            </label>
+            <div class="sheet__actions">
+              <button class="button button--primary" id="apply-back" type="button" disabled>使用这张图片</button>
+              <button class="button" id="reset-back" type="button">恢复默认牌背</button>
+            </div>
+            <p class="back-editor__status" id="back-status"></p>
+          </div>
+        </div>
+      </div>
+    </dialog>
+
+    <script type="module" src="app.js?v=1"></script>
+  </body>
+</html>
