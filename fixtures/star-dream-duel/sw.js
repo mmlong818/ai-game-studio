@@ -13,7 +13,6 @@ const APP_SHELL = [
   './assets/tiles-v2/heart.png',
   './assets/tiles-v2/drop.png',
   './icons/app-icon-192.png',
-  './icons/app-icon-192.png',
   './icons/app-icon-512.png'
 ];
 

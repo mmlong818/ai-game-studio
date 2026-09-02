@@ -1,7 +1,7 @@
 import { expect, test } from "@playwright/test";
 
 test.beforeEach(async ({ page }) => {
-  await page.goto("/");
+  await page.goto("/player-first");
   await page.evaluate(() => localStorage.clear());
   await page.reload();
 });

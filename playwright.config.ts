@@ -11,7 +11,7 @@ export default defineConfig({
     screenshot: "only-on-failure",
   },
   webServer: {
-    command: "npm run dev -- --port 4399 --strictPort",
+    command: "npm run dev:web -- --port 4399 --strictPort",
     url: "http://127.0.0.1:4399",
     reuseExistingServer: false,
   },

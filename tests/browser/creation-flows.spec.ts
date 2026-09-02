@@ -1,9 +1,9 @@
 import { expect, test } from "@playwright/test";
 
 test.beforeEach(async ({ page }) => {
-  await page.goto("/?advanced=1");
+  await page.goto("/player-first?advanced=1");
   await page.evaluate(() => localStorage.clear());
-  await page.goto("/?advanced=1");
+  await page.goto("/player-first?advanced=1");
 });
 
 test("现有游戏改造可以进入制作、编辑并撤销", async ({ page }) => {

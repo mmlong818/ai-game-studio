@@ -332,10 +332,18 @@ export default defineConfig(({ mode }) => {
   const apiKey = process.env.OPENAI_API_KEY || fileEnvironment.OPENAI_API_KEY;
   return {
     plugins: [react(), localImageGeneration(apiKey), localPreviewHosting(), stableReleaseHosting()],
+    build: {
+      outDir: "dist-web",
+      emptyOutDir: true,
+    },
     server: {
       host: "0.0.0.0",
       port: 4311,
       strictPort: false,
+      proxy: {
+        "/api": "http://127.0.0.1:4312",
+        "/media": "http://127.0.0.1:4312",
+      },
     },
     preview: {
       port: 4311,
