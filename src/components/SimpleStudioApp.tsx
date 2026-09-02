@@ -1,4 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import type { ProjectDetail } from "../shared/contracts";
+import { getProject } from "../web/api";
 import { generateProjectImage } from "../domain/imageGenerationClient";
 import { runtimeAssetPaths } from "../domain/assets";
 import { buildGameSpec } from "../domain/gameSpec";
@@ -9,6 +11,7 @@ import { generateRuntimeFiles } from "../domain/runtimeGenerator";
 import { buildSimplePlayableRevision } from "../domain/simpleProduction";
 import { downloadSimpleOpenSourceBundle, publishSimplePlayableRevision, verifySimplePlayableRevision } from "../domain/simpleRelease";
 import { INITIAL_DRAFT } from "../domain/storage";
+import { getTemplate } from "../domain/templates";
 
 type FlowMode = "remix" | "new-game";
 type FlowPhase = "playing" | "input" | "analyzing" | "choices" | "producing" | "validating" | "ready" | "testing" | "published" | "failed";
@@ -34,7 +37,22 @@ interface SimpleFlowState {
   publishedUrl: string;
 }
 
-const STORAGE_KEY = "ai-game-studio:simple-flow:v1";
+const STORAGE_KEY = "ai-game-studio:simple-flow:v2";
+
+const SOURCE_TEMPLATE_MAP: Record<string, string> = {
+  tetris: "falling-blocks",
+  puzzle: "picture-puzzle",
+  breakout: "breakout",
+  klotski: "sliding-block",
+  maze: "maze",
+  snake: "snake",
+  "merge-2048": "merge-2048",
+  "space-shooter": "space-shooter",
+  "polyomino-fit": "polyomino",
+  "block-place": "block-placement",
+  "region-logic": "region-logic",
+  "mahjong-roguelite": "tile-roguelite",
+};
 
 const INITIAL_FLOW: SimpleFlowState = {
   mode: "remix",
@@ -79,17 +97,29 @@ const designChoices = [
   { id: "explore", label: "重新构思", note: "变化更大，试玩前需要更长制作时间", recommended: false },
 ];
 
-const readFlow = (): SimpleFlowState => {
+const readFlow = (storageKey: string): SimpleFlowState => {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
+    const raw = localStorage.getItem(storageKey);
     return raw ? { ...INITIAL_FLOW, ...JSON.parse(raw) as SimpleFlowState } : INITIAL_FLOW;
   } catch {
     return INITIAL_FLOW;
   }
 };
 
+const embeddableGameUrl = (url: string | undefined): string | undefined => {
+  if (!url) return undefined;
+  if (!import.meta.env.DEV) return url;
+  const parsed = new URL(url);
+  return `/__game${parsed.pathname}${parsed.search}${parsed.hash}`;
+};
+
 export function SimpleStudioApp() {
-  const [flow, setFlow] = useState<SimpleFlowState>(readFlow);
+  const sourceGameId = new URLSearchParams(window.location.search).get("game")?.trim() || null;
+  const flowStorageKey = sourceGameId ? `${STORAGE_KEY}:${sourceGameId}` : STORAGE_KEY;
+  const [flow, setFlow] = useState<SimpleFlowState>(() => readFlow(flowStorageKey));
+  const [sourceGame, setSourceGame] = useState<ProjectDetail | null>(null);
+  const [sourceLoading, setSourceLoading] = useState(Boolean(sourceGameId));
+  const [sourceError, setSourceError] = useState("");
   const [draftRequest, setDraftRequest] = useState("");
   const [sheetView, setSheetView] = useState<SheetView | null>(flow.phase === "input" ? "request" : null);
   const [processOpen, setProcessOpen] = useState(true);
@@ -101,8 +131,28 @@ export function SimpleStudioApp() {
   );
 
   useEffect(() => {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(flow));
+    localStorage.setItem(flowStorageKey, JSON.stringify(flow));
   }, [flow]);
+
+  useEffect(() => {
+    if (!sourceGameId) return;
+    let active = true;
+    getProject(sourceGameId)
+      .then((project) => {
+        if (!active) return;
+        setSourceGame(project);
+        setFlow((current) => current.requestHistory.length > 0 || current.projectId
+          ? current
+          : { ...current, revision: project.publication?.versionNumber ?? project.version.number });
+      })
+      .catch((error) => {
+        if (active) setSourceError(error instanceof Error ? error.message : "没有找到这个游戏。");
+      })
+      .finally(() => {
+        if (active) setSourceLoading(false);
+      });
+    return () => { active = false; };
+  }, []);
 
   useEffect(() => {
     if (!processOpen) return;
@@ -129,6 +179,8 @@ export function SimpleStudioApp() {
   }, [flow.phase, flow.activityId]);
 
   const activeProject = useMemo(() => flow.projectId ? loadProject(flow.projectId) : null, [flow.projectId, flow.revision, flow.phase]);
+  const sourceTemplateId = sourceGame ? SOURCE_TEMPLATE_MAP[sourceGame.template] ?? null : null;
+  const sourceTemplate = getTemplate(sourceTemplateId);
   const fallbackSpec = useMemo(() => buildGameSpec(flow.mode === "new-game" ? {
     ...INITIAL_DRAFT,
     creationMode: "mechanic-composition",
@@ -138,8 +190,12 @@ export function SimpleStudioApp() {
     changeLevel: "R3",
   } : {
     ...INITIAL_DRAFT,
-    selectedSuggestionIds: ["merge-2048-world"],
-  }), [flow.mode, flow.request, recommendedMechanicIds]);
+    templateId: sourceTemplateId,
+    selectedSuggestionIds: sourceTemplateId ? [`${sourceTemplateId}-world`] : [],
+    creationMode: sourceTemplateId ? "template-remix" : "mechanic-composition",
+    newGameBrief: sourceGame?.idea ?? "改造当前单人网页游戏",
+    selectedMechanicIds: sourceTemplateId ? [] : recommendMechanics(sourceGame?.idea ?? "单人网页游戏").slice(0, 2).map((item) => item.id),
+  }), [flow.mode, flow.request, recommendedMechanicIds, sourceGame?.idea, sourceTemplateId]);
 
   const spec = activeProject?.spec ?? fallbackSpec;
 
@@ -158,9 +214,17 @@ export function SimpleStudioApp() {
       .replace('<script type="module" src="./app.js"></script>', `<script>${files["app.js"]}</script>`);
   }, [activeProject, flow.phase, flow.selectedDirection, spec]);
 
-  const suggestions = flow.mode === "new-game" ? NEW_GAME_SUGGESTIONS : REMIX_SUGGESTIONS;
+  const suggestions = flow.mode === "new-game"
+    ? NEW_GAME_SUGGESTIONS
+    : sourceTemplate
+      ? [
+          ...sourceTemplate.suggestions.slice(0, 2).map((item) => `${item.title}：${item.description}`),
+          ...REMIX_SUGGESTIONS.slice(1, 3),
+        ]
+      : REMIX_SUGGESTIONS;
   const choices = isVisualRequest(flow.request) ? visualChoices : designChoices;
-  const gameTitle = flow.mode === "new-game" ? "新游戏试玩" : "果林合成";
+  const gameTitle = flow.mode === "new-game" ? "新游戏试玩" : sourceGame?.title ?? "载入游戏";
+  const showGeneratedRevision = Boolean(activeProject && ["testing", "published"].includes(flow.phase));
 
   const openRequest = (mode: FlowMode = flow.mode) => {
     setFlow((current) => ({ ...current, mode, phase: current.phase === "input" ? "playing" : current.phase }));
@@ -218,9 +282,13 @@ export function SimpleStudioApp() {
       referenceDossier: createReferenceDossier(flow.request, selectedMechanicIds),
     } : {
       ...INITIAL_DRAFT,
+      templateId: sourceTemplateId,
       freeRequest: flow.request,
       changeLevel: level,
-      selectedSuggestionIds: ["merge-2048-world"],
+      selectedSuggestionIds: sourceTemplateId ? [`${sourceTemplateId}-world`] : [],
+      creationMode: sourceTemplateId ? "template-remix" as const : "mechanic-composition" as const,
+      newGameBrief: sourceGame?.idea ?? flow.request,
+      selectedMechanicIds: sourceTemplateId ? [] : recommendMechanics(`${sourceGame?.idea ?? ""} ${flow.request}`).slice(0, 2).map((item) => item.id),
     };
     try {
       const result = await buildSimplePlayableRevision({
@@ -324,6 +392,32 @@ export function SimpleStudioApp() {
     }
   };
 
+  if (!sourceGameId) {
+    return (
+      <main className="player-first-app game-choice-page">
+        <section className="game-choice-message">
+          <span className="player-brand">游造</span>
+          <h1>先选一个要改造的游戏</h1>
+          <p>“边玩边改”会跟随具体游戏保存意见、版本和开发记录，不会绑定固定示例。</p>
+          <a href="/games">去游戏大厅选择</a>
+        </section>
+      </main>
+    );
+  }
+
+  if (sourceLoading || !sourceGame) {
+    return (
+      <main className="player-first-app game-choice-page">
+        <section className="game-choice-message" role={sourceError ? "alert" : "status"}>
+          <span className="player-brand">游造</span>
+          <h1>{sourceError ? "这个游戏暂时打不开" : "正在打开游戏"}</h1>
+          <p>{sourceError || "正在读取当前游戏和已发布版本。"}</p>
+          {sourceError && <a href="/games">返回游戏大厅</a>}
+        </section>
+      </main>
+    );
+  }
+
   return (
     <main className="player-first-app">
       <header className="player-bar">
@@ -334,13 +428,20 @@ export function SimpleStudioApp() {
           <small>版本 {flow.revision}</small>
         </div>
         <nav aria-label="游戏操作">
-          <button type="button" onClick={() => openRequest("new-game")}>做一个新游戏</button>
-          <a href="?advanced=1">高级制作</a>
+          <a href="/games">换一个游戏</a>
+          <a href="/">做一个新游戏</a>
+          <a href={`/player-first?advanced=1&game=${encodeURIComponent(sourceGame.id)}`}>高级制作</a>
         </nav>
       </header>
 
       <section className="game-stage" aria-label="游戏试玩区">
-        <iframe key={`${flow.mode}-${flow.revision}-${flow.phase}`} title={`${gameTitle}游戏画面`} srcDoc={runtime} />
+        <iframe
+          key={`${sourceGame.id}-${flow.revision}-${flow.phase}`}
+          title={`${gameTitle}游戏画面`}
+          {...(showGeneratedRevision
+            ? { srcDoc: runtime }
+            : { src: embeddableGameUrl(sourceGame.publication?.stableUrl ?? sourceGame.publication?.versionUrl) })}
+        />
       </section>
 
       <button type="button" className="remix-edge-button" onClick={() => openRequest(flow.mode)} aria-haspopup="dialog">
@@ -408,6 +509,7 @@ export function SimpleStudioApp() {
                     </button>
                   ))}
                 </div>
+                <button type="button" className="choice-revise" onClick={() => openRequest(flow.mode)}>先补充一条意见</button>
               </>
             )}
           </section>

@@ -8,6 +8,61 @@
   color: var(--player-ink);
 }
 
+.game-choice-page {
+  display: grid;
+  min-height: 100svh;
+  place-items: center;
+  padding: 24px;
+  background: #18241b;
+  color: white;
+}
+
+.game-choice-message {
+  display: grid;
+  width: min(100%, 560px);
+  gap: 16px;
+  text-align: left;
+}
+
+.game-choice-message h1 {
+  max-width: 12ch;
+  margin: 18px 0 0;
+  font-size: clamp(38px, 8vw, 72px);
+  line-height: .98;
+  letter-spacing: -.055em;
+  text-wrap: balance;
+}
+
+.game-choice-message p {
+  max-width: 44ch;
+  margin: 0;
+  color: rgba(255,255,255,.68);
+  font-size: 15px;
+  line-height: 1.7;
+}
+
+.game-choice-message a {
+  display: inline-flex;
+  width: fit-content;
+  min-height: 48px;
+  align-items: center;
+  margin-top: 10px;
+  padding: 0 18px;
+  border-radius: 9px;
+  background: var(--player-accent);
+  color: white;
+  font-size: 14px;
+  font-weight: 780;
+  text-decoration: none;
+}
+
+.game-choice-message a:focus-visible,
+.player-bar a:focus-visible,
+.remix-edge-button:focus-visible {
+  outline: 3px solid white;
+  outline-offset: 3px;
+}
+
 .player-bar {
   position: fixed;
   z-index: 30;
@@ -247,6 +302,21 @@
 .direction-list strong { font-size: 17px; }
 .direction-list small { padding: 4px 7px; border-radius: 4px; background: var(--player-accent); color: white; font-size: 10px; }
 .direction-list p { margin: 0; color: #656b63; font-size: 13px; }
+
+.choice-revise {
+  width: 100%;
+  min-height: 44px;
+  margin-top: 14px;
+  border: 1px solid #c7cbc2;
+  border-radius: 9px;
+  background: transparent;
+  color: #4f564d;
+  font-size: 12px;
+  font-weight: 760;
+}
+
+.choice-revise:hover { border-color: #7e857b; background: white; }
+.choice-revise:focus-visible { outline: 3px solid rgba(23,25,21,.22); outline-offset: 2px; }
 
 .process-chat {
   position: fixed;

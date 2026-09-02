@@ -78,8 +78,8 @@ function GameCard({ game, featured, activity }: { game: ProjectSummary; featured
           <div><dt><Gauge size={14} aria-hidden="true" /> {t("library.difficulty")}</dt><dd>{difficultyLabel}</dd></div>
           <div><dt><Gamepad2 size={14} aria-hidden="true" /> {t("library.input")}</dt><dd>{inputLabel}</dd></div>
         </dl>
-        <a className="library-play-link" href={publication.stableUrl} target="_blank" rel="noreferrer">
-          {actionLabel} <ArrowUpRight size={18} aria-hidden="true" />
+        <a className="library-play-link" href={`/player-first?game=${encodeURIComponent(game.id)}`}>
+          {actionLabel}并改造 <ArrowUpRight size={18} aria-hidden="true" />
         </a>
       </div>
     </article>

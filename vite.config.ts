@@ -343,6 +343,10 @@ export default defineConfig(({ mode }) => {
       proxy: {
         "/api": "http://127.0.0.1:4312",
         "/media": "http://127.0.0.1:4312",
+        "/__game": {
+          target: "http://127.0.0.1:4313",
+          rewrite: (path) => path.replace(/^\/__game/, ""),
+        },
       },
     },
     preview: {
