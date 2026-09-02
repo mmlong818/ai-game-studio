@@ -243,6 +243,34 @@ h1 {
   box-shadow: 0 0 0 3px var(--butter), 0 8px 18px rgba(0, 0, 0, 0.3);
 }
 
+.card.is-capped {
+  opacity: 0.45;
+  filter: saturate(0.3);
+}
+
+.rule-toast {
+  position: absolute;
+  z-index: 200;
+  left: 4px;
+  top: 4px;
+  transform: translate(var(--x, 0px), var(--y, 0px)) translateY(6px);
+  padding: 10px 14px;
+  border-radius: 12px;
+  background: rgba(23, 32, 42, 0.94);
+  color: #fff7e6;
+  font-size: 13px;
+  line-height: 1.5;
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.35);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 160ms ease, transform 160ms ease;
+}
+
+.rule-toast.is-visible {
+  opacity: 1;
+  transform: translate(var(--x, 0px), var(--y, 0px));
+}
+
 .card.is-hint {
   box-shadow: 0 0 0 3px var(--mint), 0 8px 18px rgba(0, 0, 0, 0.3);
 }

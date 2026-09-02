@@ -74,7 +74,9 @@ test("超级移动上限为 (空档数+1)×2^(空列数),目标为空列时不�
   assert.equal(core.maxMovableCount(noRoom, false), 2);
   const verdict = core.validateMove(noRoom, move);
   assert.equal(verdict.ok, false);
-  assert.match(verdict.reason, /只允许一次移动 2 张/);
+  assert.equal(verdict.code, "supermove-limit");
+  assert.equal(verdict.limit, 2);
+  assert.match(verdict.reason, /最多一次搬 2 张/);
   // 只搬底部两张(8D 7S)到黑 9 上:2 张在上限内且叠放合法。
   const nineTarget = { ...noRoom, columns: noRoom.columns.map((column, index) => (index === 6 ? [8 * 4 + 0] : column)) };
   assert.equal(core.validateMove(nineTarget, { from: { type: "column", index: 0 }, to: { type: "column", index: 6 }, count: 2 }).ok, true);

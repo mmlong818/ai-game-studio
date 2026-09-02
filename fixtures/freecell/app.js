@@ -14,6 +14,7 @@ import {
   findBestDestination,
   isRed,
   isWon,
+  maxMovableCount,
   orderedRunLength,
   rankOf,
   solve,
@@ -24,6 +25,7 @@ import {
 const PROGRESS_KEY = "freecell.progress.v1";
 const SESSION_KEY = "freecell.session.v1";
 const CARD_BACK_KEY = "freecell.cardBack.v1";
+const SUPERMOVE_TIP_KEY = "freecell.tip.supermove.v1";
 const DEFAULT_CARD_BACK = "assets/card-back.png";
 const CARD_BACK_WIDTH = 500;
 const CARD_BACK_HEIGHT = 700;
@@ -162,7 +164,7 @@ function startLevel(level, { deal = true } = {}) {
   dom.body.dataset.gameState = "playing";
   saveSession();
   renderMeta();
-  setStatus(`第 ${level} 关开始:Microsoft 第 ${level} 号牌局。`);
+  setStatus(`第 ${level} 关开始。`);
   if (deal) dealAnimation();
   else render();
 }
@@ -282,6 +284,7 @@ function render() {
   computeMetrics();
   const state = game.state;
   const selected = new Set(selectedCards());
+  const capped = cappedCards();
   for (let card = 0; card < 52; card += 1) {
     const element = cardElements.get(card);
     const position = cardPosition(state, card);
@@ -289,6 +292,7 @@ function render() {
     element.classList.remove("is-facedown");
     element.classList.toggle("is-on-foundation", state.foundations[suitOf(card)] > rankOf(card));
     element.classList.toggle("is-selected", selected.has(card));
+    element.classList.toggle("is-capped", capped.has(card));
     element.classList.toggle("is-hint", Boolean(game.hint && game.hint.cards.includes(card)));
     const covered = state.foundations[suitOf(card)] > rankOf(card) + 1;
     element.hidden = covered;
@@ -341,6 +345,54 @@ function selectedCards() {
   return column.slice(column.length - count);
 }
 
+/** 选中一列牌组时,有序牌组里超出本次搬动上限、这次带不走的牌。 */
+function cappedCards() {
+  const capped = new Set();
+  if (!game.selection || !game.state || game.selection.from.type !== "column") return capped;
+  const column = game.state.columns[game.selection.from.index];
+  const run = orderedRunLength(column);
+  const limit = maxMovableCount(game.state, false);
+  if (run <= limit) return capped;
+  for (let index = column.length - run; index < column.length - limit; index += 1) capped.add(column[index]);
+  return capped;
+}
+
+let ruleToastTimer = null;
+/** 在目标位置旁边短暂弹出规则说明;第一次触发时多解释一句。 */
+function showRuleToast(message, slot) {
+  let toast = dom.table.querySelector(".rule-toast");
+  if (!toast) {
+    toast = document.createElement("div");
+    toast.className = "rule-toast";
+    toast.setAttribute("role", "status");
+    dom.table.appendChild(toast);
+  }
+  let text = message;
+  try {
+    if (!localStorage.getItem(SUPERMOVE_TIP_KEY)) {
+      text = `${message} 空档和空列越多，一次能搬得越多：每个空档 +1，每个空列翻倍。`;
+      localStorage.setItem(SUPERMOVE_TIP_KEY, "1");
+    }
+  } catch { /* 存储不可用时只显示短提示 */ }
+  toast.textContent = text;
+  const position = slot ? slotPosition(slot) : { x: metrics.left, y: metrics.columnsY };
+  const width = Math.min(dom.table.clientWidth - 16, 300);
+  const left = Math.max(4, Math.min(position.x + metrics.cardW / 2 - width / 2, dom.table.clientWidth - width - 4));
+  toast.style.setProperty("--x", `${Math.round(left)}px`);
+  toast.style.setProperty("--y", `${Math.round(position.y + metrics.cardH + 8)}px`);
+  toast.style.width = `${width}px`;
+  toast.hidden = false;
+  toast.classList.add("is-visible");
+  if (ruleToastTimer) clearTimeout(ruleToastTimer);
+  ruleToastTimer = setTimeout(() => { toast.classList.remove("is-visible"); toast.hidden = true; }, 3200);
+}
+
+/** 统一处理被拒绝的移动:上限类拒绝在目标旁弹出说明,其余只更新状态栏。 */
+function rejectMove(move, verdict) {
+  setStatus(verdict.reason ?? "这个位置不能放。");
+  if (verdict.code === "supermove-limit") showRuleToast(verdict.reason, move.to);
+}
+
 function validTargets(selection) {
   const targets = [];
   for (let index = 0; index < CELL_COUNT; index += 1) targets.push({ type: "cell", index });
@@ -358,7 +410,7 @@ function performMove(move, { announce = true } = {}) {
   if (game.won) return false;
   const verdict = validateMove(game.state, move);
   if (!verdict.ok) {
-    setStatus(verdict.reason);
+    rejectMove(move, verdict);
     return false;
   }
   startTimerIfNeeded();
@@ -414,10 +466,16 @@ function select(from, count) {
     setStatus("只能拿起底部连续交替颜色、点数递减的牌组。");
     return false;
   }
+  let capped = false;
+  if (from.type === "column") {
+    const limit = maxMovableCount(game.state, false);
+    if (count > limit) { count = limit; capped = true; }
+  }
   game.selection = { from, count };
   game.hint = null;
   const cards = selectedCards();
-  setStatus(cards.length > 1 ? `已拿起 ${cards.length} 张牌(${cardName(cards[0])} 起),再点目标位置。` : `已拿起 ${cardName(cards[0])},点目标位置或再点一次自动放置。`);
+  if (capped) setStatus(`现在最多一次搬 ${count} 张，已拿起底部 ${count} 张；上面变灰的牌这次带不走。`);
+  else setStatus(cards.length > 1 ? `已拿起 ${cards.length} 张牌(${cardName(cards[0])} 起),再点目标位置。` : `已拿起 ${cardName(cards[0])},点目标位置或再点一次自动放置。`);
   render();
   return true;
 }
@@ -471,10 +529,7 @@ function handleSlotTap(slot) {
     return;
   }
   const move = { from: game.selection.from, to: slot, count: game.selection.count };
-  if (!performMove(move)) {
-    const verdict = validateMove(game.state, move);
-    setStatus(verdict.reason ?? "这个位置不能放。");
-  }
+  performMove(move);
 }
 
 // ---------- 指针:点击与拖拽 ----------
@@ -585,7 +640,7 @@ function endDrag(event) {
   if (move && validateMove(game.state, move).ok) {
     performMove(move);
   } else {
-    if (move && !(target.type === origin.from.type && target.index === origin.from.index)) setStatus(validateMove(game.state, move).reason);
+    if (move && !(target.type === origin.from.type && target.index === origin.from.index)) rejectMove(move, validateMove(game.state, move));
     game.selection = null;
     render();
   }
