@@ -144,7 +144,7 @@ export function validateMove(state, move) {
   const target = state.columns[move.to.index];
   if (!target) return { ok: false, reason: "目标列不存在。" };
   const limit = maxMovableCount(state, target.length === 0);
-  if (cards.length > limit) return { ok: false, reason: `当前空档与空列只允许一次移动 ${limit} 张。` };
+  if (cards.length > limit) return { ok: false, code: "supermove-limit", limit, reason: `现在最多一次搬 ${limit} 张，先腾出空档或空列试试。` };
   if (target.length > 0 && !stacksOn(cards[0], target[target.length - 1])) return { ok: false, reason: "只能放到颜色相反、点数大 1 的牌上。" };
   return { ok: true, cards };
 }
