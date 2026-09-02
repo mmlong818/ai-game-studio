@@ -52,6 +52,7 @@ const projectLifecycle = new ProjectLifecycle(repository, artifactRoot);
 const templateArtIds = new Set(["signal-hunt", "tetris", "puzzle", "breakout", "klotski", "maze", "snake", "merge-2048", "space-shooter"]);
 await repository.failInterruptedBuilds();
 await repository.reconcilePublishedStatuses();
+await repository.initializeCatalogScopes();
 const goldenProjectId = await repository.ensureGoldenFixture();
 
 function projectIdFrom(pathname: string) {

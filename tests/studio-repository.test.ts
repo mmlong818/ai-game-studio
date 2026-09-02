@@ -48,6 +48,7 @@ test("黄金游戏会写入数据库并产生稳定网址与版本网址", async
     assert.ok(project);
     assert.equal(project.status, "published");
     assert.equal(project.fixtureKind, "star-dream-duel");
+    assert.equal(project.isOfficial, true);
     assert.equal(project.spec.acceptanceCriteria.length, 15);
     assert.ok(project.spec.acceptanceCriteria.every((item) => item.status === "passed"));
     assert.equal(project.version.qualityStatus, "passed");
@@ -62,7 +63,7 @@ test("黄金游戏会写入数据库并产生稳定网址与版本网址", async
   }
 });
 
-test("游戏大厅只返回已经在线交付的游戏", async () => {
+test("游戏大厅只返回已经在线交付的官方游戏", async () => {
   const { database, repository } = await createRepository();
   try {
     const goldenId = await repository.ensureGoldenFixture();
@@ -77,7 +78,42 @@ test("游戏大厅只返回已经在线交付的游戏", async () => {
     assert.equal(games.length, 1);
     assert.equal(games[0]?.id, goldenId);
     assert.equal(games[0]?.status, "published");
+    assert.equal(games[0]?.isOfficial, true);
     assert.equal(games[0]?.publication?.status, "live");
+    assert.equal((await repository.list()).some((project) => project.id === goldenId), false);
+  } finally {
+    await database.close();
+  }
+});
+
+test("目录边界迁移只把既有在线游戏认作官方，之后的新项目仍归用户", async () => {
+  const { database, repository } = await createRepository();
+  try {
+    const existing = await repository.create({
+      title: "迁移前官方游戏",
+      dimensions: "2d",
+      idea: "玩家在固定棋盘中完成官方挑战，用于验证旧目录迁移与用户项目边界。",
+    });
+    await database.query("UPDATE projects SET status = 'published' WHERE id = $1", [existing.id]);
+    await database.query(
+      `INSERT INTO publications (id, project_id, version_id, status, stable_path, version_path, published_at)
+       VALUES ($1, $2, $3, 'live', $4, $5, $6)`,
+      ["publication-existing", existing.id, existing.version.id, "/play/migrated-official/", "/version/migrated-official/", new Date().toISOString()],
+    );
+
+    await repository.initializeCatalogScopes();
+    assert.equal((await repository.get(existing.id))?.isOfficial, true);
+
+    const userProject = await repository.create({
+      title: "迁移后用户游戏",
+      dimensions: "2d",
+      idea: "玩家创建自己的收集小游戏，发布后仍应只出现在个人项目列表。",
+    });
+    await repository.initializeCatalogScopes();
+
+    assert.equal((await repository.get(userProject.id))?.isOfficial, false);
+    assert.equal((await repository.list()).some((project) => project.id === userProject.id), true);
+    assert.equal((await repository.list()).some((project) => project.id === existing.id), false);
   } finally {
     await database.close();
   }
@@ -225,7 +261,8 @@ test("发布闸门拒绝未验收版本，并能把稳定网址回滚到历史�
     assert.equal(secondBuild.status, "succeeded");
     assert.notEqual(secondBuild.versionId, firstBuild.versionId);
     assert.equal((await repository.get(project.id))?.status, "published");
-    assert.equal((await repository.publishedGames()).some((game) => game.id === project.id), true);
+    assert.equal((await repository.publishedGames()).some((game) => game.id === project.id), false);
+    assert.equal((await repository.list()).some((game) => game.id === project.id), true);
     await repository.reviewVersionArt(project.id, secondBuild.versionId ?? "", { status: "passed", summary: "主美已复核主体、构图、资产一致性与移动画幅。" });
     assert.ok((await repository.get(project.id))?.spec.acceptanceCriteria.filter((item) => item.probeType === "visual").every((item) => item.status === "passed"));
     const secondPublished = await repository.publish(project.id, secondBuild.versionId ?? "");
@@ -335,13 +372,14 @@ test("完成或未完成项目都能归档和恢复，归档项目从常规列�
 
     assert.ok(archived.archivedAt);
     assert.equal((await repository.list()).some((project) => project.id === goldenId), false);
-    assert.equal((await repository.list({ archived: true }))[0]?.id, goldenId);
+    assert.equal((await repository.list({ archived: true })).some((project) => project.id === goldenId), false);
     assert.equal((await repository.publishedGames()).some((project) => project.id === goldenId), false);
     assert.ok(await repository.resolveGameBySlug(archived.slug));
 
     const restored = await repository.restore(goldenId);
     assert.equal(restored.archivedAt, null);
-    assert.equal((await repository.list()).some((project) => project.id === goldenId), true);
+    assert.equal((await repository.list()).some((project) => project.id === goldenId), false);
+    assert.equal((await repository.publishedGames()).some((project) => project.id === goldenId), true);
 
     await repository.archive(goldenId);
     await new ProjectLifecycle(repository, artifactRoot).deleteArchived(goldenId);

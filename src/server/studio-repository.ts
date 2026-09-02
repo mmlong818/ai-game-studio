@@ -59,6 +59,7 @@ type ProjectRow = {
   dimensions: "2d" | "3d";
   status: "contract_ready" | "playable" | "published";
   fixture_kind: string | null;
+  is_official: boolean | number;
   created_at: DateValue;
   archived_at: DateValue | null;
   version_id: string;
@@ -178,6 +179,7 @@ function toSummary(row: ProjectRow, gameOrigin: string): ProjectSummary {
     inputModes: spec?.inputModes ?? ["keyboard", "touch"],
     status: row.status,
     fixtureKind: row.fixture_kind,
+    isOfficial: Boolean(row.is_official),
     coverUrl: row.publication_status && row.stable_path
       ? `${origin}${row.stable_path}${row.fixture_kind === "star-dream-duel" ? "icons/app-icon-512.png" : "assets/cover.png"}`
       : null,
@@ -277,17 +279,19 @@ async function insertProject(
   spec: GameSpec,
   fixtureKind: string | null = null,
   preferredSlug?: string,
+  isOfficial = false,
 ) {
   const now = new Date().toISOString();
+  const officialValue = database.provider === "sqlite-test" ? Number(isOfficial) : isOfficial;
   const projectId = randomUUID();
   const specId = randomUUID();
   const versionId = randomUUID();
   const slug = preferredSlug ?? await uniqueSlug(database, spec.title);
   await database.transaction(async (transaction) => {
     await transaction.query(
-      `INSERT INTO projects (id, title, idea, slug, dimensions, status, fixture_kind, created_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
-      [projectId, spec.title, input.idea, slug, spec.dimensions, fixtureKind ? "playable" : "contract_ready", fixtureKind, now],
+      `INSERT INTO projects (id, title, idea, slug, dimensions, status, fixture_kind, is_official, created_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+      [projectId, spec.title, input.idea, slug, spec.dimensions, fixtureKind ? "playable" : "contract_ready", fixtureKind, officialValue, now],
     );
     await transaction.query(
       "INSERT INTO game_specs (id, project_id, spec_json, created_at) VALUES ($1, $2, $3, $4)",
@@ -337,6 +341,23 @@ export class StudioRepository {
     );
   }
 
+  async initializeCatalogScopes() {
+    const migrationKey = "official_catalog_scope_initialized";
+    const initialized = (await this.database.query<{ value: string }>(
+      "SELECT value FROM studio_meta WHERE key = $1", [migrationKey],
+    )).rows[0];
+    if (initialized) return;
+    await this.database.transaction(async (transaction) => {
+      await transaction.query(
+        `UPDATE projects SET is_official = TRUE
+         WHERE EXISTS (SELECT 1 FROM publications WHERE publications.project_id = projects.id AND publications.status = 'live')`,
+      );
+      await transaction.query(
+        "INSERT INTO studio_meta (key, value) VALUES ($1, $2)", [migrationKey, "true"],
+      );
+    });
+  }
+
   async ensureGoldenFixture() {
     const initialized = (await this.database.query<{ value: string }>(
       "SELECT value FROM studio_meta WHERE key = $1", ["golden_fixture_initialized"],
@@ -353,7 +374,7 @@ export class StudioRepository {
       );
       return existing.id;
     }
-    const projectId = await this.locks.run(SLUG_LOCK_KEY, () => insertProject(this.database, goldenInput, acceptedGoldenSpec(), "star-dream-duel", "star-dream-duel"));
+    const projectId = await this.locks.run(SLUG_LOCK_KEY, () => insertProject(this.database, goldenInput, acceptedGoldenSpec(), "star-dream-duel", "star-dream-duel", true));
     await this.publish(projectId);
     await this.ensureGoldenBuild(projectId);
     await this.database.query(
@@ -419,7 +440,7 @@ export class StudioRepository {
 
   async list(options: { archived?: boolean } = {}): Promise<ProjectSummary[]> {
     const archiveFilter = options.archived ? "p.archived_at IS NOT NULL" : "p.archived_at IS NULL";
-    const rows = (await this.database.query<ProjectRow>(`${projectSelect} WHERE ${archiveFilter} ORDER BY COALESCE(p.archived_at, p.created_at) DESC`)).rows;
+    const rows = (await this.database.query<ProjectRow>(`${projectSelect} WHERE ${archiveFilter} AND p.is_official = FALSE ORDER BY COALESCE(p.archived_at, p.created_at) DESC`)).rows;
     return rows.map((row) => toSummary(row, this.gameOrigin));
   }
 
@@ -464,7 +485,10 @@ export class StudioRepository {
   }
 
   async publishedGames() {
-    return (await this.list())
+    const rows = (await this.database.query<ProjectRow>(
+      `${projectSelect} WHERE p.archived_at IS NULL AND p.is_official = TRUE ORDER BY p.created_at DESC`,
+    )).rows;
+    return rows.map((row) => toSummary(row, this.gameOrigin))
       .filter((project) => project.status === "published" && project.publication?.status === "live")
       .sort((left, right) => (right.publication?.publishedAt ?? "").localeCompare(left.publication?.publishedAt ?? ""));
   }

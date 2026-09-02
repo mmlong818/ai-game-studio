@@ -6,6 +6,7 @@ dist-server/
 test-results/
 playwright-report/
 coverage/
+/data/logs/
 *.tsbuildinfo
 .env
 .env.*

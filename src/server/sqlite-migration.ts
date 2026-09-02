@@ -13,7 +13,7 @@ type TableCopy = {
 // sqliteSchema definitions). Keep this in sync whenever a column or table is added there,
 // otherwise a legacy sqlite file migrates silently without that data.
 const tables: TableCopy[] = [
-  { name: "projects", columns: ["id", "title", "idea", "slug", "dimensions", "status", "fixture_kind", "created_at", "archived_at"] },
+  { name: "projects", columns: ["id", "title", "idea", "slug", "dimensions", "status", "fixture_kind", "is_official", "created_at", "archived_at"] },
   { name: "studio_meta", columns: ["key", "value"] },
   { name: "game_specs", columns: ["id", "project_id", "spec_json", "created_at"] },
   {

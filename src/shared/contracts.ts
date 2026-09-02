@@ -230,6 +230,7 @@ export const projectSummarySchema = z.object({
   inputModes: z.array(inputModeSchema).min(1),
   status: z.enum(["contract_ready", "playable", "published"]),
   fixtureKind: z.string().nullable(),
+  isOfficial: z.boolean(),
   coverUrl: z.string().url().nullable(),
   createdAt: z.string(),
   archivedAt: z.string().nullable(),
