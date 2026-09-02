@@ -1,0 +1,27 @@
+* text=auto
+
+*.js text eol=lf
+*.mjs text eol=lf
+*.ts text eol=lf
+*.tsx text eol=lf
+*.json text eol=lf
+*.md text eol=lf
+*.py text eol=lf
+*.sh text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf
+.dockerignore text eol=lf
+.env.example text eol=lf
+.gitattributes text eol=lf
+.gitignore text eol=lf
+Dockerfile text eol=lf
+
+*.gif binary
+*.jpg binary
+*.jpeg binary
+*.mp3 binary
+*.png binary
+*.wav binary
+*.webp binary
+*.woff binary
+*.woff2 binary

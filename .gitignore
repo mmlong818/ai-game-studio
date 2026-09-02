@@ -1,0 +1,15 @@
+node_modules/
+dist/
+dist-web/
+dist-server/
+.studio-data/
+test-results/
+playwright-report/
+coverage/
+/data/logs/
+/data/artifacts/
+*.tsbuildinfo
+.env
+.env.*
+!.env.example
+npm-debug.log*

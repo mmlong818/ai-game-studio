@@ -1,0 +1,7 @@
+Use case: stylized-concept
+Asset type: 3×3 game sprite atlas
+Primary request: Exact row-major 3x3 atlas for an irregular-region logic puzzle. Cells 1-5 are five different isolated tiny star-spirit tokens, front-facing and consistent scale: seafoam sprout, coral comet, marigold sun, denim raindrop and ivory moon. Cell 6 is one clean hand-drawn exclusion petal mark. Cell 7 is one compact hint lantern glow. Cell 8 is one compact mistake ripple. Cell 9 is one compact completion constellation burst.
+Style/medium: premium tactile felt and paper-grain storybook game sprites with polished toy faces, no cats and no purple
+Composition/framing: strict 3x3 equal-cell contact sheet, exactly one centered isolated token or effect per cell, consistent token scale
+Lighting/mood: soft warm editorial light with restrained highlights
+Constraints: solid uniform chroma-green #00FF00 background; no grid lines, text, letters, numbers, logos, watermark, cat mascot, full board, scene, overlap, cast shadows crossing cells or green-family colors on objects

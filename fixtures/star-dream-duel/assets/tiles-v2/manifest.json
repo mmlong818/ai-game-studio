@@ -1,0 +1,70 @@
+{
+  "schemaVersion": 1,
+  "model": "gpt-image-2",
+  "sourceAtlas": "output/imagegen/star-dream-duel-tile-atlas-v2.png",
+  "sourceAtlasSha256": "637dac91e1a9fb90dc63a6c117634b635621a1957af86fe5b57b21f7022d9d3a",
+  "promptFile": "fixtures/star-dream-duel/_studio/TILE_ART_PROMPT.md",
+  "layout": "3x2",
+  "assets": [
+    {
+      "filename": "moon.png",
+      "role": "match3-tile-moon",
+      "source": "openai-image-api+equal-grid-extraction",
+      "model": "gpt-image-2",
+      "width": 512,
+      "height": 512,
+      "bytes": 462750,
+      "sha256": "7b290cf3b7a20d1c64bad227795d8cb22fd71fd22cbff773cb1e464a059f1712"
+    },
+    {
+      "filename": "cloud.png",
+      "role": "match3-tile-cloud",
+      "source": "openai-image-api+equal-grid-extraction",
+      "model": "gpt-image-2",
+      "width": 512,
+      "height": 512,
+      "bytes": 438788,
+      "sha256": "3f01be770317121527baa232500ffa2208ebac58375863725da316d163df7459"
+    },
+    {
+      "filename": "star.png",
+      "role": "match3-tile-star",
+      "source": "openai-image-api+equal-grid-extraction",
+      "model": "gpt-image-2",
+      "width": 512,
+      "height": 512,
+      "bytes": 452484,
+      "sha256": "df5b81ea8b451699d9ea03c5bf1fd0d2c1dabbf109aa296e26993e75cfe896e6"
+    },
+    {
+      "filename": "flower.png",
+      "role": "match3-tile-flower",
+      "source": "openai-image-api+equal-grid-extraction",
+      "model": "gpt-image-2",
+      "width": 512,
+      "height": 512,
+      "bytes": 452320,
+      "sha256": "29d7f17be24fdbf946f9262fc8bcf5ba63d02ae1a79c5c084f93724e44fe5ba7"
+    },
+    {
+      "filename": "heart.png",
+      "role": "match3-tile-heart",
+      "source": "openai-image-api+equal-grid-extraction",
+      "model": "gpt-image-2",
+      "width": 512,
+      "height": 512,
+      "bytes": 451480,
+      "sha256": "4f6cf404d7fe7e1634c5da836f4f33cc5e9f2c8c714a85008e02e00ee5c52a70"
+    },
+    {
+      "filename": "drop.png",
+      "role": "match3-tile-drop",
+      "source": "openai-image-api+equal-grid-extraction",
+      "model": "gpt-image-2",
+      "width": 512,
+      "height": 512,
+      "bytes": 450306,
+      "sha256": "22d093397b8899589e9f7e9e985c6f66d127b16a2fb7ed7f2b26990c69ae8236"
+    }
+  ]
+}

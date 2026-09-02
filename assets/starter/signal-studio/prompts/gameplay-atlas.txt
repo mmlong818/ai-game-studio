@@ -1,0 +1,7 @@
+Use case: stylized-concept
+Asset type: 3×3 game sprite and texture atlas
+Primary request: Nine isolated assets for a coastal signal hunt and 3D ruin exploration game: signal orb, ruin fragment, explorer marker, exit emblem, floor texture, wall texture, fog wisp, capture ring and warning flare.
+Style/medium: high-end painted archaeological science-fiction game sprites
+Composition/framing: exact 3x3 equal-cell contact sheet with one centered asset per cell
+Lighting/mood: moonlit fog with coral and antique-gold emission
+Constraints: uniform chroma-green background, no text, logo, watermark, overlap or edge crop

@@ -1,0 +1,49 @@
+name: ai-game-studio
+
+services:
+  # 生产部署:docker compose --profile app up -d
+  # 反向代理应把工作台域名指向 4312、游戏子域指向 4313,并在下面两个 ORIGIN 里写公网地址。
+  studio:
+    build: .
+    profiles: ["app"]
+    environment:
+      HOST: 0.0.0.0
+      PORT: "4312"
+      GAME_PORT: "4313"
+      PUBLIC_ORIGIN: ${PUBLIC_ORIGIN:-http://127.0.0.1:4312}
+      PUBLIC_GAME_ORIGIN: ${PUBLIC_GAME_ORIGIN:-http://127.0.0.1:4313}
+      DATABASE_URL: postgresql://studio@postgres:5432/ai_game_studio
+      STUDIO_ACCESS_TOKEN: ${STUDIO_ACCESS_TOKEN:-}
+      BUILD_CONCURRENCY: ${BUILD_CONCURRENCY:-2}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      NODE_USE_ENV_PROXY: ${NODE_USE_ENV_PROXY:-}
+    ports:
+      - "127.0.0.1:4312:4312"
+      - "127.0.0.1:4313:4313"
+    volumes:
+      - studio-artifacts:/app/data
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+  postgres:
+    image: postgres:18.6-alpine3.23
+    environment:
+      POSTGRES_DB: ai_game_studio
+      POSTGRES_USER: studio
+      POSTGRES_HOST_AUTH_METHOD: trust
+    ports:
+      - "127.0.0.1:54329:5432"
+    volumes:
+      - studio-postgres-data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U studio -d ai_game_studio"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+    restart: unless-stopped
+
+volumes:
+  studio-postgres-data:
+  studio-artifacts:

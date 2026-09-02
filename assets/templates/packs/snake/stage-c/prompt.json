@@ -1,0 +1,11 @@
+{
+  "out": "snake-runtime-atlas-v2.png",
+  "prompt": "Create a production-ready 3 by 3 sprite atlas for a contemporary cute mobile snake game. The character is one coherent small jade dragon with translucent celadon-jade scales, warm coral cheek accents, soft rounded forms, expressive but refined details, and a modern toy-like finish rather than an antique Chinese style. Exact cells, left to right, top to bottom: 1 head facing right, 2 straight horizontal body segment with clean connectors on both ends, 3 ninety-degree elbow corner body segment with clean connectors, 4 tapered tail facing left with one connector, 5 luminous vermilion fruit collectible, 6 compact moss-and-jade garden stone obstacle, 7 eating sparkle burst, 8 danger proximity ripple, 9 joyful completion flourish. Every cell contains exactly one isolated object, centered, fully visible, consistent camera and lighting, strong readable silhouette at 44 pixels, generous padding, no overlap between cells.",
+  "use_case": "stylized-concept",
+  "style": "premium contemporary cute mobile game bitmap sprites, polished soft 3D illustration, celadon jade and coral palette",
+  "composition": "exact equal 3 by 3 grid, orthographic or very slight top-down view, one centered isolated asset per cell",
+  "lighting": "soft studio light, clear highlights, restrained glow",
+  "constraints": "solid uniform pure magenta #FF00FF background only; no text; no labels; no border; no watermark; no scenery; no cast shadow outside each object; do not merge cells; preserve exact listed order",
+  "size": "1024x1024",
+  "quality": "high"
+}
