@@ -71,3 +71,9 @@ for (const showcase of showcases) {
 
 const { games } = await request("/api/games");
 console.log(`游戏大厅当前共 ${games.length} 款已发布游戏。`);
+// 固定游戏(星梦对决、空档接龙)由 API 服务启动时的 ensureOfficialFixtures() 自动注册,不走上面的建项目流程。
+for (const fixture of ["star-dream-duel", "freecell"]) {
+  if (!games.some((game) => game.fixtureKind === fixture)) {
+    console.warn(`固定游戏 ${fixture} 尚未出现在大厅:请确认 API 服务已用包含该 fixture 的代码重启,或检查 studio_meta 中的初始化标记。`);
+  }
+}

@@ -29,13 +29,15 @@ function GameArtwork({ game, featured }: { game: ProjectSummary; featured: boole
   const { t } = usePreferences();
   const [failed, setFailed] = useState(false);
   const artworkUrl = game.coverUrl ?? `/media/template-art/${game.template}/cover.png`;
+  // 只有以方形 App 图标充当封面的固定游戏需要留白；自带竖版 cover.png 的固定游戏按普通封面展示。
+  const squareArt = Boolean(game.fixtureKind) && artworkUrl.endsWith("app-icon-512.png");
   return (
-    <div className={`library-art ${game.fixtureKind ? "is-square-art" : ""}`}>
+    <div className={`library-art ${squareArt ? "is-square-art" : ""}`}>
       {failed ? <div className="library-art-fallback" role="img" aria-label={t("library.coverUnavailable")}><Box size={30} aria-hidden="true" /><span>{game.title}</span><small>{t("library.coverUnavailable")}</small></div> : <img
         className="library-art-image"
         src={artworkUrl}
-        width={game.fixtureKind ? 512 : 2048}
-        height={game.fixtureKind ? 512 : 1152}
+        width={squareArt ? 512 : 2048}
+        height={squareArt ? 512 : 1152}
         loading={featured ? "eager" : "lazy"}
         fetchPriority={featured ? "high" : "auto"}
         alt={`${game.title} 游戏封面`}
