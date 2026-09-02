@@ -53,7 +53,8 @@ const templateArtIds = new Set(["signal-hunt", "tetris", "puzzle", "breakout", "
 await repository.failInterruptedBuilds();
 await repository.reconcilePublishedStatuses();
 await repository.initializeCatalogScopes();
-const goldenProjectId = await repository.ensureGoldenFixture();
+const officialFixtureIds = await repository.ensureOfficialFixtures();
+const goldenProjectId = officialFixtureIds["star-dream-duel"] ?? null;
 
 function projectIdFrom(pathname: string) {
   return pathname.match(/^\/api\/projects\/([^/]+)$/)?.[1] ?? null;
@@ -97,6 +98,7 @@ async function handleApi(request: IncomingMessage, response: ServerResponse, pat
       databaseProvider: database.provider,
       importedProjectCount,
       goldenProjectId,
+      officialFixtureIds,
     });
     return true;
   }
