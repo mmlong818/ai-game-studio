@@ -753,7 +753,7 @@ export function ProjectStudio({ project, onProjectChange }: ProjectStudioProps) 
         onProjectChange(await restoreProject(project.id));
       } else {
         await archiveProject(project.id);
-        window.location.assign("/#archive");
+        window.location.assign("/projects#archive");
       }
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : t("projects.archiveFailed"));
@@ -785,7 +785,7 @@ export function ProjectStudio({ project, onProjectChange }: ProjectStudioProps) 
       <header className="workbench-topbar">
         <div className="workbench-brand-group">
           <a className="workbench-brand" href="/" aria-label={t("brand.home")}><span aria-hidden="true">界</span><strong>{t("brand.name")}</strong></a>
-          <a className="workbench-projects-link" href="/#projects"><ArrowLeft size={15} aria-hidden="true" /> {t("studio.back")}</a>
+          <a className="workbench-projects-link" href="/projects#projects"><ArrowLeft size={15} aria-hidden="true" /> {t("studio.back")}</a>
           <div className="workbench-project-title">
             <strong>{project.title}</strong><span>v{project.version.number} · {project.spec.dimensions.toUpperCase()}</span>
           </div>

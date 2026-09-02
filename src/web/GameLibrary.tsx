@@ -159,7 +159,7 @@ export function GameLibrary() {
             <Box size={28} aria-hidden="true" />
             <h2>{t("library.none")}</h2>
             <p>{t("library.noneDetail")}</p>
-            <a href="/#projects">{t("library.back")}</a>
+            <a href="/projects">{t("library.back")}</a>
           </section>
         )}
       </main>

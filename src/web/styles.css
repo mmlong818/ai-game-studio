@@ -712,8 +712,8 @@ summary:focus-visible {
 }
 
 @media (max-width: 720px) {
-  .app-header { height: auto; min-height: 68px; padding-right: 12px; padding-left: 12px; }
-  .brand-copy small, .header-nav > a { display: none; }
+  .app-header { height: auto; min-height: 68px; gap: 10px; padding-right: 12px; padding-left: 12px; }
+  .brand-copy small { display: none; }
   .header-nav > .game-create-link { display: inline-flex; min-height: 40px; padding: 0 11px; }
   .preference-controls { margin-left: 0; }
   .preference-controls label { min-width: 44px; justify-content: center; padding: 0 5px; }
@@ -2012,6 +2012,10 @@ summary:focus-visible {
 }
 
 @media (max-width: 430px) {
+  .brand-copy {
+    display: none;
+  }
+
   .brand-mark {
     width: 34px;
     height: 34px;

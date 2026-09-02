@@ -574,7 +574,7 @@ function StudioHome() {
         <section className="projects-section" id="projects">
           <header className="projects-heading">
             <div><p className="eyebrow">{t("projects.count", { count: projects.length })}</p><h2>{t("projects.continue")}</h2></div>
-            <a href="/games">{t("projects.viewDelivered")} <ArrowRight size={16} aria-hidden="true" /></a>
+            <a href="/">{t("projects.viewDelivered")} <ArrowRight size={16} aria-hidden="true" /></a>
           </header>
           <nav className="project-view-tabs" aria-label={t("projects.views")}>
             <a href="#projects" aria-current={!showArchived ? "page" : undefined}><span>{t("projects.active")}</span><strong>{projects.length}</strong></a>
@@ -617,7 +617,7 @@ function ProjectPage({ projectId, legacyUrl = false }: { projectId: string; lega
       {project ? <ProjectStudio project={project} onProjectChange={setProject} /> : (
         <main className="project-page-state">
           {error ? <div className="global-error" role="alert">{error}</div> : <div className="loading-state" role="status"><LoaderCircle className="spin" size={20} /> {t("studio.loadingPage")}</div>}
-          <a className="secondary-button" href="/#projects">{t("studio.backProjects")}</a>
+          <a className="secondary-button" href="/projects#projects">{t("studio.backProjects")}</a>
         </main>
       )}
     </div>
@@ -633,18 +633,18 @@ function NotFoundPage() {
         <p className="eyebrow">404 · ROUTE NOT FOUND</p>
         <h1>{t("notFound.title")}</h1>
         <p>{t("notFound.detail")}</p>
-        <div><a className="primary-action-link" href="/">{t("notFound.back")}</a><a className="text-action-link" href="/games">{t("notFound.games")} <ArrowRight size={16} aria-hidden="true" /></a></div>
+        <div><a className="primary-action-link" href="/projects">{t("notFound.back")}</a><a className="text-action-link" href="/">{t("notFound.games")} <ArrowRight size={16} aria-hidden="true" /></a></div>
       </main>
     </div>
   );
 }
 
 export function App() {
-  if (window.location.pathname === "/games") return <GameLibrary />;
   const pathProjectId = projectIdFromPath();
   if (pathProjectId) return <ProjectPage projectId={pathProjectId} />;
   const legacyProjectId = projectIdFromLocation();
   if (legacyProjectId) return <ProjectPage projectId={legacyProjectId} legacyUrl />;
-  if (window.location.pathname === "/" || window.location.pathname === "") return <StudioHome />;
+  if (["/", "", "/games"].includes(window.location.pathname)) return <GameLibrary />;
+  if (window.location.pathname === "/projects") return <StudioHome />;
   return <NotFoundPage />;
 }
