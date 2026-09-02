@@ -420,19 +420,6 @@ export function SimpleStudioApp() {
 
   return (
     <main className="player-first-app">
-      <header className="player-bar">
-        <div>
-          <span className="player-brand">游造</span>
-          <span className="player-divider" aria-hidden="true" />
-          <strong>{gameTitle}</strong>
-          <small>版本 {flow.revision}</small>
-        </div>
-        <nav aria-label="游戏操作">
-          <a href="/games">换一个游戏</a>
-          <a href="/">做一个新游戏</a>
-        </nav>
-      </header>
-
       <section className="game-stage" aria-label="游戏试玩区">
         <iframe
           key={`${sourceGame.id}-${flow.revision}-${flow.phase}`}

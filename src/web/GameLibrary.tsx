@@ -79,7 +79,7 @@ function GameCard({ game, featured, activity }: { game: ProjectSummary; featured
           <div><dt><Gamepad2 size={14} aria-hidden="true" /> {t("library.input")}</dt><dd>{inputLabel}</dd></div>
         </dl>
         <a className="library-play-link" href={`/player-first?game=${encodeURIComponent(game.id)}`}>
-          {actionLabel}并改造 <ArrowUpRight size={18} aria-hidden="true" />
+          {actionLabel} <ArrowUpRight size={18} aria-hidden="true" />
         </a>
       </div>
     </article>

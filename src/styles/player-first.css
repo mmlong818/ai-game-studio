@@ -129,17 +129,17 @@
   display: grid;
   min-height: 100svh;
   place-items: center;
-  padding: 74px 18px 26px;
-  background: radial-gradient(circle at 50% 25%, #314d38 0, #1d3023 42%, #111b14 100%);
+  padding: 0;
+  background: #111b14;
 }
 
 .game-stage iframe {
-  width: min(100%, 760px);
-  height: min(82svh, 860px);
+  width: 100%;
+  height: 100svh;
   border: 0;
-  border-radius: 20px;
+  border-radius: 0;
   background: #edf5ed;
-  box-shadow: 0 30px 90px rgba(0,0,0,.38);
+  box-shadow: none;
 }
 
 .remix-edge-button {
@@ -391,12 +391,8 @@
 @keyframes thinking { 0%, 70%, 100% { opacity: .3; transform: translateY(0); } 35% { opacity: 1; transform: translateY(-2px); } }
 
 @media (max-width: 640px) {
-  .player-bar { height: 52px; padding: 0 12px; }
-  .player-bar small,
-  .player-bar a { display: none; }
-  .player-bar nav { gap: 4px; }
-  .game-stage { padding: 58px 0 0; }
-  .game-stage iframe { width: 100%; height: calc(100svh - 58px); border-radius: 0; }
+  .game-stage { padding: 0; }
+  .game-stage iframe { width: 100%; height: 100svh; border-radius: 0; }
   .remix-edge-button { top: auto; right: 12px; bottom: 20px; border-radius: 999px; transform: none; }
   .remix-edge-button:active { transform: scale(.98); }
   .sheet-layer { align-items: flex-end; }

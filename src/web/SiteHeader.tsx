@@ -16,7 +16,6 @@ export function SiteHeader({ active }: { active: "studio" | "games" }) {
           <a className="game-create-link" href="/create">{t("nav.gameCreate")}</a>
           <a href="/#projects" aria-current={active === "studio" ? "page" : undefined}>{t("nav.projects")}</a>
           <a href="/games" aria-current={active === "games" ? "page" : undefined}>{t("nav.games")}</a>
-          <a href="/player-first">边玩边改</a>
           <span className="environment-badge"><CircleDot size={12} aria-hidden="true" /> {t("nav.local")}</span>
           <ModelSettingsButton />
           <PreferenceControls />
