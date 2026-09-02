@@ -63,6 +63,34 @@ test("黄金游戏会写入数据库并产生稳定网址与版本网址", async
   }
 });
 
+test("空档接龙固定游戏随星梦对决一起注册为官方游戏并使用自带竖版封面", async () => {
+  const { database, repository } = await createRepository();
+  try {
+    const fixtures = await repository.ensureOfficialFixtures();
+    assert.ok(fixtures["star-dream-duel"]);
+    assert.ok(fixtures.freecell);
+    const project = await repository.get(fixtures.freecell!);
+    assert.ok(project);
+    assert.equal(project.title, "空档接龙");
+    assert.equal(project.fixtureKind, "freecell");
+    assert.equal(project.isOfficial, true);
+    assert.equal(project.status, "published");
+    assert.match(project.publication?.stableUrl ?? "", /\/play\/freecell\/$/);
+    assert.match(project.coverUrl ?? "", /\/play\/freecell\/assets\/cover\.png$/);
+    assert.ok(project.spec.acceptanceCriteria.some((item) => item.id === "AC-SUPERMOVE" && item.status === "passed"));
+    assert.deepEqual(project.spec.inputModes, ["pointer", "drag", "keyboard"]);
+    assert.equal((await repository.resolveGameBySlug("freecell"))?.fixture_kind, "freecell");
+    const lobby = await repository.publishedGames();
+    assert.deepEqual(lobby.map((game) => game.fixtureKind).sort(), ["freecell", "star-dream-duel"]);
+    // 重复调用幂等,不会重复插入。
+    assert.equal((await repository.ensureOfficialFixtures()).freecell, fixtures.freecell);
+    assert.equal(Number((await database.query<{ count: number }>("SELECT COUNT(*) AS count FROM projects WHERE fixture_kind = 'freecell'")).rows[0]?.count), 1);
+    assert.equal(Number((await database.query<{ count: number }>("SELECT COUNT(*) AS count FROM builds WHERE project_id = $1", [fixtures.freecell])).rows[0]?.count), 1);
+  } finally {
+    await database.close();
+  }
+});
+
 test("游戏大厅只返回已经在线交付的官方游戏", async () => {
   const { database, repository } = await createRepository();
   try {
