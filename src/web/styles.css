@@ -296,6 +296,18 @@ summary:focus-visible {
   content: "";
 }
 
+.header-nav > .game-create-link {
+  border: 1px solid var(--text);
+  border-radius: var(--radius-xs);
+  background: var(--text);
+  color: var(--surface-raised);
+}
+
+.header-nav > .game-create-link:hover {
+  background: var(--primary-hover);
+  color: #fff;
+}
+
 .environment-badge {
   display: inline-flex;
   min-height: 32px;
@@ -702,6 +714,7 @@ summary:focus-visible {
 @media (max-width: 720px) {
   .app-header { height: auto; min-height: 68px; padding-right: 12px; padding-left: 12px; }
   .brand-copy small, .header-nav > a { display: none; }
+  .header-nav > .game-create-link { display: inline-flex; min-height: 40px; padding: 0 11px; }
   .preference-controls { margin-left: 0; }
   .preference-controls label { min-width: 44px; justify-content: center; padding: 0 5px; }
   .preference-controls select { position: absolute; inset: 0; width: 44px; max-width: 44px; min-height: 44px; padding: 0; opacity: 0; }

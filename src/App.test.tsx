@@ -4,7 +4,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import App from "./App";
 
 describe("creation workbench", () => {
-  beforeEach(() => window.history.replaceState({}, "", "/?advanced=1"));
+  beforeEach(() => window.history.replaceState({}, "", "/create"));
   it("从固定建议形成可检查的模板改造规格", async () => {
     const user = userEvent.setup();
     render(<App />);

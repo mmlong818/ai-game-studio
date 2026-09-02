@@ -430,7 +430,6 @@ export function SimpleStudioApp() {
         <nav aria-label="游戏操作">
           <a href="/games">换一个游戏</a>
           <a href="/">做一个新游戏</a>
-          <a href={`/player-first?advanced=1&game=${encodeURIComponent(sourceGame.id)}`}>高级制作</a>
         </nav>
       </header>
 

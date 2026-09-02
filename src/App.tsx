@@ -689,7 +689,7 @@ export function AdvancedStudioApp() {
 }
 
 export default function App() {
-  return new URLSearchParams(window.location.search).get("advanced") === "1"
+  return window.location.pathname === "/create" || new URLSearchParams(window.location.search).get("advanced") === "1"
     ? <AdvancedStudioApp />
     : <SimpleStudioApp />;
 }
