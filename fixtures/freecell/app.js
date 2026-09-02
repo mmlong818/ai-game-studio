@@ -14,6 +14,7 @@ import {
   findBestDestination,
   isRed,
   isWon,
+  legalMoves,
   maxMovableCount,
   orderedRunLength,
   rankOf,
@@ -66,6 +67,9 @@ const dom = {
   applyBack: document.getElementById("apply-back"),
   resetBack: document.getElementById("reset-back"),
   backStatus: document.getElementById("back-status"),
+  stuckBanner: document.getElementById("stuck-banner"),
+  stuckUndo: document.getElementById("stuck-undo"),
+  stuckRestart: document.getElementById("stuck-restart"),
 };
 
 // ---------- 本地存储 ----------
@@ -300,6 +304,17 @@ function render() {
   }
   renderSlots();
   renderMeta();
+  renderStuck();
+}
+
+/** 没有任何合法移动（含放入空档与收牌）且未通关时，提醒玩家撤销或重开。 */
+function renderStuck() {
+  const stuck = Boolean(game.state) && !game.won && legalMoves(game.state).length === 0;
+  dom.stuckBanner.hidden = !stuck;
+  if (stuck) {
+    dom.stuckUndo.hidden = game.history.length === 0;
+    setStatus("没有可以移动的牌了。");
+  }
 }
 
 function renderSlots() {
@@ -1043,6 +1058,9 @@ setInterval(() => {
 document.addEventListener("visibilitychange", () => {
   if (document.hidden) saveSession();
 });
+
+dom.stuckUndo.addEventListener("click", () => undo());
+dom.stuckRestart.addEventListener("click", () => restartLevel());
 
 // ---------- 启动 ----------
 
