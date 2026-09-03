@@ -118,6 +118,20 @@ test("纸境 3D 产物：popup 模式生成不可变产物并通过静态探针"
     assert.match(script, /function createPaperPopupRules\(\)/);
     assert.match(script, /prefers-reduced-motion/);
     assert.doesNotMatch(script, /new THREE\.Sprite\(/, "禁止位图立牌充当 3D 物体");
+    // 渲染层已切到 PlayCanvas：引擎单文件 ESM 随产物一起交付，页面只从相对路径 import，不再引用 Three.js，也不从网络加载任何东西。
+    assert.equal(manifest.engine, "playcanvas");
+    assert.match(manifest.engineVersion, /^\d+\.\d+\.\d+$/);
+    assert.equal(manifest.engineLicense, "MIT");
+    assert.match(script, /^import \* as pc from "\.\/vendor\/playcanvas\.module\.js";/);
+    assert.doesNotMatch(script, /THREE\./);
+    assert.doesNotMatch(script, /https?:\/\//, "运行时不得从网络加载引擎或资源");
+    assert.ok(statSync(join(root, "vendor", "playcanvas.module.js")).size > 1_000_000, "PlayCanvas 单文件 ESM 构建应随产物交付");
+    assert.ok(existsSync(join(root, "vendor", "PLAYCANVAS-LICENSE.md")));
+    assert.match(readFileSync(join(root, "_studio", "OPEN_SOURCE_ATTRIBUTION.md"), "utf8"), /PlayCanvas[\s\S]*MIT/);
+    assert.ok(existsSync(resolve("third_party", "playcanvas-LICENSE.md")));
+    const provenance = JSON.parse(readFileSync(join(root, "_studio", "THREE_ASSET_PROVENANCE.json"), "utf8"));
+    assert.equal(provenance.engine.name, "PlayCanvas");
+    assert.equal(provenance.engine.version, manifest.engineVersion);
     assert.doesNotMatch(`${html}\n${script}`, /<svg|\.svg/i);
     assert.match(html, /data-key="jump"/);
     assert.match(html, /data-key="cw"/);
