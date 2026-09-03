@@ -1,11 +1,12 @@
 /**
- * 纸境 · 立体书迷宫（threeMode = "popup"）的浏览器运行时 —— PlayCanvas 版。
+ * 纸境 · 立体书迷宫（threeMode = "popup"）的浏览器运行时 —— 平台引擎层（PlayCanvas 底座）的第一个消费者。
  *
- * 这是平台接入真正 3D 引擎的第一个案例：渲染层由 PlayCanvas 2.x（MIT）驱动，规则内核仍通过 paperPopupRulesSource() 内嵌同一份代码。
- * 对外导出的函数名与签名与旧的 three-popup-runtime.ts 完全一致（writePaperPopupArtifact、readPaperPopupAssetManifest、paperPopupTextureFiles…），
- * game-artifact.ts 与测试不需要知道引擎换了。浏览器脚本分三段（引擎 / 场景 / 规则驱动）放在同名目录里，全部是模板字面量片段。
+ * 引导 / 几何 / 材质 / 实体工具 / 输入 / 后台停渲染 / 性能三档 / 调试骨架 / vendor 与许可归属全部来自 src/engine/playcanvas；
+ * 这里只剩纸境专属：色板与渲染预设、纸艺构件生成器、关卡→实例映射、探针合同扩展、贴图与关卡溯源文档。
+ * 规则内核仍通过 paperPopupRulesSource() 内嵌同一份代码；对外导出的函数名与签名保持不变（writePaperPopupArtifact、readPaperPopupAssetManifest、paperPopupTextureFiles…），
+ * game-artifact.ts 与测试不需要知道底层换了。浏览器脚本分三段（纸境装配 / 场景 / 规则驱动）放在同名目录里，全部是模板字面量片段。
  */
-import { copyFileSync, existsSync, mkdirSync, readFileSync, statSync, writeFileSync, appendFileSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { ProjectDetail } from "../shared/contracts.js";
@@ -15,17 +16,13 @@ import { auditPopupBlueprints, popupBestTemplateBlueprints, popupChapters } from
 import { popupEngineScript } from "./playcanvas-popup-runtime/script-engine.js";
 import { popupSceneScript } from "./playcanvas-popup-runtime/script-scene.js";
 import { popupGameLoopScript } from "./playcanvas-popup-runtime/script-game.js";
+import { paperRenderPreset } from "./playcanvas-popup-runtime/render-preset.js";
+import { assertEngineAvailable, controlBarHtml, engineImportHeader, engineManifestFields, engineProvenance, engineRuntimeFiles, engineRuntimeScript, playcanvasModuleSource, playcanvasVendorFile, playcanvasVersion, toJsLiteral, writeEngineAttribution, writeEngineVendor } from "../engine/playcanvas/index.js";
+
+export { playcanvasModuleSource, playcanvasVendorFile, playcanvasVersion, paperRenderPreset };
 
 const moduleRoot = dirname(fileURLToPath(import.meta.url));
 export const paperPopupAssetRoot = resolve(moduleRoot, "..", "..", "assets", "starter", "paper-popup");
-const playcanvasPackageRoot = resolve(moduleRoot, "..", "..", "node_modules", "playcanvas");
-/** 引擎单文件 ESM 构建（官方 build/playcanvas.mjs），复制到产物 vendor/ 时改名为 .js 以匹配静态服务的 MIME 表。 */
-export const playcanvasModuleSource = join(playcanvasPackageRoot, "build", "playcanvas.mjs");
-export const playcanvasVendorFile = "playcanvas.module.js";
-
-export function playcanvasVersion(): string {
-  try { return String((JSON.parse(readFileSync(join(playcanvasPackageRoot, "package.json"), "utf8")) as { version?: string }).version ?? "unknown"); } catch { return "unknown"; }
-}
 
 export type PaperPopupAssetManifest = {
   schemaVersion: number;
@@ -132,10 +129,17 @@ body:is([data-game-state=idle],[data-game-state=stage-complete],[data-game-state
 @media(max-width:360px){.three-start,.three-result{width:calc(100% - 14px);padding:16px}.three-start h2,.three-result h2{font-size:30px}.three-result-actions{grid-template-columns:1fr}.popup-guide{grid-template-columns:1fr 1fr 1fr}}
 `;
 
+/** HUD 触控按钮（data-key 合同）：⟲ 逆时针、跃、⟳ 顺时针。 */
+export const popupControlButtons = [
+  { key: "ccw", label: "⟲", ariaLabel: "向左转动书本" },
+  { key: "jump", label: "跃", ariaLabel: "跳跃", className: "popup-jump" },
+  { key: "cw", label: "⟳", ariaLabel: "向右转动书本" },
+] as const;
+
 export function popupGameHtml(project: ProjectDetail) {
   const campaignLevels = createPopupCampaignLevels(project);
   const campaignOptions = campaignLevels.map((level, index) => `<option value="${index}"${index > 0 ? " disabled" : ""}>${escapeHtml(level.label)}</option>`).join("");
-  return `<!doctype html><html lang="zh-CN"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#f4ecd9"><title>${escapeHtml(project.title)} · 立体书迷宫</title><link rel="modulepreload" href="./vendor/${playcanvasVendorFile}"><link rel="stylesheet" href="./styles.css"><script type="module" src="./app.js"></script></head><body data-runtime="web-3d" data-three-mode="popup" data-chapter="1" data-visual-style="${project.spec.visualStyle}" data-detail-level="paper"><main class="three-shell"><canvas id="game-canvas" class="three-canvas" aria-label="可转动的立体书迷宫" tabindex="0"></canvas><button class="three-back" id="back-to-setup" type="button" aria-label="返回启动页">返回</button><div class="three-toast" id="toast" role="status" aria-live="polite"></div><div class="three-hud"><div class="three-topbar"><div class="popup-chip popup-level"><span id="campaign-hud">纸境 · 第 1 / 20 页</span><h1 id="level-title">翻开第一页</h1></div><div class="popup-chip popup-stars"><span>折纸星 · 朝向</span><strong id="star-count" aria-label="折纸星 0 / 3"><i></i><i></i><i></i><em class="popup-dial" id="orientation-dial" aria-label="书本朝向">▲</em></strong></div></div><div></div><div class="three-bottom"><div class="three-objective"><span id="status-label">怎么走</span><p id="status">点击地面走过去；转一转书，路就出现了。</p></div><div class="three-controls" aria-label="转书与跳跃"><button type="button" data-key="ccw" aria-label="向左转动书本">⟲</button><button type="button" data-key="jump" class="popup-jump" aria-label="跳跃">跃</button><button type="button" data-key="cw" aria-label="向右转动书本">⟳</button></div></div></div><section class="three-start" id="start-card"><span class="kicker">纸境 · 立体书迷宫</span><h2>${escapeHtml(project.title)}</h2><p>每一页都是一座纸做的迷宫。把整本书转 90°，折起的桥和台阶就会落下来，藏在纸洞后的折纸星也会露出来。</p><div class="popup-guide"><div><b>⟲ ⟳</b>横向滑动或 Q / E 转书</div><div><b>☝</b>点击地面或方向键行走</div><div><b>跃</b>空格或按钮越过一格空隙</div></div><label class="three-level-field"><span>翻到哪一页</span><select data-campaign-level aria-label="选择关卡">${campaignOptions}</select></label><small data-campaign-progress>第 1 / 20 页 · 晨光草甸</small><button type="button" id="start">翻开这一页</button></section><section class="three-result" id="result-card" hidden><span class="kicker" id="result-kicker">这一页读完了</span><h2 id="result-title">抵达出口</h2><div class="result-stars" id="result-stars"><i>★</i><i>★</i><i>★</i></div><p id="result-detail"></p><div class="three-result-actions"><button type="button" class="secondary-result" id="result-setup">回到目录</button><button type="button" id="restart">翻到下一页</button></div></section><div class="webgl-error" id="webgl-error" hidden>此浏览器无法启动 WebGL 2。请启用硬件加速，或换用最新版 Chrome、Edge、Safari。</div></main></body></html>`;
+  return `<!doctype html><html lang="zh-CN"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#f4ecd9"><title>${escapeHtml(project.title)} · 立体书迷宫</title><link rel="modulepreload" href="./vendor/${playcanvasVendorFile}"><link rel="stylesheet" href="./styles.css"><script type="module" src="./app.js"></script></head><body data-runtime="web-3d" data-three-mode="popup" data-chapter="1" data-visual-style="${project.spec.visualStyle}" data-detail-level="paper"><main class="three-shell"><canvas id="game-canvas" class="three-canvas" aria-label="可转动的立体书迷宫" tabindex="0"></canvas><button class="three-back" id="back-to-setup" type="button" aria-label="返回启动页">返回</button><div class="three-toast" id="toast" role="status" aria-live="polite"></div><div class="three-hud"><div class="three-topbar"><div class="popup-chip popup-level"><span id="campaign-hud">纸境 · 第 1 / 20 页</span><h1 id="level-title">翻开第一页</h1></div><div class="popup-chip popup-stars"><span>折纸星 · 朝向</span><strong id="star-count" aria-label="折纸星 0 / 3"><i></i><i></i><i></i><em class="popup-dial" id="orientation-dial" aria-label="书本朝向">▲</em></strong></div></div><div></div><div class="three-bottom"><div class="three-objective"><span id="status-label">怎么走</span><p id="status">点击地面走过去；转一转书，路就出现了。</p></div>${controlBarHtml("转书与跳跃", popupControlButtons)}</div></div><section class="three-start" id="start-card"><span class="kicker">纸境 · 立体书迷宫</span><h2>${escapeHtml(project.title)}</h2><p>每一页都是一座纸做的迷宫。把整本书转 90°，折起的桥和台阶就会落下来，藏在纸洞后的折纸星也会露出来。</p><div class="popup-guide"><div><b>⟲ ⟳</b>横向滑动或 Q / E 转书</div><div><b>☝</b>点击地面或方向键行走</div><div><b>跃</b>空格或按钮越过一格空隙</div></div><label class="three-level-field"><span>翻到哪一页</span><select data-campaign-level aria-label="选择关卡">${campaignOptions}</select></label><small data-campaign-progress>第 1 / 20 页 · 晨光草甸</small><button type="button" id="start">翻开这一页</button></section><section class="three-result" id="result-card" hidden><span class="kicker" id="result-kicker">这一页读完了</span><h2 id="result-title">抵达出口</h2><div class="result-stars" id="result-stars"><i>★</i><i>★</i><i>★</i></div><p id="result-detail"></p><div class="three-result-actions"><button type="button" class="secondary-result" id="result-setup">回到目录</button><button type="button" id="restart">翻到下一页</button></div></section><div class="webgl-error" id="webgl-error" hidden>此浏览器无法启动 WebGL 2。请启用硬件加速，或换用最新版 Chrome、Edge、Safari。</div></main></body></html>`;
 }
 
 export function popupGameScript(project: ProjectDetail, safeStorageShim = "") {
@@ -159,10 +163,11 @@ export function popupGameScript(project: ProjectDetail, safeStorageShim = "") {
     beatMs: 380,
   });
   // 注意：下面的浏览器脚本刻意不使用模板字符串与 ${}，避免与本 TS 模板字面量冲突。
-  const header = `import * as pc from "./vendor/${playcanvasVendorFile}";
-${safeStorageShim}
+  // 渲染预设以 JS 字面量内嵌（键不加引号），静态探针才能读到 tiltShift: true 这类键。
+  const header = `${engineImportHeader()}${safeStorageShim}
 const config = ${config};
 const rules = ${paperPopupRulesSource()};
+const renderPreset = ${toJsLiteral(paperRenderPreset)};
 document.body.dataset.gameState = "idle";
 document.body.dataset.cameraMode = config.cameraMode;
 document.body.dataset.engine = "playcanvas";
@@ -189,7 +194,7 @@ pauseButton.textContent = "暂停";
 pauseButton.setAttribute("aria-label", "暂停游戏");
 document.querySelector(".three-shell").appendChild(pauseButton);
 `;
-  return `${header}${popupEngineScript}${popupSceneScript}${popupGameLoopScript}`;
+  return `${header}${engineRuntimeScript()}${popupEngineScript}${popupSceneScript}${popupGameLoopScript}`;
 }
 
 export type PopupArtifactHelpers = {
@@ -252,33 +257,11 @@ export function inspectPaperPopupArtifact(root: string, input: { html: string; s
   return probes.map(([name]) => name);
 }
 
-function writeEngineAttribution(studioRoot: string, version: string) {
-  const path = join(studioRoot, "OPEN_SOURCE_ATTRIBUTION.md");
-  const section = [
-    "",
-    "## 3D 引擎：PlayCanvas",
-    "",
-    `- 项目：https://github.com/playcanvas/engine（npm \`playcanvas@${version}\`）`,
-    "- 许可证：MIT（版权 PlayCanvas Ltd.），原文见 `vendor/PLAYCANVAS-LICENSE.md` 与平台仓库 `third_party/playcanvas-LICENSE.md`",
-    `- 接入方式：官方单文件 ESM 构建 \`build/playcanvas.mjs\` 原样复制为 \`vendor/${playcanvasVendorFile}\`，由 \`app.js\` 以相对路径 \`import\` 引入；运行时不从 CDN 加载任何代码`,
-    "- 使用范围：渲染（实体 / 组件、StandardMaterial、阴影、雾、ACES、CameraFrame 后处理）；关卡规则、几何与美术均为平台自有代码",
-    "",
-  ].join("\n");
-  if (existsSync(path)) {
-    const current = readFileSync(path, "utf8");
-    if (!current.includes("## 3D 引擎：PlayCanvas")) appendFileSync(path, section, "utf8");
-  } else writeFileSync(path, `# 开源代码归属\n\n此游戏模板没有声明为第三方开源代码移植。\n${section}`, "utf8");
-}
-
 export function writePaperPopupArtifact(root: string, project: ProjectDetail, helpers: PopupArtifactHelpers) {
-  if (!existsSync(playcanvasModuleSource)) throw new Error("PlayCanvas 浏览器运行时缺失（node_modules/playcanvas/build/playcanvas.mjs），请先安装项目依赖。");
-  const version = playcanvasVersion();
+  assertEngineAvailable();
   helpers.copySignalAssetPack(root);
   copyPaperPopupAssetPack(root);
-  mkdirSync(join(root, "vendor"), { recursive: true });
-  copyFileSync(playcanvasModuleSource, join(root, "vendor", playcanvasVendorFile));
-  const licenseSource = join(playcanvasPackageRoot, "LICENSE");
-  if (existsSync(licenseSource)) copyFileSync(licenseSource, join(root, "vendor", "PLAYCANVAS-LICENSE.md"));
+  const { version } = writeEngineVendor(root);
   writeFileSync(join(root, "index.html"), popupGameHtml(project), "utf8");
   writeFileSync(join(root, "styles.css"), popupGameStyles, "utf8");
   writeFileSync(join(root, "app.js"), `${popupGameScript(project, helpers.safeStorageShim)}${helpers.telemetryScript}`, "utf8");
@@ -326,7 +309,7 @@ export function writePaperPopupArtifact(root: string, project: ProjectDetail, he
   writeFileSync(join(provenanceRoot, "THREE_ASSET_PROVENANCE.json"), JSON.stringify({
     schemaVersion: 2,
     runtime: `playcanvas ${version}`,
-    engine: { name: "PlayCanvas", version, license: "MIT", bundle: `vendor/${playcanvasVendorFile}`, bytes: statSync(join(root, "vendor", playcanvasVendorFile)).size },
+    engine: engineProvenance(root, version),
     mode: "popup",
     contract: project.spec.threeContract,
     assetGeneration: { model: "gpt-image-2", promptRecord: "_studio/PAPER_POPUP_ASSET_PROMPTS.md", manifest: "assets/starter/paper-popup/manifest.json", deliveredTextures: paperPopupTextureFiles },
@@ -342,14 +325,22 @@ export function writePaperPopupArtifact(root: string, project: ProjectDetail, he
     note: "没有位图立牌充当 3D 物体；AI 位图只作为封面、纸纹、桌面与章节印花贴图，来源与哈希见 manifest。",
     files: trackedAssets.map((filename) => ({ filename: `assets/${filename}`, bytes: statSync(join(root, "assets", filename)).size, use: filename.endsWith(".wav") ? "audio" : filename === "cover.png" ? "cover" : "texture", sha256: manifest.entries.find((entry) => entry.file === filename)?.delivered.sha256 ?? null })),
   }, null, 2), "utf8");
+  // 引擎层使用记录：哪些通用片段被内嵌、用的哪套渲染预设，供验收与后续官方 3D 游戏对照。
+  writeFileSync(join(provenanceRoot, "ENGINE_LAYER.json"), JSON.stringify({
+    schemaVersion: 1,
+    engine: { name: "PlayCanvas", version, license: "MIT" },
+    layer: "src/engine/playcanvas",
+    runtimeFiles: engineRuntimeFiles,
+    renderPreset: { id: paperRenderPreset.id, name: paperRenderPreset.name },
+    consumer: { game: "paper-popup", specific: ["palettes", "paper-render-preset", "decor-catalog", "blueprint-to-views", "probe-contract"] },
+    doc: "docs/58-engine-layer.md",
+  }, null, 2), "utf8");
   writeFileSync(join(root, "game-manifest.json"), JSON.stringify({
     title: project.title,
     template: project.spec.template,
     runtimeTarget: "web-3d",
     perspective: "third-person",
-    engine: "playcanvas",
-    engineVersion: version,
-    engineLicense: "MIT",
+    ...engineManifestFields(version, paperRenderPreset),
     difficulty: project.spec.difficulty,
     visualStyle: project.spec.visualStyle,
     aspectRatio: project.spec.aspectRatio,
@@ -362,7 +353,6 @@ export function writePaperPopupArtifact(root: string, project: ProjectDetail, he
     artPipeline: { renderer: "playcanvas-procedural-papercraft", cover: "./assets/cover.png", textures: paperPopupTextureFiles.map((file) => `./assets/${file}`), environment: "./assets/background.png" },
     threeMode: "popup",
     threeContract: project.spec.threeContract,
-    performanceProfiles: { low: { pixelRatio: 1, shadows: false, tiltShift: false }, medium: { pixelRatio: 1.25, shadows: true, tiltShift: false }, high: { pixelRatio: 1.5, shadows: true, tiltShift: true } },
     assetProvenance: "./_studio/THREE_ASSET_PROVENANCE.json",
     levelAudit: "./_studio/PAPER_POPUP_LEVELS.json",
   }, null, 2), "utf8");
