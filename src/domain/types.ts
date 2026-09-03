@@ -74,9 +74,17 @@ export interface ReferenceDossier {
   compatibilityRisks: string[];
 }
 
+/** 用户在大厅里选中的真实游戏；模板只是它背后的玩法骨架。 */
+export interface SourceGame {
+  id: string;
+  title: string;
+  coverUrl: string | null;
+}
+
 export interface StudioDraft {
   creationMode: CreationMode;
   templateId: string | null;
+  sourceGame?: SourceGame | null;
   selectedSuggestionIds: string[];
   freeRequest: string;
   newGameBrief: string;

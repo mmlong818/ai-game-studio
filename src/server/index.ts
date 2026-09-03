@@ -49,7 +49,7 @@ const orchestrator = new BuildOrchestrator(repository, artifactRoot, {
 });
 const accessControl = new AccessControl(process.env.STUDIO_ACCESS_TOKEN?.trim() || null);
 const projectLifecycle = new ProjectLifecycle(repository, artifactRoot);
-const templateArtIds = new Set(["signal-hunt", "tetris", "puzzle", "breakout", "klotski", "maze", "snake", "merge-2048", "space-shooter"]);
+const templateArtIds = new Set(["signal-hunt", "tetris", "puzzle", "breakout", "klotski", "maze", "snake", "merge-2048", "space-shooter", "polyomino-fit", "block-place", "region-logic", "mahjong-roguelite"]);
 await repository.failInterruptedBuilds();
 await repository.reconcilePublishedStatuses();
 await repository.initializeCatalogScopes();

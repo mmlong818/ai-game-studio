@@ -60,6 +60,7 @@ type ProjectRow = {
   status: "contract_ready" | "playable" | "published";
   fixture_kind: string | null;
   is_official: boolean | number;
+  lobby_rank: number | null;
   created_at: DateValue;
   archived_at: DateValue | null;
   version_id: string;
@@ -181,7 +182,7 @@ function toSummary(row: ProjectRow, gameOrigin: string): ProjectSummary {
     fixtureKind: row.fixture_kind,
     isOfficial: Boolean(row.is_official),
     coverUrl: row.publication_status && row.stable_path
-      ? `${origin}${row.stable_path}${row.fixture_kind === "star-dream-duel" ? "icons/app-icon-512.png" : "assets/cover.png"}`
+      ? `${origin}${row.stable_path}assets/cover.png`
       : null,
     createdAt: iso(row.created_at),
     archivedAt: iso(row.archived_at),
@@ -488,9 +489,15 @@ export class StudioRepository {
     const rows = (await this.database.query<ProjectRow>(
       `${projectSelect} WHERE p.archived_at IS NULL AND p.is_official = TRUE ORDER BY p.created_at DESC`,
     )).rows;
+    // 大厅顺序：人工设置的 lobby_rank 优先（小者在前），未设置的按发布时间倒序排在其后。
+    const rankOf = new Map(rows.map((row) => [row.id, row.lobby_rank ?? Number.POSITIVE_INFINITY]));
     return rows.map((row) => toSummary(row, this.gameOrigin))
       .filter((project) => project.status === "published" && project.publication?.status === "live")
-      .sort((left, right) => (right.publication?.publishedAt ?? "").localeCompare(left.publication?.publishedAt ?? ""));
+      .sort((left, right) => {
+        const rankDelta = (rankOf.get(left.id) ?? Number.POSITIVE_INFINITY) - (rankOf.get(right.id) ?? Number.POSITIVE_INFINITY);
+        if (rankDelta !== 0) return rankDelta;
+        return (right.publication?.publishedAt ?? "").localeCompare(left.publication?.publishedAt ?? "");
+      });
   }
 
   async recordPlayEvent(rawInput: unknown) {

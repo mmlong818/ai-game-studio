@@ -3,7 +3,6 @@ import {
   Activity,
   Archive,
   ArchiveRestore,
-  ArrowLeft,
   Braces,
   Check,
   CheckCircle2,
@@ -785,7 +784,11 @@ export function ProjectStudio({ project, onProjectChange }: ProjectStudioProps) 
       <header className="workbench-topbar">
         <div className="workbench-brand-group">
           <a className="workbench-brand" href="/" aria-label={t("brand.home")}><span aria-hidden="true">界</span><strong>{t("brand.name")}</strong></a>
-          <a className="workbench-projects-link" href="/projects#projects"><ArrowLeft size={15} aria-hidden="true" /> {t("studio.back")}</a>
+          <nav className="workbench-nav" aria-label={t("nav.create")}>
+            <a href="/">{t("nav.games")}</a>
+            <a href="/create">{t("nav.gameCreate")}</a>
+            <a href="/projects">{t("nav.projects")}</a>
+          </nav>
           <div className="workbench-project-title">
             <strong>{project.title}</strong><span>v{project.version.number} · {project.spec.dimensions.toUpperCase()}</span>
           </div>

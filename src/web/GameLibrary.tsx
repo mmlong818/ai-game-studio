@@ -1,85 +1,123 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
-  ArrowUpRight,
   Box,
-  CalendarDays,
-  Clock3,
   Gamepad2,
-  Gauge,
   History,
-  Layers3,
-  Radio,
+  Medal,
+  SearchX,
   Sparkles,
   Trophy,
 } from "lucide-react";
-import type { PlayActivity, ProjectSummary } from "../shared/contracts";
+import type { GameTemplate, PlayActivity, ProjectSummary } from "../shared/contracts";
 import { getPlayActivities, getPublishedGames } from "./api";
 import { SiteHeader } from "./SiteHeader";
-import { usePreferences, type ResolvedLocale } from "./preferences";
+import { usePreferences, type MessageKey } from "./preferences";
 
-function formatPublishedAt(value: string, locale: ResolvedLocale) {
-  return new Intl.DateTimeFormat(locale, {
-    year: "numeric",
-    month: "short",
-    day: "numeric",
-  }).format(new Date(value));
-}
+const templateNameKeys: Record<GameTemplate, MessageKey> = {
+  "signal-hunt": "library.template.signal-hunt",
+  tetris: "library.template.tetris",
+  puzzle: "library.template.puzzle",
+  breakout: "library.template.breakout",
+  klotski: "library.template.klotski",
+  maze: "library.template.maze",
+  snake: "library.template.snake",
+  "merge-2048": "library.template.merge-2048",
+  "space-shooter": "library.template.space-shooter",
+  "polyomino-fit": "library.template.polyomino-fit",
+  "block-place": "library.template.block-place",
+  "region-logic": "library.template.region-logic",
+  "mahjong-roguelite": "library.template.mahjong-roguelite",
+  generated: "library.template.generated",
+};
 
 function GameArtwork({ game, featured }: { game: ProjectSummary; featured: boolean }) {
   const { t } = usePreferences();
   const [failed, setFailed] = useState(false);
   const artworkUrl = game.coverUrl ?? `/media/template-art/${game.template}/cover.png`;
   return (
-    <div className={`library-art ${game.fixtureKind ? "is-square-art" : ""}`}>
+    <div className="library-art">
       {failed ? <div className="library-art-fallback" role="img" aria-label={t("library.coverUnavailable")}><Box size={30} aria-hidden="true" /><span>{game.title}</span><small>{t("library.coverUnavailable")}</small></div> : <img
         className="library-art-image"
         src={artworkUrl}
-        width={game.fixtureKind ? 512 : 2048}
-        height={game.fixtureKind ? 512 : 1152}
+        width={2048}
+        height={1152}
         loading={featured ? "eager" : "lazy"}
         fetchPriority={featured ? "high" : "auto"}
         alt={`${game.title} 游戏封面`}
         onError={() => setFailed(true)}
       />}
-      <span className="art-label">{game.fixtureKind ? "GOLDEN GAME / BITMAP ART" : "GPT-IMAGE-2 / ORIGINAL KEY ART"}</span>
+    </div>
+  );
+}
+
+function GameChipArt({ game }: { game: ProjectSummary }) {
+  const [failed, setFailed] = useState(false);
+  if (failed) return <Gamepad2 size={18} aria-hidden="true" />;
+  return <img src={game.coverUrl ?? `/media/template-art/${game.template}/cover.png`} width={64} height={64} loading="lazy" alt="" onError={() => setFailed(true)} />;
+}
+
+function GameMarquee({ games }: { games: ProjectSummary[] }) {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const segmentRef = useRef<HTMLDivElement>(null);
+  const [loop, setLoop] = useState(false);
+  const [duration, setDuration] = useState(0);
+
+  useEffect(() => {
+    const container = containerRef.current;
+    const segment = segmentRef.current;
+    if (!container || !segment) return;
+    const measure = () => {
+      const overflow = segment.scrollWidth > container.clientWidth + 1;
+      setLoop(overflow);
+      setDuration(overflow ? Math.max(12, segment.scrollWidth / 36) : 0);
+    };
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(container);
+    observer.observe(segment);
+    return () => observer.disconnect();
+  }, [games]);
+
+  const chips = games.map((game) => (
+    <span className="library-marquee-chip" key={game.id}>
+      <span className="library-marquee-chip-art"><GameChipArt game={game} /></span>
+      {game.title}
+    </span>
+  ));
+
+  return (
+    <div className={`library-marquee ${loop ? "is-looping" : ""}`} ref={containerRef} aria-hidden="true">
+      <div className="library-marquee-track" style={loop ? { animationDuration: `${duration}s` } : undefined}>
+        <div className="library-marquee-segment" ref={segmentRef}>{chips}</div>
+        {loop ? <div className="library-marquee-segment">{chips}</div> : null}
+      </div>
     </div>
   );
 }
 
 function GameCard({ game, featured, activity }: { game: ProjectSummary; featured: boolean; activity?: PlayActivity }) {
-  const { locale, t } = usePreferences();
+  const { t } = usePreferences();
   const publication = game.publication;
   if (!publication) return null;
   const hasNewVersion = Boolean(activity && activity.versionId !== publication.versionId);
   const actionLabel = activity?.status === "completed" ? t("library.replay") : activity ? t("library.continue") : t("library.play");
   const difficultyLabel = game.difficulty === "relaxed" ? t("library.difficultyRelaxed") : game.difficulty === "challenging" ? t("library.difficultyChallenging") : t("library.difficultyStandard");
-  const inputLabel = game.inputModes.map((mode) => mode === "keyboard" ? t("library.inputKeyboard") : mode === "pointer" ? t("library.inputPointer") : t("library.inputTouch")).filter((value, index, values) => values.indexOf(value) === index).join(" · ");
   return (
     <article className={`library-card ${featured ? "is-featured" : ""}`}>
       <GameArtwork game={game} featured={featured} />
       <div className="library-card-body">
-        <div className="library-card-topline">
-          <span><Radio size={13} aria-hidden="true" /> LIVE</span>
-          <span>{game.dimensions.toUpperCase()}</span>
+        <div className="library-badges" aria-label={t("library.playStatus")}>
+          {activity?.status === "completed" ? <span className="library-badge is-complete" title={t("library.completed")}><Medal size={14} aria-hidden="true" /><span className="sr-only">{t("library.completed")}</span></span> : null}
+          {activity && activity.status !== "completed" ? <span className="library-badge" title={t("library.recent")}><History size={14} aria-hidden="true" /><span className="sr-only">{t("library.recent")}</span></span> : null}
+          {activity && activity.bestScore > 0 ? <span className="library-badge is-score" title={t("library.best", { score: activity.bestScore })}><Trophy size={14} aria-hidden="true" />{activity.bestScore}</span> : null}
+          {hasNewVersion ? <span className="library-badge is-new" title={t("library.newVersion")}><Sparkles size={14} aria-hidden="true" /><span className="sr-only">{t("library.newVersion")}</span></span> : null}
         </div>
+        <p className="library-card-category">{t(templateNameKeys[game.template])} · {game.dimensions.toUpperCase()}</p>
         <h2>{game.title}</h2>
-        <p>{game.idea}</p>
-        <div className="library-flags" aria-label={t("library.playStatus")}>
-          {activity?.status === "completed" ? <span className="is-complete"><Trophy size={13} aria-hidden="true" />{t("library.completed")}</span> : null}
-          {activity && activity.status !== "completed" ? <span><History size={13} aria-hidden="true" />{t("library.recent")}</span> : null}
-          {activity && activity.bestScore > 0 ? <span><Trophy size={13} aria-hidden="true" />{t("library.best", { score: activity.bestScore })}</span> : null}
-          {hasNewVersion ? <span className="is-new"><Sparkles size={13} aria-hidden="true" />{t("library.newVersion")}</span> : null}
-        </div>
-        <dl className="library-meta">
-          <div><dt><Layers3 size={14} aria-hidden="true" /> {t("library.version")}</dt><dd>v{publication.versionNumber}</dd></div>
-          <div><dt><CalendarDays size={14} aria-hidden="true" /> {t("library.publishedAt")}</dt><dd><time dateTime={publication.publishedAt}>{formatPublishedAt(publication.publishedAt, locale)}</time></dd></div>
-          <div><dt><Gamepad2 size={14} aria-hidden="true" /> {t("library.format")}</dt><dd>{game.dimensions.toUpperCase()} · {game.aspectRatio}</dd></div>
-          <div><dt><Clock3 size={14} aria-hidden="true" /> {t("library.session")}</dt><dd>{game.sessionLength}</dd></div>
-          <div><dt><Gauge size={14} aria-hidden="true" /> {t("library.difficulty")}</dt><dd>{difficultyLabel}</dd></div>
-          <div><dt><Gamepad2 size={14} aria-hidden="true" /> {t("library.input")}</dt><dd>{inputLabel}</dd></div>
-        </dl>
+        <p className="library-card-idea">{game.idea}</p>
+        <p className="library-card-meta">v{publication.versionNumber} · {difficultyLabel} · {game.sessionLength}</p>
         <a className="library-play-link" href={`/player-first?game=${encodeURIComponent(game.id)}`}>
-          {actionLabel} <ArrowUpRight size={18} aria-hidden="true" />
+          <Gamepad2 size={18} aria-hidden="true" /> {actionLabel}
         </a>
       </div>
     </article>
@@ -90,7 +128,7 @@ function LibrarySkeleton() {
   const { t } = usePreferences();
   return (
     <div className="library-skeleton-grid" role="status" aria-label={t("library.loading")}>
-      {Array.from({ length: 4 }, (_, index) => <span aria-hidden="true" key={index} />)}
+      {Array.from({ length: 6 }, (_, index) => <span aria-hidden="true" key={index} />)}
     </div>
   );
 }
@@ -101,6 +139,7 @@ export function GameLibrary() {
   const [activities, setActivities] = useState<Map<string, PlayActivity>>(new Map());
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [query, setQuery] = useState("");
 
   useEffect(() => {
     let active = true;
@@ -131,9 +170,18 @@ export function GameLibrary() {
     };
   }, []);
 
+  const visibleGames = useMemo(() => {
+    const needle = query.trim().toLowerCase();
+    if (!needle) return games;
+    return games.filter((game) => game.title.toLowerCase().includes(needle) || game.idea.toLowerCase().includes(needle));
+  }, [games, query]);
+
+  const filtering = query.trim().length > 0;
+
   return (
     <div className="library-page">
-      <SiteHeader active="games" />
+      <SiteHeader active="games" search={{ value: query, onChange: setQuery, placeholder: t("library.searchPlaceholder"), label: t("library.searchLabel") }} />
+      {games.length > 0 ? <GameMarquee games={games} /> : null}
       <main className="library-main" id="main-content" tabIndex={-1}>
         <header className="library-hero">
           <div>
@@ -150,9 +198,16 @@ export function GameLibrary() {
         {error ? <div className="library-message is-error" role="alert">{error}</div> : null}
         {loading ? (
           <LibrarySkeleton />
-        ) : games.length > 0 ? (
+        ) : visibleGames.length > 0 ? (
           <section className="library-grid" aria-label={t("library.list")}>
-            {games.map((game, index) => <GameCard game={game} activity={activities.get(game.id)} featured={index === 0} key={game.id} />)}
+            {visibleGames.map((game, index) => <GameCard game={game} activity={activities.get(game.id)} featured={index === 0} key={game.id} />)}
+          </section>
+        ) : filtering ? (
+          <section className="library-empty">
+            <SearchX size={28} aria-hidden="true" />
+            <h2>{t("library.noResults")}</h2>
+            <p>{t("library.noResultsDetail")}</p>
+            <button type="button" onClick={() => setQuery("")}>{t("library.clearFilters")}</button>
           </section>
         ) : (
           <section className="library-empty">

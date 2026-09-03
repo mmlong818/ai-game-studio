@@ -1,0 +1,39 @@
+import { describe, expect, it } from "vitest";
+import { gameTemplateSchema } from "../shared/contracts";
+import { buildGameSpec } from "./gameSpec";
+import { createProbe } from "./probe";
+import { INITIAL_DRAFT } from "./storage";
+import { GAME_TEMPLATES } from "./templates";
+import { DOMAIN_TEMPLATE_ART, resolveTemplateForGame } from "./templateResolution";
+
+describe("官方游戏默认必须有玩法模板", () => {
+  it("每一个服务端游戏模板都能落到一个玩法模板", () => {
+    for (const serverTemplate of gameTemplateSchema.options) {
+      if (serverTemplate === "generated") continue;
+      const template = resolveTemplateForGame({ template: serverTemplate, idea: "" });
+      expect(template, `服务端模板 ${serverTemplate} 没有对应的玩法模板`).toBeDefined();
+    }
+  });
+
+  it("AI 原创游戏按创意描述落到能力匹配的玩法模板", () => {
+    const template = resolveTemplateForGame({
+      template: "generated",
+      idea: "Q版小瓢虫在巨大树干的三条树纹之间高速攀爬，躲避树瘤、蘑菇和树脂，收集露珠与金色种子并冲向树冠。",
+    });
+    expect(template?.id).toBe("lane-climb");
+  });
+
+  it("星梦对决对应轮换对决三消模板", () => {
+    expect(resolveTemplateForGame({ template: "signal-hunt", idea: "" })?.id).toBe("turn-duel-match3");
+  });
+
+  it("每个玩法模板都有确定性验收场景，并且图标映射只指向存在的模板", () => {
+    for (const template of GAME_TEMPLATES) {
+      const spec = buildGameSpec({ ...INITIAL_DRAFT, creationMode: "template-remix", templateId: template.id, selectedSuggestionIds: [`${template.id}-world`] });
+      expect(() => createProbe(spec), `${template.id} 缺少专属验收探针`).not.toThrow();
+    }
+    for (const templateId of Object.keys(DOMAIN_TEMPLATE_ART)) {
+      expect(GAME_TEMPLATES.some((template) => template.id === templateId), `${templateId} 不是已登记的玩法模板`).toBe(true);
+    }
+  });
+});

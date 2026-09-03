@@ -22,12 +22,14 @@ const postgresSchema = `
     status TEXT NOT NULL CHECK (status IN ('contract_ready', 'playable', 'published')),
     fixture_kind TEXT,
     is_official BOOLEAN NOT NULL DEFAULT FALSE,
+    lobby_rank INTEGER,
     created_at TIMESTAMPTZ NOT NULL,
     archived_at TIMESTAMPTZ
   );
 
   ALTER TABLE projects ADD COLUMN IF NOT EXISTS archived_at TIMESTAMPTZ;
   ALTER TABLE projects ADD COLUMN IF NOT EXISTS is_official BOOLEAN NOT NULL DEFAULT FALSE;
+  ALTER TABLE projects ADD COLUMN IF NOT EXISTS lobby_rank INTEGER;
 
   CREATE TABLE IF NOT EXISTS studio_meta (
     key TEXT PRIMARY KEY,
@@ -151,7 +153,7 @@ const sqliteSchema = `
 
   CREATE TABLE projects (
     id TEXT PRIMARY KEY, title TEXT NOT NULL, idea TEXT NOT NULL, slug TEXT NOT NULL UNIQUE,
-    dimensions TEXT NOT NULL, status TEXT NOT NULL, fixture_kind TEXT, is_official INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL,
+    dimensions TEXT NOT NULL, status TEXT NOT NULL, fixture_kind TEXT, is_official INTEGER NOT NULL DEFAULT 0, lobby_rank INTEGER, created_at TEXT NOT NULL,
     archived_at TEXT
   );
   CREATE TABLE studio_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
