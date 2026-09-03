@@ -8,8 +8,7 @@ const projectRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 for (const filename of [".env.local", ".env"]) {
   const file = join(projectRoot, filename);
   if (!existsSync(file)) continue;
-  for (const rawLine of readFileSync(file, "utf8").split(/?
-/)) {
+  for (const rawLine of readFileSync(file, "utf8").split(/\r?\n/)) {
     const line = rawLine.trim();
     if (!line || line.startsWith("#")) continue;
     const separator = line.indexOf("=");
