@@ -170,13 +170,13 @@ document.querySelector(".three-shell").appendChild(pauseButton);
 
 const palettes = {
   // 晨光草甸：奶油纸、鼠尾草绿、万寿菊，墨蓝只做书封与细节。
-  1: { sky: 0xf6eedc, fog: 0xf6eedc, desk: 0xf0e5cd, cover: 0x3a4a6c, page: 0xf5ebd5, top: [0xa3bb8c, 0x96b07f], side: 0xeadcbc, sideShade: 0xd8c59f, edge: 0xfffaf0, accent: 0xecb63b, accent2: 0xd97f66, tree: 0x6f8f6a, treeLight: 0x8fae82, bush: 0x9db88a, flower: [0xecb63b, 0xfff6e6, 0xd97f66], hazard: 0x8fb7b0, bird: 0xfaf3e3, decal: "decal-meadow.png", star: 0xf4b93a, sunColor: 0xfff1d2, sunIntensity: 3.1, hemiSky: 0xfff4e0, hemiGround: 0xbfa77a, hemiIntensity: 0.85, exposure: 1.12, backdrop: [0xa3bb8c, 0x86a37b, 0xf3e8cf] },
+  1: { sky: 0xf6eedc, fog: 0xf6eedc, desk: 0xeadfc6, cover: 0x3a4a6c, page: 0xf3e9d2, top: [0x8fae7a, 0x86a571], side: 0xd9c39a, sideShade: 0xb99e73, edge: 0xfffaf0, accent: 0xe8b23a, accent2: 0xd97f66, tree: 0x6f8f6a, treeLight: 0x8fae82, bush: 0x9db88a, flower: [0xecb63b, 0xfff6e6, 0xd97f66], hazard: 0x8fb7b0, bird: 0xfaf3e3, decal: "decal-meadow.png", star: 0xf4b93a, sunColor: 0xfff1d2, sunIntensity: 3.4, hemiSky: 0xeef4ff, hemiGround: 0xa08a63, hemiIntensity: 0.55, exposure: 1.0, backdrop: [0x8fae7a, 0x789a68, 0xe8dcc2] },
   // 海岸灯塔：奶油、珊瑚、海泡绿、墨蓝。
-  2: { sky: 0xe3edee, fog: 0xe3edee, desk: 0xe6ece6, cover: 0x24395e, page: 0xf1e8d4, top: [0xa9d1c9, 0x9cc5bd], side: 0xe8dcc2, sideShade: 0xd3c4a4, edge: 0xfffdf6, accent: 0xd97d64, accent2: 0x27406a, tree: 0x7fa39a, treeLight: 0x9fbfb6, bush: 0x8fb5ad, flower: [0xd97d64, 0xfff8ee, 0xf0c46a], hazard: 0x6fa6b8, bird: 0xffffff, decal: "decal-coast.png", star: 0xf4b93a, sunColor: 0xfff6e6, sunIntensity: 3.0, hemiSky: 0xeaf7ff, hemiGround: 0x9fb3b5, hemiIntensity: 0.85, exposure: 1.12, backdrop: [0xa9d1c9, 0x7fb5c4, 0xf7f2e6] },
+  2: { sky: 0xe3edee, fog: 0xe3edee, desk: 0xdfe6e0, cover: 0x24395e, page: 0xf1e8d4, top: [0x9cc9c0, 0x90bdb4], side: 0xe3d3b3, sideShade: 0xc4b18a, edge: 0xfffdf6, accent: 0xd97d64, accent2: 0x27406a, tree: 0x7fa39a, treeLight: 0x9fbfb6, bush: 0x8fb5ad, flower: [0xd97d64, 0xfff8ee, 0xf0c46a], hazard: 0x6fa6b8, bird: 0xffffff, decal: "decal-coast.png", star: 0xf4b93a, sunColor: 0xfff6e6, sunIntensity: 3.4, hemiSky: 0xeaf7ff, hemiGround: 0x8a9c9e, hemiIntensity: 0.55, exposure: 1.0, backdrop: [0x9cc9c0, 0x6fa6b8, 0xf3ede0] },
   // 灯笼夜市：墨蓝夜空、李子紫纸台、暖琥珀灯笼把场景照亮。
-  3: { sky: 0x1d2347, fog: 0x1d2347, desk: 0x262b4f, cover: 0x131736, page: 0x403c6a, top: [0x8a6aa2, 0x7f6097], side: 0x6a4d84, sideShade: 0x55406c, edge: 0xf6e6cc, accent: 0xf4a44a, accent2: 0xbd6684, tree: 0x5f3f70, treeLight: 0x7a5390, bush: 0x6a4a7c, flower: [0xf4a44a, 0xf6d38a, 0xbd6684], hazard: 0x9a6fb0, bird: 0xf2e3cf, decal: "decal-market.png", star: 0xf8c655, sunColor: 0xffcf9c, sunIntensity: 2.4, hemiSky: 0x8f92e6, hemiGround: 0x4a3656, hemiIntensity: 1.25, exposure: 1.75, backdrop: [0x5a4574, 0x6c4f86, 0x463560], lanterns: true },
+  3: { sky: 0x1d2347, fog: 0x1d2347, desk: 0x23284a, cover: 0x131736, page: 0x4a4577, top: [0x8d6aa6, 0x83609b], side: 0x6a4d84, sideShade: 0x4f3a63, edge: 0xf6e6cc, accent: 0xf4a44a, accent2: 0xbd6684, tree: 0x5f3f70, treeLight: 0x7a5390, bush: 0x6a4a7c, flower: [0xf4a44a, 0xf6d38a, 0xbd6684], hazard: 0x9a6fb0, bird: 0xf2e3cf, decal: "decal-market.png", star: 0xf8c655, sunColor: 0xffcf9c, sunIntensity: 2.6, hemiSky: 0x8f92e6, hemiGround: 0x2f2440, hemiIntensity: 0.9, exposure: 1.45, backdrop: [0x5a4574, 0x6c4f86, 0x463560], lanterns: true },
   // 雪原天文台：冰白、淡蓝，单一黄铜点缀。
-  4: { sky: 0xe4edf5, fog: 0xe4edf5, desk: 0xe9eff5, cover: 0x5b7a99, page: 0xf4f8fb, top: [0xfafcfd, 0xf0f5f9], side: 0xd2e0ec, sideShade: 0xbccfe0, edge: 0xffffff, accent: 0xc9a45c, accent2: 0x7f9cba, tree: 0xe6eef5, treeLight: 0xf7fafc, bush: 0xdde8f0, flower: [0xc9a45c, 0xffffff, 0xbcd3e6], hazard: 0xa9c3da, bird: 0xffffff, decal: "decal-snow.png", star: 0xf4b93a, sunColor: 0xfff9ef, sunIntensity: 3.0, hemiSky: 0xffffff, hemiGround: 0xa9bccd, hemiIntensity: 0.8, exposure: 1.1, backdrop: [0xdde8f0, 0xbcd3e6, 0xf7fafc] },
+  4: { sky: 0xe4edf5, fog: 0xe4edf5, desk: 0xdfe7ef, cover: 0x5b7a99, page: 0xf4f8fb, top: [0xf7fafc, 0xecf2f7], side: 0xcfdde9, sideShade: 0xaec2d3, edge: 0xffffff, accent: 0xc9a45c, accent2: 0x7f9cba, tree: 0xe6eef5, treeLight: 0xf7fafc, bush: 0xdde8f0, flower: [0xc9a45c, 0xffffff, 0xbcd3e6], hazard: 0xa9c3da, bird: 0xffffff, decal: "decal-snow.png", star: 0xf4b93a, sunColor: 0xfff9ef, sunIntensity: 3.4, hemiSky: 0xf2f7ff, hemiGround: 0x8fa3b6, hemiIntensity: 0.55, exposure: 0.98, backdrop: [0xdde8f0, 0xbcd3e6, 0xf7fafc] },
 };
 const STEP = 0.5;
 const state = { running: false, finished: false, renderCount: 0, performanceTier: "medium", suspended: false, mistakes: 0, stars: 0, orientation: 0, beats: 0, rotations: 0, blockedMoves: 0, lastEvent: "", restoredSession: false };
@@ -237,7 +237,10 @@ function decalTexture(name) {
 
 const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(32, 1, 0.1, 200);
-const cameraDirection = new THREE.Vector3(0.5, 0.82, 0.866).normalize();
+// 桌面用等角三分之一俯视；竖屏更俯视一些，让整本书在窄画幅里占到更多高度。
+const LANDSCAPE_DIRECTION = new THREE.Vector3(0.5, 0.82, 0.866).normalize();
+const PORTRAIT_DIRECTION = new THREE.Vector3(0.5, 1.18, 0.866).normalize();
+const cameraDirection = LANDSCAPE_DIRECTION.clone();
 const cameraTarget = new THREE.Vector3(0, 0.6, 0);
 let cameraDistance = 14;
 const hemi = new THREE.HemisphereLight(palette.hemiSky, palette.hemiGround, palette.hemiIntensity);
@@ -249,11 +252,12 @@ sun.shadow.mapSize.set(performanceProfiles[performanceTier].shadowSize, performa
 sun.shadow.camera.near = 1; sun.shadow.camera.far = 40;
 sun.shadow.camera.left = -8; sun.shadow.camera.right = 8; sun.shadow.camera.top = 8; sun.shadow.camera.bottom = -8;
 sun.shadow.bias = -0.0005;
-sun.shadow.normalBias = 0.018;
-sun.shadow.radius = 2;
+sun.shadow.normalBias = 0.02;
+sun.shadow.radius = 3;
 scene.add(sun);
 scene.add(sun.target);
-const desk = new THREE.Mesh(new THREE.PlaneGeometry(90, 90), new THREE.MeshStandardMaterial({ color: 0xffffff, map: deskTexture, roughness: 1, metalness: 0 }));
+const desk = new THREE.Mesh(new THREE.PlaneGeometry(90, 90), new THREE.MeshStandardMaterial({ color: palette.desk, map: loadTexture("./assets/paper-grain.png", 18), roughness: 1, metalness: 0 }));
+void deskTexture;
 desk.rotation.x = -Math.PI / 2;
 desk.position.y = -0.62;
 desk.receiveShadow = true;
@@ -287,8 +291,8 @@ function addEdges(mesh, color, opacity, thick) {
   edges.renderOrder = 1;
   mesh.add(edges);
   if (thick) {
-    const outer = new THREE.LineSegments(geometry, material);
-    outer.scale.setScalar(1.012);
+    const outer = new THREE.LineSegments(geometry, new THREE.LineBasicMaterial({ color: color ?? palette.edge, transparent: true, opacity: 0.55 }));
+    outer.scale.setScalar(1.02);
     outer.renderOrder = 1;
     mesh.add(outer);
   }
@@ -343,10 +347,11 @@ function cellWorld(x, z, y) {
 function cellTop(x, z) { const h = rules.heightAt(blueprint, x, z); return h > 0 ? 0.72 + (h - 1) * STEP * 1.1 : 0; }
 function directionAngle(direction) { return direction === "N" ? Math.PI : direction === "S" ? 0 : direction === "E" ? Math.PI / 2 : -Math.PI / 2; }
 
+function bookMargin() { return camera.aspect < 1 ? 0.9 : 1.2; }
 function buildBook() {
   disposeGroup(bookBase); disposeGroup(rightPage);
-  const bookW = gridWidth + 2.6;
-  const bookD = gridDepth + 2.2;
+  const bookW = gridWidth + 2 * bookMargin();
+  const bookD = gridDepth + 2 * bookMargin();
   const cover = paperBox(bookW + 0.5, 0.14, bookD + 0.5, palette.cover, { edgeColor: palette.edge, edgeOpacity: 0.35 });
   cover.position.y = -0.47;
   bookBase.add(cover);
@@ -397,19 +402,19 @@ function buildLevel() {
       addEdges(mesh, palette.edge, 0.75);
       level.add(mesh);
       cellMeshes.set(x + "," + z, mesh);
-      const sheet = new THREE.Mesh(offsetPaperUv(new THREE.BoxGeometry(1.0, 0.07, 1.0), random), paperMaterial(topColor));
-      sheet.position.copy(cellWorld(x, z, height - 0.1 + 0.035));
+      const sheet = new THREE.Mesh(offsetPaperUv(new THREE.BoxGeometry(1.06, 0.12, 1.06), random), paperMaterial(topColor));
+      sheet.position.copy(cellWorld(x, z, height - 0.1 + 0.06));
       sheet.castShadow = true; sheet.receiveShadow = true;
       sheet.userData = { cell: { x, z } };
       addEdges(sheet, palette.edge, 1, true);
       level.add(sheet);
       // 每一层高度加一条略深的纸层线，读出“很多张纸叠起来”的厚度。
       for (let layer = 1; layer < h; layer += 1) {
-        const stripe = new THREE.Mesh(new THREE.BoxGeometry(1.004, 0.035, 1.004), paperMaterial(palette.sideShade, { map: null }));
+        const stripe = new THREE.Mesh(new THREE.BoxGeometry(1.006, 0.04, 1.006), paperMaterial(new THREE.Color(palette.sideShade).multiplyScalar(0.92), { map: null }));
         stripe.position.copy(cellWorld(x, z, 0.72 + (layer - 1) * STEP * 1.1 - 0.1));
         level.add(stripe);
       }
-      if (random() < 0.28 * decorScale) {
+      if (random() < 0.0 * decorScale) {
         const tuft = makeGrassTuft(random, 0.55);
         tuft.position.copy(cellWorld(x, z, height - 0.1)).add(new THREE.Vector3((random() < 0.5 ? -0.36 : 0.36), 0, (random() < 0.5 ? -0.36 : 0.36)));
         level.add(tuft);
@@ -1143,6 +1148,7 @@ function loadLevel(index) {
 }
 
 function fitCamera() {
+  cameraDirection.copy(camera.aspect < 1 ? PORTRAIT_DIRECTION : LANDSCAPE_DIRECTION);
   // 投影拟合：把关卡网格（含最高纸台）的 8 个角点都放进视锥，再按画幅留很小的边距；书页边缘允许出画。
   const right = new THREE.Vector3().crossVectors(new THREE.Vector3(0, 1, 0), cameraDirection).normalize();
   const up = new THREE.Vector3().crossVectors(cameraDirection, right).normalize();
@@ -1150,22 +1156,23 @@ function fitCamera() {
   const horizontal = vertical * camera.aspect;
   let maxHeight = 0.72;
   for (let z = 0; z < gridDepth; z += 1) for (let x = 0; x < gridWidth; x += 1) maxHeight = Math.max(maxHeight, cellTop(x, z));
-  cameraTarget.set(0, maxHeight * 0.45 + (camera.aspect < 1 ? 0.35 : 0), 0.1);
+  cameraTarget.set(0, maxHeight * 0.4, 0);
   let distance = 4;
   const portrait = camera.aspect < 1;
-  const halfW = gridWidth / 2 + (portrait ? 0.12 : 0.5);
-  const halfD = gridDepth / 2 + (portrait ? 0.12 : 0.5);
-  for (const [x, y, z] of [[-halfW, -0.35, -halfD], [halfW, -0.35, -halfD], [-halfW, -0.35, halfD], [halfW, -0.35, halfD], [-halfW, maxHeight + 1.2, -halfD], [halfW, maxHeight + 1.2, -halfD], [-halfW, maxHeight + 1.2, halfD], [halfW, maxHeight + 1.2, halfD]]) {
+  // 以整本书（网格 + 书页留白）为拟合对象：竖屏书页应占画面高度 60% 以上。
+  const halfW = gridWidth / 2 + bookMargin() * (portrait ? 0.75 : 1.0);
+  const halfD = gridDepth / 2 + bookMargin() * (portrait ? 0.75 : 1.0);
+  for (const [x, y, z] of [[-halfW, -0.45, -halfD], [halfW, -0.45, -halfD], [-halfW, -0.45, halfD], [halfW, -0.45, halfD], [-halfW, maxHeight + 0.9, -halfD], [halfW, maxHeight + 0.9, -halfD], [-halfW, maxHeight + 0.9, halfD], [halfW, maxHeight + 0.9, halfD]]) {
     const point = new THREE.Vector3(x, y, z).sub(cameraTarget);
     const rx = Math.abs(point.dot(right));
     const uy = Math.abs(point.dot(up));
     const fz = point.dot(cameraDirection);
     distance = Math.max(distance, fz + rx / horizontal, fz + uy / vertical);
   }
-  cameraDistance = distance * (portrait ? 1.0 : 1.02);
+  cameraDistance = distance * (portrait ? 0.98 : 1.0);
   camera.position.copy(cameraTarget).addScaledVector(cameraDirection, cameraDistance);
   camera.lookAt(cameraTarget);
-  if (scene.fog) { scene.fog.near = cameraDistance * 1.7; scene.fog.far = cameraDistance * 3.4; }
+  if (scene.fog) { scene.fog.near = cameraDistance * 2.2; scene.fog.far = cameraDistance * 4.5; }
   const radius = Math.hypot(gridWidth, gridDepth) * 0.5 + 0.9;
   sun.position.set(-6, 12, 5).multiplyScalar(Math.max(1, radius / 6));
   const shadowExtent = radius + 1.5;
