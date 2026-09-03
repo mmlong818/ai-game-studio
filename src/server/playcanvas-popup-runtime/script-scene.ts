@@ -1,25 +1,13 @@
-// 纸境 · 立体书迷宫 PlayCanvas 运行时 —— 第 2 段：场景实体（书、纸台、构件层、链接、星、旗、门、玩家、障碍）。
+// 纸境 · 立体书迷宫 PlayCanvas 运行时 —— 第 2 段：场景实体（书、纸台、构件层、链接、星、旗、门、玩家、障碍）。构件生成器与关卡→实例映射是纸境专属；几何 / 材质 / 实体工具来自引擎层。
 // 注意：本段是浏览器脚本的模板字面量片段，内部不能出现 ${ 与反斜杠转义。
 export const popupSceneScript = `
-// ---- 场景骨架：相机、主光、补光、桌面、书（书底 / 右页 / 关卡层）、远景。每类对象都是独立实体，便于后续编辑器操作。 ----
-const cameraEntity = new pc.Entity("camera");
-cameraEntity.addComponent("camera", { fov: 32, nearClip: 0.1, farClip: 200, clearColor: pcColor(palette.sky), toneMapping: pc.TONEMAP_ACES });
-app.root.addChild(cameraEntity);
+// ---- 场景骨架：相机、主光、补光由引擎层按纸艺预设创建（engine.camera / engine.sun / engine.fill）；这里只建桌面、书（书底 / 右页 / 关卡层）、远景。每类对象都是独立实体，便于后续编辑器操作。 ----
 // 桌面用等角三分之一俯视；竖屏更俯视一些，让整本书在窄画幅里占到更多高度。
 const LANDSCAPE_DIRECTION = new pc.Vec3(0.5, 0.82, 0.866).normalize();
 const PORTRAIT_DIRECTION = new pc.Vec3(0.5, 1.82, 0.866).normalize();
 const cameraDirection = LANDSCAPE_DIRECTION.clone();
 const cameraTarget = new pc.Vec3(0, 0.6, 0);
 let cameraDistance = 14;
-let cameraAspect = 1;
-const sun = new pc.Entity("sun");
-sun.addComponent("light", { type: "directional", color: pcColor(palette.sunColor), intensity: palette.sunIntensity, castShadows: true, shadowResolution: 1024, shadowType: pc.SHADOW_PCF5_32F, shadowBias: 0.12, normalOffsetBias: 0.04, shadowDistance: 60, numCascades: 1, shadowUpdateMode: pc.SHADOWUPDATE_REALTIME, penumbraSize: 6, shadowSamples: 12, shadowBlockerSamples: 8 });
-app.root.addChild(sun);
-// 半球光的近似：天空色环境光 + 一盏从背面低角度打来的弱补光（不投影）。
-const fill = new pc.Entity("fill");
-fill.addComponent("light", { type: "directional", color: pcColor(palette.hemiSky), intensity: palette.hemiIntensity * 0.3, castShadows: false });
-fill.setPosition(6, 5, -7); fill.lookAt(0, 0, 0); fill.rotateLocal(90, 0, 0);
-app.root.addChild(fill);
 const desk = meshEntity(planeMesh(90, 90, palette.desk), deskMat, { cast: false });
 desk.setLocalPosition(0, -0.62, 0);
 app.root.addChild(desk);
@@ -28,45 +16,6 @@ const bookBase = new pc.Entity("book-base"); book.addChild(bookBase);
 const rightPage = new pc.Entity("right-page"); book.addChild(rightPage);
 const level = new pc.Entity("level"); book.addChild(level);
 const backdropGroup = new pc.Entity("backdrop"); app.root.addChild(backdropGroup);
-
-let cameraFrame = null;
-function applyPostProcessing(profile) {
-  if (!profile.post) {
-    if (cameraFrame) { cameraFrame.destroy(); cameraFrame = null; }
-    cameraEntity.camera.toneMapping = pc.TONEMAP_ACES;
-    return;
-  }
-  if (!cameraFrame) cameraFrame = new pc.CameraFrame(app, cameraEntity.camera);
-  const frame = cameraFrame;
-  frame.rendering.samples = profile.samples;
-  frame.rendering.toneMapping = pc.TONEMAP_ACES;
-  frame.rendering.sharpness = 0;
-  // SSAO：纸层之间的接触阴影，让顶纸、层线与构件“压”在纸面上。
-  frame.ssao.type = profile.ssao ? pc.SSAOTYPE_LIGHTING : pc.SSAOTYPE_NONE;
-  frame.ssao.intensity = 0.55; frame.ssao.radius = 5; frame.ssao.samples = 12; frame.ssao.power = 3; frame.ssao.minAngle = 12; frame.ssao.blurEnabled = true;
-  // bloom 只给星与灯笼一点光晕。
-  frame.bloom.intensity = profile.bloom ? 0.012 : 0; frame.bloom.blurLevel = 14;
-  // 屏幕空间暗角：四角约 -12% 亮度（ART-SPEC §4）。
-  frame.vignette.intensity = 0.16; frame.vignette.inner = 0.55; frame.vignette.outer = 1.25; frame.vignette.curvature = 0.55; frame.vignette.color = new pc.Color(0, 0, 0);
-  // 高档：以书页为焦平面的景深，读出移轴摄影的“上下虚化”。
-  frame.dof.enabled = Boolean(profile.tiltShift); frame.dof.nearBlur = true; frame.dof.focusDistance = cameraDistance; frame.dof.focusRange = cameraDistance * 0.62; frame.dof.blurRadius = 3.2; frame.dof.blurRings = 3; frame.dof.blurRingPoints = 3; frame.dof.highQuality = false;
-  frame.taa.enabled = false;
-  frame.update();
-}
-function applyPerformanceTier(nextTier) {
-  performanceTier = nextTier;
-  state.performanceTier = nextTier;
-  const profile = performanceProfiles[nextTier];
-  device.maxPixelRatio = Math.min(window.devicePixelRatio || 1, profile.pixelRatio);
-  sun.light.castShadows = profile.shadows;
-  sun.light.shadowResolution = profile.shadowSize;
-  sun.light.shadowType = profile.shadowType === "pcss" ? pc.SHADOW_PCSS_32F : profile.shadowType === "pcf5" ? pc.SHADOW_PCF5_32F : pc.SHADOW_PCF1_32F;
-  applyPostProcessing(profile);
-  document.body.dataset.performanceTier = nextTier;
-  resize();
-  // 低性能档构件数量 × 0.4（四角主构件保留）：切档时只重建构件层，不动纸台与规则。
-  if (typeof rebuildDecor === "function" && blueprint) rebuildDecor();
-}
 
 const cellEntities = new Map();
 const cellBoxes = [];
@@ -85,7 +34,6 @@ function cellWorld(x, z, y) { return new pc.Vec3(x - (gridWidth - 1) / 2, y || 0
 function cellTop(x, z) { const h = rules.heightAt(blueprint, x, z); return h > 0 ? 0.72 + (h - 1) * STEP * 1.1 : 0; }
 function directionAngle(direction) { return direction === "N" ? Math.PI : direction === "S" ? 0 : direction === "E" ? Math.PI / 2 : -Math.PI / 2; }
 function bookMargin() { return cameraAspect < 1 ? 0.9 : 1.2; }
-function place(entity, position) { entity.setLocalPosition(position.x, position.y, position.z); return entity; }
 
 function buildBook() {
   disposeGroup(bookBase); disposeGroup(rightPage);
@@ -115,11 +63,11 @@ function buildBook() {
 
 function buildLevel() {
   disposeGroup(level);
-  levelMaterials.splice(0).forEach((material) => material.destroy());
+  materials.disposeTransientMaterials();
   cellEntities.clear(); cellBoxes.splice(0); linkViews.splice(0); starViews.splice(0); plateViews.splice(0); hazardViews.splice(0); flagViews.splice(0);
   exitView = null; confetti = null;
   const random = seeded(campaignLevelIndex * 7919 + 17);
-  const decorScale = performanceProfiles[performanceTier].decor;
+  const decorScale = performanceProfiles[engine.tier].decor;
   const cells = new pc.Entity("cells"); level.addChild(cells);
   for (let z = 0; z < gridDepth; z += 1) {
     for (let x = 0; x < gridWidth; x += 1) {
@@ -227,13 +175,7 @@ function blobPoints(random, radius, squash, segments, raise) {
   }
   return points;
 }
-function hexPoints(radius, y) { const points = []; for (let index = 0; index < 6; index += 1) points.push([Math.cos(index / 6 * Math.PI * 2) * radius, (y || 0) + Math.sin(index / 6 * Math.PI * 2) * radius]); return points; }
-function starPoints(radius, y, count) {
-  const points = []; const total = (count || 5) * 2;
-  for (let index = 0; index < total; index += 1) { const angle = (index / total) * Math.PI * 2 - Math.PI / 2; const r = index % 2 === 0 ? radius : radius * 0.5; points.push([Math.cos(angle) * r, (y || 0) + Math.sin(angle) * r]); }
-  return points;
-}
-function tag(entity, data) { entity.userData = Object.assign(entity.userData || {}, data); return entity; }
+// starPoints / hexPoints / tag 来自引擎层几何与实体工具。
 function glowBox(w, h, d, color, emissive, intensity) {
   return meshEntity(boxMesh(w, h, d, color, color, 0, null), materialFor({ map: null, emissive, emissiveIntensity: intensity }));
 }
@@ -584,17 +526,8 @@ function nearestCellDistance(x, z) {
   for (let cz = 0; cz < gridDepth; cz += 1) for (let cx = 0; cx < gridWidth; cx += 1) if (rules.solid(blueprint, cx, cz)) best = Math.min(best, Math.hypot(cx - x, cz - z));
   return best;
 }
-// 用引擎的网格实例包围盒测量构件（未挂到场景时以自身为根）。
-function measureDecor(item) {
-  item.syncHierarchy();
-  let minX = Infinity; let minY = Infinity; let minZ = Infinity; let maxX = -Infinity; let maxY = -Infinity; let maxZ = -Infinity;
-  item.findComponents("render").forEach((render) => render.meshInstances.forEach((instance) => {
-    const aabb = instance.aabb; const lo = aabb.getMin(); const hi = aabb.getMax();
-    minX = Math.min(minX, lo.x); minY = Math.min(minY, lo.y); minZ = Math.min(minZ, lo.z); maxX = Math.max(maxX, hi.x); maxY = Math.max(maxY, hi.y); maxZ = Math.max(maxZ, hi.z);
-  }));
-  if (!Number.isFinite(minX)) return { height: 0.01, radius: 0.01 };
-  return { height: maxY - Math.min(0, minY), radius: Math.max(Math.abs(minX), Math.abs(maxX), Math.abs(minZ), Math.abs(maxZ)) };
-}
+// 用引擎层的包围盒测量构件（未挂到场景时以自身为根）。
+function measureDecor(item) { const bounds = measureBounds(item); return { height: bounds.height, radius: bounds.radius }; }
 // 生成一个构件并缩放到目标高度；返回 { entity, height, radius, base, layers }。
 function spawnDecor(kind, random, targetHeight) {
   const entry = decorCatalog[kind];
@@ -635,7 +568,7 @@ function tryPlaceMain(kind, random, point, out, baseDepth, margin, force) {
   return false;
 }
 function decorSeed() { return seeded(campaignLevelIndex * 104729 + 31); }
-function rebuildDecor() { if (blueprint) buildDecor(decorSeed(), performanceProfiles[performanceTier].decor); }
+function rebuildDecor() { if (blueprint) buildDecor(decorSeed(), performanceProfiles[engine.tier].decor); }
 function buildDecor(random, decorScale) {
   disposeGroup(decorGroup); disposeGroup(backdropGroup);
   decorItems.splice(0);
@@ -691,12 +624,11 @@ function buildDecor(random, decorScale) {
   const backdropCount = Math.round(4 + spread * 0.6);
   // 点光预算：夜市 5 盏灯笼杆 + 出口门 1 盏 = 6 个点光；其余章节最多 2 盏。低性能档不加点光，只靠自发光。
   let lights = 0;
-  if (performanceTier !== "low") decorItems.forEach((item) => {
+  if (engine.tier !== "low") decorItems.forEach((item) => {
     const anchor = item.entity.userData && item.entity.userData.lanternAnchor;
     if (!anchor || lanternLightBudget <= 0) return;
     lanternLightBudget -= 1; lights += 1;
-    const light = new pc.Entity("lantern-light");
-    light.addComponent("light", { type: "omni", color: pcColor(palette.accent), intensity: 1.6, range: 3.8, falloffMode: pc.LIGHTFALLOFF_INVERSESQUARED, castShadows: false });
+    const light = entityKit.pointLight("lantern-light", palette.accent, 1.6, 3.8);
     light.setLocalPosition(anchor.x, anchor.y, anchor.z);
     item.entity.addChild(light);
     item.entity.userData.light = light;
@@ -744,7 +676,7 @@ function buildDecor(random, decorScale) {
   const secondaries = decorItems.filter((item) => !item.main);
   const round = (value) => Number(value.toFixed(3));
   decorStats = {
-    tier: performanceTier, decorScale, count: decorItems.length, mainCount: mains.length, cornerMains: Math.min(4, mains.length),
+    tier: engine.tier, decorScale, count: decorItems.length, mainCount: mains.length, cornerMains: Math.min(4, mains.length),
     perimeter: round(perimeter), maxGap: round(maxGap), slotCount: slots.length,
     minClearance: round(Math.min(...decorItems.map((item) => item.clearance))),
     occluding: decorItems.filter((item) => item.occludes).length,
