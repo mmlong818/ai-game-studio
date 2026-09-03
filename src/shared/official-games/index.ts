@@ -77,5 +77,10 @@ export const officialFixtureGames = (): OfficialGameDefinition[] =>
   OFFICIAL_GAMES.filter((game) => game.kind === "fixture");
 
 /** 按 lobbyRank 升序排列的登记表（大厅顺序）。 */
+/** 登记状态为 live（缺省）的游戏才进入大厅、创作页与播种。 */
+export const isLiveOfficialGame = (game: OfficialGameDefinition): boolean => (game.stage ?? "live") === "live";
+export const LIVE_OFFICIAL_GAMES: readonly OfficialGameDefinition[] = OFFICIAL_GAMES.filter(isLiveOfficialGame);
+
+/** 大厅顺序：只含 live 游戏，按 lobbyRank 升序。 */
 export const officialLobbyOrder = (): OfficialGameDefinition[] =>
-  [...OFFICIAL_GAMES].sort((left, right) => left.lobbyRank - right.lobbyRank);
+  [...LIVE_OFFICIAL_GAMES].sort((left, right) => left.lobbyRank - right.lobbyRank);

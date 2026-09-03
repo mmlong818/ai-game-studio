@@ -33,7 +33,8 @@ npm run game:new -- <id> --kind fixture|template|three --title "中文名"
 | `serverTemplate` | 服务端 `GameTemplate` 枚举值；枚举由此派生 | template 必填；fixture 可选（spec 所落模板） |
 | `fixtureKind` + `fixture{metaKey,buildOutputs}` | fixtures 目录名、启动注册的初始化标记与六步构建输出 | fixture |
 | `threeMode` | 3D 模式 | three |
-| `lobbyRank` | 大厅顺序，1 起连续唯一 | 全部 |
+| `lobbyRank` | 大厅顺序，1 起连续唯一（只在 live 游戏之间计算） | 全部 |
+| `stage` | 缺省 `live`；`development` 表示单独开发中：不进大厅、不做改造模板、不播种，启动同步会把它已发布的项目摘下官方目录 | 可选 |
 | `cover` | 封面路径：`fixtures/<kind>/assets/cover.png`、`assets/templates/packs/<t>/cover.png`、`assets/starter/<id>/cover.png` | 全部 |
 | `referenceDoc` | 参照文档路径 | 全部 |
 | `domainTemplate` | 创作页玩法模板（id、name、genre、pitch、coreLoop、coreRules、capabilities、suggestions=commonSuggestions(...)、redirectExamples） | 全部 |

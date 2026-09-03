@@ -121,6 +121,7 @@ export const GAMEPLAY_TEMPLATE_BUNDLES: GameplayTemplateBundle[] = [
     runtimeDefinition: game.runtimeDefinition,
     mechanicId: game.mechanicId,
     threeMode: game.threeMode,
+    development: (game.stage ?? "live") !== "live",
   })),
   ...SUPPLEMENTARY_GAMEPLAY_TEMPLATES,
 ];
@@ -128,7 +129,8 @@ export const GAMEPLAY_TEMPLATE_BUNDLES: GameplayTemplateBundle[] = [
 export const getGameplayBundle = (templateId: string | null | undefined): GameplayTemplateBundle | undefined =>
   GAMEPLAY_TEMPLATE_BUNDLES.find((bundle) => bundle.domainTemplate.id === templateId);
 
-export const GAME_TEMPLATES: GameTemplate[] = GAMEPLAY_TEMPLATE_BUNDLES.map((bundle) => bundle.domainTemplate);
+/** 创作页可选的玩法模板：开发中的登记不在其中；其探针与运行时定义仍由捆绑表提供以便持续测试。 */
+export const GAME_TEMPLATES: GameTemplate[] = GAMEPLAY_TEMPLATE_BUNDLES.filter((bundle) => !bundle.development).map((bundle) => bundle.domainTemplate);
 
 /** 模板改造需要研究同类机制时，用这张表找到对应的内部机制（MECHANIC_LIBRARY 中的 id）。 */
 export const TEMPLATE_MECHANIC_MAP: Record<string, string> = Object.fromEntries(
@@ -234,5 +236,6 @@ export const MECHANIC_LIBRARY: MechanicDefinition[] = [
   },
 ];
 
+/** 按 id 查玩法模板：覆盖开发中的登记（它们不在创作页列表里，但探针、规格与测试仍要能找到）。 */
 export const getTemplate = (id: string | null): GameTemplate | undefined =>
-  GAME_TEMPLATES.find((template) => template.id === id);
+  GAMEPLAY_TEMPLATE_BUNDLES.find((bundle) => bundle.domainTemplate.id === id)?.domainTemplate;
