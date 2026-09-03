@@ -6,7 +6,7 @@ import { createProject } from "./domain/project";
 import { classifyChange } from "./domain/classifyChange";
 import { createReferenceDossier, recommendMechanics } from "./domain/research";
 import { loadDraft, saveDraft } from "./domain/storage";
-import { GAME_TEMPLATES, getTemplate } from "./domain/templates";
+import { GAME_TEMPLATES, getTemplate, TEMPLATE_MECHANIC_MAP } from "./domain/templates";
 import type { ChangeLevel, CreationMode, GameTemplate, SourceGame, StudioDraft, ValidationResult } from "./domain/types";
 import { DOMAIN_TEMPLATE_ART, resolveTemplateForGame } from "./domain/templateResolution";
 import { validateDraft } from "./domain/validation";
@@ -14,27 +14,6 @@ import { getPublishedGames } from "./web/api";
 
 type Stage = "compose" | "review" | "produce";
 type ComposeStep = "choose" | "pick-game" | "describe";
-
-// 模板改造需要研究同类机制时，用这张表找到对应的内部机制。
-const TEMPLATE_MECHANIC_MAP: Record<string, string> = {
-  "falling-blocks": "grid-merge",
-  "picture-puzzle": "drag-snap",
-  breakout: "projectile-combat",
-  "sliding-block": "grid-path",
-  maze: "grid-path",
-  snake: "lane-dodge",
-  "merge-2048": "grid-merge",
-  "space-shooter": "projectile-combat",
-  polyomino: "drag-snap",
-  "block-placement": "grid-merge",
-  "region-logic": "constraint-deduction",
-  "tile-roguelite": "route-choice",
-  "collect-escape-3d": "collect-escape",
-  "arena-3d": "projectile-combat",
-  "turn-duel-match3": "grid-merge",
-  "lane-climb": "lane-dodge",
-  "solitaire-freecell": "grid-merge",
-};
 
 // 面向外行的改动说明：不出现 R0–R3 代码，只说会发生什么。
 const LEVEL_EXPLAIN: Record<ChangeLevel, { tone: "safe" | "caution" | "blocked"; title: string; detail: string }> = {

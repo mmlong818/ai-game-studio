@@ -2,6 +2,7 @@ import { createServer, type IncomingMessage, type ServerResponse } from "node:ht
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { getTemplateCatalog, projectInputSchema } from "../shared/contracts.js";
+import { OFFICIAL_SERVER_TEMPLATE_IDS } from "../shared/official-games/index.js";
 import { AccessControl } from "./access-control.js";
 import { openDatabase } from "./database.js";
 import { BuildOrchestrator } from "./build-orchestrator.js";
@@ -49,11 +50,14 @@ const orchestrator = new BuildOrchestrator(repository, artifactRoot, {
 });
 const accessControl = new AccessControl(process.env.STUDIO_ACCESS_TOKEN?.trim() || null);
 const projectLifecycle = new ProjectLifecycle(repository, artifactRoot);
-const templateArtIds = new Set(["signal-hunt", "tetris", "puzzle", "breakout", "klotski", "maze", "snake", "merge-2048", "space-shooter", "polyomino-fit", "block-place", "region-logic", "mahjong-roguelite"]);
+// 创作页可用的模板封面目录：由官方游戏登记表派生（含固定游戏所落的 signal-hunt）。
+const templateArtIds = new Set<string>(OFFICIAL_SERVER_TEMPLATE_IDS);
 await repository.failInterruptedBuilds();
 await repository.reconcilePublishedStatuses();
 await repository.initializeCatalogScopes();
 const officialFixtureIds = await repository.ensureOfficialFixtures();
+// 按登记表把已发布的官方游戏标记为官方并写入大厅顺序；未登记的项目不动。
+await repository.syncOfficialCatalog();
 const goldenProjectId = officialFixtureIds["star-dream-duel"] ?? null;
 
 function projectIdFrom(pathname: string) {

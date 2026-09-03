@@ -1,5 +1,6 @@
 import type { AssetRole, GameSpecV2 } from "./platformTypes";
 import { createP2Runtime } from "./p2Runtimes";
+import { TEMPLATE_RUNTIME_DEFINITIONS } from "./templates";
 
 const escapeHtml = (value: string): string =>
   value.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;");
@@ -45,28 +46,18 @@ const ladybugScript = (paths: Partial<Record<AssetRole, string>>) => `const game
 
 const layeredLadybugScript = (paths: Record<string, string>) => `const game=document.querySelector('#game');const status=document.querySelector('#status');let x=50,y=72,playing=false,boost=0;const asset=p=>p?'url("'+p+'")':'none';const paths=${JSON.stringify(paths)};const render=()=>{game.innerHTML='<div class="bark"></div><div class="dew" aria-label="露珠"></div><div class="resin" aria-label="树脂障碍"></div><div class="bug" aria-label="玩家昆虫"><div class="bug-legs"></div><div class="bug-body"></div><div class="bug-head"></div></div>';const bug=game.querySelector('.bug');bug.style.left=x+'%';bug.style.top=y+'%';game.querySelector('.bark').style.backgroundImage=asset(paths['NODE-BACKGROUND']||paths.background);game.querySelector('.bug-body').style.backgroundImage=asset(paths['NODE-PLAYER']||paths.player);game.querySelector('.bug-head').style.backgroundImage=asset(paths['NODE-HEAD']);game.querySelector('.bug-legs').style.backgroundImage=asset(paths['NODE-LEGS']);game.querySelector('.dew').style.backgroundImage=asset(paths['NODE-TARGET']||paths.collectible);game.querySelector('.resin').style.backgroundImage=asset(paths['NODE-OBSTACLE']||paths.obstacle)};const move=(dx,dy)=>{if(!playing)return;x=Math.max(8,Math.min(92,x+dx));y=Math.max(8,Math.min(88,y+dy));render();status.textContent=boost>0?'冲刺中':'游戏中'};document.querySelector('#start').onclick=()=>{playing=true;status.textContent='游戏中';game.focus()};document.querySelector('#restart').onclick=()=>{x=50;y=72;boost=0;playing=false;render();status.textContent='准备开始'};document.querySelector('#mute').onclick=e=>{e.currentTarget.ariaPressed=e.currentTarget.ariaPressed!=='true'};addEventListener('keydown',e=>{const m={ArrowLeft:[-8,0],ArrowRight:[8,0],ArrowUp:[0,-8],ArrowDown:[0,8]};if(m[e.key]){e.preventDefault();move(...m[e.key])}if(e.key===' '){boost=25;status.textContent='冲刺中'}});let sx=0,sy=0;game.addEventListener('pointerdown',e=>{sx=e.clientX;sy=e.clientY});game.addEventListener('pointerup',e=>{const dx=e.clientX-sx,dy=e.clientY-sy;Math.abs(dx)>Math.abs(dy)?move(Math.sign(dx)*8,0):move(0,Math.sign(dy)*8)});addEventListener('blur',()=>{if(playing){playing=false;status.textContent='已暂停'}});render();`;
 
-const templateRuntimeDefinitions: Record<string, { actions: string[]; feedback: string[]; className: string }> = {
-  "falling-blocks": { actions: ["旋转拼块", "移动落点", "快速落下"], feedback: ["拼块已旋转", "落点已调整", "完整横行消除"], className: "falling" },
-  "picture-puzzle": { actions: ["选择拼块", "拖到轮廓", "完成拼图"], feedback: ["拼块已拿起", "正确位置已吸附", "完整画面已还原"], className: "puzzle" },
-  breakout: { actions: ["移动挡板", "改变角度", "击破砖阵"], feedback: ["挡板跟随移动", "弹球反射角改变", "目标全部清除"], className: "breakout" },
-  "sliding-block": { actions: ["选择方块", "合法腾挪", "推出目标"], feedback: ["目标块已选择", "空位已经腾出", "目标块抵达出口"], className: "sliding" },
-  maze: { actions: ["探索岔路", "绕开墙体", "抵达出口"], feedback: ["已记录新路线", "墙体阻挡有效", "成功走出迷宫"], className: "maze" },
-  snake: { actions: ["改变方向", "收集食物", "延长身体"], feedback: ["转向有效", "收集成功", "身体增长，空间压力上升"], className: "snake" },
-  "space-shooter": { actions: ["移动闪避", "发射弹体", "结算波次"], feedback: ["已避开威胁", "命中反馈确认", "本波敌人已清除"], className: "shooter" },
-  polyomino: { actions: ["旋转拼块", "试放轮廓", "完成覆盖"], feedback: ["拼块已旋转", "合法位置已锁定", "目标轮廓完全覆盖"], className: "polyomino" },
-  "block-placement": { actions: ["三选一", "放置拼块", "完成消行"], feedback: ["已选中拼块", "合法放置", "横列或竖列已消除"], className: "placement" },
-  "region-logic": { actions: ["读取线索", "排除候选", "验证答案"], feedback: ["行列与区域约束已读取", "矛盾候选已排除", "唯一解验证完成"], className: "logic" },
-  "tile-roguelite": { actions: ["配对自由牌", "选择路线", "获取遗物"], feedback: ["自由牌已消除", "风险路线已生效", "遗物协同加入本局"], className: "tiles" },
-  "collect-escape-3d": { actions: ["探索空间", "收集目标", "进入出口"], feedback: ["相机与角色已移动", "出口已经解锁", "成功撤离"], className: "collect3d" },
-  "arena-3d": { actions: ["走位闪避", "攻击命中", "完成波次"], feedback: ["移动响应正常", "命中反馈确认", "竞技场波次结算"], className: "arena" },
+/** 没有玩法模板、只按机制 id 生成运行时的定义；玩法模板自身的定义来自登记表（TEMPLATE_RUNTIME_DEFINITIONS）。 */
+const mechanicRuntimeDefinitions: Record<string, { actions: string[]; feedback: string[]; className: string }> = {
   "queue-management": { actions: ["查看订单", "安排队列", "完成交付"], feedback: ["截止时间和容量已显示", "加工顺序已经生效", "本轮订单完成结算"], className: "management" },
   "chapter-branch": { actions: ["阅读情境", "做出选择", "查看结果"], feedback: ["当前章节状态已记录", "选择产生了后果", "章节结果已保存"], className: "narrative" },
   "deck-combo": { actions: ["抽取卡牌", "支付并打出", "结算回合"], feedback: ["从固定牌库完成抽牌", "费用扣除并触发连携", "回合资源完成结算"], className: "deck" },
   "gamepad-control": { actions: ["检测手柄", "执行动作", "验证回退"], feedback: ["手柄连接状态可见", "按键映射产生反馈", "键盘回退仍然可用"], className: "gamepad" },
-  "turn-duel-match3": { actions: ["观察半区", "交换三消", "结束回合"], feedback: ["上下半区与棋盘已显示", "三连消除并计入当前行动者", "轮到 AI 行动并结算"], className: "duel" },
-  "solitaire-freecell": { actions: ["拿起牌组", "放入空档", "收入收牌堆"], feedback: ["牌列与空档已显示", "牌已放入空档", "收牌堆推进一张"], className: "solitaire" },
-  "lane-climb": { actions: ["切换车道", "躲避障碍", "收集冲刺"], feedback: ["车道已切换", "安全通路保持可见", "收集物触发加速并抵达终点"], className: "laneclimb" },
   "spatial-puzzle-3d": { actions: ["观察空间", "操作机关", "抵达目标"], feedback: ["相机与空间线索可读", "机关改变了可达路径", "空间目标已经完成"], className: "spatial3d" },
+};
+
+const templateRuntimeDefinitions: Record<string, { actions: string[]; feedback: string[]; className: string }> = {
+  ...TEMPLATE_RUNTIME_DEFINITIONS,
+  ...mechanicRuntimeDefinitions,
 };
 
 const templateScript = (templateId: string, paths: Partial<Record<AssetRole, string>>): string => {
