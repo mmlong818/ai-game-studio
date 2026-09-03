@@ -49,7 +49,9 @@ test.afterAll(async () => {
 async function openGame(page: Page) {
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
-  await page.goto(`${origin}/?probe=1`, { waitUntil: "domcontentloaded" });
+  // Firefox 偶发“navigation interrupted by another navigation”（about:blank 与首个 goto 竞争），重试一次即可。
+  try { await page.goto(`${origin}/?probe=1`, { waitUntil: "domcontentloaded" }); }
+  catch (error) { if (!String(error).includes("interrupted by another navigation")) throw error; await page.goto(`${origin}/?probe=1`, { waitUntil: "domcontentloaded" }); }
   await page.waitForFunction(() => Boolean((window as any).__GAME_DEBUG__), undefined, { timeout: 15_000 });
   return errors;
 }
@@ -69,6 +71,51 @@ test("纸境 3D 产物在真实 WebGL 上下文中启动", async ({ page }) => {
   expect(state.popup.blueprintCount).toBe(20);
   expect(state.popup.chapterCount).toBe(4);
   expect(state.renderCount).toBeGreaterThan(0);
+  expect(errors).toEqual([]);
+});
+
+test("构件层硬指标（ART-SPEC §5）：20 关环带密度、四角主构件、层数、尺寸、不遮挡、不进可走格半径、低档 ×0.4", async ({ page }) => {
+  test.setTimeout(240_000);
+  const errors = await openGame(page);
+  await page.getByRole("button", { name: "翻开这一页" }).click();
+  await expect(page.locator("body")).toHaveAttribute("data-game-state", "playing");
+  type DecorStats = { count: number; mainCount: number; cornerMains: number; maxGap: number; minClearance: number; occluding: number; minLayers: number; minTreeLayers: number | null; mainHeight: [number, number]; secondaryHeight: [number, number]; lights: number; backdropCount: number; layerOffset: number; layerLift: number };
+  // 只统计构件层数据，不需要逐帧渲染：软件 GL 下停渲染可以让 40 次重建在数秒内完成。
+  await page.evaluate(() => (window as any).__GAME_DEBUG__.suspend(true));
+  const readDecor = async (level: number, tier: "high" | "low") => {
+    await page.evaluate(([n, t]) => { const api = (window as any).__GAME_DEBUG__; api.setPerformanceTier("high"); api.setLevel(n); api.restart(); api.setPerformanceTier(t); }, [level, tier] as const);
+    const state = await debugState(page);
+    return { chapter: state.popup.chapter as number, decor: state.popup.decor as DecorStats };
+  };
+  let highTotal = 0; let lowTotal = 0;
+  for (let level = 1; level <= 20; level += 1) {
+    const { chapter, decor } = await readDecor(level, "high");
+    const label = `第 ${level} 关`;
+    expect(decor.maxGap, `${label} 环带每 1.5 格至少 1 个构件`).toBeLessThanOrEqual(1.5);
+    expect(decor.cornerMains, `${label} 四角主构件`).toBe(4);
+    expect(decor.occluding, `${label} 四个朝向都不遮挡可走格与星`).toBe(0);
+    expect(decor.minClearance, `${label} 基座不进入可走格 0.6 格半径`).toBeGreaterThanOrEqual(0.6);
+    expect(decor.minLayers, `${label} 每个构件至少 2 层纸片`).toBeGreaterThanOrEqual(2);
+    if (decor.minTreeLayers !== null) expect(decor.minTreeLayers, `${label} 松树至少 3 层`).toBeGreaterThanOrEqual(3);
+    expect(decor.layerOffset).toBeGreaterThanOrEqual(0.05); expect(decor.layerOffset).toBeLessThanOrEqual(0.1);
+    expect(decor.layerLift).toBeGreaterThanOrEqual(0.06); expect(decor.layerLift).toBeLessThanOrEqual(0.1);
+    expect(decor.mainHeight[0], `${label} 主构件高度下限`).toBeGreaterThanOrEqual(1.2 - 1e-6);
+    expect(decor.mainHeight[1], `${label} 主构件高度上限`).toBeLessThanOrEqual(2.2 + 1e-6);
+    expect(decor.secondaryHeight[0], `${label} 次构件高度下限`).toBeGreaterThanOrEqual(0.3 - 1e-6);
+    expect(decor.secondaryHeight[1], `${label} 次构件高度上限`).toBeLessThanOrEqual(0.7 + 1e-6);
+    expect(decor.backdropCount, `${label} 远端两排纸山 / 屋影`).toBeGreaterThanOrEqual(4);
+    // 夜市：装饰点光 ≤ 5，加出口门 1 盏共 ≤ 6。
+    expect(decor.lights, `${label} 点光预算`).toBeLessThanOrEqual(chapter === 3 ? 5 : 2);
+    highTotal += decor.count;
+    const low = (await readDecor(level, "low")).decor;
+    expect(low.cornerMains, `${label} 低档四角主构件保留`).toBe(4);
+    expect(low.lights).toBe(0);
+    lowTotal += low.count;
+  }
+  const ratio = lowTotal / highTotal;
+  expect(ratio, `低性能档构件数量约为 ×0.4（实测 ${ratio.toFixed(3)}）`).toBeGreaterThanOrEqual(0.36);
+  expect(ratio).toBeLessThanOrEqual(0.46);
+  await page.evaluate(() => (window as any).__GAME_DEBUG__.suspend(false));
   expect(errors).toEqual([]);
 });
 
