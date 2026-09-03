@@ -1,4 +1,4 @@
-import { getChangeLevelLabel } from "../domain/classifyChange";
+import { describeChangeLevel } from "../domain/classifyChange";
 import { GAME_TEMPLATES, MECHANIC_LIBRARY } from "../domain/templates";
 import type { StudioDraft } from "../domain/types";
 
@@ -66,11 +66,11 @@ export function ReviewScreen({
     <main className="review-screen">
       <div className="review-heading">
         <div>
-          <span className="eyebrow">规则规格已形成</span>
-          <h1>{template ? `${template.name}改造方案` : "新游戏机制方案"}</h1>
-          <p>现在得到的是制作合同，不是无法回头的最终生成。核心边界和资料来源已经可以检查。</p>
+          <span className="eyebrow">方案已形成</span>
+          <h1>{template ? `${draft.sourceGame?.title ?? template.name}改造方案` : "新游戏机制方案"}</h1>
+          <p>这只是一份可以检查的方案，还没有真正开始生成。看一眼没问题，再进入制作。</p>
         </div>
-        <span className="ready-stamp">可以进入规则设计</span>
+        <span className="ready-stamp">可以开始制作</span>
       </div>
 
       <div className="review-grid">
@@ -80,21 +80,19 @@ export function ReviewScreen({
             <>
               <dl className="fact-list">
                 <div>
-                  <dt>玩法起点</dt>
+                  <dt>基于的玩法</dt>
                   <dd>{template.name}</dd>
                 </div>
                 <div>
-                  <dt>改造级别</dt>
-                  <dd>
-                    {draft.changeLevel} · {getChangeLevelLabel(draft.changeLevel)}
-                  </dd>
+                  <dt>改动范围</dt>
+                  <dd>{describeChangeLevel(draft.changeLevel)}</dd>
                 </div>
                 <div>
                   <dt>核心循环</dt>
                   <dd>{template.coreLoop}</dd>
                 </div>
               </dl>
-              <h3>采用的固定建议</h3>
+              <h3>你的要求</h3>
               <ul className="review-list">
                 {selectedSuggestions?.map((item) => (
                   <li key={item.id}>
@@ -104,7 +102,7 @@ export function ReviewScreen({
                 ))}
                 {draft.freeRequest && (
                   <li>
-                    <strong>补充要求</strong>
+                    <strong>你写的话</strong>
                     <span>{draft.freeRequest}</span>
                   </li>
                 )}
@@ -113,7 +111,7 @@ export function ReviewScreen({
           ) : (
             <>
               <blockquote>{draft.newGameBrief}</blockquote>
-              <h3>组合的玩法要素</h3>
+              <h3>会用到的玩法</h3>
               <ul className="review-list">
                 {selectedMechanics.map((item) => (
                   <li key={item.id}>
@@ -127,18 +125,17 @@ export function ReviewScreen({
         </section>
 
         <aside className="review-evidence" aria-labelledby="evidence-heading">
-          <h2 id="evidence-heading">制作门禁</h2>
+          <h2 id="evidence-heading">开始前的检查</h2>
           <ul className="gate-list">
             <li><span>通过</span> 单人网页范围</li>
             <li><span>通过</span> 核心玩法边界</li>
             <li><span>通过</span> AI 位图资源规则</li>
             <li><span>通过</span> 桌面与触控双输入</li>
-            <li><span>下一步</span> 规则与验收合同</li>
+            <li><span>下一步</span> 生成规则并验证</li>
           </ul>
           {draft.referenceDossier && (
             <div className="source-summary">
-              <strong>{draft.referenceDossier.id}</strong>
-              <span>{draft.referenceDossier.references.length} 个来源</span>
+              <strong>参考了 {draft.referenceDossier.references.length} 个真实来源</strong>
               <ul>
                 {draft.referenceDossier.references.map((reference) => (
                   <li key={reference.url}>

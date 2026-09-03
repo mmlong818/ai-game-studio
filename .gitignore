@@ -13,3 +13,6 @@ coverage/
 .env.*
 !.env.example
 npm-debug.log*
+
+# Claude Code 隔离工作树
+.claude/

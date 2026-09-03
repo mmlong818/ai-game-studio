@@ -5,6 +5,7 @@ const STORAGE_KEY = "ai-game-studio:m0-draft";
 export const INITIAL_DRAFT: StudioDraft = {
   creationMode: "template-remix",
   templateId: "merge-2048",
+  sourceGame: null,
   selectedSuggestionIds: [],
   freeRequest: "",
   newGameBrief: "",

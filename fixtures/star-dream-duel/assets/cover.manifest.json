@@ -1,0 +1,13 @@
+{
+  "schemaVersion": 1,
+  "filename": "cover.png",
+  "role": "library-card-cover",
+  "source": "openai-image-api",
+  "model": "gpt-image-2",
+  "size": "1024x1536",
+  "quality": "high",
+  "promptFile": "fixtures/star-dream-duel/_studio/COVER_ART_PROMPT.md",
+  "bytes": 2529107,
+  "sha256": "b3ab224988c42797119895fb70b784da709fb210c05ae79efef9e7906c6925eb",
+  "generatedAt": "2026-09-02T21:25:35.466Z"
+}

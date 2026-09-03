@@ -386,6 +386,26 @@ export const GOLDEN_SCENARIOS: Record<string, GoldenScenarioDefinition> = {
     },
     completingActions: ["finish-wave"],
   },
+  "turn-duel-match3": {
+    actions: {
+      "inspect-board": ["board-readable", "half-zones-visible"],
+      "swap-outside-zone": ["zone-blocked"],
+      "swap-match": ["three-in-line", "combo-scored-to-actor"],
+      "end-turn": ["turn-passed-to-ai", "ai-turn-resolved"],
+      "drain-opponent": ["score-drained", "session-completed"],
+    },
+    rejectedActions: ["swap-outside-zone"],
+    completingActions: ["drain-opponent"],
+  },
+  "lane-climb": {
+    actions: {
+      "read-lanes": ["safe-lane-visible"],
+      "switch-lane": ["lane-changed", "obstacle-avoided"],
+      collect: ["target-collected", "speed-tier-changed"],
+      finish: ["distance-target-reached", "session-completed"],
+    },
+    completingActions: ["finish"],
+  },
 };
 
 const COMPOSED_MECHANIC_SCENARIOS: Record<string, GoldenScenarioDefinition> = {

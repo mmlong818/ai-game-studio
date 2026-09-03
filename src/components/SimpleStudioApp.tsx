@@ -12,6 +12,7 @@ import { buildSimplePlayableRevision } from "../domain/simpleProduction";
 import { downloadSimpleOpenSourceBundle, publishSimplePlayableRevision, verifySimplePlayableRevision } from "../domain/simpleRelease";
 import { INITIAL_DRAFT } from "../domain/storage";
 import { getTemplate } from "../domain/templates";
+import { resolveTemplateForGame } from "../domain/templateResolution";
 
 type FlowMode = "remix" | "new-game";
 type FlowPhase = "playing" | "input" | "analyzing" | "choices" | "producing" | "validating" | "ready" | "testing" | "published" | "failed";
@@ -38,21 +39,6 @@ interface SimpleFlowState {
 }
 
 const STORAGE_KEY = "ai-game-studio:simple-flow:v2";
-
-const SOURCE_TEMPLATE_MAP: Record<string, string> = {
-  tetris: "falling-blocks",
-  puzzle: "picture-puzzle",
-  breakout: "breakout",
-  klotski: "sliding-block",
-  maze: "maze",
-  snake: "snake",
-  "merge-2048": "merge-2048",
-  "space-shooter": "space-shooter",
-  "polyomino-fit": "polyomino",
-  "block-place": "block-placement",
-  "region-logic": "region-logic",
-  "mahjong-roguelite": "tile-roguelite",
-};
 
 const INITIAL_FLOW: SimpleFlowState = {
   mode: "remix",
@@ -179,7 +165,7 @@ export function SimpleStudioApp() {
   }, [flow.phase, flow.activityId]);
 
   const activeProject = useMemo(() => flow.projectId ? loadProject(flow.projectId) : null, [flow.projectId, flow.revision, flow.phase]);
-  const sourceTemplateId = sourceGame ? SOURCE_TEMPLATE_MAP[sourceGame.template] ?? null : null;
+  const sourceTemplateId = sourceGame ? resolveTemplateForGame(sourceGame)?.id ?? null : null;
   const sourceTemplate = getTemplate(sourceTemplateId);
   const fallbackSpec = useMemo(() => buildGameSpec(flow.mode === "new-game" ? {
     ...INITIAL_DRAFT,
@@ -430,9 +416,10 @@ export function SimpleStudioApp() {
         />
       </section>
 
-      <button type="button" className="remix-edge-button" onClick={() => openRequest(flow.mode)} aria-haspopup="dialog">
+      {/* 游戏内的修改不是独立流程：直接进入创作页的“改一个现有游戏”步骤，并预选当前游戏。 */}
+      <a className="remix-edge-button" href={`/create?game=${encodeURIComponent(sourceGame.id)}`}>
         <span aria-hidden="true">＋</span> 改造这个游戏
-      </button>
+      </a>
 
       {flow.requestHistory.length > 0 && flow.phase !== "input" && flow.phase !== "playing" && (
         <section className={`process-chat ${processOpen ? "is-open" : "is-collapsed"}`} aria-live="polite">

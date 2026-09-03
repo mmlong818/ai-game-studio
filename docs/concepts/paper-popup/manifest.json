@@ -1,0 +1,41 @@
+{
+  "schemaVersion": 1,
+  "purpose": "paper-popup 3D showcase concept lock",
+  "model": "gpt-image-2",
+  "quality": "high",
+  "generatedAt": "2026-09-02T22:52:20.206Z",
+  "entries": [
+    {
+      "file": "01-key-art.png",
+      "promptFile": "01-key-art.prompt.txt",
+      "bytes": 2673166,
+      "width": 1024,
+      "height": 1536,
+      "sha256": "368f60eafbaaa21b6b63ee8d5fc193f00490b8c33722b697116f200806d3bc83"
+    },
+    {
+      "file": "02-mobile-gameplay.png",
+      "promptFile": "02-mobile-gameplay.prompt.txt",
+      "bytes": 2406375,
+      "width": 1024,
+      "height": 1536,
+      "sha256": "5169f3e4c343a89d922e7ccc6921ce6692b8cd2f342382f2497a9f0ba35b51f9"
+    },
+    {
+      "file": "03-chapter-palettes.png",
+      "promptFile": "03-chapter-palettes.prompt.txt",
+      "bytes": 2937201,
+      "width": 1536,
+      "height": 1024,
+      "sha256": "348f1b7899a9909828efaf96d285ca047009acc47f0a7006a3b241f30a4f553f"
+    },
+    {
+      "file": "04-paper-texture.png",
+      "promptFile": "04-paper-texture.prompt.txt",
+      "bytes": 1922422,
+      "width": 1024,
+      "height": 1024,
+      "sha256": "b7619211a3d9750c4f065011175a2eda8b890a6c79a3c698d288d0312484d7c2"
+    }
+  ]
+}

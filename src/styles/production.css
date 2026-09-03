@@ -9,7 +9,7 @@
   align-items: flex-end;
   justify-content: space-between;
   gap: 24px;
-  border-bottom: 1px solid var(--line);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.3);
   padding-bottom: 24px;
 }
 
@@ -30,7 +30,7 @@
   margin-top: 16px;
   padding: 14px;
   border-radius: 14px;
-  background: var(--surface-soft, #f3f0e8);
+  background: var(--surface-soft);
 }
 
 .visual-comparison > div {
@@ -54,12 +54,12 @@
 .visual-comparison figcaption {
   margin-top: 4px;
   font-size: 12px;
-  color: var(--text-muted, #657068);
+  color: var(--muted);
 }
 
 .manual-review-form {
   padding: 12px;
-  border: 1px solid var(--line, #d7d7cf);
+  border: 1px solid var(--line);
   border-radius: 12px;
 }
 
@@ -83,6 +83,7 @@
 
 .production-header h1 {
   margin: 6px 0 4px;
+  color: var(--on-canvas);
   font-size: clamp(30px, 4vw, 54px);
 }
 
@@ -90,6 +91,10 @@
 .property-panel p,
 .assertion p {
   color: var(--muted);
+}
+
+.production-header p {
+  color: var(--on-canvas-muted);
 }
 
 .production-header p,
@@ -103,33 +108,42 @@
   background: none;
   padding: 0;
   margin-bottom: 24px;
-  color: var(--muted);
+  color: var(--on-canvas-muted);
   font-weight: 700;
+}
+
+.text-action:hover:not(:disabled) {
+  color: var(--on-canvas);
 }
 
 .production-summary {
   display: grid;
   min-width: 210px;
   gap: 6px;
+  color: var(--on-canvas-muted);
   text-align: right;
 }
 
 .production-summary strong {
+  color: var(--on-canvas);
   font-size: 24px;
 }
 
 .workspace-notice {
   margin: 18px 0;
   padding: 14px 18px;
+  border: 0;
   border-left: 4px solid var(--accent);
-  background: var(--surface-soft);
+  border-radius: 12px;
+  background: var(--surface);
+  box-shadow: var(--shadow-raised);
 }
 
 .workspace-tabs {
   display: flex;
   gap: 6px;
   margin-bottom: 18px;
-  border-bottom: 1px solid var(--line);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.3);
   overflow: auto;
 }
 
@@ -141,12 +155,12 @@
   background: none;
   white-space: nowrap;
   font-weight: 800;
-  color: var(--muted);
+  color: var(--on-canvas-muted);
 }
 
 .workspace-tabs button.active {
-  border-bottom-color: var(--accent);
-  color: var(--ink);
+  border-bottom-color: var(--lego-yellow);
+  color: var(--on-canvas);
 }
 
 .production-grid {
@@ -162,8 +176,10 @@
 .preview-workspace > section,
 .quality-workspace > section,
 .quality-workspace > aside {
-  border: 1px solid var(--line);
+  border: 0;
+  border-radius: var(--radius-md);
   background: var(--surface);
+  box-shadow: var(--shadow-raised);
   padding: 18px;
 }
 
@@ -183,6 +199,7 @@
   text-align: left;
   padding: 12px;
   border: 1px solid transparent;
+  border-radius: 10px;
   background: none;
 }
 
@@ -204,7 +221,7 @@
   overflow: hidden;
   border: 1px solid var(--line-strong);
   border-radius: 18px;
-  background: linear-gradient(#dcebd8, #b7cfaa);
+  background: linear-gradient(#eaf4fc, #d3e7f7);
 }
 
 .scene-object {
@@ -255,8 +272,12 @@
 
 .property-fields {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   gap: 10px;
+}
+
+.property-fields input {
+  min-width: 0;
 }
 
 .property-fields label,
@@ -270,10 +291,17 @@
 .property-fields input,
 .prompt-field textarea {
   width: 100%;
-  border: 1px solid var(--line-strong);
-  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-soft);
   padding: 10px;
   font: inherit;
+}
+
+.property-fields input:focus-visible,
+.prompt-field textarea:focus-visible {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(0, 103, 192, 0.18);
 }
 
 .locked-properties {
@@ -281,6 +309,7 @@
   gap: 4px;
   margin-top: 18px;
   padding: 12px;
+  border-radius: var(--radius-sm);
   background: var(--surface-soft);
   font-size: 12px;
 }
@@ -321,6 +350,8 @@
   gap: 4px;
   padding: 12px;
   border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--surface-soft);
 }
 
 .preview-workspace {
@@ -329,6 +360,7 @@
 
 .preview-workspace iframe {
   border: 1px solid var(--line-strong);
+  border-radius: 12px;
   background: white;
 }
 
@@ -368,6 +400,10 @@
   gap: 18px;
 }
 
+.production-workspace .section-heading h2 {
+  color: var(--ink);
+}
+
 .assertion-list {
   display: grid;
   gap: 8px;
@@ -379,6 +415,8 @@
   gap: 12px;
   padding: 12px;
   border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--surface-soft);
 }
 
 .assertion > span {

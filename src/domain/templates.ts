@@ -297,6 +297,38 @@ export const GAME_TEMPLATES: GameTemplate[] = [
     ),
     redirectExamples: ["联机竞技", "大型团战", "持久世界"],
   },
+  {
+    id: "turn-duel-match3",
+    name: "轮换对决三消",
+    genre: "对抗三消",
+    pitch: "和 AI 共用一个棋盘轮流三消，用连消抢分，把对手的积分耗尽。",
+    coreLoop: "观察棋盘 → 交换消除 → 连消计分 → 轮到对手",
+    coreRules: ["玩家只能操作下半区，AI 只能操作上半区", "交换后必须形成三连", "全部连消归当前行动者", "任一方积分归零即结束"],
+    capabilities: ["match3-board", "swap-match", "turn-order", "ai-opponent", "combo-scoring"],
+    suggestions: commonSuggestions(
+      "turn-duel-match3",
+      "共用棋盘、半区限制、轮流行动和连消归属保持不变",
+      "替换棋子主题、对手形象、起始积分和连消倍率。",
+      "只加入一种特殊棋子或一种对手行为。",
+    ),
+    redirectExamples: ["实时对战", "联机", "开放世界", "多人"],
+  },
+  {
+    id: "lane-climb",
+    name: "多道攀爬",
+    genre: "反应闪避",
+    pitch: "角色在几条固定道之间切换，躲开障碍、收集奖励并冲向终点。",
+    coreLoop: "换道 → 躲避 → 收集 → 冲向终点",
+    coreRules: ["角色只在固定几条道之间切换", "每个生成批次至少保留一条安全通路", "收集物提供分数与加速", "抵达终点或耗尽生命结束"],
+    capabilities: ["lane-dodge", "continuous-movement", "collect-escape", "checkpoint-save"],
+    suggestions: commonSuggestions(
+      "lane-climb",
+      "固定道、换道操作、安全通路和终点结算保持不变",
+      "替换角色、场景、障碍与收集物，调整道数、速度和长度。",
+      "只加入一种会移动的障碍或一种收集效果。",
+    ),
+    redirectExamples: ["开放世界", "联机", "经营建造", "多人"],
+  },
 ];
 
 export const MECHANIC_LIBRARY: MechanicDefinition[] = [
