@@ -1,49 +1,32 @@
+import { OFFICIAL_GAMES } from "../shared/official-games";
 import { recommendMechanics } from "./research";
 import { GAME_TEMPLATES, getTemplate } from "./templates";
 import type { GameTemplate } from "./types";
 
 /**
  * 服务端游戏模板 id → 创作流程使用的玩法模板 id。
+ * 由官方游戏登记表派生：每条带 serverTemplate 的登记（模板游戏，以及固定游戏所落的模板）都贡献一项。
  * 规则：每一款官方游戏都必须能落到一个玩法模板上，否则不能进入“改一个现有游戏”。
  */
-export const SERVER_TEMPLATE_TO_DOMAIN: Record<string, string> = {
-  "signal-hunt": "turn-duel-match3",
-  tetris: "falling-blocks",
-  puzzle: "picture-puzzle",
-  breakout: "breakout",
-  klotski: "sliding-block",
-  maze: "maze",
-  snake: "snake",
-  "merge-2048": "merge-2048",
-  "space-shooter": "space-shooter",
-  "polyomino-fit": "polyomino",
-  "block-place": "block-placement",
-  "region-logic": "region-logic",
-  "mahjong-roguelite": "tile-roguelite",
-};
+export const SERVER_TEMPLATE_TO_DOMAIN: Record<string, string> = Object.fromEntries(
+  OFFICIAL_GAMES
+    .filter((game) => game.serverTemplate)
+    .map((game) => [game.serverTemplate as string, game.domainTemplate.id]),
+);
 
-/** 固定游戏（fixture）不走服务端模板，按自身种类映射。 */
-export const FIXTURE_TEMPLATE_TO_DOMAIN: Record<string, string> = {
-  "star-dream-duel": "turn-duel-match3",
-  freecell: "solitaire-freecell",
-};
+/** 固定游戏（fixture）不走服务端模板，按自身种类映射。由登记表的 fixture 型条目派生。 */
+export const FIXTURE_TEMPLATE_TO_DOMAIN: Record<string, string> = Object.fromEntries(
+  OFFICIAL_GAMES
+    .filter((game) => game.kind === "fixture" && game.fixtureKind)
+    .map((game) => [game.fixtureKind as string, game.domainTemplate.id]),
+);
 
-/** 玩法模板 id → 服务端已有封面所属的模板目录，供创作页当图标用。 */
-export const DOMAIN_TEMPLATE_ART: Record<string, string> = {
-  "turn-duel-match3": "signal-hunt",
-  "falling-blocks": "tetris",
-  "picture-puzzle": "puzzle",
-  breakout: "breakout",
-  "sliding-block": "klotski",
-  maze: "maze",
-  snake: "snake",
-  "merge-2048": "merge-2048",
-  "space-shooter": "space-shooter",
-  polyomino: "polyomino-fit",
-  "block-placement": "block-place",
-  "region-logic": "region-logic",
-  "tile-roguelite": "mahjong-roguelite",
-};
+/** 玩法模板 id → 服务端已有封面所属的模板目录，供创作页当图标用。由登记表派生。 */
+export const DOMAIN_TEMPLATE_ART: Record<string, string> = Object.fromEntries(
+  OFFICIAL_GAMES
+    .filter((game) => game.serverTemplate)
+    .map((game) => [game.domainTemplate.id, game.serverTemplate as string]),
+);
 
 /**
  * AI 原创（generated）游戏没有固定的服务端模板：先从创意描述里识别机制，
