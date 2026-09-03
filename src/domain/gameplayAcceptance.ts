@@ -1,5 +1,5 @@
 import { stableId } from "./hash";
-import { GOLDEN_SCENARIOS, scenarioForMechanics, type GameProbe, type GoldenScenarioDefinition } from "./probe";
+import { GOLDEN_SCENARIOS, PAPER_POPUP_RULE_LABELS, PAPER_POPUP_TEMPLATE_ID, PaperPopupProbe, scenarioForMechanics, type GameProbe, type GoldenScenarioDefinition } from "./probe";
 import type {
   AcceptanceAssertion,
   BuildManifest,
@@ -129,6 +129,54 @@ function runCollectEscape3DScenario(probe: GameProbe): ScenarioResult {
   };
 }
 
+/** 纸境 · 立体书迷宫的确定性验收场景：折桥拒绝穿行 → 按正确角度序列真实走完 → 跳空回检查点。 */
+export function runPaperPopupScenario(probe: GameProbe): ScenarioResult {
+  const errors: string[] = [];
+  probe.setSeed(17);
+  probe.restart();
+  probe.performAction("start");
+  const folded = probe.performAction("cross-folded-link");
+  if (folded.accepted || !probe.snapshot().events.includes("folded-link-blocked")) errors.push("折起的角度桥没有阻止穿行");
+  if (probe.snapshot().values.hiddenStarVisible !== false) errors.push("默认角度下隐藏星不应可见");
+  const solution = probe instanceof PaperPopupProbe ? probe.solution() : [];
+  if (!solution.length) errors.push("缺少正确角度序列");
+  for (const action of solution) {
+    const result = probe.performAction(action);
+    if (!result.accepted) errors.push(`${action} 在正确序列中被拒绝`);
+  }
+  const state = probe.snapshot();
+  if (!state.events.includes("book-rotated") || Number(state.resources.rotations) < 1) errors.push("正确序列没有转动书本");
+  if (!state.events.includes("angle-link-connected")) errors.push("转动后角度桥没有接上");
+  if (!state.events.includes("checkpoint-reached")) errors.push("主线没有经过检查点");
+  if (!state.events.includes("exit-reached") || state.result !== "completed") errors.push("没有抵达出口门");
+  // 隐藏星：转到它的角度后应可见。
+  probe.restart();
+  probe.performAction("start");
+  let revealed = false;
+  for (let index = 0; index < 4 && !revealed; index += 1) {
+    probe.performAction("rotate-cw");
+    revealed = probe.snapshot().values.hiddenStarVisible === true;
+  }
+  if (!revealed || !probe.snapshot().events.includes("hidden-star-revealed")) errors.push("隐藏星没有在非默认角度显现");
+  // 失败恢复：往空处跳，回到最近检查点而不是整局结束。
+  probe.restart();
+  probe.performAction("start");
+  const before = probe.snapshot();
+  let fell = false;
+  for (const direction of ["N", "E", "S", "W"]) {
+    const result = probe.performAction(`jump-${direction}`);
+    if (result.state.events.includes("returned-to-checkpoint")) { fell = true; break; }
+    if (result.state.values.x !== before.values.x || result.state.values.z !== before.values.z) { probe.restart(); probe.performAction("start"); }
+  }
+  const recovered = probe.snapshot();
+  if (!fell || recovered.lifecycle !== "playing" || Number(recovered.resources.mistakes) !== 1) errors.push("跳空后没有回到检查点继续");
+  probe.restart();
+  probe.performAction("start");
+  probe.restore(state);
+  if (!probe.snapshot().events.includes("checkpoint-restored")) errors.push("刷新后没有恢复当前局面");
+  return { passedLabels: errors.length === 0 ? [...PAPER_POPUP_RULE_LABELS] : [], log: state.events, errors };
+}
+
 function runGoldenTemplateScenario(project: StudioProject, probe: GameProbe, override?: GoldenScenarioDefinition): ScenarioResult {
   const templateId = project.spec.source.templateId;
   const definition = override ?? (templateId ? GOLDEN_SCENARIOS[templateId] : undefined);
@@ -175,6 +223,8 @@ export function runGameplayAcceptance(
       ? runTileRogueliteScenario(probe)
       : project.spec.source.templateId === "collect-escape-3d"
         ? runCollectEscape3DScenario(probe)
+        : project.spec.source.templateId === PAPER_POPUP_TEMPLATE_ID
+          ? runPaperPopupScenario(probe)
         : project.spec.source.templateId
           ? runGoldenTemplateScenario(project, probe)
           : project.spec.source.selectedMechanicIds.includes("lane-dodge") && project.spec.source.selectedMechanicIds.includes("collect-escape")
