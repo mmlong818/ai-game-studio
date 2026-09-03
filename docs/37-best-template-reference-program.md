@@ -43,6 +43,7 @@
 | 14 | 3D 小型竞技场 | `signal-hunt` | 已完成并发布 v8，见 `52-3d-arena-best-template-reference.md` | 20 个唯一竞技蓝图、五章、四类独立位图敌人、真实飞行弹体、目标锁定、受击血条、远程预警、两次波次强化三选一、强化常驻 HUD 与手机/桌面真检均已通过；稳定网址已指向 `879a78ee-4c43-4386-8a3f-dde794a785ba` |
 | 15 | 空档接龙 | 固定游戏 `fixtures/freecell` | 已完成，见 `53-freecell-best-template-reference.md` | 标准 FreeCell 规则、超级移动、安全自动收牌、Microsoft 1–100 号牌局全部经求解器验证、点击/拖拽/键盘、本地进度、自定义牌背、gpt-image-2 位图与溯源、Chromium 真实通关测试均已落实；服务启动时自动注册为官方游戏，稳定网址 `/play/freecell/` |
 | 16 | 纸境 · 立体书迷宫 | `threeMode = popup`（创作侧模板 `popup-rotate-3d` 待主工作区登记） | 已完成参照合同与实现，见 `54-paper-popup-3d-best-template-reference.md` | 20 关四章数据描述、每关必须转动且至少一颗隐藏星、求解器 + 浏览器探针逐关通关、纸艺程序化渲染与官方 gpt-image-2 贴图包、手机/桌面真检均已通过；待主美真人复核、发布并标记官方进入大厅 |
+| 17 | 虫虫攀枝 | 固定游戏 `fixtures/bug-climb`（官方原创，由实验通道 v13 固化） | 已完成，见 `56-bug-climb-best-template-reference.md` | 三路线闪避、露珠冲刺破障、三种输入、gpt-image-2 位图与溯源随产物归档；服务启动自动注册，大厅第 15 位 |
 
 “待专门研究”不是占位式授权：该行在完成可追溯研究文档前不得进入视觉模仿或机制重构。
 

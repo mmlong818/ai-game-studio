@@ -8,6 +8,7 @@
  */
 import { blockPlace } from "./block-place.js";
 import { breakout } from "./breakout.js";
+import { bugClimb } from "./bug-climb.js";
 import { freecell } from "./freecell.js";
 import { klotski } from "./klotski.js";
 import { mahjongRoguelite } from "./mahjong-roguelite.js";
@@ -46,6 +47,7 @@ export const OFFICIAL_GAMES = [
   mahjongRoguelite,
   freecell,
   paperPopup,
+  bugClimb,
   // @scaffold:insert — 脚手架会把新登记追加在这一行之上
 ] as const satisfies readonly OfficialGameDefinition[];
 

@@ -50,9 +50,31 @@ function acceptedFreecellSpec() {
   });
 }
 
+const bugClimbInput: ProjectInput = {
+  title: "虫虫攀枝",
+  dimensions: "2d",
+  idea: "Q版小瓢虫在巨大树干的三条树纹之间高速攀爬，躲避树瘤、蘑菇和树脂，收集露珠与金色种子并冲向树冠。",
+};
+
+function acceptedBugClimbSpec() {
+  const spec = generateGameSpec(bugClimbInput);
+  return gameSpecSchema.parse({
+    ...spec,
+    template: "generated",
+    inputModes: ["pointer", "keyboard", "touch-buttons"],
+    acceptanceCriteria: [
+      ...spec.acceptanceCriteria,
+      { id: "AC-LANES", priority: "P0", statement: "三条树纹路线始终等宽可判断，每个生成批次至少保留一条安全通路", probeType: "state", status: "passed" },
+      { id: "AC-DASH", priority: "P0", statement: "露珠冲刺可撞碎琥珀树脂，普通碰撞扣体力并清空倍率", probeType: "state", status: "passed" },
+      { id: "AC-TOUCH", priority: "P1", statement: "键盘、触控按钮与四向滑动都能完成一局", probeType: "state", status: "passed" },
+    ].map((criterion) => ({ ...criterion, status: "passed" })),
+  });
+}
+
 export const fixtureSpecBuilders: Record<string, FixtureSpecBuilder> = {
   "star-dream-duel": { input: goldenInput, spec: acceptedGoldenSpec },
   freecell: { input: freecellInput, spec: acceptedFreecellSpec },
+  "bug-climb": { input: bugClimbInput, spec: acceptedBugClimbSpec },
 };
 
 /**

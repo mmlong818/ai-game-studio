@@ -103,7 +103,7 @@ npm run test:browsers
 - 真实帧率、P95 帧耗时、输入延迟、长任务、内存、无障碍、音频恢复和截图证据。
 - 受影响检查调度、修改前后截图、整组回滚、双视角真人体验门禁和匿名质量事件。
 - 包含运行时、全部本地资源、规格、规则、来源与质量报告的 ZIP 导出能力。
-- “现有滑动合成改造”和“全新虫虫攀枝”两类完整流程，以及 14 个模板的专属动作回归。
+- “现有滑动合成改造”和“全新虫虫攀枝”两类完整流程，以及 14 个模板的专属动作回归；虫虫攀枝已作为官方原创固化为固定游戏 `fixtures/bug-climb/`（见 docs/56）。
 - 队列经营、章节叙事、卡牌连携、单人手柄输入和 WebGL 空间谜题五类独立玩法循环；均通过桌面与手机浏览器回归。
 - 官方 3D 示范游戏「纸境 · 立体书迷宫」（**开发中**，登记为 `stage: "development"`，暂不进入大厅与改造模板；第 8 关存在障碍无法躲开、跳跃无效的问题待修）：第三种 3D 模式 `threeMode = "popup"`，整本立体书按 90° 转动、桥与折纸星只在特定角度接上或可见；20 关四章由数据描述并经求解器与浏览器探针逐关验证。参照合同见 [docs/54](docs/54-paper-popup-3d-best-template-reference.md)，入库脚本 `npm run seed:showcases -- paper-popup`（登记于 `src/shared/official-games/paper-popup.ts`），贴图生成 `NODE_USE_ENV_PROXY=1 node scripts/generate-paper-popup-art.mjs`，批量审计 `npm run audit:stage-f -- popup=<artifact-root>`。
 
