@@ -1,6 +1,6 @@
 import { OFFICIAL_GAMES } from "../shared/official-games";
 import { recommendMechanics } from "./research";
-import { GAME_TEMPLATES, getTemplate } from "./templates";
+import { GAME_TEMPLATES, GAMEPLAY_TEMPLATE_BUNDLES, getTemplate } from "./templates";
 import type { GameTemplate } from "./types";
 
 /**
@@ -21,6 +21,13 @@ export const FIXTURE_TEMPLATE_TO_DOMAIN: Record<string, string> = Object.fromEnt
     .map((game) => [game.fixtureKind as string, game.domainTemplate.id]),
 );
 
+/** 3D 项目不看服务端模板，按 threeMode 映射。由玩法模板捆绑里声明了 threeMode 的条目派生。 */
+export const THREE_MODE_TO_DOMAIN: Record<string, string> = Object.fromEntries(
+  GAMEPLAY_TEMPLATE_BUNDLES
+    .filter((bundle) => bundle.threeMode)
+    .map((bundle) => [bundle.threeMode as string, bundle.domainTemplate.id]),
+);
+
 /** 玩法模板 id → 服务端已有封面所属的模板目录，供创作页当图标用。由登记表派生。 */
 export const DOMAIN_TEMPLATE_ART: Record<string, string> = Object.fromEntries(
   OFFICIAL_GAMES
@@ -38,8 +45,9 @@ export function resolveGeneratedTemplate(idea: string): GameTemplate | undefined
   return GAME_TEMPLATES.find((template) => mechanics.every((mechanic) => template.capabilities.includes(mechanic)));
 }
 
-export function resolveTemplateForGame(game: { template: string; idea: string; fixtureKind?: string | null }): GameTemplate | undefined {
+export function resolveTemplateForGame(game: { template: string; idea: string; fixtureKind?: string | null; threeMode?: string | null }): GameTemplate | undefined {
   if (game.fixtureKind && FIXTURE_TEMPLATE_TO_DOMAIN[game.fixtureKind]) return getTemplate(FIXTURE_TEMPLATE_TO_DOMAIN[game.fixtureKind]);
+  if (game.threeMode && THREE_MODE_TO_DOMAIN[game.threeMode]) return getTemplate(THREE_MODE_TO_DOMAIN[game.threeMode]);
   if (game.template === "generated") return resolveGeneratedTemplate(game.idea);
   return getTemplate(SERVER_TEMPLATE_TO_DOMAIN[game.template] ?? null);
 }

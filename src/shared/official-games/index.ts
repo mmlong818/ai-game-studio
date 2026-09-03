@@ -13,6 +13,7 @@ import { klotski } from "./klotski.js";
 import { mahjongRoguelite } from "./mahjong-roguelite.js";
 import { maze } from "./maze.js";
 import { merge2048 } from "./merge-2048.js";
+import { paperPopup } from "./paper-popup.js";
 import { polyominoFit } from "./polyomino-fit.js";
 import { puzzle } from "./puzzle.js";
 import { regionLogic } from "./region-logic.js";
@@ -44,6 +45,7 @@ export const OFFICIAL_GAMES = [
   regionLogic,
   mahjongRoguelite,
   freecell,
+  paperPopup,
   // @scaffold:insert — 脚手架会把新登记追加在这一行之上
 ] as const satisfies readonly OfficialGameDefinition[];
 

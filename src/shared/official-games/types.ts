@@ -75,6 +75,8 @@ export interface GameplayTemplateBundle {
   runtimeDefinition: OfficialRuntimeDefinition;
   /** 模板改造触发 R2 时用来做同类机制研究的内部机制 id（见 MECHANIC_LIBRARY）。 */
   mechanicId: string;
+  /** 若这套玩法模板就是某种 3D 模式的落点，写上 threeMode；3D 项目按它映射到玩法模板。 */
+  threeMode?: OfficialThreeMode;
 }
 
 /** 模板游戏的示范项目参数，供 scripts/seed-showcase-games.ts 通过 API 创建并发布。标题取登记的 title。 */
@@ -140,5 +142,5 @@ export type ServerTemplatesOf<T extends readonly OfficialGameDefinition[]> =
 export const officialCoverPath = (game: Pick<OfficialGameDefinition, "kind" | "fixtureKind" | "serverTemplate" | "id">): string => {
   if (game.kind === "fixture") return `fixtures/${game.fixtureKind ?? game.id}/assets/cover.png`;
   if (game.kind === "template") return `assets/templates/packs/${game.serverTemplate ?? game.id}/cover.png`;
-  return `assets/templates/packs/${game.id}/cover.png`;
+  return `assets/starter/${game.id}/cover.png`;
 };

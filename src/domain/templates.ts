@@ -25,6 +25,7 @@ const SUPPLEMENTARY_GAMEPLAY_TEMPLATES: GameplayTemplateBundle[] = [
       redirectExamples: ["开放世界", "载具群", "复杂骨骼战斗"],
     },
     probeKind: "collect-escape-3d",
+    threeMode: "collector",
     probeScenario: {
       actions: {
         "move-forward": ["character-moved"],
@@ -60,6 +61,7 @@ const SUPPLEMENTARY_GAMEPLAY_TEMPLATES: GameplayTemplateBundle[] = [
       ),
       redirectExamples: ["联机竞技", "大型团战", "持久世界"],
     },
+    threeMode: "arena",
     probeScenario: {
       actions: {
         "move-and-attack": ["movement-responsive", "attack-responsive"],
@@ -118,6 +120,7 @@ export const GAMEPLAY_TEMPLATE_BUNDLES: GameplayTemplateBundle[] = [
     probeScenario: game.probeScenario,
     runtimeDefinition: game.runtimeDefinition,
     mechanicId: game.mechanicId,
+    threeMode: game.threeMode,
   })),
   ...SUPPLEMENTARY_GAMEPLAY_TEMPLATES,
 ];
