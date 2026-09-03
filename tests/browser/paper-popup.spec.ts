@@ -168,6 +168,53 @@ test("用键盘、转书键与滑动真实走完第 1 关：断桥只有转过�
   expect(errors).toEqual([]);
 });
 
+test("第 8 关（潮汐走廊）：按纸浪落点提示的视觉时机用真实按键穿过走廊，点亮检查点并转角过桥", async ({ page }) => {
+  // 真人反馈“纸浪躲不开、跳跃无效”的复现关。这里不用探针回放，只用键盘：每一拍看一眼纸浪的落点提示（下一拍会涌到的格子），
+  // 提示不在我要踩的格子上就迈一步，否则原地等一拍——这正是规则内核判定碰撞用的格子，所以“看着安全”与“规则安全”一致。
+  // 按键当场结算一拍（不再等节拍边界），因此“看到 → 按下”之间不会再插入一次纸浪移动；节拍放慢到 1400ms 只是给 Playwright 在软件渲染下的往返留时间（真人默认 380ms）。
+  test.setTimeout(120_000);
+  const errors = await openGame(page);
+  await page.getByRole("button", { name: "翻开这一页" }).click();
+  await expect(page.locator("body")).toHaveAttribute("data-game-state", "playing");
+  await page.evaluate(() => { const api = (window as any).__GAME_DEBUG__; api.setLevel(8); api.restart(); api.setBeatMs(1400); });
+  await page.waitForFunction(() => (window as any).__GAME_DEBUG__.getState().model.t >= 1, undefined, { timeout: 10_000 });
+  const start = await debugState(page);
+  expect(start.popup.blueprintId).toBe("p08");
+  expect(start.popup.hazards.map((hazard: { id: string }) => hazard.id)).toEqual(["w1", "w2"]);
+  // 每个障碍都暴露“当前格”与“下一拍落点”两个字段：渲染层把落点画成泡沫环 / 影子。
+  for (const hazard of start.popup.hazards) { expect(hazard.cell).toEqual(expect.objectContaining({ x: expect.any(Number), z: expect.any(Number) })); expect(hazard.next).toEqual(expect.objectContaining({ x: expect.any(Number), z: expect.any(Number) })); }
+  // 走廊循环只读最小状态，缩短“看到 → 按下”的往返。
+  const quickState = () => page.evaluate(() => { const s = (window as any).__GAME_DEBUG__.getState(); return { model: s.model, hazards: s.popup.hazards, queueLength: s.queueLength }; });
+  const waitBeat = async () => { const t = (await quickState()).model.t; await page.waitForFunction((from) => (window as any).__GAME_DEBUG__.getState().model.t > from, t, { timeout: 8_000 }); };
+  const pressAndSettle = async (key: string) => { const t = (await quickState()).model.t; await page.keyboard.press(key); await page.waitForFunction((from) => { const s = (window as any).__GAME_DEBUG__.getState(); return s.model.t > from && s.queueLength === 0; }, t, { timeout: 8_000 }); };
+  // 起点 (0,6) 向北到 (0,5)：纸浪永远到不了这里。
+  await pressAndSettle("ArrowUp");
+  expect((await debugState(page)).model).toEqual(expect.objectContaining({ x: 0, z: 5 }));
+  // 走廊 (1..4,5)：按视觉时机逐格向东。
+  const log: string[] = [];
+  for (let guard = 0; guard < 40; guard += 1) {
+    const state = await quickState();
+    if (state.model.x >= 4 && state.model.z === 5) break;
+    const target = { x: state.model.x + 1, z: state.model.z };
+    const wave = state.hazards[0];
+    const dangerous = wave.next.x === target.x && wave.next.z === target.z;
+    log.push("t=" + state.model.t + " 我=(" + state.model.x + "," + state.model.z + ") 浪=(" + wave.cell.x + "," + wave.cell.z + ") 落点=(" + wave.next.x + "," + wave.next.z + ") → " + (dangerous ? "等一拍" : "向东"));
+    if (dangerous) await waitBeat(); else await pressAndSettle("ArrowRight");
+  }
+  const atFlag = await debugState(page);
+  expect(atFlag.model, log.join(" | ")).toEqual(expect.objectContaining({ x: 4, z: 5, checkpoint: 0, mistakes: 0 }));
+  expect(atFlag.lastEvent).toBe("checkpoint:0");
+  // 转到 270°（Q 一次 ccw），桥 b1 落下；书转了 270° 后屏幕向左对应网格向北，穿过桥到 (4,2)。
+  await page.keyboard.press("KeyQ");
+  await page.waitForFunction(() => (window as any).__GAME_DEBUG__.getState().model.o === 3, undefined, { timeout: 3_000 });
+  expect((await debugState(page)).popup.links.find((link: { id: string }) => link.id === "b1").open).toBe(true);
+  await pressAndSettle("ArrowLeft");
+  const crossed = await debugState(page);
+  expect(crossed.model).toEqual(expect.objectContaining({ x: 4, z: 2, mistakes: 0 }));
+  expect(crossed.blockedMoves).toBe(0);
+  expect(errors).toEqual([]);
+});
+
 test.describe("手机竖屏", () => {
   test.use({ hasTouch: true, viewport: { width: 390, height: 844 } });
 
