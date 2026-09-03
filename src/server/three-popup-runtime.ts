@@ -169,10 +169,14 @@ pauseButton.setAttribute("aria-label", "暂停游戏");
 document.querySelector(".three-shell").appendChild(pauseButton);
 
 const palettes = {
-  1: { sky: 0xf3ead6, fog: 0xf3ead6, desk: 0xf3ebd9, cover: 0x2f3d5c, page: 0xf3e9d3, top: [0x9db486, 0x8fa878], side: 0xe6d8b8, edge: 0xfff8e8, accent: 0xe2a93a, accent2: 0xd98265, tree: 0x7a9474, hazard: 0x8fb7b0, bird: 0xfaf3e3, decal: "decal-meadow.png", star: 0xf1b53c, sunColor: 0xfff1d6, hemiSky: 0xfff6e6, hemiGround: 0xc4b087 },
-  2: { sky: 0xdde8ea, fog: 0xdde8ea, desk: 0xe9eee8, cover: 0x2a3f66, page: 0xece4d2, top: [0xb9d3cf, 0xadc8c3], side: 0xe2d8c2, edge: 0xfffaf0, accent: 0xd9836a, accent2: 0x2a3f66, tree: 0x8aa89e, hazard: 0x6fa9b6, bird: 0xffffff, decal: "decal-coast.png", star: 0xf1b53c, sunColor: 0xfff5e4, hemiSky: 0xf2fbff, hemiGround: 0xa7b9b8 },
-  3: { sky: 0x2a2f52, fog: 0x2a2f52, desk: 0x3a3f66, cover: 0x181b36, page: 0x565478, top: [0x7a6797, 0x70608d], side: 0x655681, edge: 0xefdfc6, accent: 0xf0a34a, accent2: 0xc97b96, tree: 0x6d4b80, hazard: 0x9a6fb0, bird: 0xf2e3cf, decal: "decal-market.png", star: 0xf6c052, sunColor: 0xffd9a8, hemiSky: 0x9a9be0, hemiGround: 0x4a3a52, exposure: 1.3 },
-  4: { sky: 0xdbe7f2, fog: 0xdbe7f2, desk: 0xe6eef5, cover: 0x4b6a8a, page: 0xeef3f7, top: [0xf6f9fb, 0xeaf1f6], side: 0xcfdce8, edge: 0xffffff, accent: 0xc9a45c, accent2: 0x6d88a8, tree: 0xd7e3ee, hazard: 0xa9c3da, bird: 0xffffff, decal: "decal-snow.png", star: 0xf1b53c, sunColor: 0xfff9ee, hemiSky: 0xffffff, hemiGround: 0xa9b8c8 },
+  // 晨光草甸：奶油纸、鼠尾草绿、万寿菊，墨蓝只做书封与细节。
+  1: { sky: 0xf6eedc, fog: 0xf6eedc, desk: 0xf0e5cd, cover: 0x3a4a6c, page: 0xf5ebd5, top: [0xa3bb8c, 0x96b07f], side: 0xeadcbc, sideShade: 0xd8c59f, edge: 0xfffaf0, accent: 0xecb63b, accent2: 0xd97f66, tree: 0x6f8f6a, treeLight: 0x8fae82, bush: 0x9db88a, flower: [0xecb63b, 0xfff6e6, 0xd97f66], hazard: 0x8fb7b0, bird: 0xfaf3e3, decal: "decal-meadow.png", star: 0xf4b93a, sunColor: 0xfff1d2, sunIntensity: 3.1, hemiSky: 0xfff4e0, hemiGround: 0xbfa77a, hemiIntensity: 0.85, exposure: 1.12, backdrop: [0xa3bb8c, 0x86a37b, 0xf3e8cf] },
+  // 海岸灯塔：奶油、珊瑚、海泡绿、墨蓝。
+  2: { sky: 0xe3edee, fog: 0xe3edee, desk: 0xe6ece6, cover: 0x24395e, page: 0xf1e8d4, top: [0xa9d1c9, 0x9cc5bd], side: 0xe8dcc2, sideShade: 0xd3c4a4, edge: 0xfffdf6, accent: 0xd97d64, accent2: 0x27406a, tree: 0x7fa39a, treeLight: 0x9fbfb6, bush: 0x8fb5ad, flower: [0xd97d64, 0xfff8ee, 0xf0c46a], hazard: 0x6fa6b8, bird: 0xffffff, decal: "decal-coast.png", star: 0xf4b93a, sunColor: 0xfff6e6, sunIntensity: 3.0, hemiSky: 0xeaf7ff, hemiGround: 0x9fb3b5, hemiIntensity: 0.85, exposure: 1.12, backdrop: [0xa9d1c9, 0x7fb5c4, 0xf7f2e6] },
+  // 灯笼夜市：墨蓝夜空、李子紫纸台、暖琥珀灯笼把场景照亮。
+  3: { sky: 0x1d2347, fog: 0x1d2347, desk: 0x262b4f, cover: 0x131736, page: 0x403c6a, top: [0x8a6aa2, 0x7f6097], side: 0x6a4d84, sideShade: 0x55406c, edge: 0xf6e6cc, accent: 0xf4a44a, accent2: 0xbd6684, tree: 0x5f3f70, treeLight: 0x7a5390, bush: 0x6a4a7c, flower: [0xf4a44a, 0xf6d38a, 0xbd6684], hazard: 0x9a6fb0, bird: 0xf2e3cf, decal: "decal-market.png", star: 0xf8c655, sunColor: 0xffcf9c, sunIntensity: 2.4, hemiSky: 0x8f92e6, hemiGround: 0x4a3656, hemiIntensity: 1.25, exposure: 1.75, backdrop: [0x5a4574, 0x6c4f86, 0x463560], lanterns: true },
+  // 雪原天文台：冰白、淡蓝，单一黄铜点缀。
+  4: { sky: 0xe4edf5, fog: 0xe4edf5, desk: 0xe9eff5, cover: 0x5b7a99, page: 0xf4f8fb, top: [0xfafcfd, 0xf0f5f9], side: 0xd2e0ec, sideShade: 0xbccfe0, edge: 0xffffff, accent: 0xc9a45c, accent2: 0x7f9cba, tree: 0xe6eef5, treeLight: 0xf7fafc, bush: 0xdde8f0, flower: [0xc9a45c, 0xffffff, 0xbcd3e6], hazard: 0xa9c3da, bird: 0xffffff, decal: "decal-snow.png", star: 0xf4b93a, sunColor: 0xfff9ef, sunIntensity: 3.0, hemiSky: 0xffffff, hemiGround: 0xa9bccd, hemiIntensity: 0.8, exposure: 1.1, backdrop: [0xdde8f0, 0xbcd3e6, 0xf7fafc] },
 };
 const STEP = 0.5;
 const state = { running: false, finished: false, renderCount: 0, performanceTier: "medium", suspended: false, mistakes: 0, stars: 0, orientation: 0, beats: 0, rotations: 0, blockedMoves: 0, lastEvent: "", restoredSession: false };
@@ -202,7 +206,7 @@ renderer.toneMappingExposure = 1.08;
 const deviceMemory = Number(navigator.deviceMemory || 4);
 const hardwareConcurrency = Number(navigator.hardwareConcurrency || 4);
 let performanceTier = deviceMemory <= 2 || hardwareConcurrency <= 4 ? "low" : deviceMemory >= 8 && hardwareConcurrency >= 8 ? "high" : "medium";
-const performanceProfiles = { low: { pixelRatio: 1, shadows: false, shadowSize: 512, tiltShift: false, decor: 0.4, particles: false }, medium: { pixelRatio: 1.25, shadows: true, shadowSize: 1024, tiltShift: false, decor: 0.75, particles: true }, high: { pixelRatio: 1.5, shadows: true, shadowSize: 2048, tiltShift: true, decor: 1, particles: true } };
+const performanceProfiles = { low: { pixelRatio: 1, shadows: false, shadowSize: 512, tiltShift: false, decor: 0.35, particles: false }, medium: { pixelRatio: 1.25, shadows: true, shadowSize: 1024, tiltShift: false, decor: 0.75, particles: true }, high: { pixelRatio: 1.5, shadows: true, shadowSize: 2048, tiltShift: true, decor: 1, particles: true } };
 function applyPerformanceTier(nextTier) {
   performanceTier = nextTier;
   state.performanceTier = nextTier;
@@ -236,16 +240,17 @@ const camera = new THREE.PerspectiveCamera(32, 1, 0.1, 200);
 const cameraDirection = new THREE.Vector3(0.5, 0.82, 0.866).normalize();
 const cameraTarget = new THREE.Vector3(0, 0.6, 0);
 let cameraDistance = 14;
-const hemi = new THREE.HemisphereLight(palette.hemiSky, palette.hemiGround, 1.15);
+const hemi = new THREE.HemisphereLight(palette.hemiSky, palette.hemiGround, palette.hemiIntensity);
 scene.add(hemi);
-let sun = new THREE.DirectionalLight(palette.sunColor, 2.7);
+let sun = new THREE.DirectionalLight(palette.sunColor, palette.sunIntensity);
 sun.position.set(-6, 12, 5);
 sun.castShadow = performanceProfiles[performanceTier].shadows;
 sun.shadow.mapSize.set(performanceProfiles[performanceTier].shadowSize, performanceProfiles[performanceTier].shadowSize);
 sun.shadow.camera.near = 1; sun.shadow.camera.far = 40;
 sun.shadow.camera.left = -8; sun.shadow.camera.right = 8; sun.shadow.camera.top = 8; sun.shadow.camera.bottom = -8;
-sun.shadow.bias = -0.0006;
-sun.shadow.normalBias = 0.02;
+sun.shadow.bias = -0.0005;
+sun.shadow.normalBias = 0.018;
+sun.shadow.radius = 2;
 scene.add(sun);
 scene.add(sun.target);
 const desk = new THREE.Mesh(new THREE.PlaneGeometry(90, 90), new THREE.MeshStandardMaterial({ color: 0xffffff, map: deskTexture, roughness: 1, metalness: 0 }));
@@ -274,11 +279,29 @@ function disposeGroup(group) {
 function paperMaterial(color, options = {}) {
   return new THREE.MeshStandardMaterial({ color, map: options.map === null ? null : paperTexture, roughness: 0.96, metalness: 0, flatShading: true, emissive: options.emissive || 0x000000, emissiveIntensity: options.emissiveIntensity || 0, transparent: Boolean(options.transparent), opacity: options.opacity ?? 1, side: options.side || THREE.FrontSide });
 }
-function addEdges(mesh, color, opacity) {
-  const edges = new THREE.LineSegments(new THREE.EdgesGeometry(mesh.geometry, 18), new THREE.LineBasicMaterial({ color: color ?? palette.edge, transparent: true, opacity: opacity ?? 0.85 }));
+function addEdges(mesh, color, opacity, thick) {
+  // 纸边：EdgesGeometry 描边；thick 时再叠一层微放大的描边，形成约 2px 的浅色纸边。
+  const geometry = new THREE.EdgesGeometry(mesh.geometry, 18);
+  const material = new THREE.LineBasicMaterial({ color: color ?? palette.edge, transparent: true, opacity: opacity ?? 0.9 });
+  const edges = new THREE.LineSegments(geometry, material);
   edges.renderOrder = 1;
   mesh.add(edges);
+  if (thick) {
+    const outer = new THREE.LineSegments(geometry, material);
+    outer.scale.setScalar(1.012);
+    outer.renderOrder = 1;
+    mesh.add(outer);
+  }
   return edges;
+}
+function offsetPaperUv(geometry, random) {
+  // 每个纸面随机偏移纸纹，避免复制感。
+  const uv = geometry.attributes.uv;
+  if (!uv) return geometry;
+  const dx = random(); const dy = random();
+  for (let index = 0; index < uv.count; index += 1) uv.setXY(index, uv.getX(index) + dx, uv.getY(index) + dy);
+  uv.needsUpdate = true;
+  return geometry;
 }
 function paperBox(w, h, d, color, options = {}) {
   const mesh = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), Array.isArray(color) ? color : paperMaterial(color, options));
@@ -356,55 +379,44 @@ function buildLevel() {
   cellMeshes.clear(); linkViews.splice(0); starViews.splice(0); plateViews.splice(0); hazardViews.splice(0); flagViews.splice(0);
   exitView = null;
   const random = seeded(campaignLevelIndex * 7919 + 17);
+  const decorScale = performanceProfiles[performanceTier].decor;
   for (let z = 0; z < gridDepth; z += 1) {
     for (let x = 0; x < gridWidth; x += 1) {
       const h = rules.heightAt(blueprint, x, z);
       if (!h) continue;
       const height = cellTop(x, z);
       const topColor = palette.top[(x + z) % 2];
+      // 纸台主体：满格（无缝）、侧面为奶油纸，底部略深；顶面另做一张薄纸片，形成层叠。
       const side = paperMaterial(palette.side);
-      const top = paperMaterial(topColor);
-      const bottom = paperMaterial(palette.side, { map: null });
-      const mesh = new THREE.Mesh(new THREE.BoxGeometry(0.98, height, 0.98), [side, side, top, bottom, side, side]);
+      const shade = paperMaterial(palette.sideShade);
+      const bodyGeometry = offsetPaperUv(new THREE.BoxGeometry(1, height, 1), random);
+      const mesh = new THREE.Mesh(bodyGeometry, [side, shade, paperMaterial(palette.side), shade, side, shade]);
       mesh.position.copy(cellWorld(x, z, height / 2 - 0.1));
       mesh.castShadow = true; mesh.receiveShadow = true;
       mesh.userData = { cell: { x, z } };
-      addEdges(mesh, palette.edge, 0.9);
+      addEdges(mesh, palette.edge, 0.75);
       level.add(mesh);
       cellMeshes.set(x + "," + z, mesh);
-      if (random() < 0.32 * performanceProfiles[performanceTier].decor) {
-        const tuft = new THREE.Mesh(new THREE.ConeGeometry(0.07, 0.16, 4), paperMaterial(palette.tree, { map: null }));
-        tuft.position.copy(cellWorld(x, z, height + 0.07)).add(new THREE.Vector3((random() - 0.5) * 0.6, 0, (random() - 0.5) * 0.6));
-        tuft.rotation.y = random() * Math.PI;
-        tuft.castShadow = true;
+      const sheet = new THREE.Mesh(offsetPaperUv(new THREE.BoxGeometry(1.0, 0.07, 1.0), random), paperMaterial(topColor));
+      sheet.position.copy(cellWorld(x, z, height - 0.1 + 0.035));
+      sheet.castShadow = true; sheet.receiveShadow = true;
+      sheet.userData = { cell: { x, z } };
+      addEdges(sheet, palette.edge, 1, true);
+      level.add(sheet);
+      // 每一层高度加一条略深的纸层线，读出“很多张纸叠起来”的厚度。
+      for (let layer = 1; layer < h; layer += 1) {
+        const stripe = new THREE.Mesh(new THREE.BoxGeometry(1.004, 0.035, 1.004), paperMaterial(palette.sideShade, { map: null }));
+        stripe.position.copy(cellWorld(x, z, 0.72 + (layer - 1) * STEP * 1.1 - 0.1));
+        level.add(stripe);
+      }
+      if (random() < 0.28 * decorScale) {
+        const tuft = makeGrassTuft(random, 0.55);
+        tuft.position.copy(cellWorld(x, z, height - 0.1)).add(new THREE.Vector3((random() < 0.5 ? -0.36 : 0.36), 0, (random() < 0.5 ? -0.36 : 0.36)));
         level.add(tuft);
       }
     }
   }
-  // 纸树：围在网格外圈的空位上，不占用任何可走格。
-  const decorCount = Math.round((gridWidth + gridDepth) * 0.9 * performanceProfiles[performanceTier].decor);
-  for (let index = 0; index < decorCount; index += 1) {
-    const side = Math.floor(random() * 4);
-    const along = random();
-    let x = side === 0 ? -0.9 : side === 1 ? gridWidth - 0.1 : along * gridWidth - 0.5;
-    let z = side === 2 ? -0.9 : side === 3 ? gridDepth - 0.1 : along * gridDepth - 0.5;
-    if (side < 2) z = along * gridDepth - 0.5;
-    if (side >= 2) x = along * gridWidth - 0.5;
-    if (rules.solid(blueprint, Math.round(x), Math.round(z))) continue;
-    const tree = new THREE.Group();
-    const tiers = 2 + Math.floor(random() * 2);
-    for (let tier = 0; tier < tiers; tier += 1) {
-      const cone = new THREE.Mesh(new THREE.ConeGeometry(0.28 - tier * 0.07, 0.36, 5), paperMaterial(palette.tree, { map: null }));
-      cone.position.y = 0.2 + tier * 0.24;
-      cone.castShadow = true;
-      addEdges(cone, palette.edge, 0.5);
-      tree.add(cone);
-    }
-    tree.position.copy(cellWorld(x, z, -0.1));
-    tree.rotation.y = random() * Math.PI;
-    tree.scale.setScalar(0.7 + random() * 0.5);
-    level.add(tree);
-  }
+  buildDecor(random, decorScale);
   blueprint.links.forEach((link) => level.add(createLinkView(link)));
   blueprint.plates.forEach((plate) => level.add(createPlateView(plate)));
   blueprint.stars.forEach((star, index) => level.add(createStarView(star, index)));
@@ -416,6 +428,254 @@ function buildLevel() {
   level.add(playerView);
 }
 
+// ---- 章节装饰：全部是程序化纸片几何，只放在书页空白处与关卡外圈，不占可走格，不挡星。 ----
+function makeGrassTuft(random, scale = 1) {
+  const group = new THREE.Group();
+  const blades = 3 + Math.floor(random() * 3);
+  for (let index = 0; index < blades; index += 1) {
+    const blade = new THREE.Mesh(new THREE.ConeGeometry(0.06, 0.22 + random() * 0.14, 3), paperMaterial(index % 2 ? palette.treeLight : palette.tree, { map: null }));
+    blade.position.set((random() - 0.5) * 0.18, 0.12, (random() - 0.5) * 0.18);
+    blade.rotation.set((random() - 0.5) * 0.5, random() * Math.PI, (random() - 0.5) * 0.5);
+    blade.castShadow = true;
+    group.add(blade);
+  }
+  group.scale.setScalar(scale);
+  return group;
+}
+function makePaperTree(random, snow) {
+  const group = new THREE.Group();
+  const tiers = 3 + Math.floor(random() * 2);
+  const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.07, 0.3, 5), paperMaterial(snow ? palette.accent : 0x8a6a4f, { map: null }));
+  trunk.position.y = 0.15;
+  group.add(trunk);
+  for (let tier = 0; tier < tiers; tier += 1) {
+    const radius = 0.34 - tier * 0.07;
+    const cone = new THREE.Mesh(new THREE.ConeGeometry(radius, 0.34, 5), paperMaterial(tier % 2 ? palette.treeLight : palette.tree, { map: null }));
+    cone.position.y = 0.34 + tier * 0.22;
+    cone.rotation.y = tier * 0.4;
+    cone.castShadow = true;
+    addEdges(cone, palette.edge, 0.6);
+    group.add(cone);
+  }
+  return group;
+}
+function makeBush(random) {
+  const group = new THREE.Group();
+  const lumps = 2 + Math.floor(random() * 2);
+  for (let index = 0; index < lumps; index += 1) {
+    const lump = new THREE.Mesh(new THREE.IcosahedronGeometry(0.18 + random() * 0.1, 0), paperMaterial(index % 2 ? palette.bush : palette.tree, { map: null }));
+    lump.position.set((random() - 0.5) * 0.3, 0.14 + random() * 0.08, (random() - 0.5) * 0.3);
+    lump.castShadow = true;
+    addEdges(lump, palette.edge, 0.5);
+    group.add(lump);
+  }
+  return group;
+}
+function makeFlowerCluster(random) {
+  const group = new THREE.Group();
+  const count = 2 + Math.floor(random() * 3);
+  for (let index = 0; index < count; index += 1) {
+    const flower = new THREE.Group();
+    const color = palette.flower[Math.floor(random() * palette.flower.length)];
+    const stem = new THREE.Mesh(new THREE.CylinderGeometry(0.015, 0.02, 0.28, 4), paperMaterial(palette.tree, { map: null }));
+    stem.position.y = 0.14;
+    flower.add(stem);
+    for (let petal = 0; petal < 5; petal += 1) {
+      const leaf = new THREE.Mesh(new THREE.BoxGeometry(0.11, 0.02, 0.06), paperMaterial(color, { map: null }));
+      leaf.position.set(Math.cos(petal / 5 * Math.PI * 2) * 0.06, 0.29, Math.sin(petal / 5 * Math.PI * 2) * 0.06);
+      leaf.rotation.y = -petal / 5 * Math.PI * 2;
+      leaf.castShadow = true;
+      flower.add(leaf);
+    }
+    const core = new THREE.Mesh(new THREE.IcosahedronGeometry(0.035, 0), paperMaterial(palette.accent, { map: null, emissive: palette.accent, emissiveIntensity: 0.25 }));
+    core.position.y = 0.3;
+    flower.add(core);
+    flower.position.set((random() - 0.5) * 0.4, 0, (random() - 0.5) * 0.4);
+    flower.rotation.y = random() * Math.PI;
+    group.add(flower);
+  }
+  group.add(makeGrassTuft(random, 0.7));
+  return group;
+}
+let lanternLightBudget = 0;
+function makeLanternPost(random) {
+  const group = new THREE.Group();
+  const post = new THREE.Mesh(new THREE.BoxGeometry(0.07, 1.1, 0.07), paperMaterial(palette.cover, { map: null }));
+  post.position.y = 0.55;
+  post.castShadow = true;
+  group.add(post);
+  const arm = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.05, 0.05), paperMaterial(palette.cover, { map: null }));
+  arm.position.set(0.14, 1.08, 0);
+  group.add(arm);
+  const lantern = new THREE.Mesh(new THREE.OctahedronGeometry(0.13, 0), new THREE.MeshStandardMaterial({ color: palette.accent, emissive: palette.accent, emissiveIntensity: 1.2, flatShading: true }));
+  lantern.position.set(0.28, 0.92, 0);
+  addEdges(lantern, 0xfff1d0, 0.8);
+  group.add(lantern);
+  if (lanternLightBudget > 0 && performanceTier !== "low") {
+    lanternLightBudget -= 1;
+    const light = new THREE.PointLight(palette.accent, 2.2, 3.6, 2);
+    light.position.set(0.28, 0.95, 0);
+    group.add(light);
+  }
+  group.rotation.y = random() * Math.PI * 2;
+  return group;
+}
+function makeSnowMound(random) {
+  const mound = new THREE.Mesh(new THREE.IcosahedronGeometry(0.22 + random() * 0.14, 0), paperMaterial(palette.treeLight, { map: null }));
+  mound.scale.y = 0.5;
+  mound.position.y = 0.08;
+  mound.castShadow = true;
+  addEdges(mound, palette.accent2, 0.35);
+  return mound;
+}
+function makePaperBoat(random) {
+  const group = new THREE.Group();
+  const hull = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.12, 0.22), paperMaterial(palette.edge, { map: null }));
+  hull.position.y = 0.06;
+  hull.castShadow = true;
+  addEdges(hull, palette.accent2, 0.6);
+  const sail = new THREE.Mesh(new THREE.ConeGeometry(0.16, 0.4, 3), paperMaterial(palette.accent, { map: null }));
+  sail.position.set(0.02, 0.32, 0);
+  sail.castShadow = true;
+  addEdges(sail, palette.edge, 0.7);
+  group.add(hull, sail);
+  group.rotation.y = random() * Math.PI * 2;
+  return group;
+}
+function makeWaveStrip(random, length) {
+  const group = new THREE.Group();
+  const crests = Math.max(2, Math.round(length / 0.34));
+  for (let index = 0; index < crests; index += 1) {
+    const crest = new THREE.Mesh(new THREE.ConeGeometry(0.17, 0.26 + random() * 0.1, 3), paperMaterial(index % 2 ? palette.hazard : palette.accent2, { map: null }));
+    crest.position.set(index * 0.34 - length / 2, 0.13, (index % 2) * 0.06);
+    crest.rotation.y = 0.4 + index * 0.6;
+    crest.castShadow = true;
+    addEdges(crest, palette.edge, 0.8);
+    group.add(crest);
+  }
+  return group;
+}
+function makeBackdropPeak(random, height, color, width) {
+  // 站立的纸片山 / 云 / 屋影：立在书页远端，永远在关卡后方，不会遮挡可走格。
+  const shape = new THREE.Shape();
+  width = width || 0.9 + random() * 1.1;
+  shape.moveTo(-width / 2, 0);
+  shape.lineTo(-width * 0.18, height * (0.55 + random() * 0.25));
+  shape.lineTo(0, height);
+  shape.lineTo(width * 0.22, height * (0.5 + random() * 0.3));
+  shape.lineTo(width / 2, 0);
+  shape.closePath();
+  const mesh = new THREE.Mesh(new THREE.ExtrudeGeometry(shape, { depth: 0.06, bevelEnabled: false }), paperMaterial(color, { map: null }));
+  mesh.castShadow = true;
+  addEdges(mesh, palette.edge, 0.7);
+  return mesh;
+}
+function makeCloud(random) {
+  const group = new THREE.Group();
+  for (let index = 0; index < 3; index += 1) {
+    const puff = new THREE.Mesh(new THREE.IcosahedronGeometry(0.16 + random() * 0.1, 0), paperMaterial(palette.backdrop[2], { map: null }));
+    puff.position.set(index * 0.22 - 0.22, (index === 1 ? 0.08 : 0), 0);
+    puff.scale.z = 0.35;
+    addEdges(puff, palette.edge, 0.5);
+    group.add(puff);
+  }
+  return group;
+}
+function makeMarketStall(random) {
+  const group = new THREE.Group();
+  const body = paperBox(0.6, 0.5, 0.5, palette.bush, { edgeColor: palette.edge, edgeOpacity: 0.7 });
+  body.position.y = 0.25;
+  group.add(body);
+  const roof = new THREE.Mesh(new THREE.ConeGeometry(0.5, 0.26, 4), paperMaterial(palette.accent2, { map: null }));
+  roof.rotation.y = Math.PI / 4;
+  roof.position.y = 0.62;
+  roof.castShadow = true;
+  addEdges(roof, palette.edge, 0.7);
+  group.add(roof);
+  const window = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.14, 0.02), new THREE.MeshStandardMaterial({ color: palette.accent, emissive: palette.accent, emissiveIntensity: 1.1, flatShading: true }));
+  window.position.set(0, 0.3, 0.26);
+  group.add(window);
+  group.rotation.y = random() * Math.PI * 2;
+  return group;
+}
+function makeDecor(kind, random) {
+  if (kind === "tree") return makePaperTree(random, blueprint.chapter === 4);
+  if (kind === "bush") return makeBush(random);
+  if (kind === "flower") return makeFlowerCluster(random);
+  if (kind === "grass") return makeGrassTuft(random, 1);
+  if (kind === "lantern") return makeLanternPost(random);
+  if (kind === "mound") return makeSnowMound(random);
+  if (kind === "boat") return makePaperBoat(random);
+  if (kind === "stall") return makeMarketStall(random);
+  return makeBush(random);
+}
+const chapterDecorKinds = {
+  1: ["tree", "tree", "flower", "flower", "bush", "grass", "grass"],
+  2: ["tree", "bush", "grass", "boat", "flower", "bush"],
+  3: ["lantern", "lantern", "stall", "tree", "bush", "lantern"],
+  4: ["tree", "tree", "mound", "mound", "tree", "grass"],
+};
+function buildDecor(random, decorScale) {
+  lanternLightBudget = palette.lanterns ? 5 : 2;
+  const kinds = chapterDecorKinds[blueprint.chapter];
+  const occupied = [];
+  const free = (x, z, radius) => {
+    if (rules.solid(blueprint, Math.round(x), Math.round(z))) return false;
+    if (rules.inside(blueprint, Math.round(x), Math.round(z))) {
+      // 网格内部的空洞格只放很低的装饰，避免挡住星与路；这里直接跳过。
+      return false;
+    }
+    return occupied.every((item) => Math.hypot(item.x - x, item.z - z) > radius + item.radius);
+  };
+  // 书页空白处：网格外圈到书页边缘之间（约 1.6 格宽的环带）。
+  const count = Math.round((gridWidth + gridDepth) * 1.7 * decorScale);
+  for (let index = 0; index < count * 3 && occupied.length < count; index += 1) {
+    const side = Math.floor(random() * 4);
+    const along = random();
+    const depthOffset = 0.45 + random() * 1.05;
+    let x; let z;
+    if (side === 0) { x = -0.5 - depthOffset; z = along * (gridDepth + 1.8) - 1.4; }
+    else if (side === 1) { x = gridWidth - 0.5 + depthOffset; z = along * (gridDepth + 1.8) - 1.4; }
+    else if (side === 2) { z = -0.5 - depthOffset; x = along * (gridWidth + 1.8) - 1.4; }
+    else { z = gridDepth - 0.5 + depthOffset; x = along * (gridWidth + 1.8) - 1.4; }
+    const kind = kinds[Math.floor(random() * kinds.length)];
+    const radius = kind === "tree" || kind === "stall" ? 0.42 : kind === "lantern" ? 0.3 : 0.3;
+    if (!free(x, z, radius)) continue;
+    occupied.push({ x, z, radius });
+    const item = makeDecor(kind, random);
+    item.position.copy(cellWorld(x, z, -0.1));
+    item.scale.setScalar(0.75 + random() * 0.45);
+    level.add(item);
+  }
+  // 远端站立纸片背景：两排交错的纸山 / 纸云 / 屋影，只立在 -z 远边，永远处于关卡后方，不会遮挡可走格。
+  const backdropCount = Math.round(4 + gridWidth * 0.9 * decorScale);
+  for (let index = 0; index < backdropCount; index += 1) {
+    const rowBack = index % 2 === 0;
+    const along = (index + 0.5) / backdropCount + (random() - 0.5) * 0.08;
+    const color = palette.backdrop[rowBack ? (index % 3 === 0 ? 1 : 0) : 2];
+    const height = rowBack ? 1.3 + random() * 1.1 : 0.7 + random() * 0.6;
+    const peak = makeBackdropPeak(random, height, color, rowBack ? 1.8 + random() * 1.2 : 1.2 + random() * 0.8);
+    peak.position.copy(cellWorld(along * (gridWidth + 2.4) - 1.7, -0.5 - (rowBack ? 1.72 : 1.32), -0.1));
+    level.add(peak);
+    if (palette.lanterns && rowBack) {
+      for (let window = 0; window < 2; window += 1) {
+        const pane = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.16, 0.03), new THREE.MeshStandardMaterial({ color: palette.accent, emissive: palette.accent, emissiveIntensity: 1.2, flatShading: true }));
+        pane.position.set(peak.position.x + (window - 0.5) * 0.36, height * 0.35 + window * 0.2, peak.position.z + 0.08);
+        level.add(pane);
+      }
+    } else if (!palette.lanterns && rowBack && random() < 0.5) {
+      const cloud = makeCloud(random);
+      cloud.position.copy(peak.position).add(new THREE.Vector3(0.4, height + 0.2, 0.1));
+      level.add(cloud);
+    }
+  }
+  if (blueprint.chapter === 2) {
+    // 海岸：书页近端一条纸浪。
+    const wave = makeWaveStrip(random, gridWidth * 0.8);
+    wave.position.copy(cellWorld((gridWidth - 1) / 2, gridDepth - 0.5 + 1.35, -0.1));
+    level.add(wave);
+  }
+}
 function createLinkView(link) {
   const group = new THREE.Group();
   const dx = Math.sign(link.to.x - link.from.x);
@@ -511,25 +771,29 @@ function createStarView(star, index) {
   const openDirection = rules.DIRECTION_ORDER[(2 - star.angles[0] + 4) % 4];
   pocket.rotation.y = directionAngle(openDirection);
   const wallMaterial = paperMaterial(palette.side);
-  const back = new THREE.Mesh(new THREE.BoxGeometry(0.78, 0.66, 0.05), wallMaterial);
-  back.position.set(0, 0.33, -0.37);
-  const left = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.66, 0.78), wallMaterial);
-  left.position.set(-0.37, 0.33, 0);
-  const right = left.clone(); right.position.x = 0.37;
-  const roof = new THREE.Mesh(new THREE.BoxGeometry(0.8, 0.05, 0.8), paperMaterial(palette.top[0]));
-  roof.position.set(0, 0.68, 0);
-  [back, left, right, roof].forEach((wall) => { wall.castShadow = true; wall.receiveShadow = true; addEdges(wall, palette.edge, 0.9); pocket.add(wall); });
-  const cutout = new THREE.Mesh(new THREE.CircleGeometry(0.12, 5), new THREE.MeshBasicMaterial({ color: palette.cover, side: THREE.DoubleSide }));
-  cutout.position.set(0, 0.38, -0.4);
+  const back = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.86, 0.05), wallMaterial);
+  back.position.set(0, 0.43, -0.44);
+  const left = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.86, 0.9), wallMaterial);
+  left.position.set(-0.44, 0.43, 0);
+  const right = left.clone(); right.position.x = 0.44;
+  const roof = new THREE.Mesh(new THREE.BoxGeometry(0.94, 0.06, 0.94), paperMaterial(palette.top[0]));
+  roof.position.set(0, 0.88, 0);
+  [back, left, right, roof].forEach((wall) => { wall.castShadow = true; wall.receiveShadow = true; addEdges(wall, palette.edge, 0.95, true); pocket.add(wall); });
+  const cutout = new THREE.Mesh(new THREE.CircleGeometry(0.16, 6), new THREE.MeshBasicMaterial({ color: palette.cover, side: THREE.DoubleSide }));
+  cutout.position.set(0, 0.5, -0.47);
   pocket.add(cutout);
   if (star.angles.length === 4) pocket.visible = false;
   group.add(pocket);
-  const starMesh = new THREE.Mesh(starGeometry(0.2, 0.08), new THREE.MeshStandardMaterial({ color: palette.star, emissive: palette.star, emissiveIntensity: 0.55, roughness: 0.5, flatShading: true }));
-  starMesh.position.set(0, 0.36, 0);
+  const starMesh = new THREE.Mesh(starGeometry(0.3, 0.1), new THREE.MeshStandardMaterial({ color: palette.star, emissive: palette.star, emissiveIntensity: 1.1, roughness: 0.45, flatShading: true }));
+  starMesh.position.set(0, 0.46, 0);
   starMesh.castShadow = true;
-  addEdges(starMesh, 0xfff3c4, 0.9);
-  const glow = new THREE.PointLight(palette.star, 0, 1.6, 2);
-  glow.position.set(0, 0.5, 0.2);
+  addEdges(starMesh, 0xffffff, 1, true);
+  // 发光边：一枚略大的半透明纸星贴在后面。
+  const halo = new THREE.Mesh(starGeometry(0.38, 0.02), new THREE.MeshBasicMaterial({ color: palette.star, transparent: true, opacity: 0.32, depthWrite: false }));
+  halo.position.set(0, 0, -0.04);
+  starMesh.add(halo);
+  const glow = new THREE.PointLight(palette.star, 0, 2.2, 2);
+  glow.position.set(0, 0.6, 0.25);
   group.add(starMesh, glow);
   starViews.push({ star, index, group, starMesh, glow, pocket, collected: false, pop: 0 });
   return group;
@@ -538,65 +802,94 @@ function createStarView(star, index) {
 function createFlagView(point, index) {
   const group = new THREE.Group();
   group.position.copy(cellWorld(point.x, point.z, cellTop(point.x, point.z) - 0.1));
-  const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.025, 0.03, 0.95, 5), new THREE.MeshStandardMaterial({ color: palette.cover, roughness: 0.8, flatShading: true }));
-  pole.position.set(0.28, 0.47, 0.28);
+  const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.035, 1.25, 5), new THREE.MeshStandardMaterial({ color: palette.cover, roughness: 0.8, flatShading: true }));
+  pole.position.set(0.3, 0.62, 0.3);
   pole.castShadow = true;
   const flagGeometry = new THREE.BufferGeometry();
-  flagGeometry.setAttribute("position", new THREE.Float32BufferAttribute([0, 0, 0, 0.42, -0.12, 0, 0, -0.26, 0], 3));
+  flagGeometry.setAttribute("position", new THREE.Float32BufferAttribute([0, 0, 0, 0.56, -0.16, 0, 0, -0.36, 0], 3));
   flagGeometry.computeVertexNormals();
-  const flagMaterial = new THREE.MeshStandardMaterial({ color: palette.accent2, side: THREE.DoubleSide, roughness: 0.9, flatShading: true, emissive: palette.accent2, emissiveIntensity: 0.05 });
+  const flagMaterial = new THREE.MeshStandardMaterial({ color: palette.accent2, side: THREE.DoubleSide, roughness: 0.85, flatShading: true, emissive: palette.accent2, emissiveIntensity: 0.15 });
   const flag = new THREE.Mesh(flagGeometry, flagMaterial);
-  flag.position.set(0.3, 0.92, 0.28);
+  flag.position.set(0.32, 1.22, 0.3);
   flag.castShadow = true;
-  const base = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.12, 0.06, 6), paperMaterial(palette.side, { map: null }));
-  base.position.set(0.28, 0.03, 0.28);
-  group.add(pole, flag, base);
-  flagViews.push({ index, group, flag, flagMaterial, reached: false });
+  addEdges(flag, palette.edge, 0.9);
+  const base = new THREE.Mesh(new THREE.CylinderGeometry(0.14, 0.17, 0.08, 6), paperMaterial(palette.edge, { map: null }));
+  base.position.set(0.3, 0.04, 0.3);
+  addEdges(base, palette.accent2, 0.6);
+  const ring = new THREE.Mesh(new THREE.TorusGeometry(0.3, 0.025, 5, 18), new THREE.MeshStandardMaterial({ color: palette.accent2, emissive: palette.accent2, emissiveIntensity: 0.3, flatShading: true }));
+  ring.rotation.x = Math.PI / 2;
+  ring.position.set(0, 0.04, 0);
+  group.add(pole, flag, base, ring);
+  flagViews.push({ index, group, flag, flagMaterial, ring, reached: false });
   return group;
 }
 
 function createExitView(point) {
+  // 出口门：每章一个标志物——草甸灯笼门、海岸小灯塔、夜市灯笼串、雪原天文台圆顶。
   const group = new THREE.Group();
   group.position.copy(cellWorld(point.x, point.z, cellTop(point.x, point.z) - 0.1));
   const postMaterial = paperMaterial(palette.cover, { map: null });
   for (const sideSign of [-1, 1]) {
-    const post = new THREE.Mesh(new THREE.BoxGeometry(0.12, 1.15, 0.12), postMaterial);
-    post.position.set(sideSign * 0.36, 0.575, 0);
+    const post = new THREE.Mesh(new THREE.BoxGeometry(0.14, 1.3, 0.14), postMaterial);
+    post.position.set(sideSign * 0.4, 0.65, 0);
     post.castShadow = true;
-    addEdges(post, palette.edge, 0.5);
+    addEdges(post, palette.edge, 0.6);
     group.add(post);
+    const foot = paperBox(0.26, 0.1, 0.26, palette.side, { edgeColor: palette.edge });
+    foot.position.set(sideSign * 0.4, 0.05, 0);
+    group.add(foot);
   }
-  const lintel = paperBox(1.05, 0.12, 0.2, palette.cover, { edgeColor: palette.edge, edgeOpacity: 0.5 });
-  lintel.position.set(0, 1.18, 0);
+  const lintel = paperBox(1.24, 0.14, 0.22, palette.cover, { edgeColor: palette.edge, edgeOpacity: 0.6 });
+  lintel.position.set(0, 1.34, 0);
   group.add(lintel);
-  const roof = new THREE.Mesh(new THREE.ConeGeometry(0.72, 0.3, 4), paperMaterial(palette.accent2, { map: null }));
-  roof.rotation.y = Math.PI / 4;
-  roof.position.set(0, 1.4, 0);
-  roof.castShadow = true;
-  addEdges(roof, palette.edge, 0.6);
-  group.add(roof);
-  if (blueprint.chapter === 4) {
-    const dome = new THREE.Mesh(new THREE.SphereGeometry(0.34, 8, 5, 0, Math.PI * 2, 0, Math.PI / 2), paperMaterial(palette.edge, { map: null }));
-    dome.position.set(0, 1.5, 0);
-    dome.castShadow = true;
-    addEdges(dome, palette.accent2, 0.5);
-    group.add(dome);
-  }
   const lanterns = [];
-  for (const sideSign of [-1, 1]) {
-    const lantern = new THREE.Mesh(new THREE.OctahedronGeometry(0.11, 0), new THREE.MeshStandardMaterial({ color: palette.accent, emissive: palette.accent, emissiveIntensity: 0.9, flatShading: true }));
-    lantern.position.set(sideSign * 0.36, 0.98, 0.14);
+  const hangLantern = (x, y, size) => {
+    const lantern = new THREE.Mesh(new THREE.OctahedronGeometry(size, 0), new THREE.MeshStandardMaterial({ color: palette.accent, emissive: palette.accent, emissiveIntensity: 1.3, flatShading: true }));
+    lantern.position.set(x, y, 0.16);
+    addEdges(lantern, 0xfff3d6, 0.9);
     group.add(lantern);
     lanterns.push(lantern);
+  };
+  if (blueprint.chapter === 1) {
+    const roof = new THREE.Mesh(new THREE.ConeGeometry(0.9, 0.34, 4), paperMaterial(palette.accent2, { map: null }));
+    roof.rotation.y = Math.PI / 4; roof.position.set(0, 1.58, 0); roof.castShadow = true; addEdges(roof, palette.edge, 0.7, true); group.add(roof);
+    hangLantern(-0.4, 1.1, 0.13); hangLantern(0.4, 1.1, 0.13);
+  } else if (blueprint.chapter === 2) {
+    const roof = new THREE.Mesh(new THREE.ConeGeometry(0.85, 0.3, 4), paperMaterial(palette.accent, { map: null }));
+    roof.rotation.y = Math.PI / 4; roof.position.set(0, 1.56, 0); roof.castShadow = true; addEdges(roof, palette.edge, 0.7, true); group.add(roof);
+    const tower = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.22, 1.5, 7), paperMaterial(palette.edge, { map: null }));
+    tower.position.set(0.68, 0.75, -0.42); tower.castShadow = true; addEdges(tower, palette.accent2, 0.6); group.add(tower);
+    const band = new THREE.Mesh(new THREE.CylinderGeometry(0.19, 0.19, 0.22, 7), paperMaterial(palette.accent, { map: null }));
+    band.position.set(0.68, 0.75, -0.42); group.add(band);
+    const lamp = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.14, 0.24, 6), new THREE.MeshStandardMaterial({ color: palette.accent, emissive: 0xffe6a8, emissiveIntensity: 1.4, flatShading: true }));
+    lamp.position.set(0.68, 1.62, -0.42); group.add(lamp); lanterns.push(lamp);
+    const cap = new THREE.Mesh(new THREE.ConeGeometry(0.2, 0.2, 6), paperMaterial(palette.accent2, { map: null }));
+    cap.position.set(0.68, 1.84, -0.42); cap.castShadow = true; group.add(cap);
+    hangLantern(0, 1.1, 0.12);
+  } else if (blueprint.chapter === 3) {
+    const roof = new THREE.Mesh(new THREE.ConeGeometry(0.95, 0.38, 4), paperMaterial(palette.accent2, { map: null }));
+    roof.rotation.y = Math.PI / 4; roof.position.set(0, 1.62, 0); roof.castShadow = true; addEdges(roof, palette.edge, 0.7, true); group.add(roof);
+    for (let index = 0; index < 5; index += 1) hangLantern(-0.5 + index * 0.25, 1.16 - Math.abs(index - 2) * 0.05, 0.1);
+    const string = new THREE.Mesh(new THREE.BoxGeometry(1.2, 0.015, 0.015), paperMaterial(palette.edge, { map: null }));
+    string.position.set(0, 1.25, 0.16); group.add(string);
+  } else {
+    const drum = new THREE.Mesh(new THREE.CylinderGeometry(0.42, 0.42, 0.24, 10), paperMaterial(palette.edge, { map: null }));
+    drum.position.set(0, 1.53, 0); drum.castShadow = true; addEdges(drum, palette.accent2, 0.6); group.add(drum);
+    const dome = new THREE.Mesh(new THREE.SphereGeometry(0.42, 10, 6, 0, Math.PI * 2, 0, Math.PI / 2), paperMaterial(palette.edge, { map: null }));
+    dome.position.set(0, 1.65, 0); dome.castShadow = true; addEdges(dome, palette.accent2, 0.6, true); group.add(dome);
+    const slit = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.36, 0.5), paperMaterial(palette.accent2, { map: null }));
+    slit.position.set(0, 1.86, 0); slit.rotation.z = 0.2; group.add(slit);
+    const scope = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.07, 0.6, 6), paperMaterial(palette.accent, { map: null }));
+    scope.position.set(0.12, 2.05, 0); scope.rotation.z = -0.9; scope.castShadow = true; group.add(scope);
+    hangLantern(-0.4, 1.1, 0.11); hangLantern(0.4, 1.1, 0.11);
   }
-  const light = new THREE.PointLight(palette.accent, 1.6, 3.2, 2);
-  light.position.set(0, 1, 0.3);
+  const light = new THREE.PointLight(palette.accent, palette.lanterns ? 3 : 2, 4, 2);
+  light.position.set(0, 1.15, 0.4);
   group.add(light);
   group.userData.lanterns = lanterns;
   group.userData.light = light;
   return group;
 }
-
 function createPlayerView() {
   const group = new THREE.Group();
   const puppet = new THREE.Group();
@@ -685,7 +978,7 @@ function syncStars() {
     const visible = view.star.angles.includes(model.o);
     view.collected = model.stars[view.index];
     view.starMesh.visible = visible && !view.collected;
-    view.glow.intensity = view.starMesh.visible ? 0.9 : 0;
+    view.glow.intensity = view.starMesh.visible ? 1.6 : 0;
   });
   starCount.querySelectorAll("i").forEach((dot, index) => { dot.classList.toggle("is-lit", Boolean(model.stars[index])); });
   starCount.setAttribute("aria-label", "折纸星 " + model.stars.filter(Boolean).length + " / 3");
@@ -706,7 +999,7 @@ function syncPlates() {
 function syncFlags() {
   flagViews.forEach((view) => {
     const reached = model.checkpoint >= view.index;
-    if (reached !== view.reached) { view.reached = reached; view.flagMaterial.color.setHex(reached ? palette.star : palette.accent2); view.flagMaterial.emissive.setHex(reached ? palette.star : palette.accent2); view.flagMaterial.emissiveIntensity = reached ? 0.6 : 0.05; }
+    if (reached !== view.reached) { view.reached = reached; view.flagMaterial.color.setHex(reached ? palette.star : palette.accent2); view.flagMaterial.emissive.setHex(reached ? palette.star : palette.accent2); view.flagMaterial.emissiveIntensity = reached ? 0.9 : 0.15; view.ring.material.color.setHex(reached ? palette.star : palette.accent2); view.ring.material.emissive.setHex(reached ? palette.star : palette.accent2); view.ring.material.emissiveIntensity = reached ? 1 : 0.3; }
   });
 }
 function syncOrientation() {
@@ -832,9 +1125,9 @@ function loadLevel(index) {
   gridWidth = rules.width(blueprint);
   gridDepth = rules.depth(blueprint);
   scene.background = new THREE.Color(palette.sky);
-  scene.fog = new THREE.Fog(palette.fog, cameraDistance * 1.25, cameraDistance * 2.6);
-  hemi.color.setHex(palette.hemiSky); hemi.groundColor.setHex(palette.hemiGround);
-  sun.color.setHex(palette.sunColor);
+  scene.fog = new THREE.Fog(palette.fog, cameraDistance * 1.7, cameraDistance * 3.4);
+  hemi.color.setHex(palette.hemiSky); hemi.groundColor.setHex(palette.hemiGround); hemi.intensity = palette.hemiIntensity;
+  sun.color.setHex(palette.sunColor); sun.intensity = palette.sunIntensity;
   renderer.toneMappingExposure = palette.exposure || 1.08;
   desk.material.color.setHex(palette.desk);
   model = rules.createState(blueprint);
@@ -850,23 +1143,36 @@ function loadLevel(index) {
 }
 
 function fitCamera() {
-  // 以关卡网格（而非整本书）为拟合对象，让立体书迷宫占满画面中段；书页边缘允许被裁掉。
-  const radius = Math.hypot(gridWidth, gridDepth) * 0.5 + 0.9;
-  const vertical = THREE.MathUtils.degToRad(camera.fov) / 2;
-  const horizontal = Math.atan(Math.tan(vertical) * camera.aspect);
-  const fit = Math.min(vertical, horizontal);
-  cameraDistance = (radius / Math.sin(fit)) * (camera.aspect < 1 ? 0.8 : 0.78);
-  cameraTarget.set(0, 0.55, 0.15);
+  // 投影拟合：把关卡网格（含最高纸台）的 8 个角点都放进视锥，再按画幅留很小的边距；书页边缘允许出画。
+  const right = new THREE.Vector3().crossVectors(new THREE.Vector3(0, 1, 0), cameraDirection).normalize();
+  const up = new THREE.Vector3().crossVectors(cameraDirection, right).normalize();
+  const vertical = Math.tan(THREE.MathUtils.degToRad(camera.fov) / 2);
+  const horizontal = vertical * camera.aspect;
+  let maxHeight = 0.72;
+  for (let z = 0; z < gridDepth; z += 1) for (let x = 0; x < gridWidth; x += 1) maxHeight = Math.max(maxHeight, cellTop(x, z));
+  cameraTarget.set(0, maxHeight * 0.45 + (camera.aspect < 1 ? 0.35 : 0), 0.1);
+  let distance = 4;
+  const portrait = camera.aspect < 1;
+  const halfW = gridWidth / 2 + (portrait ? 0.12 : 0.5);
+  const halfD = gridDepth / 2 + (portrait ? 0.12 : 0.5);
+  for (const [x, y, z] of [[-halfW, -0.35, -halfD], [halfW, -0.35, -halfD], [-halfW, -0.35, halfD], [halfW, -0.35, halfD], [-halfW, maxHeight + 1.2, -halfD], [halfW, maxHeight + 1.2, -halfD], [-halfW, maxHeight + 1.2, halfD], [halfW, maxHeight + 1.2, halfD]]) {
+    const point = new THREE.Vector3(x, y, z).sub(cameraTarget);
+    const rx = Math.abs(point.dot(right));
+    const uy = Math.abs(point.dot(up));
+    const fz = point.dot(cameraDirection);
+    distance = Math.max(distance, fz + rx / horizontal, fz + uy / vertical);
+  }
+  cameraDistance = distance * (portrait ? 1.0 : 1.02);
   camera.position.copy(cameraTarget).addScaledVector(cameraDirection, cameraDistance);
   camera.lookAt(cameraTarget);
-  if (scene.fog) { scene.fog.near = cameraDistance * 1.25; scene.fog.far = cameraDistance * 2.6; }
+  if (scene.fog) { scene.fog.near = cameraDistance * 1.7; scene.fog.far = cameraDistance * 3.4; }
+  const radius = Math.hypot(gridWidth, gridDepth) * 0.5 + 0.9;
   sun.position.set(-6, 12, 5).multiplyScalar(Math.max(1, radius / 6));
-  const shadowExtent = radius + 1;
+  const shadowExtent = radius + 1.5;
   sun.shadow.camera.left = -shadowExtent; sun.shadow.camera.right = shadowExtent; sun.shadow.camera.top = shadowExtent; sun.shadow.camera.bottom = -shadowExtent;
   sun.shadow.camera.far = radius * 6 + 20;
   sun.shadow.camera.updateProjectionMatrix();
 }
-
 function applyEvents(events, action) {
   events.forEach((event) => {
     if (event !== "wait") state.lastEvent = event;
@@ -1136,11 +1442,11 @@ function animate(now) {
   });
   starViews.forEach((view) => {
     view.starMesh.rotation.y = time * 1.4 + view.index;
-    view.starMesh.position.y = 0.36 + (reducedMotion ? 0 : Math.sin(time * 2.2 + view.index) * 0.04);
+    view.starMesh.position.y = 0.46 + (reducedMotion ? 0 : Math.sin(time * 2.2 + view.index) * 0.05);
     if (view.pop > 0) { view.pop = Math.max(0, view.pop - delta * 2.5); view.pocket.scale.setScalar(1 + (1 - view.pop) * 0.0 + view.pop * 0.12); }
   });
   flagViews.forEach((view) => { view.flag.rotation.y = reducedMotion ? 0 : Math.sin(time * 3 + view.index) * 0.16; });
-  if (exitView) { exitView.userData.light.intensity = 1.4 + Math.sin(time * 2.5) * 0.35; exitView.userData.lanterns.forEach((lantern, index) => { lantern.position.y = 0.98 + (reducedMotion ? 0 : Math.sin(time * 2 + index) * 0.02); }); }
+  if (exitView) { exitView.userData.light.intensity = (palette.lanterns ? 3 : 2) + Math.sin(time * 2.5) * 0.4; exitView.userData.lanterns.forEach((lantern, index) => { lantern.material.emissiveIntensity = 1.2 + (reducedMotion ? 0 : Math.sin(time * 3 + index) * 0.25); }); }
   hazardViews.forEach((view) => {
     if (!view.from || !view.to) return;
     const f = reducedMotion ? 1 : beatFraction;
