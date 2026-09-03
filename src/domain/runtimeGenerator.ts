@@ -64,6 +64,7 @@ const templateRuntimeDefinitions: Record<string, { actions: string[]; feedback: 
   "deck-combo": { actions: ["抽取卡牌", "支付并打出", "结算回合"], feedback: ["从固定牌库完成抽牌", "费用扣除并触发连携", "回合资源完成结算"], className: "deck" },
   "gamepad-control": { actions: ["检测手柄", "执行动作", "验证回退"], feedback: ["手柄连接状态可见", "按键映射产生反馈", "键盘回退仍然可用"], className: "gamepad" },
   "turn-duel-match3": { actions: ["观察半区", "交换三消", "结束回合"], feedback: ["上下半区与棋盘已显示", "三连消除并计入当前行动者", "轮到 AI 行动并结算"], className: "duel" },
+  "solitaire-freecell": { actions: ["拿起牌组", "放入空档", "收入收牌堆"], feedback: ["牌列与空档已显示", "牌已放入空档", "收牌堆推进一张"], className: "solitaire" },
   "lane-climb": { actions: ["切换车道", "躲避障碍", "收集冲刺"], feedback: ["车道已切换", "安全通路保持可见", "收集物触发加速并抵达终点"], className: "laneclimb" },
   "spatial-puzzle-3d": { actions: ["观察空间", "操作机关", "抵达目标"], feedback: ["相机与空间线索可读", "机关改变了可达路径", "空间目标已经完成"], className: "spatial3d" },
 };

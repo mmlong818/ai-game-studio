@@ -1,0 +1,159 @@
+{
+  "schemaVersion": 2,
+  "model": "gpt-image-2",
+  "generatedAt": "2026-09-02T22:26:57.159Z",
+  "entries": [
+    {
+      "file": "assets/cover.png",
+      "role": "封面",
+      "bytes": 2978999,
+      "prompt": "Use case: key art cover for a browser FreeCell solitaire card game.\nPrimary request: one vertical poster illustration. Center focus: a fanned arc of oversized playing cards floating above a soft round felt table; the cards show only large suit symbols (spade, heart, diamond, club) as glossy enamel gems, and one card is turned to show an ornate patterned back. Four small translucent glass shelves (the free cells) hover at the top, four glowing gem sockets (the foundations) at the top right, gentle sparkles and tiny star confetti.\nStyle/medium: premium contemporary kawaii casual mobile-game asset art, polished hand-painted enamel and frosted glass, soft 3/4 top lighting, crisp silhouettes, sophisticated pastel palette (mint, peach, lavender, butter yellow, sky blue) with one deep navy accent, charming rather than childish.\nComposition/framing: portrait 2:3, subject centered occupying about 70% of the frame, calm gradient sky background from lavender to mint, generous margins, no border.\nHard constraints: no text, no letters, no numbers, no logos, no watermark, no signature, no UI frames.",
+      "sourceFile": "assets/templates/freecell-source/cover-source.png",
+      "sha256": "e24ecfde9a01fd6a05a169f42927c29f56d9a0b5cb91eabf1a292a9fe0ce4a43"
+    },
+    {
+      "file": "assets/card-back.png",
+      "role": "默认牌背",
+      "bytes": 884969,
+      "prompt": "Use case: production texture for the back of a playing card in a kawaii FreeCell solitaire game.\nPrimary request: one full-bleed vertical playing-card back design. A deep navy field with a symmetrical ornamental lattice of tiny stars, crescent moons and four-leaf clovers in pale gold and mint enamel, a soft rounded inner frame in peach, a central round medallion with a glossy pastel star gem. Perfectly symmetrical top/bottom and left/right.\nStyle/medium: premium contemporary kawaii casual mobile-game asset art, polished hand-painted enamel and frosted glass, soft 3/4 top lighting, crisp silhouettes, sophisticated pastel palette (mint, peach, lavender, butter yellow, sky blue) with one deep navy accent, charming rather than childish.\nComposition/framing: portrait 2:3, pattern fills the entire canvas edge to edge with no outer white border, no shadow, no perspective, flat front view; keep the medallion inside the central 60%.\nHard constraints: no text, no letters, no numbers, no logos, no watermark, no signature, no UI frames.",
+      "sourceFile": "assets/templates/freecell-source/card-back-source.png",
+      "sha256": "8f4ca58fa139c17eb3b035658e226d639dfae155d8596c3404793c770585ffd0"
+    },
+    {
+      "file": "assets/background.png",
+      "role": "局内背景",
+      "bytes": 841390,
+      "prompt": "Use case: in-game table background for a browser FreeCell solitaire game; cards and UI will be drawn on top.\nPrimary request: a calm vertical background of a soft mint-teal felt card table seen straight from above, with a very subtle circular vignette, faint fabric grain and a gentle diffuse highlight near the top. Pure environment: no cards, no chips, no hands, no objects, no border frame.\nStyle/medium: premium contemporary kawaii casual mobile-game asset art, polished hand-painted enamel and frosted glass, soft 3/4 top lighting, crisp silhouettes, sophisticated pastel palette (mint, peach, lavender, butter yellow, sky blue) with one deep navy accent, charming rather than childish.\nComposition/framing: portrait 2:3, low contrast and low saturation, very soft detail so foreground cards stay readable.\nHard constraints: no text, no letters, no numbers, no logos, no watermark, no signature, no UI frames.",
+      "sourceFile": "assets/templates/freecell-source/background-source.png",
+      "sha256": "be04834d269afb170f266dd8e0c20bcf554baf26e3340c791a2c7728479c8042"
+    },
+    {
+      "file": "assets/suits/spade.png",
+      "role": "花色图集(2×2)",
+      "bytes": 100222,
+      "prompt": "Use case: production sprite atlas of the four playing-card suit symbols for a kawaii solitaire game.\nPrimary request: one perfectly aligned 2 columns by 2 rows atlas on a fully transparent background. Top-left: spade (deep navy). Top-right: heart (coral red). Bottom-left: diamond (coral red). Bottom-right: club (deep navy). Each symbol is a glossy enamel gem with one soft highlight and a thin darker outline so it stays readable at 24 pixels.\nStyle/medium: premium contemporary kawaii casual mobile-game asset art, polished hand-painted enamel and frosted glass, soft 3/4 top lighting, crisp silhouettes, sophisticated pastel palette (mint, peach, lavender, butter yellow, sky blue) with one deep navy accent, charming rather than childish.\nComposition/framing: exact 2x2 orthographic grid; cell boundaries at exactly one-half of the width and one-half of the height; each symbol centered in its cell occupying 62-70% of the cell; nothing crosses a cell boundary; no gutters, no cell backgrounds, no shadows outside the symbol.\nHard constraints: no text, no letters, no numbers, no logos, no watermark, no signature, no UI frames.",
+      "sourceFile": "assets/templates/freecell-source/suit-atlas-source.png",
+      "sha256": "cc32ff09fe9843828e11dfdf9ee5973d591f7ee43d53cf4ec4b4f34ecf353937"
+    },
+    {
+      "file": "assets/suits/heart.png",
+      "role": "花色图集(2×2)",
+      "bytes": 97957,
+      "prompt": "Use case: production sprite atlas of the four playing-card suit symbols for a kawaii solitaire game.\nPrimary request: one perfectly aligned 2 columns by 2 rows atlas on a fully transparent background. Top-left: spade (deep navy). Top-right: heart (coral red). Bottom-left: diamond (coral red). Bottom-right: club (deep navy). Each symbol is a glossy enamel gem with one soft highlight and a thin darker outline so it stays readable at 24 pixels.\nStyle/medium: premium contemporary kawaii casual mobile-game asset art, polished hand-painted enamel and frosted glass, soft 3/4 top lighting, crisp silhouettes, sophisticated pastel palette (mint, peach, lavender, butter yellow, sky blue) with one deep navy accent, charming rather than childish.\nComposition/framing: exact 2x2 orthographic grid; cell boundaries at exactly one-half of the width and one-half of the height; each symbol centered in its cell occupying 62-70% of the cell; nothing crosses a cell boundary; no gutters, no cell backgrounds, no shadows outside the symbol.\nHard constraints: no text, no letters, no numbers, no logos, no watermark, no signature, no UI frames.",
+      "sourceFile": "assets/templates/freecell-source/suit-atlas-source.png",
+      "sha256": "84cef32adcfc1c6fdc195ed9e38307f6f397daa7026a5dad5f2ba9e8e4d7a72f"
+    },
+    {
+      "file": "assets/suits/diamond.png",
+      "role": "花色图集(2×2)",
+      "bytes": 68108,
+      "prompt": "Use case: production sprite atlas of the four playing-card suit symbols for a kawaii solitaire game.\nPrimary request: one perfectly aligned 2 columns by 2 rows atlas on a fully transparent background. Top-left: spade (deep navy). Top-right: heart (coral red). Bottom-left: diamond (coral red). Bottom-right: club (deep navy). Each symbol is a glossy enamel gem with one soft highlight and a thin darker outline so it stays readable at 24 pixels.\nStyle/medium: premium contemporary kawaii casual mobile-game asset art, polished hand-painted enamel and frosted glass, soft 3/4 top lighting, crisp silhouettes, sophisticated pastel palette (mint, peach, lavender, butter yellow, sky blue) with one deep navy accent, charming rather than childish.\nComposition/framing: exact 2x2 orthographic grid; cell boundaries at exactly one-half of the width and one-half of the height; each symbol centered in its cell occupying 62-70% of the cell; nothing crosses a cell boundary; no gutters, no cell backgrounds, no shadows outside the symbol.\nHard constraints: no text, no letters, no numbers, no logos, no watermark, no signature, no UI frames.",
+      "sourceFile": "assets/templates/freecell-source/suit-atlas-source.png",
+      "sha256": "ebf1e2fc34adf048c721d01b2b8d153f3953fd88949e73490e66b66545dbf8ea"
+    },
+    {
+      "file": "assets/suits/club.png",
+      "role": "花色图集(2×2)",
+      "bytes": 107249,
+      "prompt": "Use case: production sprite atlas of the four playing-card suit symbols for a kawaii solitaire game.\nPrimary request: one perfectly aligned 2 columns by 2 rows atlas on a fully transparent background. Top-left: spade (deep navy). Top-right: heart (coral red). Bottom-left: diamond (coral red). Bottom-right: club (deep navy). Each symbol is a glossy enamel gem with one soft highlight and a thin darker outline so it stays readable at 24 pixels.\nStyle/medium: premium contemporary kawaii casual mobile-game asset art, polished hand-painted enamel and frosted glass, soft 3/4 top lighting, crisp silhouettes, sophisticated pastel palette (mint, peach, lavender, butter yellow, sky blue) with one deep navy accent, charming rather than childish.\nComposition/framing: exact 2x2 orthographic grid; cell boundaries at exactly one-half of the width and one-half of the height; each symbol centered in its cell occupying 62-70% of the cell; nothing crosses a cell boundary; no gutters, no cell backgrounds, no shadows outside the symbol.\nHard constraints: no text, no letters, no numbers, no logos, no watermark, no signature, no UI frames.",
+      "sourceFile": "assets/templates/freecell-source/suit-atlas-source.png",
+      "sha256": "e9b59d5ce0d25b8edf96d2a97363459c8e05f10fa55aa1722c9d4cb3e429a392"
+    },
+    {
+      "file": "assets/courts/jack-spade.png",
+      "role": "人头牌图集(4×3)",
+      "bytes": 187004,
+      "prompt": "Use case: production sprite atlas of twelve court-card characters (Jack, Queen, King of each suit) for a kawaii solitaire game.\nPrimary request: one perfectly aligned 4 columns by 3 rows atlas on a fully transparent background. Columns from left to right belong to spades (navy costume), hearts (coral costume), diamonds (peach-gold costume), clubs (forest-green costume). Row 1: young page boys with a small feather cap (Jack). Row 2: graceful queens with a small tiara and a flower (Queen). Row 3: bearded kings with a round crown and a scepter (King). Each character is a chibi bust portrait, front facing, holding or wearing a small suit-symbol gem matching its column.\nStyle/medium: premium contemporary kawaii casual mobile-game asset art, polished hand-painted enamel and frosted glass, soft 3/4 top lighting, crisp silhouettes, sophisticated pastel palette (mint, peach, lavender, butter yellow, sky blue) with one deep navy accent, charming rather than childish.\nComposition/framing: exact 4x3 orthographic grid; cell boundaries at exactly one-quarter, one-half and three-quarters of the width and one-third and two-thirds of the height; each character centered in its cell occupying 60-70% of the cell; nothing crosses a cell boundary; no gutters, no cell backgrounds, no shadows outside the character.\nHard constraints: no text, no letters, no numbers, no logos, no watermark, no signature, no UI frames.",
+      "sourceFile": "assets/templates/freecell-source/court-atlas-source.png",
+      "sha256": "00c639ffce39d641717799a5209db8500aa9eeaf98fa22b29999e8c01cd4f904"
+    },
+    {
+      "file": "assets/courts/jack-heart.png",
+      "role": "人头牌图集(4×3)",
+      "bytes": 182292,
+      "prompt": "Use case: production sprite atlas of twelve court-card characters (Jack, Queen, King of each suit) for a kawaii solitaire game.\nPrimary request: one perfectly aligned 4 columns by 3 rows atlas on a fully transparent background. Columns from left to right belong to spades (navy costume), hearts (coral costume), diamonds (peach-gold costume), clubs (forest-green costume). Row 1: young page boys with a small feather cap (Jack). Row 2: graceful queens with a small tiara and a flower (Queen). Row 3: bearded kings with a round crown and a scepter (King). Each character is a chibi bust portrait, front facing, holding or wearing a small suit-symbol gem matching its column.\nStyle/medium: premium contemporary kawaii casual mobile-game asset art, polished hand-painted enamel and frosted glass, soft 3/4 top lighting, crisp silhouettes, sophisticated pastel palette (mint, peach, lavender, butter yellow, sky blue) with one deep navy accent, charming rather than childish.\nComposition/framing: exact 4x3 orthographic grid; cell boundaries at exactly one-quarter, one-half and three-quarters of the width and one-third and two-thirds of the height; each character centered in its cell occupying 60-70% of the cell; nothing crosses a cell boundary; no gutters, no cell backgrounds, no shadows outside the character.\nHard constraints: no text, no letters, no numbers, no logos, no watermark, no signature, no UI frames.",
+      "sourceFile": "assets/templates/freecell-source/court-atlas-source.png",
+      "sha256": "0f3fb903094083f612caeaf7f1cae7e578a006b1b0ac5c599a9ae9fe3dca4513"
+    },
+    {
+      "file": "assets/courts/jack-diamond.png",
+      "role": "人头牌图集(4×3)",
+      "bytes": 184650,
+      "prompt": "Use case: production sprite atlas of twelve court-card characters (Jack, Queen, King of each suit) for a kawaii solitaire game.\nPrimary request: one perfectly aligned 4 columns by 3 rows atlas on a fully transparent background. Columns from left to right belong to spades (navy costume), hearts (coral costume), diamonds (peach-gold costume), clubs (forest-green costume). Row 1: young page boys with a small feather cap (Jack). Row 2: graceful queens with a small tiara and a flower (Queen). Row 3: bearded kings with a round crown and a scepter (King). Each character is a chibi bust portrait, front facing, holding or wearing a small suit-symbol gem matching its column.\nStyle/medium: premium contemporary kawaii casual mobile-game asset art, polished hand-painted enamel and frosted glass, soft 3/4 top lighting, crisp silhouettes, sophisticated pastel palette (mint, peach, lavender, butter yellow, sky blue) with one deep navy accent, charming rather than childish.\nComposition/framing: exact 4x3 orthographic grid; cell boundaries at exactly one-quarter, one-half and three-quarters of the width and one-third and two-thirds of the height; each character centered in its cell occupying 60-70% of the cell; nothing crosses a cell boundary; no gutters, no cell backgrounds, no shadows outside the character.\nHard constraints: no text, no letters, no numbers, no logos, no watermark, no signature, no UI frames.",
+      "sourceFile": "assets/templates/freecell-source/court-atlas-source.png",
+      "sha256": "95fbcf5f7bc97843d6a01aac73704e9cd7b98ab254afa80aa0c650c43d0a2dfb"
+    },
+    {
+      "file": "assets/courts/jack-club.png",
+      "role": "人头牌图集(4×3)",
+      "bytes": 185361,
+      "prompt": "Use case: production sprite atlas of twelve court-card characters (Jack, Queen, King of each suit) for a kawaii solitaire game.\nPrimary request: one perfectly aligned 4 columns by 3 rows atlas on a fully transparent background. Columns from left to right belong to spades (navy costume), hearts (coral costume), diamonds (peach-gold costume), clubs (forest-green costume). Row 1: young page boys with a small feather cap (Jack). Row 2: graceful queens with a small tiara and a flower (Queen). Row 3: bearded kings with a round crown and a scepter (King). Each character is a chibi bust portrait, front facing, holding or wearing a small suit-symbol gem matching its column.\nStyle/medium: premium contemporary kawaii casual mobile-game asset art, polished hand-painted enamel and frosted glass, soft 3/4 top lighting, crisp silhouettes, sophisticated pastel palette (mint, peach, lavender, butter yellow, sky blue) with one deep navy accent, charming rather than childish.\nComposition/framing: exact 4x3 orthographic grid; cell boundaries at exactly one-quarter, one-half and three-quarters of the width and one-third and two-thirds of the height; each character centered in its cell occupying 60-70% of the cell; nothing crosses a cell boundary; no gutters, no cell backgrounds, no shadows outside the character.\nHard constraints: no text, no letters, no numbers, no logos, no watermark, no signature, no UI frames.",
+      "sourceFile": "assets/templates/freecell-source/court-atlas-source.png",
+      "sha256": "04accc6a1510475046a63384c4cbc87d2367dcc074a67b951df60d1818d951f2"
+    },
+    {
+      "file": "assets/courts/queen-spade.png",
+      "role": "人头牌图集(4×3)",
+      "bytes": 217124,
+      "prompt": "Use case: production sprite atlas of twelve court-card characters (Jack, Queen, King of each suit) for a kawaii solitaire game.\nPrimary request: one perfectly aligned 4 columns by 3 rows atlas on a fully transparent background. Columns from left to right belong to spades (navy costume), hearts (coral costume), diamonds (peach-gold costume), clubs (forest-green costume). Row 1: young page boys with a small feather cap (Jack). Row 2: graceful queens with a small tiara and a flower (Queen). Row 3: bearded kings with a round crown and a scepter (King). Each character is a chibi bust portrait, front facing, holding or wearing a small suit-symbol gem matching its column.\nStyle/medium: premium contemporary kawaii casual mobile-game asset art, polished hand-painted enamel and frosted glass, soft 3/4 top lighting, crisp silhouettes, sophisticated pastel palette (mint, peach, lavender, butter yellow, sky blue) with one deep navy accent, charming rather than childish.\nComposition/framing: exact 4x3 orthographic grid; cell boundaries at exactly one-quarter, one-half and three-quarters of the width and one-third and two-thirds of the height; each character centered in its cell occupying 60-70% of the cell; nothing crosses a cell boundary; no gutters, no cell backgrounds, no shadows outside the character.\nHard constraints: no text, no letters, no numbers, no logos, no watermark, no signature, no UI frames.",
+      "sourceFile": "assets/templates/freecell-source/court-atlas-source.png",
+      "sha256": "f59437048846a3db9f4b4b905808bee620cf8c672196d7f4f84751513292c39b"
+    },
+    {
+      "file": "assets/courts/queen-heart.png",
+      "role": "人头牌图集(4×3)",
+      "bytes": 214521,
+      "prompt": "Use case: production sprite atlas of twelve court-card characters (Jack, Queen, King of each suit) for a kawaii solitaire game.\nPrimary request: one perfectly aligned 4 columns by 3 rows atlas on a fully transparent background. Columns from left to right belong to spades (navy costume), hearts (coral costume), diamonds (peach-gold costume), clubs (forest-green costume). Row 1: young page boys with a small feather cap (Jack). Row 2: graceful queens with a small tiara and a flower (Queen). Row 3: bearded kings with a round crown and a scepter (King). Each character is a chibi bust portrait, front facing, holding or wearing a small suit-symbol gem matching its column.\nStyle/medium: premium contemporary kawaii casual mobile-game asset art, polished hand-painted enamel and frosted glass, soft 3/4 top lighting, crisp silhouettes, sophisticated pastel palette (mint, peach, lavender, butter yellow, sky blue) with one deep navy accent, charming rather than childish.\nComposition/framing: exact 4x3 orthographic grid; cell boundaries at exactly one-quarter, one-half and three-quarters of the width and one-third and two-thirds of the height; each character centered in its cell occupying 60-70% of the cell; nothing crosses a cell boundary; no gutters, no cell backgrounds, no shadows outside the character.\nHard constraints: no text, no letters, no numbers, no logos, no watermark, no signature, no UI frames.",
+      "sourceFile": "assets/templates/freecell-source/court-atlas-source.png",
+      "sha256": "52f1f7cfdddee7faa932328f75771b91e655696520c2e3ab5eb639b8807f87bf"
+    },
+    {
+      "file": "assets/courts/queen-diamond.png",
+      "role": "人头牌图集(4×3)",
+      "bytes": 217438,
+      "prompt": "Use case: production sprite atlas of twelve court-card characters (Jack, Queen, King of each suit) for a kawaii solitaire game.\nPrimary request: one perfectly aligned 4 columns by 3 rows atlas on a fully transparent background. Columns from left to right belong to spades (navy costume), hearts (coral costume), diamonds (peach-gold costume), clubs (forest-green costume). Row 1: young page boys with a small feather cap (Jack). Row 2: graceful queens with a small tiara and a flower (Queen). Row 3: bearded kings with a round crown and a scepter (King). Each character is a chibi bust portrait, front facing, holding or wearing a small suit-symbol gem matching its column.\nStyle/medium: premium contemporary kawaii casual mobile-game asset art, polished hand-painted enamel and frosted glass, soft 3/4 top lighting, crisp silhouettes, sophisticated pastel palette (mint, peach, lavender, butter yellow, sky blue) with one deep navy accent, charming rather than childish.\nComposition/framing: exact 4x3 orthographic grid; cell boundaries at exactly one-quarter, one-half and three-quarters of the width and one-third and two-thirds of the height; each character centered in its cell occupying 60-70% of the cell; nothing crosses a cell boundary; no gutters, no cell backgrounds, no shadows outside the character.\nHard constraints: no text, no letters, no numbers, no logos, no watermark, no signature, no UI frames.",
+      "sourceFile": "assets/templates/freecell-source/court-atlas-source.png",
+      "sha256": "31e76e0eb275a60314a5fd54b845e52ae1040ebc2ea1d654fd79532b675428be"
+    },
+    {
+      "file": "assets/courts/queen-club.png",
+      "role": "人头牌图集(4×3)",
+      "bytes": 216154,
+      "prompt": "Use case: production sprite atlas of twelve court-card characters (Jack, Queen, King of each suit) for a kawaii solitaire game.\nPrimary request: one perfectly aligned 4 columns by 3 rows atlas on a fully transparent background. Columns from left to right belong to spades (navy costume), hearts (coral costume), diamonds (peach-gold costume), clubs (forest-green costume). Row 1: young page boys with a small feather cap (Jack). Row 2: graceful queens with a small tiara and a flower (Queen). Row 3: bearded kings with a round crown and a scepter (King). Each character is a chibi bust portrait, front facing, holding or wearing a small suit-symbol gem matching its column.\nStyle/medium: premium contemporary kawaii casual mobile-game asset art, polished hand-painted enamel and frosted glass, soft 3/4 top lighting, crisp silhouettes, sophisticated pastel palette (mint, peach, lavender, butter yellow, sky blue) with one deep navy accent, charming rather than childish.\nComposition/framing: exact 4x3 orthographic grid; cell boundaries at exactly one-quarter, one-half and three-quarters of the width and one-third and two-thirds of the height; each character centered in its cell occupying 60-70% of the cell; nothing crosses a cell boundary; no gutters, no cell backgrounds, no shadows outside the character.\nHard constraints: no text, no letters, no numbers, no logos, no watermark, no signature, no UI frames.",
+      "sourceFile": "assets/templates/freecell-source/court-atlas-source.png",
+      "sha256": "ed5ca2ea5bc38ea90463e888c3eba28a9a797663e32c1fd7e3811c4518f74233"
+    },
+    {
+      "file": "assets/courts/king-spade.png",
+      "role": "人头牌图集(4×3)",
+      "bytes": 228313,
+      "prompt": "Use case: production sprite atlas of twelve court-card characters (Jack, Queen, King of each suit) for a kawaii solitaire game.\nPrimary request: one perfectly aligned 4 columns by 3 rows atlas on a fully transparent background. Columns from left to right belong to spades (navy costume), hearts (coral costume), diamonds (peach-gold costume), clubs (forest-green costume). Row 1: young page boys with a small feather cap (Jack). Row 2: graceful queens with a small tiara and a flower (Queen). Row 3: bearded kings with a round crown and a scepter (King). Each character is a chibi bust portrait, front facing, holding or wearing a small suit-symbol gem matching its column.\nStyle/medium: premium contemporary kawaii casual mobile-game asset art, polished hand-painted enamel and frosted glass, soft 3/4 top lighting, crisp silhouettes, sophisticated pastel palette (mint, peach, lavender, butter yellow, sky blue) with one deep navy accent, charming rather than childish.\nComposition/framing: exact 4x3 orthographic grid; cell boundaries at exactly one-quarter, one-half and three-quarters of the width and one-third and two-thirds of the height; each character centered in its cell occupying 60-70% of the cell; nothing crosses a cell boundary; no gutters, no cell backgrounds, no shadows outside the character.\nHard constraints: no text, no letters, no numbers, no logos, no watermark, no signature, no UI frames.",
+      "sourceFile": "assets/templates/freecell-source/court-atlas-source.png",
+      "sha256": "ad96da46e990db8ffd38b69b8bb8847dfbe412bb2da317d9953d258ee4d75635"
+    },
+    {
+      "file": "assets/courts/king-heart.png",
+      "role": "人头牌图集(4×3)",
+      "bytes": 222800,
+      "prompt": "Use case: production sprite atlas of twelve court-card characters (Jack, Queen, King of each suit) for a kawaii solitaire game.\nPrimary request: one perfectly aligned 4 columns by 3 rows atlas on a fully transparent background. Columns from left to right belong to spades (navy costume), hearts (coral costume), diamonds (peach-gold costume), clubs (forest-green costume). Row 1: young page boys with a small feather cap (Jack). Row 2: graceful queens with a small tiara and a flower (Queen). Row 3: bearded kings with a round crown and a scepter (King). Each character is a chibi bust portrait, front facing, holding or wearing a small suit-symbol gem matching its column.\nStyle/medium: premium contemporary kawaii casual mobile-game asset art, polished hand-painted enamel and frosted glass, soft 3/4 top lighting, crisp silhouettes, sophisticated pastel palette (mint, peach, lavender, butter yellow, sky blue) with one deep navy accent, charming rather than childish.\nComposition/framing: exact 4x3 orthographic grid; cell boundaries at exactly one-quarter, one-half and three-quarters of the width and one-third and two-thirds of the height; each character centered in its cell occupying 60-70% of the cell; nothing crosses a cell boundary; no gutters, no cell backgrounds, no shadows outside the character.\nHard constraints: no text, no letters, no numbers, no logos, no watermark, no signature, no UI frames.",
+      "sourceFile": "assets/templates/freecell-source/court-atlas-source.png",
+      "sha256": "069a8142b4000b7d7997615f3c7f493b48b32032f47682a40e1f333d4e592d5a"
+    },
+    {
+      "file": "assets/courts/king-diamond.png",
+      "role": "人头牌图集(4×3)",
+      "bytes": 220036,
+      "prompt": "Use case: production sprite atlas of twelve court-card characters (Jack, Queen, King of each suit) for a kawaii solitaire game.\nPrimary request: one perfectly aligned 4 columns by 3 rows atlas on a fully transparent background. Columns from left to right belong to spades (navy costume), hearts (coral costume), diamonds (peach-gold costume), clubs (forest-green costume). Row 1: young page boys with a small feather cap (Jack). Row 2: graceful queens with a small tiara and a flower (Queen). Row 3: bearded kings with a round crown and a scepter (King). Each character is a chibi bust portrait, front facing, holding or wearing a small suit-symbol gem matching its column.\nStyle/medium: premium contemporary kawaii casual mobile-game asset art, polished hand-painted enamel and frosted glass, soft 3/4 top lighting, crisp silhouettes, sophisticated pastel palette (mint, peach, lavender, butter yellow, sky blue) with one deep navy accent, charming rather than childish.\nComposition/framing: exact 4x3 orthographic grid; cell boundaries at exactly one-quarter, one-half and three-quarters of the width and one-third and two-thirds of the height; each character centered in its cell occupying 60-70% of the cell; nothing crosses a cell boundary; no gutters, no cell backgrounds, no shadows outside the character.\nHard constraints: no text, no letters, no numbers, no logos, no watermark, no signature, no UI frames.",
+      "sourceFile": "assets/templates/freecell-source/court-atlas-source.png",
+      "sha256": "ec09623237ed7add3f8ed5b1d3ec1ad69c27a1838950584466e5c210a80204c9"
+    },
+    {
+      "file": "assets/courts/king-club.png",
+      "role": "人头牌图集(4×3)",
+      "bytes": 218899,
+      "prompt": "Use case: production sprite atlas of twelve court-card characters (Jack, Queen, King of each suit) for a kawaii solitaire game.\nPrimary request: one perfectly aligned 4 columns by 3 rows atlas on a fully transparent background. Columns from left to right belong to spades (navy costume), hearts (coral costume), diamonds (peach-gold costume), clubs (forest-green costume). Row 1: young page boys with a small feather cap (Jack). Row 2: graceful queens with a small tiara and a flower (Queen). Row 3: bearded kings with a round crown and a scepter (King). Each character is a chibi bust portrait, front facing, holding or wearing a small suit-symbol gem matching its column.\nStyle/medium: premium contemporary kawaii casual mobile-game asset art, polished hand-painted enamel and frosted glass, soft 3/4 top lighting, crisp silhouettes, sophisticated pastel palette (mint, peach, lavender, butter yellow, sky blue) with one deep navy accent, charming rather than childish.\nComposition/framing: exact 4x3 orthographic grid; cell boundaries at exactly one-quarter, one-half and three-quarters of the width and one-third and two-thirds of the height; each character centered in its cell occupying 60-70% of the cell; nothing crosses a cell boundary; no gutters, no cell backgrounds, no shadows outside the character.\nHard constraints: no text, no letters, no numbers, no logos, no watermark, no signature, no UI frames.",
+      "sourceFile": "assets/templates/freecell-source/court-atlas-source.png",
+      "sha256": "50b68d98d59aaa6aa33472287e39c7d7dcf511ce27851eb9e122da950a94a034"
+    }
+  ]
+}
