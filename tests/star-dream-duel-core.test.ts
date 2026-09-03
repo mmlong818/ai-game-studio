@@ -19,8 +19,32 @@ test("星梦对决六类棋子有不同战术职责，四连给予额外回合",
   const mixed = core.calculateTacticalEffects(board, [
     { row: 7, col: 4 }, { row: 7, col: 5 }, { row: 7, col: 6 }, { row: 7, col: 7 },
   ], [], 1);
-  assert.equal(mixed.healing, 3);
+  assert.equal(mixed.healing, 2);
   assert.deepEqual(mixed.energy, { tide: 2, bloom: 2, veil: 2 });
+});
+
+test("星梦对决所有常规恢复量减半并向上取整", () => {
+  const board = Array.from({ length: 8 }, () => Array(8).fill("heart"));
+  const threeHearts = [0, 1, 2].map((col) => ({ row: 7, col }));
+  const effects = core.calculateTacticalEffects(board, threeHearts, [], 1);
+  assert.equal(core.HEALING_MULTIPLIER, 0.5);
+  assert.equal(effects.healing, 5);
+});
+
+test("无解重排只更换棋盘，不恢复双方生命", () => {
+  const state = {
+    board: Array.from({ length: 8 }, () => Array(8).fill("cloud")),
+    playerScore: 37,
+    aiScore: 52,
+    playerShield: 8,
+    playerEnergy: { tide: 2, bloom: 4, veil: 6 },
+  };
+  const reshuffled = core.reshuffleBattleBoard(state, core.createSeededRng(2026));
+  assert.equal(reshuffled.playerScore, 37);
+  assert.equal(reshuffled.aiScore, 52);
+  assert.equal(reshuffled.playerShield, 8);
+  assert.deepEqual(reshuffled.playerEnergy, state.playerEnergy);
+  assert.notDeepEqual(reshuffled.board, state.board);
 });
 
 test("高价值构形会生成并激活可持续存在的特殊棋子", () => {

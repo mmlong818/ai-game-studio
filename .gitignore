@@ -8,6 +8,7 @@ playwright-report/
 coverage/
 /data/logs/
 /data/artifacts/
+/data/artifacts-v1.1/
 *.tsbuildinfo
 .env
 .env.*

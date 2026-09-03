@@ -175,7 +175,7 @@ const runtimes: Record<Exclude<GameTemplate, "signal-hunt" | "generated">, Runti
     ],
     script: regionLogicScript,
     redrawFunction: "drawRegionLogic",
-    probeTokens: ["function solveRegionPuzzle", "function nextRegionDeduction", "function restoreRegionSession", "function redoRegionMove", "function recomputeAutoMarks"],
+    probeTokens: ["function solveRegionPuzzle", "function nextRegionDeduction", "function persistRegionSession", "function redoRegionMove", "function recomputeAutoMarks"],
   },
   "mahjong-roguelite": {
     id: "mahjong-roguelite",

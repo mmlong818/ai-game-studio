@@ -1,7 +1,7 @@
 // 实验转正候选包导出:把一个 generated 项目的代码、设计合同、审计与验收证据
 // 打包到 output/promotion-candidates/<slug>/,供开发者按核对清单沉淀为正式模板。
 // 用法: node scripts/export-promotion-candidate.mjs <projectId> [--api http://127.0.0.1:4312]
-import { cpSync, existsSync, mkdirSync, readdirSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, readdirSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 
 const projectId = process.argv[2];
@@ -45,14 +45,14 @@ const copied = [];
 for (const [from, to] of copies) {
   const source = join(artifactRoot, from);
   if (existsSync(source)) {
-    cpSync(source, join(target, to));
+    copyFileSync(source, join(target, to));
     copied.push(to);
   }
 }
 const qualityDir = join(artifactRoot, "_studio", "quality");
 if (existsSync(qualityDir)) {
   mkdirSync(join(target, "screenshots"), { recursive: true });
-  for (const file of readdirSync(qualityDir)) cpSync(join(qualityDir, file), join(target, "screenshots", file));
+  for (const file of readdirSync(qualityDir)) copyFileSync(join(qualityDir, file), join(target, "screenshots", file));
   copied.push("screenshots/");
 }
 

@@ -9,7 +9,7 @@ export const snake = defineOfficialGame({
   lobbyRank: 9,
   cover: "assets/templates/packs/snake/cover.png",
   referenceDoc: "docs/44-snake-best-template-reference.md",
-  mechanicId: "lane-dodge",
+  mechanicId: "trail-survival",
   seed: {
     artStyle: "jade",
     visualStyle: "cute",

@@ -9,7 +9,7 @@ export const tetris = defineOfficialGame({
   lobbyRank: 13,
   cover: "assets/templates/packs/tetris/cover.png",
   referenceDoc: "docs/38-tetris-best-template-reference.md",
-  mechanicId: "grid-merge",
+  mechanicId: "falling-blocks",
   seed: {
     artStyle: "geometric",
     visualStyle: "color-block",
