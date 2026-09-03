@@ -1,4 +1,6 @@
 import type { GameSpecV2 } from "./platformTypes";
+import { popupBestTemplateBlueprints } from "../shared/paper-popup-levels";
+import { createPaperPopupRules, type PopupAction, type PopupBlueprint, type PopupState } from "../shared/paper-popup-rules";
 
 export interface PublicGameState {
   lifecycle: "ready" | "playing" | "result";
@@ -287,6 +289,134 @@ export class CollectEscape3DProbe implements GameProbe {
   snapshot() { return this.getState(); }
 }
 
+/** 纸境 · 立体书迷宫的专属探针：直接驱动真实规则内核（与浏览器运行时同一份），不是事件脚本。 */
+export const PAPER_POPUP_TEMPLATE_ID = "popup-rotate-3d";
+export const PAPER_POPUP_RULE_LABELS = [
+  "整本书按 90° 转动",
+  "桥与台阶只在特定角度接上",
+  "隐藏星只在非默认角度可见",
+  "跳空或被障碍碰到回到检查点",
+  "抵达出口门通关",
+] as const;
+
+export class PaperPopupProbe implements GameProbe {
+  private readonly rules = createPaperPopupRules();
+  private seed = 1;
+  private blueprint: PopupBlueprint = popupBestTemplateBlueprints[0];
+  private model: PopupState = this.rules.createState(this.blueprint);
+  private state: PublicGameState = this.initialState();
+
+  constructor(levelIndex = 0) {
+    this.blueprint = popupBestTemplateBlueprints[Math.max(0, Math.min(popupBestTemplateBlueprints.length - 1, levelIndex))];
+    this.model = this.rules.createState(this.blueprint);
+    this.state = this.initialState();
+  }
+
+  private initialState(): PublicGameState {
+    return {
+      lifecycle: "ready",
+      result: null,
+      score: 0,
+      resources: { stars: 0, mistakes: 0, beats: 0, rotations: 0 },
+      values: { level: this.blueprint.id, orientation: 0, x: this.blueprint.start.x, z: this.blueprint.start.z, seed: this.seed, hiddenStarVisible: false, angleLinkOpen: false, checkpoint: -1 },
+      events: [],
+    };
+  }
+
+  private hiddenStarIndex() {
+    return this.blueprint.stars.findIndex((star) => !star.angles.includes(0));
+  }
+
+  private angleLink() {
+    return this.blueprint.links.find((link) => Array.isArray(link.angles)) ?? null;
+  }
+
+  private syncValues() {
+    const hidden = this.hiddenStarIndex();
+    const link = this.angleLink();
+    this.state.values.orientation = this.model.o * 90;
+    this.state.values.x = this.model.x;
+    this.state.values.z = this.model.z;
+    this.state.values.checkpoint = this.model.checkpoint;
+    this.state.values.hiddenStarVisible = hidden >= 0 && this.blueprint.stars[hidden].angles.includes(this.model.o) && !this.model.stars[hidden];
+    this.state.values.angleLinkOpen = link ? this.rules.linkOpen(link, this.model) : false;
+    this.state.resources.stars = this.model.stars.filter(Boolean).length;
+    this.state.resources.mistakes = this.model.mistakes;
+    this.state.score = this.state.resources.stars * 100 + (this.model.done ? 300 : 0);
+  }
+
+  getState() { return cloneState(this.state); }
+
+  listActions() {
+    if (this.state.lifecycle === "ready") return ["start"];
+    if (this.state.lifecycle === "result") return ["restart"];
+    return ["rotate-cw", "rotate-ccw", "move-N", "move-E", "move-S", "move-W", "jump-N", "jump-E", "jump-S", "jump-W", "wait", "cross-folded-link", "restart"];
+  }
+
+  /** 求解器给出的正确角度序列，供验收场景真实走完本关。 */
+  solution(): string[] {
+    const solution = this.rules.solveLevel(this.blueprint);
+    return (solution?.actions ?? []).map((action) => action === "cw" ? "rotate-cw" : action === "ccw" ? "rotate-ccw" : action === "wait" ? "wait" : action.startsWith("j") ? `jump-${action.slice(1)}` : `move-${action}`);
+  }
+
+  performAction(actionId: string): ProbeActionResult {
+    if (!this.listActions().includes(actionId)) return { accepted: false, reason: "动作在当前状态不可用", state: this.getState() };
+    if (actionId === "start") {
+      this.state.lifecycle = "playing";
+      this.state.events.push("session-start");
+      this.syncValues();
+      return { accepted: true, reason: "翻开这一页", state: this.getState() };
+    }
+    if (actionId === "restart") {
+      this.restart();
+      return { accepted: true, reason: "重开", state: this.getState() };
+    }
+    if (actionId === "cross-folded-link") {
+      // 试图走过一座此时没有接上的角度桥/台阶：规则必须拒绝，人物留在原地。
+      const link = this.angleLink();
+      if (!link || this.rules.linkOpen(link, this.model)) return { accepted: false, reason: "当前没有折起的角度桥可供测试", state: this.getState() };
+      const probe = this.rules.cloneState(this.model);
+      probe.x = link.from.x; probe.z = link.from.z;
+      const dx = Math.sign(link.to.x - link.from.x);
+      const dz = Math.sign(link.to.z - link.from.z);
+      const direction = dx === 1 ? "E" : dx === -1 ? "W" : dz === 1 ? "S" : "N";
+      const target = this.rules.walkTarget(this.blueprint, probe, direction);
+      const crossed = Boolean(target && target.x === link.to.x && target.z === link.to.z);
+      this.state.events.push(crossed ? "folded-link-crossed" : "folded-link-blocked");
+      return { accepted: false, reason: crossed ? "折起的桥被错误穿过" : "折起的桥挡住了去路", state: this.getState() };
+    }
+    const action: PopupAction = actionId === "rotate-cw" ? "cw" : actionId === "rotate-ccw" ? "ccw" : actionId === "wait" ? "wait" : actionId.startsWith("jump-") ? (`j${actionId.slice(5)}` as PopupAction) : (actionId.slice(5) as PopupAction);
+    const result = this.rules.step(this.blueprint, this.model, action);
+    this.model = result.state;
+    if (action === "cw" || action === "ccw") { this.state.resources.rotations += 1; this.state.events.push("book-rotated"); }
+    else this.state.resources.beats += 1;
+    for (const event of result.events) {
+      if (event.startsWith("star:")) this.state.events.push("star-collected");
+      if (event.startsWith("checkpoint:")) this.state.events.push("checkpoint-reached");
+      if (event === "fell" || event === "hit") this.state.events.push("returned-to-checkpoint");
+      if (event === "exit") this.state.events.push("exit-reached");
+      if (event.startsWith("blocked:")) this.state.events.push("move-blocked");
+    }
+    const link = this.angleLink();
+    if (link && (action === "cw" || action === "ccw")) this.state.events.push(this.rules.linkOpen(link, this.model) ? "angle-link-connected" : "angle-link-folded");
+    const hidden = this.hiddenStarIndex();
+    if (hidden >= 0 && (action === "cw" || action === "ccw") && this.blueprint.stars[hidden].angles.includes(this.model.o)) this.state.events.push("hidden-star-revealed");
+    this.syncValues();
+    if (this.model.done) { this.state.lifecycle = "result"; this.state.result = "completed"; }
+    return { accepted: result.ok, reason: result.ok ? "动作已执行" : "规则拒绝了这个动作", state: this.getState() };
+  }
+
+  setSeed(seed: number) { this.seed = Math.abs(Math.floor(seed)) || 1; this.state.values.seed = this.seed; }
+  restart() { this.model = this.rules.createState(this.blueprint); this.state = this.initialState(); }
+  restore(snapshot: PublicGameState) {
+    this.state = restoreState(snapshot);
+    this.model.o = ((Math.round(Number(snapshot.values.orientation) / 90) % 4 + 4) % 4) as PopupState["o"];
+    this.model.x = Number(snapshot.values.x);
+    this.model.z = Number(snapshot.values.z);
+  }
+  snapshot() { return this.getState(); }
+}
+
 export interface GoldenScenarioDefinition {
   actions: Record<string, string[]>;
   rejectedActions?: string[];
@@ -507,6 +637,7 @@ export function createProbe(spec: GameSpecV2): GameProbe {
   if (spec.source.templateId === "merge-2048") return new MergeGridProbe();
   if (spec.source.templateId === "tile-roguelite") return new TileRogueliteProbe();
   if (spec.source.templateId === "collect-escape-3d") return new CollectEscape3DProbe();
+  if (spec.source.templateId === PAPER_POPUP_TEMPLATE_ID) return new PaperPopupProbe();
   if (spec.source.templateId && GOLDEN_SCENARIOS[spec.source.templateId]) {
     return new GoldenTemplateProbe(GOLDEN_SCENARIOS[spec.source.templateId]);
   }

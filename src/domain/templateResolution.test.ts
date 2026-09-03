@@ -4,7 +4,7 @@ import { buildGameSpec } from "./gameSpec";
 import { createProbe } from "./probe";
 import { INITIAL_DRAFT } from "./storage";
 import { GAME_TEMPLATES } from "./templates";
-import { DOMAIN_TEMPLATE_ART, FIXTURE_TEMPLATE_TO_DOMAIN, resolveTemplateForGame } from "./templateResolution";
+import { DOMAIN_TEMPLATE_ART, FIXTURE_TEMPLATE_TO_DOMAIN, THREE_MODE_TO_DOMAIN, resolveTemplateForGame } from "./templateResolution";
 
 describe("官方游戏默认必须有玩法模板", () => {
   it("每一个服务端游戏模板都能落到一个玩法模板", () => {
@@ -38,6 +38,14 @@ describe("官方游戏默认必须有玩法模板", () => {
       expect(() => createProbe(spec), `${template.id} 缺少专属验收探针`).not.toThrow();
     }
     for (const templateId of Object.keys(DOMAIN_TEMPLATE_ART)) {
+      expect(GAME_TEMPLATES.some((template) => template.id === templateId), `${templateId} 不是已登记的玩法模板`).toBe(true);
+    }
+  });
+
+  it("3D 项目按 threeMode 映射：popup→立体书旋转迷宫，且三种模式都指向已登记模板", () => {
+    expect(resolveTemplateForGame({ template: "maze", idea: "", threeMode: "popup" })?.id).toBe("popup-rotate-3d");
+    expect(resolveTemplateForGame({ template: "maze", idea: "", threeMode: "arena" })?.id).toBe("arena-3d");
+    for (const templateId of Object.values(THREE_MODE_TO_DOMAIN)) {
       expect(GAME_TEMPLATES.some((template) => template.id === templateId), `${templateId} 不是已登记的玩法模板`).toBe(true);
     }
   });

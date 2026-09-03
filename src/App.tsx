@@ -34,6 +34,7 @@ const TEMPLATE_MECHANIC_MAP: Record<string, string> = {
   "turn-duel-match3": "grid-merge",
   "lane-climb": "lane-dodge",
   "solitaire-freecell": "grid-merge",
+  "popup-rotate-3d": "spatial-puzzle-3d",
 };
 
 // 面向外行的改动说明：不出现 R0–R3 代码，只说会发生什么。

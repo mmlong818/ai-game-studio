@@ -180,6 +180,7 @@ function toSummary(row: ProjectRow, gameOrigin: string): ProjectSummary {
     inputModes: spec?.inputModes ?? ["keyboard", "touch"],
     status: row.status,
     fixtureKind: row.fixture_kind,
+    threeMode: spec?.threeMode ?? null,
     isOfficial: Boolean(row.is_official),
     coverUrl: row.publication_status && row.stable_path
       ? `${origin}${row.stable_path}assets/cover.png`
