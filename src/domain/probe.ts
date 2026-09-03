@@ -1,6 +1,8 @@
-import type { GameSpecV2 } from "./platformTypes";
+import type { OfficialProbeKind, OfficialProbeScenario } from "../shared/official-games";
 import { popupBestTemplateBlueprints } from "../shared/paper-popup-levels";
 import { createPaperPopupRules, type PopupAction, type PopupBlueprint, type PopupState } from "../shared/paper-popup-rules";
+import type { GameSpecV2 } from "./platformTypes";
+import { GAMEPLAY_TEMPLATE_BUNDLES, getGameplayBundle } from "./templates";
 
 export interface PublicGameState {
   lifecycle: "ready" | "playing" | "result";
@@ -417,138 +419,17 @@ export class PaperPopupProbe implements GameProbe {
   snapshot() { return this.getState(); }
 }
 
-export interface GoldenScenarioDefinition {
-  actions: Record<string, string[]>;
-  rejectedActions?: string[];
-  completingActions?: string[];
-}
+export type GoldenScenarioDefinition = OfficialProbeScenario;
 
-export const GOLDEN_SCENARIOS: Record<string, GoldenScenarioDefinition> = {
-  "falling-blocks": {
-    actions: {
-      tick: ["piece-fell"],
-      "complete-row": ["full-row-detected", "row-cleared"],
-      "stack-to-top": ["top-reached", "session-failed"],
-    },
-    completingActions: ["stack-to-top"],
-  },
-  "picture-puzzle": {
-    actions: {
-      "inspect-pieces": ["piece-source-stable"],
-      "drop-correct": ["piece-snapped"],
-      "place-all": ["all-pieces-placed", "session-completed"],
-    },
-    completingActions: ["place-all"],
-  },
-  breakout: {
-    actions: {
-      "paddle-bounce": ["paddle-reflected-ball"],
-      "hit-target": ["ball-hit-target", "hit-feedback"],
-      "clear-targets": ["all-targets-cleared", "session-completed"],
-    },
-    completingActions: ["clear-targets"],
-  },
-  "sliding-block": {
-    actions: {
-      "inspect-grid": ["occupancy-fixed"],
-      "invalid-overlap": ["overlap-blocked"],
-      "move-target-exit": ["target-reached-exit", "session-completed"],
-    },
-    rejectedActions: ["invalid-overlap"],
-    completingActions: ["move-target-exit"],
-  },
-  maze: {
-    actions: {
-      "invalid-cross-wall": ["wall-blocked"],
-      "inspect-route": ["entry-exit-connected"],
-      "follow-route-exit": ["exit-reached", "session-completed"],
-    },
-    rejectedActions: ["invalid-cross-wall"],
-    completingActions: ["follow-route-exit"],
-  },
-  snake: {
-    actions: {
-      tick: ["continuous-step"],
-      "invalid-reverse": ["reverse-blocked"],
-      "eat-and-self-collide": ["food-collected", "body-grew", "self-collision", "session-failed"],
-    },
-    rejectedActions: ["invalid-reverse"],
-    completingActions: ["eat-and-self-collide"],
-  },
-  "space-shooter": {
-    actions: {
-      "move-and-shoot": ["player-moved", "projectile-fired"],
-      "hit-enemy": ["stable-hit", "hit-feedback"],
-      "finish-wave": ["life-accounted", "wave-settled", "session-completed"],
-    },
-    completingActions: ["finish-wave"],
-  },
-  polyomino: {
-    actions: {
-      "rotate-piece": ["piece-rotated"],
-      "invalid-overlap": ["overlap-blocked"],
-      "cover-outline": ["outline-covered", "session-completed"],
-    },
-    rejectedActions: ["invalid-overlap"],
-    completingActions: ["cover-outline"],
-  },
-  "block-placement": {
-    actions: {
-      "deal-three": ["three-pieces-offered"],
-      "place-legal": ["legal-placement"],
-      "complete-line": ["row-or-column-full", "line-cleared", "session-completed"],
-    },
-    completingActions: ["complete-line"],
-  },
-  "region-logic": {
-    actions: {
-      "inspect-clues": ["constraints-complete"],
-      solve: ["solver-found-solution"],
-      "make-error": ["error-explained", "session-completed"],
-    },
-    completingActions: ["make-error"],
-  },
-  "arena-3d": {
-    actions: {
-      "move-and-attack": ["movement-responsive", "attack-responsive"],
-      "hit-enemy": ["stable-hit", "hit-feedback"],
-      "finish-wave": ["enemy-wave-settled", "session-completed"],
-    },
-    completingActions: ["finish-wave"],
-  },
-  "turn-duel-match3": {
-    actions: {
-      "inspect-board": ["board-readable", "half-zones-visible"],
-      "swap-outside-zone": ["zone-blocked"],
-      "swap-match": ["three-in-line", "combo-scored-to-actor"],
-      "end-turn": ["turn-passed-to-ai", "ai-turn-resolved"],
-      "drain-opponent": ["score-drained", "session-completed"],
-    },
-    rejectedActions: ["swap-outside-zone"],
-    completingActions: ["drain-opponent"],
-  },
-  "solitaire-freecell": {
-    actions: {
-      "inspect-tableau": ["tableau-readable", "free-cells-visible"],
-      "stack-illegal": ["stack-rule-blocked"],
-      "move-to-cell": ["card-parked-in-cell"],
-      "stack-legal": ["alternating-descending-stack"],
-      "supermove-over-limit": ["supermove-limit-blocked"],
-      "build-foundation": ["foundation-advanced", "session-completed"],
-    },
-    rejectedActions: ["stack-illegal", "supermove-over-limit"],
-    completingActions: ["build-foundation"],
-  },
-  "lane-climb": {
-    actions: {
-      "read-lanes": ["safe-lane-visible"],
-      "switch-lane": ["lane-changed", "obstacle-avoided"],
-      collect: ["target-collected", "speed-tier-changed"],
-      finish: ["distance-target-reached", "session-completed"],
-    },
-    completingActions: ["finish"],
-  },
-};
+/**
+ * 玩法模板 id → 确定性验收场景。由玩法模板捆绑（官方游戏登记表 + 补充模板）派生，
+ * 只包含走通用 GoldenTemplateProbe 的模板；有专属探针类的模板（probeKind ≠ "golden"）不在其中。
+ */
+export const GOLDEN_SCENARIOS: Record<string, GoldenScenarioDefinition> = Object.fromEntries(
+  GAMEPLAY_TEMPLATE_BUNDLES
+    .filter((bundle) => (bundle.probeKind ?? "golden") === "golden")
+    .map((bundle) => [bundle.domainTemplate.id, bundle.probeScenario]),
+);
 
 const COMPOSED_MECHANIC_SCENARIOS: Record<string, GoldenScenarioDefinition> = {
   "lane-dodge": { actions: { "read-lane": ["safe-lane-visible"], dodge: ["lane-changed", "obstacle-avoided"], finish: ["distance-target-reached", "session-completed"] }, completingActions: ["finish"] },
@@ -633,13 +514,26 @@ export class GoldenTemplateProbe implements GameProbe {
   snapshot() { return this.getState(); }
 }
 
+/**
+ * 登记表 probeKind → 探针工厂。"golden" 用登记的场景驱动通用探针；
+ * 其余指向专属探针类。这里没有实现的种类（例如尚未合并的 paper-popup）会让 createProbe 抛错，
+ * 守卫测试因此能拦住登记了却没有探针的游戏。
+ */
+const PROBE_FACTORIES: Partial<Record<OfficialProbeKind, (scenario: OfficialProbeScenario) => GameProbe>> = {
+  golden: (scenario) => new GoldenTemplateProbe(scenario),
+  "merge-grid": () => new MergeGridProbe(),
+  "tile-roguelite": () => new TileRogueliteProbe(),
+  "collect-escape-3d": () => new CollectEscape3DProbe(),
+  "paper-popup": () => new PaperPopupProbe(),
+};
+
 export function createProbe(spec: GameSpecV2): GameProbe {
-  if (spec.source.templateId === "merge-2048") return new MergeGridProbe();
-  if (spec.source.templateId === "tile-roguelite") return new TileRogueliteProbe();
-  if (spec.source.templateId === "collect-escape-3d") return new CollectEscape3DProbe();
-  if (spec.source.templateId === PAPER_POPUP_TEMPLATE_ID) return new PaperPopupProbe();
-  if (spec.source.templateId && GOLDEN_SCENARIOS[spec.source.templateId]) {
-    return new GoldenTemplateProbe(GOLDEN_SCENARIOS[spec.source.templateId]);
+  const bundle = getGameplayBundle(spec.source.templateId);
+  if (bundle) {
+    const probeKind = bundle.probeKind ?? "golden";
+    const factory = PROBE_FACTORIES[probeKind];
+    if (!factory) throw new Error(`玩法模板 ${bundle.domainTemplate.id} 登记的探针种类 ${probeKind} 还没有实现。`);
+    return factory(bundle.probeScenario);
   }
   if (
     spec.source.selectedMechanicIds.includes("lane-dodge") &&

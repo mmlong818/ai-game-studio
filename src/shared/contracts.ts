@@ -1,6 +1,7 @@
 import { z } from "zod";
-import { getOpenSourceTemplateReference, sourceBackedTemplateIds } from "./open-source-templates.js";
+import { getOpenSourceTemplateReference } from "./open-source-templates.js";
 import { defaultLevelProgression } from "./level-progression.js";
+import { OFFICIAL_SERVER_TEMPLATE_IDS } from "./official-games/index.js";
 
 export const openAISettingsStatusSchema = z.object({
   provider: z.literal("openai"),
@@ -16,15 +17,9 @@ export type OpenAISettingsStatus = z.infer<typeof openAISettingsStatusSchema>;
 
 export const dimensionSchema = z.enum(["2d", "3d"]);
 export const runtimeTargetSchema = z.enum(["web-2d", "web-3d"]);
+// 服务端模板枚举由官方游戏登记表（src/shared/official-games）派生，不再手写。
 export const gameTemplateSchema = z.enum([
-  "signal-hunt",
-  "tetris",
-  "puzzle",
-  "breakout",
-  "klotski",
-  "maze",
-  "snake",
-  ...sourceBackedTemplateIds,
+  ...OFFICIAL_SERVER_TEMPLATE_IDS,
   // 实验通道:没有任何模板能承载玩法时,由模型直接生成独有代码(不走模板运行时)。
   "generated",
 ]);
