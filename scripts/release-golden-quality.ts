@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
-import { cpSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { cp } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { inspectGameInBrowser, inspectStarDreamStageEInBrowser } from "../src/server/browser-quality.js";
 import { openDatabase } from "../src/server/database.js";
@@ -21,7 +22,7 @@ try {
   const repository = new StudioRepository(database, publicOrigin);
   const projectId = await repository.ensureGoldenFixture();
   if (!projectId) throw new Error("星梦对决已被删除，不能创建兼容版本。");
-  cpSync(fixtureRoot, versionRoot, { recursive: true, errorOnExist: true });
+  await cp(fixtureRoot, versionRoot, { recursive: true, errorOnExist: true });
   const appPath = join(versionRoot, "app.js");
   writeFileSync(appPath, `${readFileSync(appPath, "utf8")}\n${playTelemetryScript(projectId, versionId)}`, "utf8");
   const browserResult = await inspectGameInBrowser(versionRoot);

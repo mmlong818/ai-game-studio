@@ -77,7 +77,8 @@ test.describe("空档接龙固定游戏", () => {
       }
     }
     expect(sawSupermove).toBe(true);
-    await expect(page.locator("body")).toHaveAttribute("data-game-state", "won");
+    // 自动收牌包含连续级联动画；并行运行 WebGL 用例时 Chromium 可能超过默认 5 秒。
+    await expect(page.locator("body")).toHaveAttribute("data-game-state", "won", { timeout: 15_000 });
     await expect(page.locator("#win-dialog")).toBeVisible();
     await expect(page.locator("#win-moves")).toHaveText(String(solution.moves.length));
     await expect(page.locator("#win-time")).toHaveText(/^\d{2}:\d{2}$/);
@@ -149,7 +150,8 @@ test.describe("空档接龙固定游戏", () => {
       context.fillRect(0, 0, 300, 200);
       return canvas.toDataURL("image/png").split(",")[1];
     });
-    await page.locator("#back-file").setInputFiles({ name: "my-back.png", mimeType: "image/png", buffer: Buffer.from(png, "base64") });
+    // 某些系统不会为 BMP/HEIC 等文件提供 MIME；仍应按扩展名读取并在保存时统一压缩为 JPEG。
+    await page.locator("#back-file").setInputFiles({ name: "my-back.bmp", mimeType: "application/octet-stream", buffer: Buffer.from(png, "base64") });
     await expect(page.locator("#apply-back")).toBeEnabled();
     await page.locator("#back-zoom").fill("1.4");
     await page.locator("#apply-back").click();

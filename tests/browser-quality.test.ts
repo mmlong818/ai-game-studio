@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
-import { cpSync, existsSync, mkdtempSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, rmSync } from "node:fs";
+import { cp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import test from "node:test";
@@ -40,7 +41,7 @@ test("真实浏览器验收会覆盖五档画幅、玩法状态和三阶段截�
 test("星梦对决固定游戏接入相同的状态协议和浏览器验收", { skip: !browserQualityAvailable() }, async () => {
   const artifactRoot = mkdtempSync(join(tmpdir(), "studio-golden-quality-"));
   try {
-    cpSync(resolve("fixtures", "star-dream-duel"), artifactRoot, { recursive: true });
+    await cp(resolve("fixtures", "star-dream-duel"), artifactRoot, { recursive: true });
     const result = await inspectGameInBrowser(artifactRoot);
     assert.ok(result.checks.every((check) => check.status === "passed"));
     assert.equal(result.screenshotPaths.length, 7);

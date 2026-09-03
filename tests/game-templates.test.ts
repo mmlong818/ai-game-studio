@@ -376,6 +376,7 @@ test("十二类艺术化游戏都会产出可解析脚本、角色拆分位图�
       }
       if (template === "region-logic") {
         const script = readFileSync(join(output, "app.js"), "utf8");
+        const html = readFileSync(join(output, "index.html"), "utf8");
         assert.equal(regionLogicLevels.length, 20);
         assert.equal(new Set(regionLogicLevels.map((level) => level.regions.flat().join(""))).size, 20);
         assert.equal(regionLogicLevels.filter((level) => level.starsPerUnit === 2).length, 8);
@@ -387,10 +388,17 @@ test("十二类艺术化游戏都会产出可解析脚本、角色拆分位图�
         assert.match(script, /function countRegionCompletions/);
         assert.match(script, /function recomputeAutoMarks/);
         assert.match(script, /function nextRegionDeduction/);
-        assert.match(script, /function restoreRegionSession/);
+        assert.doesNotMatch(script, /function restoreRegionSession/);
         assert.match(script, /function redoRegionMove/);
         assert.match(script, /hintUsesSolution: false/);
         assert.match(script, /probeDeadEnd/);
+        assert.match(script, /campaignIsFreelySelectable = config\.template === "region-logic"/);
+        assert.match(script, /restartCurrentGame = \(\) => \{/);
+        assert.match(script, /safeStorage\.removeItem\(regionSessionKey\(\)\)/);
+        assert.match(script, /全新开局 · 第/);
+        assert.match(script, /regionFocusVisible && regionFocus\.row === row/);
+        assert.match(script, /regionFocusVisible = false;\s*actOnRegionCell/);
+        assert.equal((html.match(/<option value="\d+"/g) ?? []).length, 20);
       }
       if (template === "mahjong-roguelite") {
         const script = readFileSync(join(output, "app.js"), "utf8");

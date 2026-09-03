@@ -41,7 +41,7 @@ cp .env.example .env.local
 npm run dev
 ```
 
-Windows 会依次寻找 `PYTHON`、`python` 和 `python3`；macOS/Linux 会优先使用 `python3`。密钥只传给本机 `imagegen` CLI 子进程，不会写入浏览器、本地项目记录、日志或开源交付包。
+`npm run dev` 启动时会自动加载 `.env.local`（其次 `.env`）里的变量，已有的环境变量不会被覆盖；生产部署请直接通过进程环境变量或 `OPENAI_API_KEY_FILE` 提供密钥。本机若有系统代理，请在 `.env.local` 里加上 `NODE_USE_ENV_PROXY=1`，否则 Node 的 fetch 不走代理，AI 调用会超时。密钥只在服务端进程内使用，不会写入浏览器、本地项目记录、日志或开源交付包。
 
 质量检查：
 

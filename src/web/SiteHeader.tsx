@@ -1,4 +1,5 @@
 import { CircleDot, Search } from "lucide-react";
+import { PLATFORM_RELEASE } from "../shared/platform-version";
 import { ModelSettingsButton } from "./ModelSettingsButton";
 import { PreferenceControls, usePreferences } from "./preferences";
 
@@ -17,7 +18,7 @@ export function SiteHeader({ active, search }: { active: "studio" | "games" | "c
       <header className={`app-header ${search ? "has-search" : ""}`}>
         <a className="brand" href="/" aria-label={t("brand.home")}>
           <span className="brand-mark" aria-hidden="true">界</span>
-          <span className="brand-copy"><strong>{t("brand.name")}</strong><small>GAME CREATION STUDIO</small></span>
+          <span className="brand-copy"><strong>{t("brand.name")}</strong><small>GAME CREATION STUDIO · V{PLATFORM_RELEASE}</small></span>
         </a>
         {search ? (
           <div className="header-search" role="search">

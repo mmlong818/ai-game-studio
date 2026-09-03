@@ -5,7 +5,8 @@ export const MAX_STARTING_SCORE = 1000;
 export const SCORE_STEP = 100;
 export const STARTING_SCORE = MIN_STARTING_SCORE;
 export const TILE_TYPES = ['moon', 'cloud', 'star', 'flower', 'heart', 'drop'];
-export const TACTICAL_RULE_VERSION = 2;
+export const TACTICAL_RULE_VERSION = 3;
+export const HEALING_MULTIPLIER = 0.5;
 
 export function tileBase(tile) {
   if (typeof tile !== 'string' || tile === 'blocker') return null;
@@ -27,6 +28,17 @@ export function createSeededRng(seed = Date.now()) {
   return () => {
     value = (value * 1664525 + 1013904223) >>> 0;
     return value / 4294967296;
+  };
+}
+
+export function reshuffleBattleBoard(battleState, rng = Math.random, options = {}) {
+  const playerScore = battleState.playerScore;
+  const aiScore = battleState.aiScore;
+  return {
+    ...battleState,
+    board: createBoard(rng, options),
+    playerScore,
+    aiScore,
   };
 }
 
@@ -263,7 +275,7 @@ export function calculateTacticalEffects(board, matches, groups = [], cascadeLev
     counts,
     shape,
     damage: counts.star * 4 + shapeBonus + chainBonus,
-    healing: counts.heart * 3 + chainBonus,
+    healing: Math.ceil((counts.heart * 3 + chainBonus) * HEALING_MULTIPLIER),
     energy: {
       tide: counts.drop * 2 + counts.cloud,
       bloom: counts.flower * 2 + counts.cloud,
