@@ -1,0 +1,168 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8" />
+<title>cocos4 blank-page gate (third_party/cocos4/gate)</title>
+<style>html,body{margin:0;background:#f3ead8;width:100%;height:100%;overflow:hidden}#GameCanvas{width:100vw;height:100vh;display:block}</style>
+</head>
+<body>
+<canvas id="GameCanvas" width="960" height="640"></canvas>
+<script type="module">
+// 门禁空白页：需先用 scripts/build-cocos-engine.mjs 构建出 cocos.module.js，复制到本目录并命名为 cc.js（产物不入库，见 BUILD.md）。
+import * as cc from './cc.js';
+import { createPaperLitEffect } from './paper-effect.js';
+import { createPaperPostEffect } from './paper-post.js';
+window.__CC__ = cc;
+const log = (...a) => { console.log(...a); (window.__LOG__ ||= []).push(a.join(' ')); };
+
+function box(w, h, d, color, bevel = 0) {
+  // programmatic box with per-face normals and vertex colors
+  const positions = [], normals = [], uvs = [], colors = [], indices = [];
+  const hx = w / 2, hy = h / 2, hz = d / 2;
+  const faces = [
+    { n: [0, 0, 1], u: [1, 0, 0], v: [0, 1, 0], o: [0, 0, hz] },
+    { n: [0, 0, -1], u: [-1, 0, 0], v: [0, 1, 0], o: [0, 0, -hz] },
+    { n: [1, 0, 0], u: [0, 0, -1], v: [0, 1, 0], o: [hx, 0, 0] },
+    { n: [-1, 0, 0], u: [0, 0, 1], v: [0, 1, 0], o: [-hx, 0, 0] },
+    { n: [0, 1, 0], u: [1, 0, 0], v: [0, 0, -1], o: [0, hy, 0] },
+    { n: [0, -1, 0], u: [1, 0, 0], v: [0, 0, 1], o: [0, -hy, 0] },
+  ];
+  const ext = (axis) => axis[0] ? hx : axis[1] ? hy : hz;
+  for (const f of faces) {
+    const base = positions.length / 3;
+    const eu = ext(f.u) - bevel, ev = ext(f.v) - bevel;
+    for (const [su, sv] of [[-1, -1], [1, -1], [1, 1], [-1, 1]]) {
+      positions.push(f.o[0] + f.u[0] * eu * su + f.v[0] * ev * sv, f.o[1] + f.u[1] * eu * su + f.v[1] * ev * sv, f.o[2] + f.u[2] * eu * su + f.v[2] * ev * sv);
+      normals.push(...f.n);
+      uvs.push(su * 0.5 + 0.5, sv * 0.5 + 0.5);
+      colors.push(...color, 1);
+    }
+    indices.push(base, base + 1, base + 2, base, base + 2, base + 3);
+  }
+  return { positions, normals, uvs, colors, indices };
+}
+
+async function main() {
+  const t0 = performance.now();
+  await cc.game.init({
+    debugMode: 1,
+    overrideSettings: {
+      rendering: { customPipeline: false, renderPipeline: '', renderMode: 0 },
+      assets: { preloadBundles: [] },
+      engine: { builtinAssets: undefined },
+      launch: { launchScene: '' },
+      splashScreen: { totalTime: 0 },
+      screen: { exactFitScreen: true, designResolution: { width: 960, height: 640 } },
+    },
+  });
+  log('game inited in', (performance.now() - t0).toFixed(0), 'ms; gfx api', cc.gfx.API[cc.game._gfxDevice?.gfxAPI ?? cc.director.root.device.gfxAPI], 'device', cc.director.root.device.constructor.name);
+
+  const effect = createPaperLitEffect(cc);
+
+  const scene = new cc.Scene('gate');
+  const globals = scene.globals;
+  globals.skybox.useHDR = false;
+  globals.shadows.enabled = true;
+  globals.shadows.type = 1; // ShadowType.ShadowMap
+  globals.shadows.shadowMapSize = 1024;
+  globals.shadows.maxReceived = 4;
+
+  // camera
+  const camNode = new cc.Node('camera');
+  scene.addChild(camNode);
+  const camera = camNode.addComponent(cc.Camera);
+  camera.projection = cc.Camera.ProjectionType.PERSPECTIVE;
+  camera.fov = 38;
+  camera.near = 0.1; camera.far = 100;
+  camera.clearFlags = cc.Camera.ClearFlag.SOLID_COLOR;
+  camera.clearColor = new cc.Color(243, 234, 216, 255);
+  camera.visibility = cc.Layers.Enum.DEFAULT;
+  const W = 960, H = 640;
+  const rt = new cc.RenderTexture();
+  const passInfo = new cc.gfx.RenderPassInfo([new cc.gfx.ColorAttachment(new URLSearchParams(location.search).get('fmt') === 'rgba8' ? cc.gfx.Format.RGBA8 : cc.gfx.Format.RGBA16F)], new cc.gfx.DepthStencilAttachment(cc.gfx.Format.DEPTH_STENCIL));
+  rt.reset({ width: W, height: H, passInfo });
+  camera.targetTexture = rt;
+  // post camera + fullscreen quad
+  const postEffect = createPaperPostEffect(cc);
+  const postCamNode = new cc.Node('post-camera');
+  scene.addChild(postCamNode);
+  const postCam = postCamNode.addComponent(cc.Camera);
+  postCam.projection = cc.Camera.ProjectionType.ORTHO;
+  postCam.orthoHeight = 1; postCam.near = 0.1; postCam.far = 10;
+  postCam.priority = 10;
+  postCam.clearFlags = cc.Camera.ClearFlag.SOLID_COLOR;
+  postCam.clearColor = new cc.Color(255, 0, 255, 255);
+  postCam.visibility = cc.Layers.Enum.UI_2D;
+  postCamNode.setPosition(0, 0, 5);
+  const quadNode = new cc.Node('post-quad');
+  quadNode.layer = cc.Layers.Enum.UI_2D;
+  scene.addChild(quadNode);
+  const quadMr = quadNode.addComponent(cc.MeshRenderer);
+  quadMr.mesh = (cc.utils.createMesh ?? cc.utils.MeshUtils?.createMesh)({ positions: [-1, -1, 0, 1, -1, 0, 1, 1, 0, -1, 1, 0], uvs: [0, 0, 1, 0, 1, 1, 0, 1], indices: [0, 1, 2, 0, 2, 3], minPos: { x: -1, y: -1, z: 0 }, maxPos: { x: 1, y: 1, z: 0 } });
+  const postMat = new cc.Material();
+  postMat.initialize({ effectAsset: postEffect });
+  postMat.setProperty('sceneTex', rt);
+  postMat.setProperty('texelSize', new cc.Vec4(1 / W, 1 / H, 14, 0.9));
+  postMat.setProperty('postParams', new cc.Vec4(0.9, 0.25, 0.3, 0));
+  postMat.setProperty('texelSize', new cc.Vec4(1 / W, 1 / H, 0.9, 1.0));
+  const tanHalf = Math.tan(camera.fov * Math.PI / 360);
+  postMat.setProperty('camParams', new cc.Vec4(camera.near, camera.far, tanHalf * W / H, tanHalf));
+  const depthTex = rt.window.framebuffer.depthStencilTexture;
+  const pass0 = postMat.passes[0];
+  pass0.bindTexture(pass0.getBinding('depthTex'), depthTex);
+  pass0.bindSampler(pass0.getBinding('depthTex'), cc.director.root.device.getSampler(new cc.gfx.SamplerInfo(cc.gfx.Filter.POINT, cc.gfx.Filter.POINT, cc.gfx.Filter.NONE)));
+  pass0.update();
+  log('depthTex', depthTex && depthTex.format, depthTex && depthTex.width);
+  quadMr.material = postMat;
+  quadMr.shadowCastingMode = cc.MeshRenderer.ShadowCastingMode.OFF;
+  quadMr.receiveShadow = cc.MeshRenderer.ShadowReceivingMode.OFF;
+  window.__POST__ = { postMat, rt, quadNode };
+  camNode.setPosition(9, 8.5, 11);
+  camNode.lookAt(new cc.Vec3(0, 0.6, 0));
+
+  // directional light + shadow
+  const lightNode = new cc.Node('sun');
+  scene.addChild(lightNode);
+  const light = lightNode.addComponent(cc.DirectionalLight);
+  light.illuminance = 1.35;
+  light.color = new cc.Color(255, 245, 225, 255);
+  light.shadowEnabled = true;
+  light.shadowFixedArea = true;
+  light.shadowNear = 0.1; light.shadowFar = 40; light.shadowOrthoSize = 9;
+  light.shadowPcf = 1; light.shadowBias = 0.0005; light.shadowNormalBias = 0;
+  lightNode.setRotationFromEuler(-55, 35, 0);
+  { // fixed-area shadow camera sits at the light node looking along its forward: place it so the scene centre is 15 units ahead
+    const f = new cc.Vec3(); cc.Vec3.transformQuat(f, cc.Vec3.FORWARD, lightNode.rotation);
+    lightNode.setPosition(-f.x * 15, -f.y * 15 + 0.6, -f.z * 15);
+  }
+
+  const createMesh = cc.utils.createMesh ?? cc.utils.MeshUtils?.createMesh;
+  const addBox = (name, size, pos, color, rotY = 0) => {
+    const node = new cc.Node(name);
+    scene.addChild(node);
+    node.setPosition(...pos);
+    if (rotY) node.setRotationFromEuler(0, rotY, 0);
+    const mr = node.addComponent(cc.MeshRenderer);
+    mr.mesh = createMesh(box(...size, color), undefined, { calculateBounds: true });
+    const mat = new cc.Material();
+    mat.initialize({ effectAsset: effect, defines: { CC_RECEIVE_SHADOW: true } });
+    mat.setProperty('mainColor', new cc.Color(255, 255, 255, 255));
+    const dbg = new URLSearchParams(location.search).get('dbg'); if (dbg === 'shadow') mat.setProperty('paperParams', new cc.Vec4(0.15, 6, 1, 60)); if (dbg === 'shadow2') mat.setProperty('paperParams', new cc.Vec4(0.15, 9, 1, 60));
+    mr.material = mat;
+    mr.shadowCastingMode = cc.MeshRenderer.ShadowCastingMode.ON;
+    mr.receiveShadow = cc.MeshRenderer.ShadowReceivingMode.ON;
+    return node;
+  };
+  addBox('ground', [12, 0.3, 12], [0, -0.15, 0], [0.93, 0.87, 0.72]);
+  addBox('wall-a', [3, 1.6, 0.25], [-1.5, 0.8, -1], [0.85, 0.35, 0.3], 10);
+  addBox('wall-b', [0.25, 2.2, 3], [1.8, 1.1, 0.5], [0.3, 0.55, 0.75]);
+  addBox('cube', [1, 1, 1], [0, 0.5, 2], [0.95, 0.75, 0.25], 25);
+  addBox('tall', [0.6, 2.6, 0.6], [-2.5, 1.3, 2.2], [0.45, 0.7, 0.4]);
+
+  log('device', dev.gfxAPI, 'renderer', dev.renderer, 'pipeline', cc.director.root.pipeline?.constructor?.name, 'frames', cc.director.getTotalFrames());
+  window.__READY__ = true;
+}
+main().catch(e => { console.error(e); window.__ERR__ = String(e && e.stack || e); });
+</script>
+</body>
+</html>
