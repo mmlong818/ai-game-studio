@@ -121,7 +121,7 @@ Playwright（`tests/browser/paper-popup.spec.ts`，Chromium / Firefox / WebKit�
 
 ## 7. 进入大厅
 
-1. 主工作区启动服务后运行 `node scripts/seed-paper-popup.mjs`（可用 `PORT`/`GAME_PORT`/`STUDIO_ORIGIN` 换端口）：创建 3D 项目（自动判定 `popup`）→ 构建 → 自动验收。
-2. 主美在工作台按 `_studio/ART_REVIEW.md` 真实复核后通过（本地可用 `REVIEW_ART=1` 直接记录）。
-3. 再次运行脚本发布稳定网址；用 `MARK_OFFICIAL=1 DATABASE_URL=...` 标记官方（或由管理员执行 `UPDATE projects SET is_official = TRUE WHERE id = ...`），即出现在游戏大厅。
-4. 创作侧模板登记（`popup-rotate-3d`，`src/domain/templates.ts`）由主工作区另行处理；领域探针已按该 templateId 注册。
+1. 本游戏已登记在 `src/shared/official-games/paper-popup.ts`（kind = "three"，threeMode = "popup"，lobbyRank 15）；创作侧模板 `popup-rotate-3d`、探针与运行时定义均由该登记派生。
+2. 主工作区启动服务后运行 `npm run seed:showcases -- paper-popup`（可用 `PORT`/`GAME_PORT`/`STUDIO_ORIGIN` 换端口）：创建 3D 项目（自动判定 `popup`）→ 构建 → 自动验收。
+3. 主美在工作台按 `_studio/ART_REVIEW.md` 真实复核后通过（本地可用 `REVIEW_ART=1` 直接记录）；再次运行脚本发布稳定网址。
+4. 重启 API 服务：`syncOfficialCatalog()` 按登记表把它标记官方并排到第 15 位，不需要手工 SQL。操作手册见 `docs/55-adding-an-official-game.md`。

@@ -1,5 +1,7 @@
 import { randomUUID } from "node:crypto";
+import { OFFICIAL_GAMES, type OfficialGameDefinition } from "../shared/official-games/index.js";
 import type { StudioDatabase } from "./database.js";
+import { officialFixtures } from "./official-fixtures.js";
 import {
   buildSchema,
   gameSpecSchema,
@@ -309,86 +311,15 @@ async function insertProject(
   return projectId;
 }
 
-const goldenInput: ProjectInput = {
-  title: "星梦对决",
-  dimensions: "2d",
-  idea: "玩家与 AI 共用一个棋盘轮流三消。玩家只能操作下半区，AI 只能操作上半区，所有连消归当前行动者，任一方积分归零时结束。",
-};
-
-function acceptedGoldenSpec() {
-  const spec = generateGameSpec(goldenInput);
-  return gameSpecSchema.parse({
-    ...spec,
-    acceptanceCriteria: [
-      ...spec.acceptanceCriteria,
-      { id: "AC-ZONE", priority: "P0", statement: "玩家与 AI 的分区操作权限始终有效", probeType: "state", status: "passed" },
-      { id: "AC-CASCADE", priority: "P0", statement: "整段连消伤害归当前行动触发者", probeType: "state", status: "passed" },
-    ].map((criterion) => ({ ...criterion, status: "passed" })),
-  });
+/** 一条已发布项目是否就是登记表里的这款官方游戏。 */
+function matchesOfficialGame(row: ProjectRow, game: OfficialGameDefinition) {
+  if (game.kind === "fixture") return row.fixture_kind === game.fixtureKind;
+  if (row.fixture_kind) return false;
+  const spec = typeof row.spec_json === "string" ? JSON.parse(row.spec_json) as GameSpec : row.spec_json;
+  if (row.title !== game.title) return false;
+  if (game.kind === "template") return spec?.template === game.serverTemplate;
+  return spec?.dimensions === "3d" && spec?.threeMode === game.threeMode;
 }
-
-const freecellInput: ProjectInput = {
-  title: "空档接龙",
-  dimensions: "2d",
-  idea: "经典空档接龙纸牌：52 张牌摆成 8 列，4 个空档与 4 个按花色从 A 到 K 的收牌堆；只能一张一张移动，但可以借空档和空列做超级移动。100 个经典 Microsoft 牌局全部已知可解，支持撤销、重开、点击与拖拽，并允许用自己的图片更换牌背。",
-};
-
-function acceptedFreecellSpec() {
-  const spec = generateGameSpec(freecellInput);
-  return gameSpecSchema.parse({
-    ...spec,
-    inputModes: ["pointer", "drag", "keyboard"],
-    acceptanceCriteria: [
-      ...spec.acceptanceCriteria,
-      { id: "AC-DEAL", priority: "P0", statement: "第 1–100 关使用 Microsoft FreeCell 发牌算法且全部可解", probeType: "state", status: "passed" },
-      { id: "AC-SUPERMOVE", priority: "P0", statement: "有序牌组一次最多移动 (空档数+1)×2^(空列数) 张", probeType: "state", status: "passed" },
-      { id: "AC-CARDBACK", priority: "P1", statement: "自定义牌背只保存在浏览器本地并在刷新后生效", probeType: "state", status: "passed" },
-    ].map((criterion) => ({ ...criterion, status: "passed" })),
-  });
-}
-
-/**
- * 内置固定游戏（fixtures/<kind>）：服务启动时注册为官方游戏并直接发布，
- * 静态文件由 fixtures 目录提供，无需经过 AI 构建管线。
- */
-interface OfficialFixtureDefinition {
-  kind: string;
-  metaKey: string;
-  input: ProjectInput;
-  spec: () => GameSpec;
-  buildOutputs: string[];
-}
-
-const officialFixtures: OfficialFixtureDefinition[] = [
-  {
-    kind: "star-dream-duel",
-    metaKey: "golden_fixture_initialized",
-    input: goldenInput,
-    spec: acceptedGoldenSpec,
-    buildOutputs: [
-      "共享 8×8 棋盘、分区操作、连消归属与三局两胜已锁定。",
-      "GAME_DESIGN、ART_DIRECTION、SOUND_DIRECTION 已形成。",
-      "已接入棋盘规则、玩家输入、AI 回合与结算逻辑。",
-      "棋子、音效、PWA 图标与触控反馈已经集成。",
-      "8 项规则测试与页面结构检查通过。",
-      "稳定玩家网址和不可变版本网址已生成。",
-    ],
-  },
-  {
-    kind: "freecell",
-    metaKey: "freecell_fixture_initialized",
-    input: freecellInput,
-    spec: acceptedFreecellSpec,
-    buildOutputs: [
-      "8 列、4 空档、4 收牌堆与超级移动上限已锁定。",
-      "Microsoft 发牌算法 1–100 号牌局已由求解器逐局验证可解。",
-      "已接入点击、拖拽、键盘输入、撤销与自动收牌。",
-      "gpt-image-2 花色、人头、牌背、封面与桌面位图已切分并归档溯源。",
-      "发牌、合法性、超级移动与浏览器通关测试通过。",
-      "稳定玩家网址和不可变版本网址已生成。",
-    ],
-  },
-];
 
 export class StudioRepository {
   private readonly locks = new KeyedMutex();
@@ -435,6 +366,32 @@ export class StudioRepository {
   async ensureOfficialFixtures() {
     const result: Record<string, string | null> = {};
     for (const definition of officialFixtures) result[definition.kind] = await this.ensureOfficialFixture(definition.kind);
+    return result;
+  }
+
+  /**
+   * 按官方游戏登记表同步大厅：已发布（有 live 发布记录）且属于登记表的项目标记 is_official 并写入 lobby_rank；
+   * 未登记的项目（例如由 AI 原创转官方的“虫虫攀枝”）一律不动。
+   * 幂等：已经一致的行不会再写；重复调用结果相同。返回 登记 id → 匹配到的 projectId（没匹配到为 null）。
+   */
+  async syncOfficialCatalog() {
+    const rows = (await this.database.query<ProjectRow>(
+      `${projectSelect} WHERE p.archived_at IS NULL AND pub.status = 'live' ORDER BY p.created_at ASC`,
+    )).rows;
+    const officialValue = this.database.provider === "sqlite-test" ? 1 : true;
+    const claimed = new Set<string>();
+    const result: Record<string, string | null> = {};
+    for (const game of OFFICIAL_GAMES) {
+      const match = rows.find((row) => !claimed.has(row.id) && matchesOfficialGame(row, game));
+      result[game.id] = match?.id ?? null;
+      if (!match) continue;
+      claimed.add(match.id);
+      if (Boolean(match.is_official) && match.lobby_rank === game.lobbyRank) continue;
+      await this.database.query(
+        "UPDATE projects SET is_official = $1, lobby_rank = $2 WHERE id = $3",
+        [officialValue, game.lobbyRank, match.id],
+      );
+    }
     return result;
   }
 
