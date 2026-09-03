@@ -9,7 +9,7 @@ export const klotski = defineOfficialGame({
   lobbyRank: 11,
   cover: "assets/templates/packs/klotski/cover.png",
   referenceDoc: "docs/43-klotski-best-template-reference.md",
-  mechanicId: "grid-path",
+  mechanicId: "sliding-block",
   seed: {
     artStyle: "ink",
     visualStyle: "line-art",

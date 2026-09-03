@@ -946,18 +946,39 @@ export class StudioRepository {
   }
 
   async resolveGameBySlug(slug: string) {
-    return (await this.database.query<{ fixture_kind: string | null; version_id: string }>(
-      `SELECT p.fixture_kind, pub.version_id FROM projects p
+    return (await this.database.query<{ project_id: string; fixture_kind: string | null; version_id: string }>(
+      `SELECT p.id AS project_id, p.fixture_kind, pub.version_id FROM projects p
        JOIN publications pub ON pub.project_id = p.id WHERE p.slug = $1 AND pub.status = 'live'`,
       [slug],
     )).rows[0];
   }
 
   async resolveGameByVersion(versionId: string) {
-    return (await this.database.query<{ fixture_kind: string | null; version_id: string }>(
-      `SELECT p.fixture_kind, v.id AS version_id FROM versions v
+    return (await this.database.query<{ project_id: string; fixture_kind: string | null; version_id: string }>(
+      `SELECT p.id AS project_id, p.fixture_kind, v.id AS version_id FROM versions v
        JOIN projects p ON p.id = v.project_id WHERE v.id = $1`,
       [versionId],
     )).rows[0];
+  }
+
+  async getVersion(projectId: string, versionId: string): Promise<ProjectDetail | null> {
+    const rows = (await this.database.query<ProjectRow>(`
+      SELECT p.*, v.id AS version_id, v.number AS version_number, v.label AS version_label,
+        v.created_at AS version_created_at, v.quality_status, v.quality_summary, v.quality_checked_at,
+        v.art_review_status, v.art_review_summary, v.art_reviewed_at,
+        gs.spec_json, pub.status AS publication_status, pub.stable_path, pub.version_path, pub.published_at,
+        pub.version_id AS published_version_id, pv.number AS published_version_number
+      FROM projects p
+      JOIN versions v ON v.project_id = p.id AND v.id = $2
+      JOIN game_specs gs ON gs.id = v.spec_id
+      LEFT JOIN publications pub ON pub.project_id = p.id
+      LEFT JOIN versions pv ON pv.id = pub.version_id
+      WHERE p.id = $1`, [projectId, versionId])).rows;
+    const row = rows[0];
+    if (!row?.spec_json) return null;
+    return projectDetailSchema.parse({
+      ...toSummary(row, this.gameOrigin),
+      spec: typeof row.spec_json === "string" ? JSON.parse(row.spec_json) : row.spec_json,
+    });
   }
 }

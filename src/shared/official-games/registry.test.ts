@@ -13,7 +13,7 @@ import { OFFICIAL_GAMES, OFFICIAL_SERVER_TEMPLATE_IDS, officialCoverPath, offici
 const repoRoot = resolve(process.cwd());
 const fileExists = (relativePath: string) => existsSync(resolve(repoRoot, relativePath));
 
-/** 大厅顺序锁：改动这里必须是产品负责人确认过的大厅调整。虫虫攀枝（AI 原创转官方）排最后一位，不在登记表内。 */
+/** 大厅顺序锁：改动这里必须是产品负责人确认过的大厅调整。虫虫攀枝（AI 原创转官方）已进入登记表并排最后一位。 */
 const LOCKED_LOBBY_ORDER = [
   "star-dream-duel",
   "puzzle",

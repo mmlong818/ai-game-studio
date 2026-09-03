@@ -158,6 +158,12 @@ test("固定游戏交付包为纯位图资源并带有 gpt-image-2 溯源", () =
   assert.match(readFileSync(join(fixtureRoot, "_studio", "ART_PROVENANCE.md"), "utf8"), /sha256/);
   const app = readFileSync(join(fixtureRoot, "app.js"), "utf8");
   assert.match(app, /freecell\.cardBack\.v1/);
+  assert.match(app, /CARD_BACK_IMAGE_EXTENSIONS/);
+  assert.match(app, /heicTo/);
+  assert.doesNotMatch(app, /file\.size/, "牌背上传不应在读取原图前限制文件大小");
+  assert.match(readFileSync(join(fixtureRoot, "index.html"), "utf8"), /\.heic,.heif,.tif,.tiff/);
+  assert.equal(existsSync(join(fixtureRoot, "vendor", "heic-to-csp.js")), true);
+  assert.equal(existsSync(join(fixtureRoot, "vendor", "heic-to.LICENSE")), true);
   assert.match(app, /toDataURL/);
   assert.doesNotMatch(app, /fetch\(|XMLHttpRequest/, "牌背图片不得上传");
 });

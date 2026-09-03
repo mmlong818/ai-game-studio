@@ -2,6 +2,7 @@ import { createServer, type IncomingMessage, type ServerResponse } from "node:ht
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { getTemplateCatalog, projectInputSchema } from "../shared/contracts.js";
+import { PLATFORM_VERSION_INFO } from "../shared/platform-version.js";
 import { OFFICIAL_SERVER_TEMPLATE_IDS } from "../shared/official-games/index.js";
 import { AccessControl } from "./access-control.js";
 import { openDatabase } from "./database.js";
@@ -16,6 +17,7 @@ import { ProjectLifecycle } from "./project-lifecycle.js";
 import { importLegacySqliteIfEmpty } from "./sqlite-migration.js";
 import { sendStaticFile, workbenchContentSecurityPolicy } from "./static-files.js";
 import { StudioRepository } from "./studio-repository.js";
+import { ensureV11FixtureArtifact } from "./v11-build-metadata.js";
 
 const port = Number.parseInt(process.env.PORT ?? "4312", 10);
 const gamePort = Number.parseInt(process.env.GAME_PORT ?? "4313", 10);
@@ -30,7 +32,8 @@ const legacySqlitePath = process.env.LEGACY_SQLITE_PATH ?? process.env.DATABASE_
 const database = await openDatabase(connectionString);
 const importedProjectCount = await importLegacySqliteIfEmpty(database, legacySqlitePath);
 const repository = new StudioRepository(database, publicOrigin, publicGameOrigin);
-const artifactRoot = join(projectRoot, "data", "artifacts");
+const legacyArtifactRoot = join(projectRoot, "data", "artifacts");
+const artifactRoot = join(projectRoot, "data", "artifacts-v1.1");
 const openAIKeyFile = process.env.OPENAI_API_KEY_FILE ?? join(projectRoot, "data", "secrets", "openai-api-key.txt");
 const openAISettings = new OpenAISettings(process.env.OPENAI_API_KEY, openAIKeyFile);
 // Node 的全局 fetch 默认不走 HTTP(S)_PROXY;在设置了代理但未开启 NODE_USE_ENV_PROXY 的环境里,
@@ -56,6 +59,17 @@ await repository.failInterruptedBuilds();
 await repository.reconcilePublishedStatuses();
 await repository.initializeCatalogScopes();
 const officialFixtureIds = await repository.ensureOfficialFixtures();
+// 1.0 固定游戏源目录保持只读；1.1 首次启动时复制为版本化不可变产物并补齐结构化工程、变更集与运行观测。
+for (const [fixtureKind, projectId] of Object.entries(officialFixtureIds)) {
+  if (!projectId) continue;
+  const fixtureProject = await repository.get(projectId);
+  if (!fixtureProject) continue;
+  ensureV11FixtureArtifact(
+    join(projectRoot, "fixtures", fixtureKind),
+    join(artifactRoot, fixtureProject.version.id),
+    fixtureProject,
+  );
+}
 // 按登记表把已发布的官方游戏标记为官方并写入大厅顺序；未登记的项目不动。
 await repository.syncOfficialCatalog();
 const goldenProjectId = officialFixtureIds["star-dream-duel"] ?? null;
@@ -99,6 +113,7 @@ async function handleApi(request: IncomingMessage, response: ServerResponse, pat
     sendJson(response, 200, {
       status: "ok",
       database: "ready",
+      platform: PLATFORM_VERSION_INFO,
       databaseProvider: database.provider,
       importedProjectCount,
       goldenProjectId,
@@ -243,19 +258,28 @@ async function gameRequest(pathname: string) {
   if (stable?.[1]) {
     const game = await repository.resolveGameBySlug(decodeURIComponent(stable[1]));
     if (!game) return null;
-    const versionArtifact = join(artifactRoot, game.version_id);
-    const root = game.fixture_kind && !existsSync(versionArtifact) ? join(projectRoot, "fixtures", game.fixture_kind) : versionArtifact;
+    const root = await ensureVersionArtifact(game);
     return { root, relativePath: stable[2], immutable: false };
   }
   const version = pathname.match(/^\/version\/([^/]+)(\/.*)?$/);
   if (version?.[1]) {
     const game = await repository.resolveGameByVersion(decodeURIComponent(version[1]));
     if (!game) return null;
-    const versionArtifact = join(artifactRoot, game.version_id);
-    const root = game.fixture_kind && !existsSync(versionArtifact) ? join(projectRoot, "fixtures", game.fixture_kind) : versionArtifact;
+    const root = await ensureVersionArtifact(game);
     return { root, relativePath: version[2], immutable: true };
   }
   return null;
+}
+
+async function ensureVersionArtifact(game: { project_id: string; fixture_kind: string | null; version_id: string }) {
+  const target = join(artifactRoot, game.version_id);
+  const source = game.fixture_kind
+    ? join(projectRoot, "fixtures", game.fixture_kind)
+    : join(legacyArtifactRoot, game.version_id);
+  if (!existsSync(target) && !existsSync(source)) return target;
+  const project = await repository.getVersion(game.project_id, game.version_id);
+  if (!project) return existsSync(target) ? target : source;
+  return ensureV11FixtureArtifact(source, target, project);
 }
 
 async function handleGame(response: ServerResponse, pathname: string) {

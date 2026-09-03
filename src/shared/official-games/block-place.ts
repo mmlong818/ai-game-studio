@@ -9,7 +9,7 @@ export const blockPlace = defineOfficialGame({
   lobbyRank: 4,
   cover: "assets/templates/packs/block-place/cover.png",
   referenceDoc: "docs/47-block-place-best-template-reference.md",
-  mechanicId: "grid-merge",
+  mechanicId: "block-placement",
   seed: {
     artStyle: "geometric",
     visualStyle: "color-block",

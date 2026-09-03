@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
-import { cpSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { cp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import test from "node:test";
@@ -39,7 +40,9 @@ test("阶段 E 逻辑、迷宫和长局模板具备计划要求的运行时能�
         assert.match(script, /uniqueSolutions/);
         assert.match(script, /countRegionCompletions/);
         assert.match(script, /nextRegionDeduction/);
-        assert.match(script, /restoreRegionSession/);
+        assert.doesNotMatch(script, /function restoreRegionSession/);
+        assert.match(script, /safeStorage\.removeItem\(regionSessionKey\(\)\)/);
+        assert.match(script, /restartCurrentGame = \(\) =>/);
         assert.match(script, /hintUsesSolution: false/);
         assert.match(script, /regionErrors/);
       }
@@ -126,7 +129,7 @@ test("阶段 E 三款模板各真实完成三局并触发两次失败", { skip: 
 test("星梦对决真实完成三局、两次失败、恢复与 720p 首屏验收", { skip: !browserQualityAvailable(), timeout: 45_000 }, async () => {
   const root = mkdtempSync(join(tmpdir(), "studio-stage-e-star-dream-"));
   try {
-    cpSync(resolve("fixtures", "star-dream-duel"), root, { recursive: true });
+    await cp(resolve("fixtures", "star-dream-duel"), root, { recursive: true });
     const result = await inspectStarDreamStageEInBrowser(root);
     assert.equal(result.completedRuns, 3);
     assert.equal(result.failedRuns, 2);

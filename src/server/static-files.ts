@@ -25,7 +25,7 @@ function safePath(root: string, requestedPath: string) {
 // style-src 放开 'unsafe-inline':生成游戏与动效常用 style 属性,样式注入的危害有限;
 // script-src 保持 'self' 严格——这也是生成游戏必须交付为外链 app.js 的原因。
 export function gameContentSecurityPolicy(frameAncestors = "'self'") {
-  return `default-src 'self'; img-src 'self' data:; media-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self'; font-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors ${frameAncestors}`;
+  return `default-src 'self'; img-src 'self' data: blob:; media-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'; worker-src 'self' blob:; connect-src 'self'; font-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors ${frameAncestors}`;
 }
 
 // 工作台页面的 CSP 与游戏产物不同:它需要嵌入游戏源的 iframe 预览、加载游戏源的封面图。

@@ -9,7 +9,7 @@ export const freecell = defineOfficialGame({
   lobbyRank: 14,
   cover: "fixtures/freecell/assets/cover.png",
   referenceDoc: "docs/53-freecell-best-template-reference.md",
-  mechanicId: "grid-merge",
+  mechanicId: "freecell-solitaire",
   fixture: {
     metaKey: "freecell_fixture_initialized",
     buildOutputs: [
