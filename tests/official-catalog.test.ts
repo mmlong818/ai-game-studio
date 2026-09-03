@@ -46,7 +46,7 @@ test("启动同步按登记表标记官方并写入大厅顺序，未登记的�
     await publishDirectly(database, impostor.id, impostor.version.id, "impostor", "2026-09-01T00:00:01.000Z");
 
     // 未登记、由人工转官方的 AI 原创项目：保留它的 is_official 与手工 lobby_rank。
-    const ladybug = await repository.create({ title: "虫虫攀枝", dimensions: "2d", template: "generated", idea: "Q版小瓢虫在巨大树干的三条树纹之间高速攀爬，躲避树瘤、蘑菇和树脂，收集露珠与金色种子并冲向树冠。" });
+    const ladybug = await repository.create({ title: "手工转官方的用户游戏", dimensions: "2d", template: "generated", idea: "Q版小瓢虫在巨大树干的三条树纹之间高速攀爬，躲避树瘤、蘑菇和树脂，收集露珠与金色种子并冲向树冠。" });
     await publishDirectly(database, ladybug.id, ladybug.version.id, "ladybug", "2026-09-02T00:00:00.000Z");
     const officialValue = database.provider === "sqlite-test" ? 1 : true;
     await database.query("UPDATE projects SET is_official = $1, lobby_rank = $2 WHERE id = $3", [officialValue, 99, ladybug.id]);
@@ -86,8 +86,9 @@ test("启动同步按登记表标记官方并写入大厅顺序，未登记的�
         tetrisGame.title,
         OFFICIAL_GAMES.find((game) => game.id === "freecell")!.title,
         "虫虫攀枝",
+        "手工转官方的用户游戏",
       ],
-      "大厅按 lobby_rank 升序：星梦对决(1) → 折光堆叠(13) → 空档接龙(14) → 虫虫攀枝(99)",
+      "大厅按 lobby_rank 升序：星梦对决(1) → 折光堆叠(13) → 空档接龙(14) → 虫虫攀枝(15) → 手工转官方的用户游戏(99)",
     );
   } finally {
     await database.close();

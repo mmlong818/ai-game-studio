@@ -77,39 +77,6 @@ const SUPPLEMENTARY_GAMEPLAY_TEMPLATES: GameplayTemplateBundle[] = [
     },
     mechanicId: "projectile-combat",
   },
-  {
-    domainTemplate: {
-      id: "lane-climb",
-      name: "多道攀爬",
-      genre: "反应闪避",
-      pitch: "角色在几条固定道之间切换，躲开障碍、收集奖励并冲向终点。",
-      coreLoop: "换道 → 躲避 → 收集 → 冲向终点",
-      coreRules: ["角色只在固定几条道之间切换", "每个生成批次至少保留一条安全通路", "收集物提供分数与加速", "抵达终点或耗尽生命结束"],
-      capabilities: ["lane-dodge", "continuous-movement", "collect-escape", "checkpoint-save"],
-      suggestions: commonSuggestions(
-        "lane-climb",
-        "固定道、换道操作、安全通路和终点结算保持不变",
-        "替换角色、场景、障碍与收集物，调整道数、速度和长度。",
-        "只加入一种会移动的障碍或一种收集效果。",
-      ),
-      redirectExamples: ["开放世界", "联机", "经营建造", "多人"],
-    },
-    probeScenario: {
-      actions: {
-        "read-lanes": ["safe-lane-visible"],
-        "switch-lane": ["lane-changed", "obstacle-avoided"],
-        collect: ["target-collected", "speed-tier-changed"],
-        finish: ["distance-target-reached", "session-completed"],
-      },
-      completingActions: ["finish"],
-    },
-    runtimeDefinition: {
-      actions: ["切换车道", "躲避障碍", "收集冲刺"],
-      feedback: ["车道已切换", "安全通路保持可见", "收集物触发加速并抵达终点"],
-      className: "laneclimb",
-    },
-    mechanicId: "lane-dodge",
-  },
 ];
 
 /** 全部玩法模板捆绑：官方游戏登记表在前（按登记顺序），补充模板在后。 */

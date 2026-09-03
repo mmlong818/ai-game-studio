@@ -29,6 +29,7 @@ const LOCKED_LOBBY_ORDER = [
   "breakout",
   "tetris",
   "freecell",
+  "bug-climb",
 ];
 
 describe("官方游戏登记表守卫", () => {

@@ -81,7 +81,7 @@ test("空档接龙固定游戏随星梦对决一起注册为官方游戏并使�
     assert.deepEqual(project.spec.inputModes, ["pointer", "drag", "keyboard"]);
     assert.equal((await repository.resolveGameBySlug("freecell"))?.fixture_kind, "freecell");
     const lobby = await repository.publishedGames();
-    assert.deepEqual(lobby.map((game) => game.fixtureKind).sort(), ["freecell", "star-dream-duel"]);
+    assert.deepEqual(lobby.map((game) => game.fixtureKind).sort(), ["bug-climb", "freecell", "star-dream-duel"]);
     // 重复调用幂等,不会重复插入。
     assert.equal((await repository.ensureOfficialFixtures()).freecell, fixtures.freecell);
     assert.equal(Number((await database.query<{ count: number }>("SELECT COUNT(*) AS count FROM projects WHERE fixture_kind = 'freecell'")).rows[0]?.count), 1);
