@@ -1,4 +1,4 @@
-// 纸境 · 立体书迷宫 PlayCanvas 运行时 —— 第 3 段：规则驱动、输入、动画循环、调试接口。
+// 纸境 · 立体书迷宫 PlayCanvas 运行时 —— 第 3 段：规则驱动、动画循环；输入 / 后台停渲染 / 自动降档 / 调试骨架来自引擎层，这里只接纸境的语义。
 // 注意：本段是浏览器脚本的模板字面量片段，内部不能出现 ${ 与反斜杠转义。
 export const popupGameLoopScript = `
 function hazardWorld(hazard, t) {
@@ -188,14 +188,9 @@ function togglePause() {
 
 let introClock = -1;
 function applyPaletteToScene() {
-  cameraEntity.camera.clearColor = pcColor(palette.sky);
-  app.scene.fog.type = pc.FOG_LINEAR;
-  app.scene.fog.color = pcColor(palette.fog);
-  app.scene.fog.start = cameraDistance * 2.2; app.scene.fog.end = cameraDistance * 4.5;
-  app.scene.ambientLight = pcColor(shade(mixColor(palette.hemiSky, palette.hemiGround, 0.5), -0.42 + (palette.hemiIntensity - 0.55) * 0.5));
-  app.scene.exposure = palette.exposure || 1.08;
-  sun.light.color = pcColor(palette.sunColor); sun.light.intensity = palette.sunIntensity;
-  fill.light.color = pcColor(palette.hemiSky); fill.light.intensity = palette.hemiIntensity * 0.3;
+  // 章节色板 → 引擎环境：天空 / 雾 / 半球近似环境光 / 曝光 / 主光补光。
+  engine.applyEnvironment({ sky: palette.sky, fog: palette.fog, ambient: shade(mixColor(palette.hemiSky, palette.hemiGround, 0.5), -0.42 + (palette.hemiIntensity - 0.55) * 0.5), exposure: palette.exposure || 1.08, sunColor: palette.sunColor, sunIntensity: palette.sunIntensity, fillColor: palette.hemiSky, fillIntensity: palette.hemiIntensity * 0.3 });
+  engine.setFog(cameraDistance * 2.2, cameraDistance * 4.5);
   desk.render.meshInstances[0].mesh = planeMesh(90, 90, palette.desk);
 }
 function loadLevel(index) {
@@ -245,12 +240,11 @@ function fitCamera() {
   const eye = new pc.Vec3().copy(cameraTarget).add(new pc.Vec3().copy(cameraDirection).mulScalar(cameraDistance));
   cameraEntity.setPosition(eye);
   cameraEntity.lookAt(cameraTarget);
-  app.scene.fog.start = cameraDistance * 2.2; app.scene.fog.end = cameraDistance * 4.5;
+  // 焦平面 = 书页：景深与雾的起止都由引擎按预设比例随相机距离更新。
+  engine.setFocus(cameraDistance);
   const radius = Math.hypot(gridWidth, gridDepth) * 0.5 + 0.9;
-  const sunPosition = new pc.Vec3(-6, 12, 5).mulScalar(Math.max(1, radius / 6));
-  sun.setPosition(sunPosition); sun.lookAt(0, 0, 0); sun.rotateLocal(90, 0, 0);
+  engine.placeSun(radius);
   sun.light.shadowDistance = cameraDistance + radius * 3;
-  if (cameraFrame) { cameraFrame.dof.focusDistance = cameraDistance; cameraFrame.dof.focusRange = cameraDistance * 0.62; cameraFrame.update(); }
 }
 
 // 书页在画面上占的高度比例（投影包围盒，供竖屏取景断言）。
@@ -418,7 +412,7 @@ function jump() {
 // 纸屑：一张动态网格里的 48 片小纸方块，逐帧更新顶点位置。
 let confettiMesh = null;
 function burstConfetti(position) {
-  if (!position || reducedMotion || !performanceProfiles[performanceTier].particles) return;
+  if (!position || reducedMotion || !engine.profile.particles) return;
   if (confetti) { confetti.entity.destroy(); confetti = null; }
   const count = 48;
   const particles = [];
@@ -506,8 +500,6 @@ function returnToSetup() {
   syncCampaignUi();
 }
 
-let slowFrames = 0;
-let fastFrames = 0;
 let time = 0;
 function animate(dt) {
   const delta = Math.min(Math.max(0, dt), 0.05);
@@ -581,38 +573,17 @@ function animate(dt) {
     confetti.material.opacity = Math.max(0.02, confetti.life); confetti.material.update();
     if (confetti.life <= 0) { confetti.entity.destroy(); confetti = null; }
   }
-  slowFrames = delta > 0.026 ? slowFrames + 1 : Math.max(0, slowFrames - 2);
-  if (slowFrames > 90 && performanceTier !== "low") { applyPerformanceTier(performanceTier === "high" ? "medium" : "low"); slowFrames = 0; tierPromotionAllowed = false; }
-  fastFrames = delta < 0.012 ? fastFrames + 1 : 0;
-  if (tierPromotionAllowed && performanceTier === "medium" && fastFrames > 90 && state.running) { tierPromotionAllowed = false; applyPerformanceTier("high"); }
+  // 帧预算交给引擎层：连续慢帧降档、高配设备连续快帧升到高档（升档只在游戏运行中发生）。
+  engine.trackFrame(delta, state.running);
 }
-// 渲染节奏由我们控制：后台 / 探针挂起时既不推进节拍也不渲染（renderCount 不再增长）。
-app.on("update", (dt) => {
-  if (renderSuspended) return;
+// 渲染节奏由引擎层控制：后台 / 探针挂起时既不推进节拍也不渲染（renderCount 不再增长）。
+engine.onUpdate((dt) => {
   animate(dt);
-  app.renderNextFrame = true;
   state.renderCount += 1;
 });
+engine.resize();
 
-function resize() {
-  const width = Math.max(1, canvas.clientWidth || window.innerWidth);
-  const height = Math.max(1, canvas.clientHeight || window.innerHeight);
-  app.setCanvasResolution(pc.RESOLUTION_FIXED, width, height);
-  cameraAspect = width / Math.max(1, height);
-  if (blueprint) fitCamera();
-}
-window.addEventListener("resize", resize);
-resize();
-
-document.addEventListener("visibilitychange", () => {
-  renderSuspended = document.hidden;
-  state.suspended = renderSuspended;
-  if (document.hidden) stopEnvironmentAudio();
-  else { previousFrame = performance.now(); if (state.running) startEnvironmentAudio(); }
-});
-
-// 输入：点击地面行走 / 横向滑动转书 / 键盘。拾取用相机射线与纸台包围盒在书局部空间求交（书转动时随之旋转）。
-const pointer = { down: false, x: 0, y: 0, moved: false, id: null };
+// 输入：点击地面行走 / 横向滑动转书 / 键盘，全部经引擎层输入控制器转成抽象动作。拾取用相机射线与纸台包围盒在书局部空间求交（书转动时随之旋转）。
 function pickCell(clientX, clientY) {
   const rect = canvas.getBoundingClientRect();
   const sx = (clientX - rect.left) / rect.width * device.width;
@@ -640,58 +611,25 @@ function pickCell(clientX, clientY) {
   });
   return best ? best.cell : null;
 }
-canvas.addEventListener("pointerdown", (event) => {
-  if (!state.running) return;
-  pointer.down = true; pointer.moved = false; pointer.x = event.clientX; pointer.y = event.clientY; pointer.id = event.pointerId;
-  canvas.setPointerCapture?.(event.pointerId);
-});
-canvas.addEventListener("pointermove", (event) => {
-  if (!pointer.down || event.pointerId !== pointer.id) return;
-  const dx = event.clientX - pointer.x;
-  const dy = event.clientY - pointer.y;
-  if (!pointer.moved && Math.abs(dx) > 42 && Math.abs(dx) > Math.abs(dy) * 1.2) {
-    pointer.moved = true;
-    performRotation(dx > 0 ? "cw" : "ccw");
-  }
-});
-function endPointer(event) {
-  if (!pointer.down || event.pointerId !== pointer.id) return;
-  pointer.down = false;
-  if (!pointer.moved && state.running) {
-    const cell = pickCell(event.clientX, event.clientY);
-    if (cell) moveTowards(cell);
-  }
+function control(action) {
+  if (action === "cw" || action === "ccw") return performRotation(action);
+  if (action === "jump") { jump(); return true; }
+  if (["N", "E", "S", "W"].includes(action)) { moveScreen(action); return true; }
+  if (action === "pause") { togglePause(); return true; }
+  return false;
 }
-canvas.addEventListener("pointerup", endPointer);
-canvas.addEventListener("pointercancel", endPointer);
-window.addEventListener("keydown", (event) => {
-  const handled = ["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "KeyW", "KeyA", "KeyS", "KeyD", "Space", "KeyQ", "KeyE"];
-  if (handled.includes(event.code)) event.preventDefault();
-  if (event.repeat) return;
-  if (event.code === "KeyP") { togglePause(); return; }
-  if (!state.running) return;
-  if (event.code === "KeyQ") performRotation("ccw");
-  else if (event.code === "KeyE") performRotation("cw");
-  else if (event.code === "Space") jump();
-  else if (event.code === "ArrowUp" || event.code === "KeyW") moveScreen("N");
-  else if (event.code === "ArrowDown" || event.code === "KeyS") moveScreen("S");
-  else if (event.code === "ArrowLeft" || event.code === "KeyA") moveScreen("W");
-  else if (event.code === "ArrowRight" || event.code === "KeyD") moveScreen("E");
+const input = createInputController({
+  canvas,
+  enabled: () => state.running,
+  keyMap: { KeyQ: "ccw", KeyE: "cw", Space: "jump", ArrowUp: "N", KeyW: "N", ArrowDown: "S", KeyS: "S", ArrowLeft: "W", KeyA: "W", ArrowRight: "E", KeyD: "E", KeyP: { action: "pause", always: true } },
+  preventCodes: ["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "KeyW", "KeyA", "KeyS", "KeyD", "Space", "KeyQ", "KeyE"],
+  buttons: document.querySelectorAll("[data-key]"),
+  swipe: { minDistance: 42, axisRatio: 1.2 },
+  onAction: control,
+  onSwipe(dx) { performRotation(dx > 0 ? "cw" : "ccw"); },
+  onTap(clientX, clientY) { const cell = pickCell(clientX, clientY); if (cell) moveTowards(cell); },
 });
-document.querySelectorAll("[data-key]").forEach((button) => {
-  button.addEventListener("pointerdown", (event) => {
-    event.preventDefault();
-    if (button.disabled) return;
-    button.classList.add("is-active");
-    if (button.dataset.key === "cw") performRotation("cw");
-    else if (button.dataset.key === "ccw") performRotation("ccw");
-    else if (button.dataset.key === "jump") jump();
-  });
-  const release = () => button.classList.remove("is-active");
-  button.addEventListener("pointerup", release);
-  button.addEventListener("pointercancel", release);
-  button.addEventListener("pointerleave", release);
-});
+void input;
 document.querySelector("#start").addEventListener("click", () => resetGame());
 document.querySelector("#restart").addEventListener("click", () => resetGame());
 backToSetupButton.addEventListener("click", returnToSetup);
@@ -701,13 +639,22 @@ campaignSelect.addEventListener("change", () => {
   campaignLevelIndex = Math.min(campaignMaxUnlocked, Math.max(0, Number(campaignSelect.value) || 0));
   saveCampaign(); syncCampaignUi();
 });
-applyPerformanceTier(performanceTier);
+engine.applyPerformanceTier(engine.tier);
 loadCampaign();
 loadLevel(campaignLevelIndex);
 app.start();
 
-const gameDebugApi = {
+// __GAME_DEBUG__：通用骨架（state / getState / suspend / restart / control / setPerformanceTier / setBeatMs / tickNow / engine）由引擎层提供，
+// 纸境的专属字段（replay / rotate / moveTo / solution / jumpIntoVoid / forceWin / forceFail / setLevel / enqueue 与 getState 的 popup 段）在这里注入。字段集合与语义与重构前一致。
+const gameDebugApi = createDebugApi({
   state,
+  engine,
+  restart: resetGame,
+  control,
+  setBeatMs(value) { beatMs = Math.max(30, Number(value) || config.beatMs); return beatMs; },
+  tickNow() { tick(); },
+  engineHandles() { return { book, level, decorGroup, backdropGroup, materialCache, meshCache }; },
+}, {
   getState() {
     const bp = blueprint;
     const playerPosition = playerView ? playerView.getLocalPosition() : null;
@@ -740,8 +687,8 @@ const gameDebugApi = {
         hazards: bp.hazards.map((hazard) => ({ id: hazard.id, cell: rules.hazardCell(hazard, model.t), next: rules.hazardCell(hazard, model.t + 1) })),
         rotationModel: "book-90-degree-steps",
         reachabilityModel: "grid-beat-rules",
-        tiltShift: performanceProfiles[performanceTier].tiltShift,
-        postProcessing: cameraFrame ? { ssao: cameraFrame.ssao.type, bloom: cameraFrame.bloom.intensity, dof: cameraFrame.dof.enabled, samples: cameraFrame.rendering.samples } : null,
+        tiltShift: engine.profile.tiltShift,
+        postProcessing: engine.postProcessingState(),
         reducedMotion,
         decor: decorStats,
         decorItems: decorItems.map((item) => ({ kind: item.kind, x: Number(item.x.toFixed(2)), z: Number(item.z.toFixed(2)), height: Number(item.height.toFixed(2)), main: item.main, layers: item.layers, occludes: item.occludes, clearance: Number(item.clearance.toFixed(2)) })),
@@ -758,15 +705,6 @@ const gameDebugApi = {
   },
   rotate(direction) { return performRotation(direction === "ccw" ? "ccw" : "cw"); },
   moveTo(x, z) { return moveTowards({ x: Number(x), z: Number(z) }); },
-  control(action) {
-    if (action === "cw" || action === "ccw") return performRotation(action);
-    if (action === "jump") { jump(); return true; }
-    if (["N", "E", "S", "W"].includes(action)) { moveScreen(action); return true; }
-    if (action === "pause") { togglePause(); return true; }
-    return false;
-  },
-  tickNow() { tick(); return gameDebugApi.getState(); },
-  setBeatMs(value) { beatMs = Math.max(30, Number(value) || config.beatMs); return beatMs; },
   solution() { return config.solutions[blueprint.id] || []; },
   jumpIntoVoid() {
     if (!state.running) return false;
@@ -775,14 +713,9 @@ const gameDebugApi = {
     queue.splice(0); queue.push("j" + direction); tick();
     return true;
   },
-  suspend(value = true) { renderSuspended = Boolean(value); state.suspended = renderSuspended; if (!renderSuspended) previousFrame = performance.now(); },
   forceWin() { if (!blueprint) return; model.done = true; completeLevel(); },
   forceFail() { showResult(false); },
-  restart: resetGame,
   setLevel(levelNumber) { campaignLevelIndex = Math.max(0, Math.min(config.blueprints.length - 1, Number(levelNumber) - 1)); campaignMaxUnlocked = Math.max(campaignMaxUnlocked, campaignLevelIndex); syncCampaignUi(); saveCampaign(); },
-  setPerformanceTier(tier) { if (performanceProfiles[tier]) { tierPromotionAllowed = false; applyPerformanceTier(tier); } return performanceTier; },
-  /** 引擎句柄（仅 ?probe）：给后续编辑器与渲染诊断用。 */
-  engine() { return { app, root: app.root, book, level, decorGroup, backdropGroup, camera: cameraEntity, sun, fill, cameraFrame, materialCache, meshCache }; },
-};
-if (new URLSearchParams(location.search).has("probe")) window.__GAME_DEBUG__ = gameDebugApi;
+});
+installDebugApi(gameDebugApi);
 `;
