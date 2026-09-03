@@ -63,6 +63,8 @@ test.describe("空档接龙固定游戏", () => {
 
     let sawSupermove = false;
     for (const step of solution.moves) {
+      // 自动收牌是逐张动画,等它收完再读局面。
+      await expect(page.locator("body")).toHaveAttribute("data-cascading", "false");
       const before = await page.evaluate(() => window.__freecell.getState());
       const movesBefore = await page.evaluate(() => window.__freecell.getMeta().moves);
       await clickMove(page, before, step.move);
