@@ -54,6 +54,7 @@ function seedInput(game: OfficialGameDefinition) {
 }
 
 const showcases = OFFICIAL_GAMES
+  .filter((game) => (game.stage ?? "live") === "live")
   .filter((game) => game.kind !== "fixture")
   .filter((game) => onlyIds.size === 0 || onlyIds.has(game.id));
 

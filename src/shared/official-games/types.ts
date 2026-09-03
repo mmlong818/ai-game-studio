@@ -18,6 +18,13 @@ export type OfficialGameKind =
 
 export type OfficialThreeMode = "collector" | "arena" | "popup";
 
+/**
+ * 登记状态。"live"（缺省）进入大厅、创作页模板与示范播种；
+ * "development" 表示仍在单独开发：保留登记与探针以便持续测试，但不进入大厅、不作为改造模板、不播种，
+ * 启动同步会把它已发布的项目从官方目录摘下（is_official=false，lobby_rank 清空）。
+ */
+export type OfficialGameStage = "live" | "development";
+
 export type OfficialSuggestionCategory = "world" | "visual" | "content" | "mechanic";
 export type OfficialSuggestionLevel = "R0" | "R1" | "R2";
 
@@ -77,6 +84,8 @@ export interface GameplayTemplateBundle {
   mechanicId: string;
   /** 若这套玩法模板就是某种 3D 模式的落点，写上 threeMode；3D 项目按它映射到玩法模板。 */
   threeMode?: OfficialThreeMode;
+  /** 派生时标记：来源登记处于 development 阶段，创作页与映射表跳过它，探针与运行时定义仍保留。 */
+  development?: boolean;
 }
 
 /** 模板游戏的示范项目参数，供 scripts/seed-showcase-games.ts 通过 API 创建并发布。标题取登记的 title。 */
@@ -103,6 +112,8 @@ export interface OfficialGameDefinition<
   /** 大厅显示的中文名。 */
   title: string;
   kind: OfficialGameKind;
+  /** 缺省 "live"；"development" 见 OfficialGameStage。 */
+  stage?: OfficialGameStage;
   /**
    * 服务端 GameTemplate 枚举值。模板型必填；固定型可选（表示该固定游戏的 spec 落到哪个服务端模板，
    * 例如星梦对决落到 "signal-hunt"）。gameTemplateSchema 枚举由全部 serverTemplate 派生。

@@ -386,6 +386,15 @@ export class StudioRepository {
       result[game.id] = match?.id ?? null;
       if (!match) continue;
       claimed.add(match.id);
+      if ((game.stage ?? "live") !== "live") {
+        // 开发中的登记：从官方目录摘下，但保留项目与发布记录，便于单独开发与回归。
+        if (!match.is_official && match.lobby_rank === null) continue;
+        await this.database.query(
+          "UPDATE projects SET is_official = $1, lobby_rank = NULL WHERE id = $2",
+          [this.database.provider === "sqlite-test" ? 0 : false, match.id],
+        );
+        continue;
+      }
       if (Boolean(match.is_official) && match.lobby_rank === game.lobbyRank) continue;
       await this.database.query(
         "UPDATE projects SET is_official = $1, lobby_rank = $2 WHERE id = $3",

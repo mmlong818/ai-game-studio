@@ -5,6 +5,8 @@ export const paperPopup = defineOfficialGame({
   id: "paper-popup",
   title: "纸境 · 立体书迷宫",
   kind: "three",
+  // 第 8 关存在障碍无法躲开、跳跃无效的问题，先从大厅与改造模板中摘出单独开发；修复并复核后改回 "live"。
+  stage: "development",
   threeMode: "popup",
   lobbyRank: 15,
   cover: "assets/starter/paper-popup/cover.png",

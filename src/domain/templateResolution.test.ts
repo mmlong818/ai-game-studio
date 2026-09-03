@@ -43,7 +43,8 @@ describe("官方游戏默认必须有玩法模板", () => {
   });
 
   it("3D 项目按 threeMode 映射：popup→立体书旋转迷宫，且三种模式都指向已登记模板", () => {
-    expect(resolveTemplateForGame({ template: "maze", idea: "", threeMode: "popup" })?.id).toBe("popup-rotate-3d");
+    // 纸境处于 development 阶段：不映射、不进入“改一个现有游戏”。
+    expect(resolveTemplateForGame({ template: "maze", idea: "", threeMode: "popup" })).toBeUndefined();
     expect(resolveTemplateForGame({ template: "maze", idea: "", threeMode: "arena" })?.id).toBe("arena-3d");
     for (const templateId of Object.values(THREE_MODE_TO_DOMAIN)) {
       expect(GAME_TEMPLATES.some((template) => template.id === templateId), `${templateId} 不是已登记的玩法模板`).toBe(true);

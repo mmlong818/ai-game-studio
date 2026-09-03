@@ -29,7 +29,6 @@ const LOCKED_LOBBY_ORDER = [
   "breakout",
   "tetris",
   "freecell",
-  "paper-popup",
 ];
 
 describe("官方游戏登记表守卫", () => {
@@ -113,6 +112,7 @@ describe("官方游戏登记表守卫", () => {
   it("服务端模板枚举、模板目录标题与三张映射表都由登记表派生", () => {
     expect([...gameTemplateSchema.options]).toEqual([...OFFICIAL_SERVER_TEMPLATE_IDS, "generated"]);
     for (const game of OFFICIAL_GAMES) {
+      if ((game.stage ?? "live") !== "live") continue; // 开发中的登记不进映射表
       if (game.serverTemplate) {
         expect(SERVER_TEMPLATE_TO_DOMAIN[game.serverTemplate]).toBe(game.domainTemplate.id);
         expect(DOMAIN_TEMPLATE_ART[game.domainTemplate.id]).toBe(game.serverTemplate);
@@ -131,5 +131,21 @@ describe("官方游戏登记表守卫", () => {
     expect(popup, "纸境 · 立体书迷宫尚未登记").toBeDefined();
     expect(popup?.probeKind).toBe("paper-popup");
     expect(popup?.domainTemplate.coreRules).toEqual([...PAPER_POPUP_RULE_LABELS]);
+  });
+
+  it("development 阶段的登记不进大厅、不做改造模板、不映射，但探针仍可创建", async () => {
+    const { GAME_TEMPLATES: creationTemplates, getGameplayBundle } = await import("../../domain/templates");
+    const { THREE_MODE_TO_DOMAIN, resolveTemplateForGame } = await import("../../domain/templateResolution");
+    const developing = OFFICIAL_GAMES.filter((game) => (game.stage ?? "live") === "development");
+    expect(developing.map((game) => game.id)).toContain("paper-popup");
+    for (const game of developing) {
+      expect(officialLobbyOrder().some((item) => item.id === game.id), `${game.id} 不应出现在大厅顺序里`).toBe(false);
+      expect(creationTemplates.some((template) => template.id === game.domainTemplate.id), `${game.id} 不应出现在创作页模板里`).toBe(false);
+      expect(getGameplayBundle(game.domainTemplate.id), `${game.id} 的探针与运行时捆绑仍应保留`).toBeDefined();
+      if (game.threeMode) {
+        expect(THREE_MODE_TO_DOMAIN[game.threeMode]).toBeUndefined();
+        expect(resolveTemplateForGame({ template: "maze", idea: "", threeMode: game.threeMode })).toBeUndefined();
+      }
+    }
   });
 });

@@ -119,7 +119,12 @@ Playwright（`tests/browser/paper-popup.spec.ts`，Chromium / Firefox / WebKit�
 5. 星与门：折纸星半径 0.3、发光边（半透明大星 + 白描边）与点光；检查点旗更大、更饱和并带地环，点亮时整体转为万寿菊色；出口门按章节：草甸灯笼门、海岸小灯塔、夜市灯笼串、雪原天文台圆顶与望远镜。
 6. 性能与回退：三档保留，低档关阴影/移轴/粒子并减装饰，但纸边、星、旗、门与路面可读性不变；reduced-motion 仍关闭翻页、弹跳、纸屑与转动缓动。
 
-## 7. 进入大厅
+## 7. 已知问题（2026-09-03，来自真人试玩）
+
+- **第 8 关无法通过**：玩家反馈纸浪/纸鸟障碍无法躲开，跳跃无效。自动探针按节拍模型能通关，说明浏览器层的输入节拍、障碍碰撞判定或跳跃与转动的时序与规则内核不一致，需要在真机上逐拍对照复现后修复。
+- 处理决定：登记表中标记 `stage: "development"`，从大厅与“改一个现有游戏”摘出单独开发；修复并真人复核第 6–10 关后再改回 `live`。
+
+## 8. 进入大厅
 
 1. 本游戏已登记在 `src/shared/official-games/paper-popup.ts`（kind = "three"，threeMode = "popup"，lobbyRank 15）；创作侧模板 `popup-rotate-3d`、探针与运行时定义均由该登记派生。
 2. 主工作区启动服务后运行 `npm run seed:showcases -- paper-popup`（可用 `PORT`/`GAME_PORT`/`STUDIO_ORIGIN` 换端口）：创建 3D 项目（自动判定 `popup`）→ 构建 → 自动验收。
