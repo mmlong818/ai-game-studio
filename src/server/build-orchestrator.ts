@@ -16,6 +16,7 @@ import { inspectGeneratedArtifact, stripPlatformSegments, writeGeneratedArtifact
 import { assertRasterAiArt } from "./art-policy.js";
 import { coverPrompt, type CoverArtGenerator } from "./image-generator.js";
 import type { StudioRepository } from "./studio-repository.js";
+import { writeV11BuildMetadata } from "./v11-build-metadata.js";
 
 const wait = (milliseconds: number) => new Promise((resolve) => setTimeout(resolve, milliseconds));
 
@@ -127,7 +128,8 @@ export class BuildOrchestrator {
           // 官方立体书模式使用策划确认的固定贴图包（封面、纸纹、桌面、章节印花），提示词与哈希已随产物写入 DYNAMIC_ART.json。
           const visualSource = ["index.html", "styles.css", "app.js"].map((file) => readFileSync(join(root, file), "utf8")).join("\n");
           assertRasterAiArt(root, visualSource);
-          return "页面公开：封面、纸纹、桌面背景与四章印花来自 gpt-image-2 生成的官方纸艺贴图包，提示词与 sha256 已归档于 _studio/PAPER_POPUP_ASSET_PROMPTS.md 与 DYNAMIC_ART.json；AI 图只作为贴图，关卡几何全部程序化；SVG 禁用门禁通过。";
+          const v11Project = writeV11BuildMetadata(root, project, { directions, previousRoot: join(this.artifactRoot, project.version.id) });
+          return `页面公开：封面、纸纹、桌面背景与四章印花来自 gpt-image-2 生成的官方纸艺贴图包，提示词与 sha256 已归档于 _studio/PAPER_POPUP_ASSET_PROMPTS.md 与 DYNAMIC_ART.json；AI 图只作为贴图，关卡几何全部程序化；SVG 禁用门禁通过。1.1 工程清单已冻结（${v11Project.objects.length} 个对象、${v11Project.rules.length} 条规则）。`;
         }
         if (!this.options.coverArt) throw new Error("AI 生图服务未配置，构建已中断。请先配置 OpenAI API Key。");
         // 封面与动态美术全部并行生成；任何核心位图缺失都中断构建，禁止退回占位图。
@@ -138,7 +140,6 @@ export class BuildOrchestrator {
         if (!cover) throw new Error("AI 封面生成失败，构建已中断；不会使用占位图替代。");
         const background = dynamicArt.find((entry) => entry.role === "局内背景" && entry.file === "assets/background.png");
         if (!background) throw new Error("AI 局内背景生成失败，构建已中断；不会使用程序图或 SVG 替代。");
-
         writeFileSync(join(root, "assets", "cover.png"), cover);
         for (const entry of dynamicArt) {
           const target = join(root, entry.file);
@@ -161,7 +162,8 @@ export class BuildOrchestrator {
           .map((file) => readFileSync(join(root, file), "utf8"))
           .join("\n");
         assertRasterAiArt(root, visualSource);
-        return `页面公开：封面与${dynamicArt.map((entry) => entry.role).join("、")}均由 gpt-image-2 生成，提示词与来源已归档；SVG 禁用门禁通过。${style.label}视觉系统已应用到页面编排、组件造型、字体层级、${style.detailLabel}、画布细节和反馈动效。`;
+        const v11Project = writeV11BuildMetadata(root, project, { directions, previousRoot: join(this.artifactRoot, project.version.id) });
+        return `页面公开：封面与${dynamicArt.map((entry) => entry.role).join("、")}均由 gpt-image-2 生成，提示词与来源已归档；SVG 禁用门禁通过。${style.label}视觉系统已应用到页面编排、组件造型、字体层级、${style.detailLabel}、画布细节和反馈动效。1.1 工程清单已冻结（${v11Project.objects.length} 个对象、${v11Project.rules.length} 条规则）。`;
       });
       sequence += 1;
       await this.step(buildId, sequence, () => {

@@ -1,7 +1,7 @@
 {
   "name": "ai-game-studio",
   "private": true,
-  "version": "0.1.0",
+  "version": "1.1.0",
   "type": "module",
   "engines": {
     "node": ">=24 <25"
@@ -20,6 +20,7 @@
     "test:legacy": "tsx --test --test-concurrency=1 tests/*.test.ts",
     "test:watch": "vitest",
     "test:browsers": "playwright test",
+    "verify:v11": "node scripts/verify-v11-runtime.mjs",
     "db:up": "docker compose up -d postgres",
     "db:down": "docker compose down",
     "db:logs": "docker compose logs -f postgres",
@@ -43,6 +44,7 @@
   "dependencies": {
     "@vitejs/plugin-react": "6.1.1",
     "fflate": "0.8.3",
+    "heic-to": "1.5.2",
     "html2canvas": "1.4.1",
     "lucide-react": "^1.34.0",
     "pg": "8.23.0",

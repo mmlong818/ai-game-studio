@@ -11,7 +11,7 @@ export const starDreamDuel = defineOfficialGame({
   lobbyRank: 1,
   cover: "fixtures/star-dream-duel/assets/cover.png",
   referenceDoc: "docs/50-star-dream-duel-best-template-reference.md",
-  mechanicId: "grid-merge",
+  mechanicId: "turn-match3",
   fixture: {
     metaKey: "golden_fixture_initialized",
     buildOutputs: [

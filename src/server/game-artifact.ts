@@ -813,6 +813,7 @@ let campaignLevelIndex = 0;
 let campaignMaxUnlocked = 0;
 let campaignRandomState = 1;
 let campaignMastery = {};
+const campaignIsFreelySelectable = config.template === "region-logic";
 
 function readCampaignProgress() {
   if (!config.campaign?.persistProgress) return;
@@ -823,6 +824,7 @@ function readCampaignProgress() {
     campaignLevelIndex = Math.max(0, Math.min(campaignMaxUnlocked, Number(saved.current) || 0));
     campaignMastery = saved.mastery && typeof saved.mastery === "object" ? saved.mastery : {};
   } catch {}
+  if (campaignIsFreelySelectable) campaignMaxUnlocked = config.campaignLevels.length - 1;
 }
 
 function writeCampaignProgress() {
@@ -909,7 +911,7 @@ function syncCampaignUi() {
   document.body.dataset.campaignTier = String(level.tier);
   if (campaignSelect) {
     campaignSelect.value = String(campaignLevelIndex);
-    Array.from(campaignSelect.options).forEach((option, index) => { option.disabled = index > campaignMaxUnlocked; });
+    Array.from(campaignSelect.options).forEach((option, index) => { option.disabled = !campaignIsFreelySelectable && index > campaignMaxUnlocked; });
   }
   campaignProgressNodes.forEach((node) => { node.textContent = "第 " + level.number + " / " + config.campaignLevels.length + " 关 · " + level.tierLabel + " · " + level.ruleModifier; });
   syncMasteryUi();
@@ -917,7 +919,7 @@ function syncCampaignUi() {
 
 function setCampaignLevel(index, options = {}) {
   const requested = Math.max(0, Math.min(config.campaignLevels.length - 1, Number(index) || 0));
-  campaignLevelIndex = options.allowLocked ? requested : Math.min(requested, campaignMaxUnlocked);
+  campaignLevelIndex = options.allowLocked || campaignIsFreelySelectable ? requested : Math.min(requested, campaignMaxUnlocked);
   if (options.unlock) campaignMaxUnlocked = Math.max(campaignMaxUnlocked, campaignLevelIndex);
   syncCampaignUi();
   resetCampaignRandom();
@@ -1263,6 +1265,7 @@ function showResult(won, title, detail) {
 }
 
 function onCampaignLevelChanged() {}
+let restartCurrentGame = () => startGame();
 
 ${runtime.script}
 
@@ -1276,13 +1279,13 @@ startButton.addEventListener("click", startGame);
 backToSetupButton?.addEventListener("click", returnToSetup);
 campaignSelect?.addEventListener("change", () => setCampaignLevel(Number(campaignSelect.value)));
 restartButton.addEventListener("click", () => {
-  if (gameSessionState !== "playing") { setGameSessionState("restarting"); startGame(); return; }
+  if (gameSessionState !== "playing" || config.template === "region-logic") { setGameSessionState("restarting"); restartCurrentGame(); return; }
   const now = Date.now();
   if (now - restartArmedAt < 2500) {
     restartArmedAt = 0;
     clearTimeout(restartResetTimer);
     restartButton.textContent = "重新开始";
-    startGame();
+    restartCurrentGame();
     return;
   }
   restartArmedAt = now;
@@ -1322,7 +1325,7 @@ resetCampaignRandom();
 onCampaignLevelChanged(currentCampaignLevel());
 const gameDebugApi = {
   start: startGame,
-  restart: startGame,
+  restart: restartCurrentGame,
   control: handleControl,
   forceWin: () => showResult(true, "验收胜利", "浏览器质量探针已触发胜利分支。"),
   setLevel: (level) => setCampaignLevel(Number(level) - 1, { allowLocked: true, unlock: true }),

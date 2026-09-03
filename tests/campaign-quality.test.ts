@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
-import { copyFileSync, cpSync, existsSync, mkdtempSync, rmSync } from "node:fs";
+import { copyFileSync, existsSync, mkdtempSync, rmSync } from "node:fs";
+import { cp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import test from "node:test";
@@ -41,7 +42,9 @@ test("全部 2D 模板与通用玩法真实通过二十关解锁、持久化、�
       writeDesignDocuments(artifactRoot, project);
       writeGameArtifact(artifactRoot, project);
       injectTestAiBackground(artifactRoot);
-      const result = await inspectCampaignInBrowser(artifactRoot);
+      const result = await inspectCampaignInBrowser(artifactRoot, {
+        initialSelection: template === "region-logic" ? "all" : "sequential",
+      });
       assert.equal(result.initialLevel, 1);
       assert.ok(result.unlockedAfterFirstWin >= 2);
       assert.ok(result.restoredUnlockedLevel >= 2);
@@ -85,7 +88,7 @@ test("3D 游戏真实通过二十关解锁、持久化、分档增压和终局�
 test("星梦对决固定游戏同样真实通过二十关合同", { skip: !browserQualityAvailable(), timeout: 30_000 }, async () => {
   const root = mkdtempSync(join(tmpdir(), "studio-campaign-golden-"));
   try {
-    cpSync(resolve("fixtures", "star-dream-duel"), root, { recursive: true });
+    await cp(resolve("fixtures", "star-dream-duel"), root, { recursive: true });
     const result = await inspectCampaignInBrowser(root);
     assert.equal(result.initialLevel, 1);
     assert.ok(result.restoredUnlockedLevel >= 2);

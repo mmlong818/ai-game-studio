@@ -4,6 +4,7 @@ import {
   SCORE_STEP,
   STARTING_SCORE,
   TACTICAL_RULE_VERSION,
+  HEALING_MULTIPLIER,
   applyAttack,
   calculateTacticalEffects,
   canOwnerSwap,
@@ -19,6 +20,7 @@ import {
   normalizeStartingScore,
   prismSwapTargets,
   removeAndCollapse,
+  reshuffleBattleBoard,
   swapTiles,
   tileBase,
   tileSpecial,
@@ -686,9 +688,9 @@ async function ensurePlayable(version) {
   showToast('棋局进入星雾，正在重新排列…', 'info', 1500);
   await wait(500);
   if (!isCurrentGame(version)) return false;
-    state.board = createBoard(rng, { blockers: currentCampaignLevel().blockers });
-  renderBoard();
-  addLog('system', '星雾重排了棋盘', '双方都获得了新的可消除选择', '↻');
+  state = reshuffleBattleBoard(state, rng, { blockers: currentCampaignLevel().blockers });
+  addLog('system', '星雾重排了棋盘', '仅重排棋子，双方生命保持不变', '↻');
+  render();
   return true;
 }
 
@@ -920,7 +922,7 @@ function useSkill(actor, skill) {
   if (skill === 'bloom') {
     const scoreKey = actor === 'player' ? 'playerScore' : 'aiScore';
     const boostKey = actor === 'player' ? 'playerAttackBoost' : 'aiAttackBoost';
-    const restored = Math.min(18, state.startingScore - state[scoreKey]);
+    const restored = Math.min(Math.ceil(18 * HEALING_MULTIPLIER), state.startingScore - state[scoreKey]);
     state[scoreKey] += restored;
     state[boostKey] = Math.max(state[boostKey], 6);
     addLog(actor, actor === 'player' ? '你释放绽放复苏' : '露娜释放绽放复苏', `恢复 ${restored} · 下一次星击 +6`, '✿');

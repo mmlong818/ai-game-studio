@@ -9,7 +9,7 @@ export const breakout = defineOfficialGame({
   lobbyRank: 12,
   cover: "assets/templates/packs/breakout/cover.png",
   referenceDoc: "docs/39-breakout-best-template-reference.md",
-  mechanicId: "projectile-combat",
+  mechanicId: "paddle-ball",
   seed: {
     artStyle: "lacquer",
     visualStyle: "classic",

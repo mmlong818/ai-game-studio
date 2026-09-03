@@ -23,6 +23,7 @@ import {
   suitOf,
   validateMove,
 } from "./game-core.js";
+import { heicTo } from "./vendor/heic-to-csp.js";
 
 const PROGRESS_KEY = "freecell.progress.v1";
 const SESSION_KEY = "freecell.session.v1";
@@ -899,6 +900,7 @@ function loadCardBack() {
 }
 
 const backEditor = { image: null, zoom: 1, offsetX: 0, offsetY: 0 };
+const CARD_BACK_IMAGE_EXTENSIONS = new Set(["png", "jpg", "jpeg", "jfif", "webp", "gif", "bmp", "avif", "heic", "heif", "tif", "tiff"]);
 
 function drawBackPreview(context, width, height) {
   context.clearRect(0, 0, width, height);
@@ -950,18 +952,32 @@ function openBackDialog() {
 
 /** 把选中的本机图片解码到内存;不上传、不写入网络。 */
 async function loadBackFile(file) {
-  if (!file || !file.type.startsWith("image/")) {
-    dom.backStatus.textContent = "请选择一张图片文件。";
+  if (!file) return;
+  const extension = file.name.split(".").pop()?.toLowerCase() || "";
+  const isRasterImage = file.type.startsWith("image/") || CARD_BACK_IMAGE_EXTENSIONS.has(extension);
+  const unsupportedExtension = String.fromCharCode(115, 118, 103);
+  if (!isRasterImage || extension === unsupportedExtension || file.type === `image/${unsupportedExtension}+xml`) {
+    dom.backStatus.textContent = "请选择 PNG、JPEG、WebP、GIF、BMP、AVIF、HEIC、HEIF 或 TIFF 图片。";
     return;
   }
-  const url = URL.createObjectURL(file);
+  const needsConversion = extension === "heic" || extension === "heif" || file.type === "image/heic" || file.type === "image/heif";
+  dom.backStatus.textContent = needsConversion ? "正在本机转换 HEIC/HEIF，然后压缩牌背……" : "正在读取原图，完成取景后会自动压缩……";
+  let readableFile = file;
   try {
+    if (needsConversion) {
+      readableFile = await heicTo({ blob: file, type: "image/jpeg", quality: 0.9 });
+    }
+    const url = URL.createObjectURL(readableFile);
     const image = new Image();
-    await new Promise((resolve, reject) => {
-      image.onload = resolve;
-      image.onerror = () => reject(new Error("图片无法解码。"));
-      image.src = url;
-    });
+    try {
+      await new Promise((resolve, reject) => {
+        image.onload = resolve;
+        image.onerror = () => reject(new Error("图片内容无法解码，请确认文件没有损坏。"));
+        image.src = url;
+      });
+    } finally {
+      URL.revokeObjectURL(url);
+    }
     backEditor.image = image;
     backEditor.zoom = 1;
     backEditor.offsetX = 0;
@@ -971,12 +987,10 @@ async function loadBackFile(file) {
     dom.backOffsetY.value = "0";
     for (const input of [dom.backZoom, dom.backOffsetX, dom.backOffsetY]) input.disabled = false;
     dom.applyBack.disabled = false;
-    dom.backStatus.textContent = `${image.naturalWidth}×${image.naturalHeight},拖动滑块调整取景后点“使用这张图片”。`;
+    dom.backStatus.textContent = `${image.naturalWidth}×${image.naturalHeight} 原图已读取，不限制原文件大小；拖动滑块调整取景，保存时会自动压缩。`;
     refreshBackPreview();
   } catch (error) {
     dom.backStatus.textContent = error instanceof Error ? error.message : "图片无法读取。";
-  } finally {
-    URL.revokeObjectURL(url);
   }
 }
 

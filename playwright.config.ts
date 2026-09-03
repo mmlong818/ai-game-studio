@@ -3,6 +3,10 @@ import { defineConfig, devices } from "@playwright/test";
 export default defineConfig({
   testDir: "./tests/browser",
   fullyParallel: true,
+  // WebGL、音频和完整牌局并行过多会争抢本机浏览器资源，造成与功能无关的超时。
+  // 三个执行槽正好覆盖 Chromium、Firefox、WebKit，同时保证 Windows 与 macOS 稳定。
+  workers: 3,
+  timeout: 60_000,
   retries: 0,
   reporter: "line",
   use: {

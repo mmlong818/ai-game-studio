@@ -23,6 +23,16 @@ const mimeTypes: Record<string, string> = {
   ".wav": "audio/wav",
 };
 
+// Chromium 会拒绝一组历史协议端口。Windows 的临时端口分配偶尔会命中
+// 5060/5061 等端口，导致游戏本身尚未加载就报 ERR_UNSAFE_PORT。
+const browserUnsafePorts = new Set([
+  1, 7, 9, 11, 13, 15, 17, 19, 20, 21, 22, 23, 25, 37, 42, 43, 53, 69, 77, 79, 87, 95,
+  101, 102, 103, 104, 109, 110, 111, 113, 115, 117, 119, 123, 135, 137, 139, 143, 161, 179,
+  389, 427, 465, 512, 513, 514, 515, 526, 530, 531, 532, 540, 548, 554, 556, 563, 587, 601,
+  636, 989, 990, 993, 995, 1719, 1720, 1723, 2049, 3659, 4045, 5060, 5061, 6000, 6566,
+  6665, 6666, 6667, 6668, 6669, 6697, 10080,
+]);
+
 export type BrowserQualityResult = {
   checks: QualityCheck[];
   screenshotPaths: string[];
@@ -138,11 +148,16 @@ function startArtifactServer(root: string) {
   });
   return new Promise<{ server: Server; url: string }>((resolveServer, reject) => {
     server.once("error", reject);
-    server.listen(0, "127.0.0.1", () => {
+    const listen = () => server.listen(0, "127.0.0.1", () => {
       const address = server.address();
       if (!address || typeof address === "string") return reject(new Error("无法启动版本验收服务器。"));
+      if (browserUnsafePorts.has(address.port)) {
+        server.close(listen);
+        return;
+      }
       resolveServer({ server, url: `http://127.0.0.1:${address.port}/` });
     });
+    listen();
   });
 }
 
@@ -288,7 +303,10 @@ async function inspectMobilePlayFlow(page: Page) {
   return { playing, setup };
 }
 
-export async function inspectCampaignInBrowser(root: string): Promise<CampaignQualityResult> {
+export async function inspectCampaignInBrowser(
+  root: string,
+  options: { initialSelection?: "sequential" | "all" } = {},
+): Promise<CampaignQualityResult> {
   const executablePath = requireBrowserExecutable();
   const { server, url } = await startArtifactServer(root);
   let browser: Browser | null = null;
@@ -321,7 +339,10 @@ export async function inspectCampaignInBrowser(root: string): Promise<CampaignQu
       };
     });
     if (initial.optionCount !== 20) throw new Error(`${initial.title} 的关卡选择器不是 20 关：检测到 ${initial.selectorCount} 个选择器，选项数 ${initial.selectorOptionCounts.join("+")}。`);
-    if (initial.enabledValues.length !== 1 || initial.enabledValues[0] !== 0) throw new Error(`初始解锁范围错误：${initial.enabledValues.join(",")}。`);
+    const expectedInitialValues = options.initialSelection === "all"
+      ? Array.from({ length: 20 }, (_, index) => index)
+      : [0];
+    if (initial.enabledValues.join(",") !== expectedInitialValues.join(",")) throw new Error(`初始可选关卡范围错误：${initial.enabledValues.join(",")}。`);
     if (initial.state?.campaign?.total !== 20 || initial.state?.campaign?.level?.number !== 1) throw new Error("运行时没有从第 1 / 20 关开始。 ");
 
     await page.locator("#start:visible, #setup-start:visible").first().click();
@@ -530,7 +551,7 @@ export async function inspectStageEInBrowser(root: string, template: StageETempl
       await page.reload({ waitUntil: "domcontentloaded" });
       await page.locator("#start").click();
       restored = await stageEDebugState(page);
-      if (!restored?.runtime?.restored || restored.runtime.stars !== redone.runtime.stars) throw new Error(`星灵巡格刷新后没有恢复当前推理进度：${JSON.stringify({ expectedStars: redone.runtime.stars, restored: restored?.runtime, campaign: restored?.campaign?.level?.number, regionSessionEntries })}`);
+      if (restored?.runtime?.restored || restored.runtime.stars !== 0) throw new Error(`星灵巡格重新打开后没有从空棋盘开始：${JSON.stringify({ restored: restored?.runtime, campaign: restored?.campaign?.level?.number, regionSessionEntries })}`);
       advanced = await page.evaluate(() => {
         const debug = (window as any).__GAME_DEBUG__;
         debug.setLevel(20);
@@ -627,7 +648,7 @@ export async function inspectStarDreamStageEInBrowser(root: string): Promise<Sta
     await page.goto(probeUrl(url), { waitUntil: "domcontentloaded", timeout: 8_000 });
     await page.waitForFunction(() => Boolean((window as Window & { __GAME_DEBUG__?: unknown }).__GAME_DEBUG__), undefined, { timeout: 8_000 });
     await page.locator("#ai-difficulty").selectOption("challenging");
-    await page.locator("#setup-start").click();
+    await page.locator("#start, #setup-start").click();
     await page.waitForFunction(() => {
       const images = [...document.querySelectorAll<HTMLImageElement>(".tile__face img")];
       return images.length === 64 && images.every((image) => image.complete && image.naturalWidth === 512 && image.naturalHeight === 512);
@@ -642,7 +663,7 @@ export async function inspectStarDreamStageEInBrowser(root: string): Promise<Sta
     });
     if (tileArt.uniqueSources !== 6 || tileArt.minimumDisplaySize < 36) throw new Error(`星梦对决位图卡面数量或显示尺寸不达标：${JSON.stringify(tileArt)}。`);
     const initial = await stageEDebugState(page);
-    if (initial?.runtime?.tacticalRuleVersion !== 2 || initial.runtime.campaignSignatureCount !== 20 || initial.runtime.chapterCount !== 5) {
+    if (initial?.runtime?.tacticalRuleVersion !== 3 || initial.runtime.campaignSignatureCount !== 20 || initial.runtime.chapterCount !== 5) {
       throw new Error(`星梦对决没有形成 20 个独立任务和五章战术合同：${JSON.stringify(initial?.runtime)}。`);
     }
     if (initial.runtime.aiLookahead !== 2 || initial.runtime.aiFairness !== "same-board-same-zone-same-resources" || initial.runtime.aiZoneReadable !== true) {
@@ -694,7 +715,7 @@ export async function inspectStarDreamStageEInBrowser(root: string): Promise<Sta
     await page.screenshot({ path: join(qualityRoot, "star-dream-duel-final-phone.png"), fullPage: true });
     await page.reload({ waitUntil: "domcontentloaded" });
     await page.locator("#ai-difficulty").selectOption("challenging");
-    await page.locator("#setup-start").click();
+    await page.locator("#start, #setup-start").click();
     const restored = await stageEDebugState(page);
     if (!restored?.runtime?.recoverable) throw new Error("星梦对决刷新后没有恢复对局断点。 ");
     for (let run = 0; run < 3; run += 1) {
