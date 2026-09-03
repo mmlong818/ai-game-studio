@@ -106,6 +106,7 @@ npm run test:browsers
 - “现有滑动合成改造”和“全新虫虫攀枝”两类完整流程，以及 14 个模板的专属动作回归；虫虫攀枝已作为官方原创固化为固定游戏 `fixtures/bug-climb/`（见 docs/56）。
 - 队列经营、章节叙事、卡牌连携、单人手柄输入和 WebGL 空间谜题五类独立玩法循环；均通过桌面与手机浏览器回归。
 - 官方 3D 示范游戏「纸境 · 立体书迷宫」（**开发中**，登记为 `stage: "development"`，暂不进入大厅与改造模板；第 8 关存在障碍无法躲开、跳跃无效的问题待修）：第三种 3D 模式 `threeMode = "popup"`，整本立体书按 90° 转动、桥与折纸星只在特定角度接上或可见；20 关四章由数据描述并经求解器与浏览器探针逐关验证。参照合同见 [docs/54](docs/54-paper-popup-3d-best-template-reference.md)，入库脚本 `npm run seed:showcases -- paper-popup`（登记于 `src/shared/official-games/paper-popup.ts`），贴图生成 `NODE_USE_ENV_PROXY=1 node scripts/generate-paper-popup-art.mjs`，批量审计 `npm run audit:stage-f -- popup=<artifact-root>`。
+- 平台**游戏引擎层**（PlayCanvas 2.21.4 底座，`src/engine/playcanvas/`）：引导 / 程序化几何与材质 / GameProjectV3 → 实体树 / 行为注册表 / 规则桥 / 输入 / `__GAME_DEBUG__` / 产物写入的通用封装，立体书是第一个消费者；`examples/engine-playcanvas-demo/` 用一份手写 GameProjectV3 走通“结构化描述 → 可运行、可验收的 3D 游戏”最小闭环。边界、映射规则、已实现行为与 AI 生成接入见 [docs/58](docs/58-engine-layer.md)。
 
 本地 AI 位图生成通过开发服务调用 Codex `imagegen` CLI，使用 `gpt-image-2`。密钥从服务端进程环境或 `.env.local` 读取，不进入浏览器、项目或交付包。当前机器尚未配置该密钥，因此真实图片调用会明确失败并保留旧版本，不会生成虚假占位资源。
 

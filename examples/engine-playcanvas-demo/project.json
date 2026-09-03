@@ -1,0 +1,120 @@
+{
+  "metadata": {
+    "id": "PROJECT-ENGINE-DEMO",
+    "title": "折纸花园 · 引擎层示例",
+    "platformRelease": "1.1",
+    "projectFormat": "game-project-v3",
+    "createdAt": "2026-09-04T00:00:00.000Z",
+    "updatedAt": "2026-09-04T00:00:00.000Z"
+  },
+  "migration": null,
+  "startSceneId": "SCENE-GARDEN",
+  "scenes": [
+    {
+      "id": "SCENE-GARDEN",
+      "name": "花园一页",
+      "instances": [
+        { "id": "INSTANCE-TILE-0-0", "objectId": "OBJECT-TILE", "parentInstanceId": null, "position": { "x": 0, "y": 0 }, "size": { "width": 1, "height": 1 }, "anchor": { "x": 0.5, "y": 0.5 }, "layer": 0, "visible": true, "overrides": {} },
+        { "id": "INSTANCE-TILE-1-0", "objectId": "OBJECT-TILE", "parentInstanceId": null, "position": { "x": 1, "y": 0 }, "size": { "width": 1, "height": 1 }, "anchor": { "x": 0.5, "y": 0.5 }, "layer": 0, "visible": true, "overrides": {} },
+        { "id": "INSTANCE-TILE-2-0", "objectId": "OBJECT-TILE", "parentInstanceId": null, "position": { "x": 2, "y": 0 }, "size": { "width": 1, "height": 1 }, "anchor": { "x": 0.5, "y": 0.5 }, "layer": 0, "visible": true, "overrides": {} },
+        { "id": "INSTANCE-TILE-3-0", "objectId": "OBJECT-TILE", "parentInstanceId": null, "position": { "x": 3, "y": 0 }, "size": { "width": 1, "height": 1 }, "anchor": { "x": 0.5, "y": 0.5 }, "layer": 0, "visible": true, "overrides": {} },
+        { "id": "INSTANCE-TILE-4-0", "objectId": "OBJECT-TILE", "parentInstanceId": null, "position": { "x": 4, "y": 0 }, "size": { "width": 1, "height": 1 }, "anchor": { "x": 0.5, "y": 0.5 }, "layer": 0, "visible": true, "overrides": {} },
+        { "id": "INSTANCE-TILE-0-1", "objectId": "OBJECT-TILE", "parentInstanceId": null, "position": { "x": 0, "y": 1 }, "size": { "width": 1, "height": 1 }, "anchor": { "x": 0.5, "y": 0.5 }, "layer": 0, "visible": true, "overrides": {} },
+        { "id": "INSTANCE-TILE-1-1", "objectId": "OBJECT-TILE", "parentInstanceId": null, "position": { "x": 1, "y": 1 }, "size": { "width": 1, "height": 1 }, "anchor": { "x": 0.5, "y": 0.5 }, "layer": 0, "visible": true, "overrides": {} },
+        { "id": "INSTANCE-TILE-2-1", "objectId": "OBJECT-TILE", "parentInstanceId": null, "position": { "x": 2, "y": 1 }, "size": { "width": 1, "height": 1 }, "anchor": { "x": 0.5, "y": 0.5 }, "layer": 0, "visible": true, "overrides": {} },
+        { "id": "INSTANCE-TILE-3-1", "objectId": "OBJECT-TILE", "parentInstanceId": null, "position": { "x": 3, "y": 1 }, "size": { "width": 1, "height": 1 }, "anchor": { "x": 0.5, "y": 0.5 }, "layer": 0, "visible": true, "overrides": {} },
+        { "id": "INSTANCE-TILE-4-1", "objectId": "OBJECT-TILE", "parentInstanceId": null, "position": { "x": 4, "y": 1 }, "size": { "width": 1, "height": 1 }, "anchor": { "x": 0.5, "y": 0.5 }, "layer": 0, "visible": true, "overrides": {} },
+        { "id": "INSTANCE-TILE-0-2", "objectId": "OBJECT-TILE", "parentInstanceId": null, "position": { "x": 0, "y": 2 }, "size": { "width": 1, "height": 1 }, "anchor": { "x": 0.5, "y": 0.5 }, "layer": 0, "visible": true, "overrides": {} },
+        { "id": "INSTANCE-TILE-1-2", "objectId": "OBJECT-TILE", "parentInstanceId": null, "position": { "x": 1, "y": 2 }, "size": { "width": 1, "height": 1 }, "anchor": { "x": 0.5, "y": 0.5 }, "layer": 0, "visible": true, "overrides": {} },
+        { "id": "INSTANCE-TILE-2-2", "objectId": "OBJECT-TILE", "parentInstanceId": null, "position": { "x": 2, "y": 2 }, "size": { "width": 1, "height": 1 }, "anchor": { "x": 0.5, "y": 0.5 }, "layer": 0, "visible": true, "overrides": {} },
+        { "id": "INSTANCE-TILE-3-2", "objectId": "OBJECT-TILE", "parentInstanceId": null, "position": { "x": 3, "y": 2 }, "size": { "width": 1, "height": 1 }, "anchor": { "x": 0.5, "y": 0.5 }, "layer": 0, "visible": true, "overrides": {} },
+        { "id": "INSTANCE-TILE-4-2", "objectId": "OBJECT-TILE", "parentInstanceId": null, "position": { "x": 4, "y": 2 }, "size": { "width": 1, "height": 1 }, "anchor": { "x": 0.5, "y": 0.5 }, "layer": 0, "visible": true, "overrides": {} },
+        { "id": "INSTANCE-TILE-0-3", "objectId": "OBJECT-TILE", "parentInstanceId": null, "position": { "x": 0, "y": 3 }, "size": { "width": 1, "height": 1 }, "anchor": { "x": 0.5, "y": 0.5 }, "layer": 0, "visible": true, "overrides": {} },
+        { "id": "INSTANCE-TILE-1-3", "objectId": "OBJECT-TILE", "parentInstanceId": null, "position": { "x": 1, "y": 3 }, "size": { "width": 1, "height": 1 }, "anchor": { "x": 0.5, "y": 0.5 }, "layer": 0, "visible": true, "overrides": {} },
+        { "id": "INSTANCE-TILE-2-3", "objectId": "OBJECT-TILE", "parentInstanceId": null, "position": { "x": 2, "y": 3 }, "size": { "width": 1, "height": 1 }, "anchor": { "x": 0.5, "y": 0.5 }, "layer": 0, "visible": true, "overrides": {} },
+        { "id": "INSTANCE-TILE-3-3", "objectId": "OBJECT-TILE", "parentInstanceId": null, "position": { "x": 3, "y": 3 }, "size": { "width": 1, "height": 1 }, "anchor": { "x": 0.5, "y": 0.5 }, "layer": 0, "visible": true, "overrides": {} },
+        { "id": "INSTANCE-TILE-4-3", "objectId": "OBJECT-TILE", "parentInstanceId": null, "position": { "x": 4, "y": 3 }, "size": { "width": 1, "height": 1 }, "anchor": { "x": 0.5, "y": 0.5 }, "layer": 0, "visible": true, "overrides": {} },
+        { "id": "INSTANCE-TILE-0-4", "objectId": "OBJECT-TILE", "parentInstanceId": null, "position": { "x": 0, "y": 4 }, "size": { "width": 1, "height": 1 }, "anchor": { "x": 0.5, "y": 0.5 }, "layer": 0, "visible": true, "overrides": {} },
+        { "id": "INSTANCE-TILE-1-4", "objectId": "OBJECT-TILE", "parentInstanceId": null, "position": { "x": 1, "y": 4 }, "size": { "width": 1, "height": 1 }, "anchor": { "x": 0.5, "y": 0.5 }, "layer": 0, "visible": true, "overrides": {} },
+        { "id": "INSTANCE-TILE-2-4", "objectId": "OBJECT-TILE", "parentInstanceId": null, "position": { "x": 2, "y": 4 }, "size": { "width": 1, "height": 1 }, "anchor": { "x": 0.5, "y": 0.5 }, "layer": 0, "visible": true, "overrides": {} },
+        { "id": "INSTANCE-TILE-3-4", "objectId": "OBJECT-TILE", "parentInstanceId": null, "position": { "x": 3, "y": 4 }, "size": { "width": 1, "height": 1 }, "anchor": { "x": 0.5, "y": 0.5 }, "layer": 0, "visible": true, "overrides": {} },
+        { "id": "INSTANCE-TILE-4-4", "objectId": "OBJECT-TILE", "parentInstanceId": null, "position": { "x": 4, "y": 4 }, "size": { "width": 1, "height": 1 }, "anchor": { "x": 0.5, "y": 0.5 }, "layer": 0, "visible": true, "overrides": {} },
+        { "id": "INSTANCE-PLAYER", "objectId": "OBJECT-PLAYER", "parentInstanceId": null, "position": { "x": 0, "y": 4 }, "size": { "width": 0.5, "height": 0.5 }, "anchor": { "x": 0.5, "y": 0.5 }, "layer": 10, "visible": true, "overrides": { "elevation": 0.3, "height": 0.7, "color": "#f7efdd" } },
+        { "id": "INSTANCE-STAR-1", "objectId": "OBJECT-STAR", "parentInstanceId": null, "position": { "x": 1, "y": 4 }, "size": { "width": 0.5, "height": 0.5 }, "anchor": { "x": 0.5, "y": 0.5 }, "layer": 5, "visible": true, "overrides": { "elevation": 0.3, "height": 0.5, "shape": "star", "color": "#f4b93a", "emissive": 0.9 } },
+        { "id": "INSTANCE-STAR-2", "objectId": "OBJECT-STAR", "parentInstanceId": null, "position": { "x": 2, "y": 4 }, "size": { "width": 0.5, "height": 0.5 }, "anchor": { "x": 0.5, "y": 0.5 }, "layer": 5, "visible": true, "overrides": { "elevation": 0.3, "height": 0.5, "shape": "star", "color": "#f4b93a", "emissive": 0.9 } },
+        { "id": "INSTANCE-STAR-3", "objectId": "OBJECT-STAR", "parentInstanceId": null, "position": { "x": 3, "y": 4 }, "size": { "width": 0.5, "height": 0.5 }, "anchor": { "x": 0.5, "y": 0.5 }, "layer": 5, "visible": true, "overrides": { "elevation": 0.3, "height": 0.5, "shape": "star", "color": "#f4b93a", "emissive": 0.9 } },
+        { "id": "INSTANCE-PLATE", "objectId": "OBJECT-PLATE", "parentInstanceId": null, "position": { "x": 0, "y": 3 }, "size": { "width": 0.7, "height": 0.7 }, "anchor": { "x": 0.5, "y": 0.5 }, "layer": 4, "visible": true, "overrides": { "elevation": 0.3, "height": 0.06, "color": "#d97f66" } },
+        { "id": "INSTANCE-WAVE", "objectId": "OBJECT-WAVE", "parentInstanceId": null, "position": { "x": 0, "y": 2 }, "size": { "width": 0.6, "height": 0.6 }, "anchor": { "x": 0.5, "y": 0.5 }, "layer": 6, "visible": true, "overrides": { "elevation": 0.3, "height": 0.45, "color": "#6fa6b8" } },
+        { "id": "INSTANCE-TREE-1", "objectId": "OBJECT-TREE", "parentInstanceId": null, "position": { "x": -1, "y": -1 }, "size": { "width": 0.9, "height": 0.9 }, "anchor": { "x": 0.5, "y": 0.5 }, "layer": 1, "visible": true, "overrides": { "height": 1.6, "shape": "cone" } },
+        { "id": "INSTANCE-TREE-2", "objectId": "OBJECT-TREE", "parentInstanceId": null, "position": { "x": 5, "y": -1 }, "size": { "width": 0.8, "height": 0.8 }, "anchor": { "x": 0.5, "y": 0.5 }, "layer": 1, "visible": true, "overrides": { "height": 1.3, "shape": "cone" } },
+        { "id": "INSTANCE-TREE-3", "objectId": "OBJECT-TREE", "parentInstanceId": null, "position": { "x": -1, "y": 5 }, "size": { "width": 0.7, "height": 0.7 }, "anchor": { "x": 0.5, "y": 0.5 }, "layer": 1, "visible": true, "overrides": { "height": 1.1, "shape": "cone" } },
+        { "id": "INSTANCE-HUD", "objectId": "OBJECT-HUD", "parentInstanceId": null, "position": { "x": 0, "y": 0 }, "size": { "width": 100, "height": 16 }, "anchor": { "x": 0, "y": 0 }, "layer": 200, "visible": true, "overrides": {} }
+      ]
+    }
+  ],
+  "objects": [
+    { "id": "OBJECT-TILE", "name": "纸台", "role": "background", "renderer": "webgl", "resourceIds": ["RESOURCE-GRAIN"], "behaviors": [{ "id": "BEHAVIOR-TILE-FOOTPRINT", "moduleId": "engine.grid-footprint", "moduleVersion": "1.0.0", "enabled": true, "parameters": { "height": 0.3 } }] },
+    { "id": "OBJECT-PLAYER", "name": "纸偶", "role": "player", "renderer": "webgl", "resourceIds": [], "behaviors": [{ "id": "BEHAVIOR-WALK", "moduleId": "engine.grid-walker", "moduleVersion": "1.0.0", "enabled": true, "parameters": { "stepsPerSecond": 6 } }] },
+    { "id": "OBJECT-STAR", "name": "折纸星", "role": "collectible", "renderer": "webgl", "resourceIds": [], "behaviors": [{ "id": "BEHAVIOR-PICKUP", "moduleId": "engine.pickup", "moduleVersion": "1.0.0", "enabled": true, "parameters": { "spinSpeed": 1.6 } }] },
+    { "id": "OBJECT-PLATE", "name": "印花压板", "role": "helper", "renderer": "webgl", "resourceIds": ["RESOURCE-DECAL"], "behaviors": [{ "id": "BEHAVIOR-PLATE", "moduleId": "engine.pressure-plate", "moduleVersion": "1.0.0", "enabled": true, "parameters": { "mode": "toggle" } }] },
+    { "id": "OBJECT-WAVE", "name": "纸浪", "role": "hazard", "renderer": "webgl", "resourceIds": [], "behaviors": [{ "id": "BEHAVIOR-WAVE", "moduleId": "engine.beat-mover", "moduleVersion": "1.0.0", "enabled": true, "parameters": { "path": [[1, 0], [1, 0], [-1, 0], [-1, 0]], "every": 1 } }] },
+    { "id": "OBJECT-TREE", "name": "纸松", "role": "background", "renderer": "webgl", "resourceIds": [], "behaviors": [{ "id": "BEHAVIOR-TREE", "moduleId": "engine.static-decor", "moduleVersion": "1.0.0", "enabled": true, "parameters": { "randomYaw": true } }] },
+    { "id": "OBJECT-HUD", "name": "状态栏", "role": "interface", "renderer": "dom", "resourceIds": [], "behaviors": [] }
+  ],
+  "rules": [
+    {
+      "id": "RULE-COLLECT-STAR",
+      "name": "纸偶碰到折纸星就计一颗",
+      "sceneId": "SCENE-GARDEN",
+      "enabled": true,
+      "priority": "P0",
+      "when": [{ "type": "collision.overlap", "parameters": {}, "references": [{ "kind": "object", "id": "OBJECT-PLAYER" }, { "kind": "object", "id": "OBJECT-STAR" }] }],
+      "then": [
+        { "type": "variable.add", "parameters": { "id": "VARIABLE-STARS", "value": 1 }, "references": [] },
+        { "type": "feedback.emit", "parameters": { "type": "collect" }, "references": [] }
+      ]
+    },
+    {
+      "id": "RULE-ALL-STARS",
+      "name": "集齐三颗星即通关",
+      "sceneId": "SCENE-GARDEN",
+      "enabled": true,
+      "priority": "P0",
+      "when": [
+        { "type": "state.is", "parameters": { "value": "playing" }, "references": [] },
+        { "type": "variable.compare", "parameters": { "id": "VARIABLE-STARS", "operator": "greater-or-equal", "value": 3 }, "references": [] }
+      ],
+      "then": [
+        { "type": "state.set", "parameters": { "value": "won" }, "references": [] },
+        { "type": "feedback.emit", "parameters": { "type": "victory" }, "references": [] }
+      ]
+    },
+    {
+      "id": "RULE-WAVE-HIT",
+      "name": "被纸浪撞到记一次失误",
+      "sceneId": "SCENE-GARDEN",
+      "enabled": true,
+      "priority": "P1",
+      "when": [{ "type": "collision.overlap", "parameters": {}, "references": [{ "kind": "object", "id": "OBJECT-PLAYER" }, { "kind": "object", "id": "OBJECT-WAVE" }] }],
+      "then": [
+        { "type": "variable.add", "parameters": { "id": "VARIABLE-MISTAKES", "value": 1 }, "references": [] },
+        { "type": "feedback.emit", "parameters": { "type": "hit" }, "references": [] }
+      ]
+    }
+  ],
+  "variables": [
+    { "id": "VARIABLE-STARS", "scope": "global", "ownerId": null, "initialValue": 0, "persistent": false },
+    { "id": "VARIABLE-MISTAKES", "scope": "global", "ownerId": null, "initialValue": 0, "persistent": false }
+  ],
+  "resources": [
+    { "id": "RESOURCE-GRAIN", "role": "background", "path": "assets/paper-grain.png", "mimeType": "image/png", "contentHash": "16f13d23ec0bf8de296fa4b1a30f04d08b4c28add2822a285fa3688c588d346d", "provenance": "ai-generated", "license": "project-owned" },
+    { "id": "RESOURCE-DECAL", "role": "background", "path": "assets/decal-meadow.png", "mimeType": "image/png", "contentHash": "2425f5a51832a261701794d3e3f4f43ec0fec4ee94b3121932cbb47d669bf3ed", "provenance": "ai-generated", "license": "project-owned" }
+  ],
+  "controls": { "keyboard": true, "pointer": true, "touch": true, "gamepad": false },
+  "presentation": { "aspectRatio": "9:16", "targetFps": 60, "responsive": true },
+  "acceptance": [
+    { "id": "ASSERT-COLLECT", "label": "三颗折纸星都能拾取并触发通关", "kind": "rule", "ruleIds": ["RULE-COLLECT-STAR", "RULE-ALL-STARS"], "behaviorIds": ["BEHAVIOR-PICKUP"] },
+    { "id": "ASSERT-WALK", "label": "方向键让纸偶走一格，越界被拒绝", "kind": "rule", "ruleIds": [], "behaviorIds": ["BEHAVIOR-WALK", "BEHAVIOR-TILE-FOOTPRINT"] },
+    { "id": "ASSERT-WAVE", "label": "纸浪按节拍巡逻", "kind": "game-feel", "ruleIds": ["RULE-WAVE-HIT"], "behaviorIds": ["BEHAVIOR-WAVE"] }
+  ]
+}
