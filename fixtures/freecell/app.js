@@ -15,6 +15,7 @@ import {
   isRed,
   isWon,
   legalMoves,
+  nextAutoMove,
   maxMovableCount,
   orderedRunLength,
   rankOf,
@@ -113,6 +114,7 @@ const game = {
   startedAt: null,
   elapsedBefore: 0,
   won: false,
+  cascading: false,
   selection: null,
   cursor: { row: 1, index: 0 },
   keyboardMode: false,
@@ -309,7 +311,7 @@ function render() {
 
 /** 没有任何合法移动（含放入空档与收牌）且未通关时，提醒玩家撤销或重开。 */
 function renderStuck() {
-  const stuck = Boolean(game.state) && !game.won && legalMoves(game.state).length === 0;
+  const stuck = Boolean(game.state) && !game.won && !game.cascading && !isWon(game.state) && legalMoves(game.state).length === 0;
   dom.stuckBanner.hidden = !stuck;
   if (stuck) {
     dom.stuckUndo.hidden = game.history.length === 0;
@@ -428,12 +430,13 @@ function performMove(move, { announce = true } = {}) {
     rejectMove(move, verdict);
     return false;
   }
+  if (game.cascading) return false;
   startTimerIfNeeded();
   game.history.push({ state: game.state, moves: game.moves });
   if (game.history.length > 500) game.history.shift();
   const moved = applyMove(game.state, move);
   const auto = autoPlayAll(moved);
-  game.state = auto.state;
+  game.state = moved;
   game.moves += 1;
   game.selection = null;
   game.hint = null;
@@ -444,12 +447,59 @@ function performMove(move, { announce = true } = {}) {
     else setStatus(`${label} 已放好。`);
   }
   render();
-  saveSession();
-  if (isWon(game.state)) finishLevel();
+  // 会话直接保存收牌完成后的局面:刷新后不会卡在收牌中途。
+  writeJson(SESSION_KEY, { level: game.level, state: auto.state, history: game.history, moves: game.moves, elapsed: elapsedMs(), won: false });
+  if (auto.moves.length > 0) runCascade(auto.state);
+  else if (isWon(game.state)) finishLevel();
   return true;
 }
 
+const REDUCED_MOTION = typeof matchMedia === "function" && matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+/** 自动收牌:一张一张飞向收牌堆;全部到位后再结算。牌越多间隔越短,整段不超过约 4 秒。 */
+function runCascade(finalState) {
+  if (REDUCED_MOTION) {
+    game.state = finalState;
+    render();
+    if (isWon(game.state)) finishLevel();
+    return;
+  }
+  const total = autoPlayAll(game.state).moves.length;
+  const interval = Math.max(70, Math.min(160, Math.floor(3600 / Math.max(1, total))));
+  game.cascading = true;
+  dom.body.dataset.cascading = "true";
+  const step = () => {
+    const move = nextAutoMove(game.state);
+    if (!move) {
+      game.cascading = false;
+      dom.body.dataset.cascading = "false";
+      game.state = finalState;
+      render();
+      if (isWon(game.state)) celebrateThenFinish();
+      return;
+    }
+    const card = move.from.type === "cell" ? game.state.cells[move.from.index] : game.state.columns[move.from.index].at(-1);
+    const element = cardElements.get(card);
+    element.classList.add("is-flying");
+    setTimeout(() => element.classList.remove("is-flying"), 520);
+    game.state = applyMove(game.state, move);
+    render();
+    setTimeout(step, interval);
+  };
+  step();
+}
+
+/** 通关时先让四个收牌堆依次弹一下,再弹出结算面板。 */
+function celebrateThenFinish() {
+  dom.body.classList.add("is-celebrating");
+  setTimeout(() => {
+    dom.body.classList.remove("is-celebrating");
+    finishLevel();
+  }, 1100);
+}
+
 function undo() {
+  if (game.cascading) return;
   const previous = game.history.pop();
   if (!previous || game.won) return;
   game.state = previous.state;
@@ -477,6 +527,7 @@ function isMovableRun(from, count) {
 }
 
 function select(from, count) {
+  if (game.cascading) return false;
   if (!isMovableRun(from, count)) {
     setStatus("只能拿起底部连续交替颜色、点数递减的牌组。");
     return false;
@@ -1064,6 +1115,7 @@ dom.stuckRestart.addEventListener("click", () => restartLevel());
 
 // ---------- 启动 ----------
 
+dom.body.dataset.cascading = "false";
 loadCardBack();
 if (restoreSession()) {
   dom.body.dataset.gameState = "playing";
