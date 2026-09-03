@@ -397,6 +397,18 @@ export const GOLDEN_SCENARIOS: Record<string, GoldenScenarioDefinition> = {
     rejectedActions: ["swap-outside-zone"],
     completingActions: ["drain-opponent"],
   },
+  "solitaire-freecell": {
+    actions: {
+      "inspect-tableau": ["tableau-readable", "free-cells-visible"],
+      "stack-illegal": ["stack-rule-blocked"],
+      "move-to-cell": ["card-parked-in-cell"],
+      "stack-legal": ["alternating-descending-stack"],
+      "supermove-over-limit": ["supermove-limit-blocked"],
+      "build-foundation": ["foundation-advanced", "session-completed"],
+    },
+    rejectedActions: ["stack-illegal", "supermove-over-limit"],
+    completingActions: ["build-foundation"],
+  },
   "lane-climb": {
     actions: {
       "read-lanes": ["safe-lane-visible"],

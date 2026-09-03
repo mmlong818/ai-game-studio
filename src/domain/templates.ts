@@ -329,6 +329,22 @@ export const GAME_TEMPLATES: GameTemplate[] = [
     ),
     redirectExamples: ["开放世界", "联机", "经营建造", "多人"],
   },
+  {
+    id: "solitaire-freecell",
+    name: "四空档接龙",
+    genre: "纸牌接龙",
+    pitch: "用四个空档和空列倒腾整副牌，把 52 张牌按花色从 A 到 K 收齐。",
+    coreLoop: "观察牌列 → 倒腾到空档 → 交替叠放 → 收入收牌堆",
+    coreRules: ["牌列只能按颜色交替、点数递减叠放", "空档一次只放一张", "一次搬动的张数受空档与空列数量限制", "收牌堆按花色从 A 到 K 收齐即通关"],
+    capabilities: ["card-tableau", "free-cells", "supermove", "foundation-build", "seeded-deal", "undo-history"],
+    suggestions: commonSuggestions(
+      "solitaire-freecell",
+      "空档数量、叠放规则、搬动上限和收牌方式保持不变",
+      "替换牌面主题、牌背、桌面与开局牌局编号范围。",
+      "只加入一种计分或一种限时规则。",
+    ),
+    redirectExamples: ["对战", "联机", "开放世界", "多人"],
+  },
 ];
 
 export const MECHANIC_LIBRARY: MechanicDefinition[] = [

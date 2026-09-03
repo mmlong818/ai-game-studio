@@ -4,7 +4,7 @@ import { buildGameSpec } from "./gameSpec";
 import { createProbe } from "./probe";
 import { INITIAL_DRAFT } from "./storage";
 import { GAME_TEMPLATES } from "./templates";
-import { DOMAIN_TEMPLATE_ART, resolveTemplateForGame } from "./templateResolution";
+import { DOMAIN_TEMPLATE_ART, FIXTURE_TEMPLATE_TO_DOMAIN, resolveTemplateForGame } from "./templateResolution";
 
 describe("官方游戏默认必须有玩法模板", () => {
   it("每一个服务端游戏模板都能落到一个玩法模板", () => {
@@ -23,8 +23,13 @@ describe("官方游戏默认必须有玩法模板", () => {
     expect(template?.id).toBe("lane-climb");
   });
 
-  it("星梦对决对应轮换对决三消模板", () => {
+  it("固定游戏按自身种类映射：星梦对决→轮换对决三消，空档接龙→四空档接龙", () => {
     expect(resolveTemplateForGame({ template: "signal-hunt", idea: "" })?.id).toBe("turn-duel-match3");
+    expect(resolveTemplateForGame({ template: "signal-hunt", idea: "", fixtureKind: "star-dream-duel" })?.id).toBe("turn-duel-match3");
+    expect(resolveTemplateForGame({ template: "signal-hunt", idea: "", fixtureKind: "freecell" })?.id).toBe("solitaire-freecell");
+    for (const templateId of Object.values(FIXTURE_TEMPLATE_TO_DOMAIN)) {
+      expect(GAME_TEMPLATES.some((template) => template.id === templateId), `${templateId} 不是已登记的玩法模板`).toBe(true);
+    }
   });
 
   it("每个玩法模板都有确定性验收场景，并且图标映射只指向存在的模板", () => {

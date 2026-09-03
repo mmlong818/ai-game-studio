@@ -326,6 +326,69 @@ function acceptedGoldenSpec() {
   });
 }
 
+const freecellInput: ProjectInput = {
+  title: "空档接龙",
+  dimensions: "2d",
+  idea: "经典空档接龙纸牌：52 张牌摆成 8 列，4 个空档与 4 个按花色从 A 到 K 的收牌堆；只能一张一张移动，但可以借空档和空列做超级移动。100 个经典 Microsoft 牌局全部已知可解，支持撤销、重开、点击与拖拽，并允许用自己的图片更换牌背。",
+};
+
+function acceptedFreecellSpec() {
+  const spec = generateGameSpec(freecellInput);
+  return gameSpecSchema.parse({
+    ...spec,
+    inputModes: ["pointer", "drag", "keyboard"],
+    acceptanceCriteria: [
+      ...spec.acceptanceCriteria,
+      { id: "AC-DEAL", priority: "P0", statement: "第 1–100 关使用 Microsoft FreeCell 发牌算法且全部可解", probeType: "state", status: "passed" },
+      { id: "AC-SUPERMOVE", priority: "P0", statement: "有序牌组一次最多移动 (空档数+1)×2^(空列数) 张", probeType: "state", status: "passed" },
+      { id: "AC-CARDBACK", priority: "P1", statement: "自定义牌背只保存在浏览器本地并在刷新后生效", probeType: "state", status: "passed" },
+    ].map((criterion) => ({ ...criterion, status: "passed" })),
+  });
+}
+
+/**
+ * 内置固定游戏（fixtures/<kind>）：服务启动时注册为官方游戏并直接发布，
+ * 静态文件由 fixtures 目录提供，无需经过 AI 构建管线。
+ */
+interface OfficialFixtureDefinition {
+  kind: string;
+  metaKey: string;
+  input: ProjectInput;
+  spec: () => GameSpec;
+  buildOutputs: string[];
+}
+
+const officialFixtures: OfficialFixtureDefinition[] = [
+  {
+    kind: "star-dream-duel",
+    metaKey: "golden_fixture_initialized",
+    input: goldenInput,
+    spec: acceptedGoldenSpec,
+    buildOutputs: [
+      "共享 8×8 棋盘、分区操作、连消归属与三局两胜已锁定。",
+      "GAME_DESIGN、ART_DIRECTION、SOUND_DIRECTION 已形成。",
+      "已接入棋盘规则、玩家输入、AI 回合与结算逻辑。",
+      "棋子、音效、PWA 图标与触控反馈已经集成。",
+      "8 项规则测试与页面结构检查通过。",
+      "稳定玩家网址和不可变版本网址已生成。",
+    ],
+  },
+  {
+    kind: "freecell",
+    metaKey: "freecell_fixture_initialized",
+    input: freecellInput,
+    spec: acceptedFreecellSpec,
+    buildOutputs: [
+      "8 列、4 空档、4 收牌堆与超级移动上限已锁定。",
+      "Microsoft 发牌算法 1–100 号牌局已由求解器逐局验证可解。",
+      "已接入点击、拖拽、键盘输入、撤销与自动收牌。",
+      "gpt-image-2 花色、人头、牌背、封面与桌面位图已切分并归档溯源。",
+      "发牌、合法性、超级移动与浏览器通关测试通过。",
+      "稳定玩家网址和不可变版本网址已生成。",
+    ],
+  },
+];
+
 export class StudioRepository {
   private readonly locks = new KeyedMutex();
 
@@ -360,27 +423,44 @@ export class StudioRepository {
   }
 
   async ensureGoldenFixture() {
+    return this.ensureOfficialFixture("star-dream-duel");
+  }
+
+  async ensureFreecellFixture() {
+    return this.ensureOfficialFixture("freecell");
+  }
+
+  /** 注册全部内置固定游戏，返回 kind → projectId（已被删除的返回 null）。 */
+  async ensureOfficialFixtures() {
+    const result: Record<string, string | null> = {};
+    for (const definition of officialFixtures) result[definition.kind] = await this.ensureOfficialFixture(definition.kind);
+    return result;
+  }
+
+  private async ensureOfficialFixture(kind: string) {
+    const definition = officialFixtures.find((candidate) => candidate.kind === kind);
+    if (!definition) throw new Error(`未知的固定游戏：${kind}`);
     const initialized = (await this.database.query<{ value: string }>(
-      "SELECT value FROM studio_meta WHERE key = $1", ["golden_fixture_initialized"],
+      "SELECT value FROM studio_meta WHERE key = $1", [definition.metaKey],
     )).rows[0];
     const existing = (await this.database.query<{ id: string }>(
-      "SELECT id FROM projects WHERE fixture_kind = $1", ["star-dream-duel"],
+      "SELECT id FROM projects WHERE fixture_kind = $1", [definition.kind],
     )).rows[0];
     if (initialized) return existing?.id ?? null;
     if (existing) {
-      await this.ensureGoldenBuild(existing.id);
+      await this.ensureFixtureBuild(existing.id, definition.buildOutputs);
       await this.database.query(
         "INSERT INTO studio_meta (key, value) VALUES ($1, $2)",
-        ["golden_fixture_initialized", "true"],
+        [definition.metaKey, "true"],
       );
       return existing.id;
     }
-    const projectId = await this.locks.run(SLUG_LOCK_KEY, () => insertProject(this.database, goldenInput, acceptedGoldenSpec(), "star-dream-duel", "star-dream-duel", true));
+    const projectId = await this.locks.run(SLUG_LOCK_KEY, () => insertProject(this.database, definition.input, definition.spec(), definition.kind, definition.kind, true));
     await this.publish(projectId);
-    await this.ensureGoldenBuild(projectId);
+    await this.ensureFixtureBuild(projectId, definition.buildOutputs);
     await this.database.query(
       "INSERT INTO studio_meta (key, value) VALUES ($1, $2)",
-      ["golden_fixture_initialized", "true"],
+      [definition.metaKey, "true"],
     );
     return projectId;
   }
@@ -406,7 +486,7 @@ export class StudioRepository {
     });
   }
 
-  private async ensureGoldenBuild(projectId: string) {
+  private async ensureFixtureBuild(projectId: string, outputs: string[]) {
     const existing = (await this.database.query<{ id: string }>(
       "SELECT id FROM builds WHERE project_id = $1 LIMIT 1", [projectId],
     )).rows[0];
@@ -415,14 +495,6 @@ export class StudioRepository {
     if (!project) return;
     const buildId = randomUUID();
     const now = project.version.createdAt;
-    const goldenOutputs = [
-      "共享 8×8 棋盘、分区操作、连消归属与三局两胜已锁定。",
-      "GAME_DESIGN、ART_DIRECTION、SOUND_DIRECTION 已形成。",
-      "已接入棋盘规则、玩家输入、AI 回合与结算逻辑。",
-      "棋子、音效、PWA 图标与触控反馈已经集成。",
-      "8 项规则测试与页面结构检查通过。",
-      "稳定玩家网址和不可变版本网址已生成。",
-    ];
     await this.database.transaction(async (transaction) => {
       await transaction.query(
         `INSERT INTO builds (id, project_id, status, runtime_target, created_at, started_at, completed_at, version_id, error_message)
@@ -433,7 +505,7 @@ export class StudioRepository {
         await transaction.query(
           `INSERT INTO build_steps (id, build_id, sequence, kind, title, detail, status, output_text, started_at, completed_at)
            VALUES ($1, $2, $3, $4, $5, $6, 'succeeded', $7, $8, $8)`,
-          [randomUUID(), buildId, sequence, step.kind, step.title, step.detail, goldenOutputs[sequence], now],
+          [randomUUID(), buildId, sequence, step.kind, step.title, step.detail, outputs[sequence] ?? "已完成。", now],
         );
       }
     });
