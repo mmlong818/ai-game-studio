@@ -389,7 +389,7 @@ export function createPaperPopupRules() {
 
   /** 某颗星的采集解（从起点出发，不要求经过检查点）。 */
   function solveStar(bp: PopupBlueprint, index: number, options: PopupSolveOptions = {}): PopupSolution | null {
-    return search(bp, createState(bp), (candidate, events) => events.includes("star:" + index), options);
+    return search(bp, createState(bp), (_candidate, events) => events.includes("star:" + index), options);
   }
 
   /** 全收集解：依次采集三颗星再到出口（贪心分段，用于探针演示，不保证全局最短）。 */
@@ -518,7 +518,10 @@ export function createPaperPopupRules() {
   };
 }
 
-/** 供浏览器运行时内嵌的规则源码：与 Node 侧使用同一份函数体。 */
+/**
+ * 供浏览器运行时内嵌的规则源码：与 Node 侧使用同一份函数体。
+ * tsx/esbuild 在开发态会给函数注入 `__name` 保名助手，tsc 产物则没有；这里提供一个无副作用的兜底定义，保证两种编译路径内嵌后都能运行。
+ */
 export function paperPopupRulesSource() {
-  return `(${createPaperPopupRules.toString()})()`;
+  return `(() => { const __name = (target, value) => { try { Object.defineProperty(target, "name", { value, configurable: true }); } catch {} return target; }; void __name; return (${createPaperPopupRules.toString()})(); })()`;
 }

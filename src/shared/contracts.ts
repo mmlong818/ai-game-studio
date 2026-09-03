@@ -156,7 +156,7 @@ export const ideaAnalysisSchema = z.object({
   template: gameTemplateSchema.nullable(),
   confidence: z.number().min(0).max(1).nullable().default(null),
   dimensions: dimensionSchema.nullable().default(null),
-  threeMode: z.enum(["collector", "arena"]).nullable().default(null),
+  threeMode: z.enum(["collector", "arena", "popup"]).nullable().default(null),
   mechanics: z.array(z.string().min(1).max(40)).max(12).default([]),
   hardConstraints: z.array(z.string().min(1).max(120)).max(10).default([]),
   summary: z.string().max(280).nullable().default(null),
@@ -189,7 +189,7 @@ export const gameSpecSchema = z.object({
   aspectRatio: gameAspectRatioSchema.default("16:9"),
   cameraMode: cameraModeSchema.default("fixed-stage"),
   inputModes: z.array(inputModeSchema).min(1).max(6).default(["pointer", "keyboard", "touch-buttons"]),
-  threeMode: z.enum(["collector", "arena"]).nullable().default(null),
+  threeMode: z.enum(["collector", "arena", "popup"]).nullable().default(null),
   threeContract: z.object({
     cameraDistance: z.number().min(4).max(24),
     movement: z.string().min(1),
@@ -864,9 +864,11 @@ export function generateGameSpec(
   const title = deriveTitle(input);
   const aspectRatio = input.aspectRatio === "auto" ? recommendedAspectRatio(template, dimensions) : input.aspectRatio;
   const cameraMode = input.cameraMode === "auto" ? recommendedCameraMode(template, dimensions) : input.cameraMode;
-  // 模板 3D 才有 collector/arena 双模合同;generated 3D 的规则完全由设计合同定义。
+  // 模板 3D 才有 collector/arena/popup 三模合同;generated 3D 的规则完全由设计合同定义。
   const threeMode = dimensions === "3d" && template !== "generated"
-    ? analysis?.threeMode ?? (/竞技场|敌人|波次|射击|战斗|arena|wave/i.test(input.idea) ? "arena" : "collector")
+    ? analysis?.threeMode ?? (/立体书|纸境|纸艺|折纸|翻书|转动整本|旋转迷宫|pop-?up|papercraft/i.test(input.idea)
+      ? "popup"
+      : /竞技场|敌人|波次|射击|战斗|arena|wave/i.test(input.idea) ? "arena" : "collector")
     : null;
   const spec: GameSpec = {
     schemaVersion: 1,
@@ -888,7 +890,15 @@ export function generateGameSpec(
     cameraMode,
     inputModes: input.inputModes ?? recommendedInputModes(template, dimensions),
     threeMode,
-    threeContract: dimensions === "3d" && template !== "generated" ? {
+    threeContract: dimensions === "3d" && template !== "generated" ? (threeMode === "popup" ? {
+      cameraDistance: 14,
+      movement: "固定等角俯视；整本书按 90° 转动，点击地面或方向键按格行走，一个跳跃键越过一格空隙",
+      objective: "转动书本让桥与台阶接上，经过检查点旗抵达出口门；三颗折纸星可选收集",
+      collision: "网格可达性模型：格高差、角度桥、顺序机关、限时门与按节拍移动的纸浪纸鸟",
+      levelBounds: "每关一张 9×9 以内的立体书网格，走不通的方向被规则阻止，跳空回到检查点",
+      performanceTiers: ["low", "medium", "high"],
+      touchScheme: "点击行走、横向滑动转书与一个跳跃键，另配两个转书按钮",
+    } : {
       cameraDistance: threeMode === "arena" ? 10 : 8,
       movement: threeMode === "arena" ? "第三人称平面移动，自动朝向最近敌人" : "第三人称平面移动与跳跃",
       objective: threeMode === "arena" ? "完成三波敌人并在升级后存活" : "收集碎片、经过检查点并抵达终点",
@@ -896,7 +906,7 @@ export function generateGameSpec(
       levelBounds: "52×52 米封闭场地，越界输入被阻止",
       performanceTiers: ["low", "medium", "high"],
       touchScheme: threeMode === "arena" ? "四向移动键与独立攻击键" : "四向移动键与独立跳跃键",
-    } : null,
+    }) : null,
     puzzleRules: createPuzzleRules(input, template),
     customImageDataUrl: template === "puzzle" ? input.customImageDataUrl ?? null : null,
     mechanics: analysis && analysis.mechanics.length > 0 ? analysis.mechanics.slice(0, 12) : inferMechanics(input.idea),
