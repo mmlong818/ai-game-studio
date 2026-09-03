@@ -9,7 +9,7 @@ import type { DirectionVerdict } from "./design-contract.js";
 import { getRuntimeDefinition } from "./game-runtimes/index.js";
 import { arenaBestTemplateBlueprints } from "./three-arena-blueprints.js";
 import { collectorBestTemplateBlueprints } from "./three-collector-blueprints.js";
-import { writePaperPopupArtifact } from "./three-popup-runtime.js";
+import { inspectPaperPopupArtifact, writePaperPopupArtifact } from "./three-popup-runtime.js";
 
 const moduleRoot = dirname(fileURLToPath(import.meta.url));
 const signalAssetRoot = resolve(moduleRoot, "..", "..", "assets", "starter", "signal-studio");
@@ -2754,42 +2754,8 @@ export function inspectGameArtifact(root: string) {
   const svgFailures = artFailures.filter((failure) => failure.includes("SVG"));
   const aiFailures = artFailures.filter((failure) => !failure.includes("SVG"));
   if (manifest.runtimeTarget === "web-3d" && manifest.threeMode === "popup") {
-    const vendor = join(root, "vendor", "three.module.js");
-    const vendorCore = join(root, "vendor", "three.core.js");
-    const levelAuditPath = join(root, "_studio", "PAPER_POPUP_LEVELS.json");
-    const levelAudit = existsSync(levelAuditPath) ? JSON.parse(readFileSync(levelAuditPath, "utf8")) as { levels?: Array<{ issues: string[]; requiresRotation: boolean; hiddenStarIndexes: number[]; starsCollectible: boolean[]; solution: unknown }> } : null;
-    const probes = [
-      ["WebGL 2 首次加载", html.includes('id="game-canvas"') && html.includes('type="module"') && html.includes('id="start"')],
-      ["Three.js 本地运行时", existsSync(vendor) && existsSync(vendorCore) && statSync(vendor).size > 100_000 && statSync(vendorCore).size > 100_000 && script.includes('from "./vendor/three.module.js"')],
-      ["真实 3D 场景", script.includes("new THREE.WebGLRenderer") && script.includes("new THREE.PerspectiveCamera") && script.includes("new THREE.Scene")],
-      ["程序化纸艺几何与纸边", script.includes("flatShading: true") && script.includes("new THREE.EdgesGeometry") && script.includes("function starGeometry") && !script.includes("new THREE.Sprite(")],
-      ["AI 贴图只作纸纹与印花", script.includes('"./assets/paper-grain.png"') && script.includes('"./assets/background.png"') && script.includes("decalTexture(") && ["paper-grain.png", "decal-meadow.png", "decal-coast.png", "decal-market.png", "decal-snow.png"].every((file) => existsSync(join(root, "assets", file)))],
-      ["单主光半球光柔影雾与 ACES", script.includes("new THREE.DirectionalLight") && script.includes("new THREE.HemisphereLight") && script.includes("PCFSoftShadowMap") && script.includes("new THREE.Fog") && script.includes("ACESFilmicToneMapping")],
-      ["高性能档移轴景深", script.includes("tiltShift: true") && script.includes("function ensureTiltShift") && script.includes("tonemapping_fragment")],
-      ["翻页开场与 reduced-motion 回退", script.includes("prefers-reduced-motion") && script.includes("rightPage.rotation.z") && script.includes("function burstConfetti")],
-      ["旋转与可达性模型", script.includes("function createPaperPopupRules()") && script.includes("function performRotation") && script.includes("function planPath") && script.includes("rules.step(")],
-      ["节拍障碍与检查点恢复", script.includes("function tick()") && script.includes("syncHazards") && script.includes('"fell"') && script.includes('"hit"') && script.includes("checkpoint:")],
-      ["两种手势加一个按钮", html.includes('data-key="cw"') && html.includes('data-key="ccw"') && html.includes('data-key="jump"') && script.includes("performRotation(dx > 0") && script.includes("function pickCell")],
-      ["胜负与重开", script.includes("showResult(true)") && script.includes("showResult(false)") && script.includes('"#restart"')],
-      ["键盘与触控", script.includes('window.addEventListener("keydown"') && script.includes('canvas.addEventListener("pointerdown"') && script.includes('button.addEventListener("pointerdown"')],
-      ["响应式与性能", styles.includes("@media(max-width:720px)") && script.includes("performanceProfiles") && script.includes("function applyPerformanceTier") && script.includes('window.addEventListener("resize"') && script.includes("renderSuspended")],
-      ["目标画幅合同", Boolean(manifest.aspectRatio) && styles.includes("width:100vw") && styles.includes("height:100svh") && styles.includes("aspect-ratio:9/16")],
-      ["镜头与输入合同", Boolean(manifest.cameraMode) && Boolean(manifest.inputModes?.length) && script.includes("config.cameraMode")],
-      ["统一运行状态", script.includes("function setGameSessionState(nextState)") && script.includes('document.body.dataset.gameState = nextState') && script.includes("function togglePause")],
-      ["二十关渐进合同", Number(manifest.levelProgression?.levelCount) >= 20 && html.includes("data-campaign-level") && script.includes("config.campaignLevels")],
-      ["二十关数据校验与求解", Boolean(levelAudit?.levels) && levelAudit!.levels!.length === 20 && levelAudit!.levels!.every((level) => level.issues.length === 0 && level.requiresRotation && level.hiddenStarIndexes.length > 0 && level.starsCollectible.every(Boolean) && level.solution)],
-      ["真实视听资产", inspectAssets(root)],
-      ["资产溯源", existsSync(join(root, "_studio", "THREE_ASSET_PROVENANCE.json")) && existsSync(join(root, "_studio", "PAPER_POPUP_ASSET_PROMPTS.md"))],
-      ["专业设计文档", existsSync(join(root, "_studio", "GAME_DESIGN.md"))
-        && existsSync(join(root, "_studio", "ART_REVIEW.md"))
-        && readFileSync(join(root, "_studio", "GAME_DESIGN.md"), "utf8").includes("## 核心循环")
-        && readFileSync(join(root, "_studio", "ART_REVIEW.md"), "utf8").includes("主体占据可用面积约 82%–94%")],
-      ["AI 生图位图", aiFailures.length === 0],
-      ["禁用 SVG", svgFailures.length === 0],
-    ] as const;
-    const failed = probes.filter(([, passed]) => !passed);
-    if (failed.length) throw new Error(`3D 立体书探针失败：${failed.map(([name]) => name).join("、")}`);
-    return probes.map(([name]) => name);
+    // 纸境 · 立体书迷宫：探针随 PlayCanvas 运行时一起维护（src/server/playcanvas-popup-runtime.ts）。
+    return inspectPaperPopupArtifact(root, { html, script, styles, manifest, aiFailures, svgFailures, assetsOk: inspectAssets(root) });
   }
   if (manifest.runtimeTarget === "web-3d") {
     const vendor = join(root, "vendor", "three.module.js");
