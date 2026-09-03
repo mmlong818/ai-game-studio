@@ -176,3 +176,19 @@ Playwright（`tests/browser/paper-popup.spec.ts`，Chromium / Firefox / WebKit�
 ### 9.5 检查
 
 `npm run typecheck`、`npm test`、`npm run build`、`npm run test:browsers`（Chromium / Firefox / WebKit）、`npx tsx --test tests/paper-popup-quality.test.ts`（含 Stage F：手机与桌面各完成一局、跳空回检查点、后台停渲染、20 关探针逐关通关）与 `npm run audit:stage-f -- popup=<root>` 均通过；2D 与 collector / arena 的测试与断言未改。
+
+## 10. 引擎评估（2026-09-04）：Cocos 4 门禁未通过，迁移停止
+
+产品侧提出把纸境的浏览器运行时从 PlayCanvas 迁到 **Cocos 4**（https://github.com/cocos/cocos4，`v4.0.0` = `6722aac6`，`cocos-creator@4.0.0-alpha.32`，MIT），并以此建立平台的"游戏引擎层"。按约定先做三条门禁，任一不过即停止。完整证据在 `third_party/cocos4/BUILD.md`，复现脚本 `scripts/build-cocos-engine.mjs`，门禁空白页在 `third_party/cocos4/gate/`（引擎产物本身**未**入库）。
+
+| 门禁 | 结果 | 证据 |
+| --- | --- | --- |
+| 1. 从源码构建出可 `<script type="module">` 相对引入的单文件 ESM | **通过** | ccbuild `moduleFormat: 'esm'` + 裁剪 `base / gfx-webgl2 / 3d / legacy-pipeline`，14–17 s；esbuild 压缩后 0.96 MB，gzip 269 KB，brotli 217 KB（未压缩 1.88 MB / gzip 354 KB） |
+| 2. 空白页：Director / Scene、相机、方向光 + 阴影、程序化 Mesh、后处理（SSAO 或 bloom）、WebGL2 截图 | **通过（带前提）** | `third_party/cocos4/gate/gate-render.png`：5 个自建顶点缓冲 Mesh、固定区域阴影贴图、RenderTexture + 全屏四边形做 SSAO 接触阴影 + 软 bloom + 暗角。前提：引擎**没有可用的内建着色器**（`.effect` 需编辑器内的离线 effect-compiler，不在仓库、npm 无包），所有材质与后处理着色器都是手写 EffectAsset |
+| 3. 许可与第三方依赖核对；体积 ≤ 6 MB / gzip ≤ 1.5 MB | 体积**通过**；许可**不通过** | Web 产物必然内含 `@cocos/engine-pal@1.0.4`（屏幕适配 / 输入 / 节拍 / 系统信息 / wasm 加载），该包 `"license": "UNLICENSED"`，README 明示"UNLICENSED — Cocos 内部使用"，dist 为混淆产物、无公开源码仓库（`cocos/engine-pal` 404），cocos4 issue 亦无澄清 |
+
+决定：**不迁移，不提交引擎产物，不改任何运行时 / 合同 / 测试；PlayCanvas 版仍是纸境的正式实现（§9）。** 这不是工程量问题——把 PAL 换成自写实现或 3.8 版 MIT 源码、再自行维护全部着色器，等于维护一个 Cocos 4 分叉，超出"直接迁移"的范围，也正是约定里禁止的"打补丁式硬塞"。
+
+顺带记下对日后有用的事实（详见 BUILD.md §3.1）：ccbuild 默认 ES5 降级会触发 Babel 循环闭包 bug 需指定现代 `targets`；Node 24.20 下 ccbuild 的 terser 压缩崩溃需改 esbuild；`createMesh` 默认不算包围盒会让模型被阴影裁剪剔除；引擎在 `import` 时会给 `#GameCanvas` 自动包两层容器，会改动页面 DOM。
+
+关于"引擎层"（`src/engine/**`、`docs/58`）：本轮未建。它的价值不取决于具体引擎，建议改以 PlayCanvas（已在产物中、MIT、有官方 ESM 与完整材质 / 后处理）为底座抽出：引擎引导（相机 / 光照 / 后处理 / 性能三档 / 后台停渲染 / reduced-motion）、程序化网格与材质预设、`GameProjectV3 → 实体 / 组件` 映射与 behavior 注册、输入抽象、`__GAME_DEBUG__` 通用实现——这些在 `playcanvas-popup-runtime/{script-engine,script-scene,script-game}.ts` 里已有雏形，Cocos 4 门禁通过与否都不影响这条路。
