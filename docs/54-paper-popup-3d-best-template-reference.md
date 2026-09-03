@@ -1,6 +1,6 @@
 # 纸境 · 立体书迷宫（paper-popup）最佳模板：参照、边界与实现合同
 
-更新时间：2026-09-03。视觉与玩法基准见 `docs/concepts/paper-popup/README.md`（产品负责人已确认）。
+更新时间：2026-09-04（渲染层已切换到 PlayCanvas，见 §9）。视觉与玩法基准见 `docs/concepts/paper-popup/README.md`（产品负责人已确认）。
 
 ## 1. 目标
 
@@ -123,6 +123,7 @@ Playwright（`tests/browser/paper-popup.spec.ts`，Chromium / Firefox / WebKit�
 
 - **第 8 关无法通过**：玩家反馈纸浪/纸鸟障碍无法躲开，跳跃无效。自动探针按节拍模型能通关，说明浏览器层的输入节拍、障碍碰撞判定或跳跃与转动的时序与规则内核不一致，需要在真机上逐拍对照复现后修复。
 - 处理决定：登记表中标记 `stage: "development"`，从大厅与“改一个现有游戏”摘出单独开发；修复并真人复核第 6–10 关后再改回 `live`。
+- 2026-09-04 更新：浏览器层根因已定位并在 PlayCanvas 运行时里修复（见 §9.3）；规则内核的“无交换判定 + 走廊无安全格”问题未改，交回产品决策。真人复核第 6–10 关仍待进行。
 
 ## 8. 进入大厅
 
@@ -130,3 +131,48 @@ Playwright（`tests/browser/paper-popup.spec.ts`，Chromium / Firefox / WebKit�
 2. 主工作区启动服务后运行 `npm run seed:showcases -- paper-popup`（可用 `PORT`/`GAME_PORT`/`STUDIO_ORIGIN` 换端口）：创建 3D 项目（自动判定 `popup`）→ 构建 → 自动验收。
 3. 主美在工作台按 `_studio/ART_REVIEW.md` 真实复核后通过（本地可用 `REVIEW_ART=1` 直接记录）；再次运行脚本发布稳定网址。
 4. 重启 API 服务：`syncOfficialCatalog()` 按登记表把它标记官方并排到第 15 位，不需要手工 SQL。操作手册见 `docs/55-adding-an-official-game.md`。
+
+## 9. 引擎切换（2026-09-04）：Three.js → PlayCanvas
+
+纸境是平台接入真正 3D 引擎的第一个案例。渲染层整体改写到 **PlayCanvas 2.21.4（MIT）**，规则内核、20 关数据、领域探针、2D 运行时与另两种 3D 模式（collector / arena，仍是 Three.js）完全不动。
+
+### 9.1 接入方式
+
+- 依赖：`package.json` 精确版本 `playcanvas@2.21.4`；许可证原文登记在 `third_party/playcanvas-LICENSE.md`，产物内再附一份 `vendor/PLAYCANVAS-LICENSE.md`，并在 `_studio/OPEN_SOURCE_ATTRIBUTION.md` 追加“3D 引擎：PlayCanvas”一节。
+- 打包：官方单文件 ESM 构建 `node_modules/playcanvas/build/playcanvas.mjs`（约 3.5 MB，未压缩）原样复制为产物 `vendor/playcanvas.module.js`（改 `.js` 后缀是为了匹配静态服务与浏览器测试服务器只认 `.js` 的 MIME 表）；`app.js` 用 `import * as pc from "./vendor/playcanvas.module.js"` 引入，运行时不从 CDN 加载任何代码（静态探针与 Node 测试都断言产物脚本里没有 `http(s)://`）。
+- 入口：`src/server/playcanvas-popup-runtime.ts` 承载新运行时，浏览器脚本按“引擎 / 场景 / 规则驱动”分三段放在同名目录；旧的 `src/server/three-popup-runtime.ts` 只做 `export *` 转发，`writePaperPopupArtifact`、`readPaperPopupAssetManifest`、`paperPopupTextureFiles` 等导出名与签名不变。`game-artifact.ts` 只改了 popup 分支的一处：静态探针从内联列表改为调用 `inspectPaperPopupArtifact()`（探针名保持，新增“开源引擎归属”）。
+- 产物清单：`game-manifest.json` 的 `engine: "playcanvas"`、`engineVersion`、`engineLicense: "MIT"`；`_studio/THREE_ASSET_PROVENANCE.json`（文件名保留）记录 `engine.bundle` 与字节数。
+
+### 9.2 运行时结构
+
+- 实体 / 组件：`camera`、`sun`（方向光）、`fill`（补光）、`desk`、`book → book-base / right-page / level`、`backdrop` 都是实体；`level` 下再分 `cells`、`decor`、`links`、`plates`、`stars`、`flags`、`hazards`、`exit`、`player` 子实体，每个纸台、构件、星、门、旗、纸偶都是独立实体（`?probe` 下 `__GAME_DEBUG__.engine()` 暴露这些句柄，供后续编辑器使用）。
+- 网格与材质：所有几何仍是程序化低多边形（`GeoBuilder` → `pc.Mesh.fromGeometry`），每个面独立顶点与法线（平面着色）；颜色全部烤成 sRGB 顶点色（`vertexColorGamma`），因此全场只有少量共享 `StandardMaterial`（纸纹 / 无纹 / 书页 / 桌面 / 发光 / 半透明），需要逐帧变化的部件（灯笼脉动、压板亮度、旗子点亮、星）才有独立材质。网格按参数缓存复用。
+- 纸边：不再用线段描边。盒子沿 12 条边做宽 0.03 的几何斜切并烤成 `edge` 色，纸片正反面留 0.022 宽的 `edge` 色内圈、侧壁整块 `edge` 色（像真纸的切口）；纸台顶纸仍是 1.06 × 0.12、每层一条层线，构件层 §5 的密度、层次、尺寸、章节专属、四朝向遮挡检查全部保留，实测值仍由 `getState().popup.decor` 暴露并被浏览器测试断言。
+- 光与后处理：方向光 + 天空色环境光 + 弱补光近似半球光，PCF5 32F 柔影（高档 2048 阴影贴图；PCSS 在软件渲染与部分移动 GPU 上会静默失效，故不用），线性雾、ACES、按章曝光。中 / 高档用 `pc.CameraFrame`：MSAA ×4、SSAO（纸层接触阴影）、暗角（四角约 −12%）；高档再开 bloom（星与灯笼）和以书页为焦平面的景深（读出移轴的上下虚化）。低档不建 CameraFrame，直接在相机上做 ACES。
+- 性能三档：软件渲染（SwiftShader / llvmpipe）直接 low；其余从 medium 起跑，连续 90 帧 < 12 ms 才升 high，连续慢帧逐级降档；后台 / 探针挂起时既不推进节拍也不渲染（`renderCount` 不增长）。
+- 镜头：仍以整本书拟合；竖屏方向向量改为 `(0.5, 1.82, 0.866)` 归一化并只保证网格 + 0.08 格留白进入画幅，实测竖屏书页占画面高度 0.55–0.60（`getState().bookScreenHeightFraction`），桌面 0.72–0.75。
+- 对外合同：DOM 结构、`data-*` 属性、`__GAME_DEBUG__` 的字段与语义与 Three 版一致，新增 `engine`、`beatFraction`、`bookScreenHeightFraction`、`popup.hazards[].next`、`popup.postProcessing`、`control()`、`engine()`。
+
+### 9.3 第 8 关（潮汐走廊）根因与修复
+
+在旧运行时上用 Playwright 真实按键逐拍复现（`scratchpad/level8-old-runtime-trace.log`）：
+
+1. **规则内核层面（未改，交回）**：碰撞只在拍末比对“障碍的新格子 == 玩家的新格子”，没有交换 / 擦身判定；第 8 关 `w1` 每拍在 1 格宽的走廊 `(1..3,5)` 上来回，走廊里没有任何一格能安全站立，求解器给出的唯一过法是“纸浪迎面来时正面走进它”（t=3→4：玩家 1→2、纸浪 2→1 交换格子）。真人不会这么做，也没有任何画面暗示可以这样做。
+2. **跳跃语义**：`jumpTarget` 只允许越过“空洞格”，走廊是实心格，所以对着纸浪按跳跃得到 `blocked:E` 并清空队列——即“跳跃无效”。这是内核设计，不是 bug。
+3. **浏览器层（已修）**：
+   - 输入延后一拍：旧运行时把按键排进队列、等下一个 380 ms 节拍边界才交给规则，实测按下到结算 300–400 ms，首次按键还要等 1 s 翻页开场；玩家按键时看到的纸浪位置与结算时的位置差半拍到一拍。**修复**：队列为空时的直接输入当场推进一拍（纸浪同步走一步、节拍时钟归零），空闲时纸浪仍按 380 ms 自行移动，连按仍按序排队。
+   - 看不见判定用的格子：碰撞比对的是障碍“下一拍”的格子，而画面只画了当前格。**修复**：每个障碍多一个落点标记（纸浪 = 泡沫环、纸鸟 = 影子）落在 `hazardCell(t + 1)`，`getState().popup.hazards[].next` 同步暴露。
+   - 点击地面盲走：BFS 路径完全忽略障碍，点检查点就直接撞进纸浪。**修复**：有障碍的关卡用规则内核自带的 `rules.search`（含等待动作）规划安全路径，找不到再退回原 BFS。
+   - 被撞时纸偶瞬移回旗、纸浪却还在一格之外：**修复**：先把纸偶走到出事的格子（跳空则落到空洞上方并下沉），一拍后再回旗；与障碍交换格子时纸偶做一个小跳，把“越过纸浪”读出来。
+   - 新增浏览器测试：只用键盘，每拍看落点标记决定“迈步 / 等一拍”，三浏览器都能无失误穿过走廊、点亮检查点、转到 270° 过桥。
+
+真人在 380 ms 节拍下仍需要在一拍内读标记并按键；若试玩仍觉得紧，建议把 `config.beatMs`（运行时配置，不是内核）调到 440–480，或在关卡数据里给走廊留一格安全位——这两项都是产品决策，本次未改。
+
+### 9.4 美术对照概念图（诚实评价）
+
+- 与 01 / 03 概念图相比，PlayCanvas 版的纸台、层线、斜切纸边、多层剪纸构件与四章色板都成立，夜市章（点光 + 自发光窗）最接近概念；SSAO 让纸片“压”在纸面上，比 Three 版的线段描边更像真纸。
+- 差距：概念图的纸台是不规则多面体“纸崖”，我们仍是规整方格；概念图的移轴虚化更强、桌面暗角更明显；雪原章整体偏白、层次弱于概念图；纸偶仍是几何体拼装。这些属于美术打磨，不影响验收硬指标。
+
+### 9.5 检查
+
+`npm run typecheck`、`npm test`、`npm run build`、`npm run test:browsers`（Chromium / Firefox / WebKit）、`npx tsx --test tests/paper-popup-quality.test.ts`（含 Stage F：手机与桌面各完成一局、跳空回检查点、后台停渲染、20 关探针逐关通关）与 `npm run audit:stage-f -- popup=<root>` 均通过；2D 与 collector / arena 的测试与断言未改。
