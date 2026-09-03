@@ -65,7 +65,7 @@
 
 ## 7. 如何让它出现在游戏大厅
 
-固定游戏不经过 `scripts/seed-showcase-games.mjs` 的 API 建项目流程，而是在 API 服务启动时自动注册：
+固定游戏不经过 `scripts/seed-showcase-games.ts` 的 API 建项目流程，而是在 API 服务启动时自动注册（登记见 `src/shared/official-games/freecell.ts`，操作手册见 `docs/55-adding-an-official-game.md`）：
 
 1. 合并本分支后重启 API 服务（`npm run dev` 或 `npm start`）。`StudioRepository.ensureOfficialFixtures()` 会在数据库中插入 `fixture_kind = "freecell"` 的官方项目、版本、发布记录和构建记录，并写入 `studio_meta.freecell_fixture_initialized`。
 2. `GET /api/health` 的 `officialFixtureIds.freecell` 返回项目 ID；`GET /api/games` 中出现《空档接龙》，稳定网址 `/play/freecell/`。
