@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { dirname, extname, join, relative } from "node:path";
 import type { ProjectDetail } from "../shared/contracts.js";
 import { resolveMechanicModules, validateMechanicBindings } from "../shared/mechanics/index.js";
@@ -192,14 +192,66 @@ export function writeV11BuildMetadata(root: string, project: ProjectDetail, opti
   return gameProject;
 }
 
+/**
+ * 来源指纹：按相对路径 + 大小 + 修改时间排序后求哈希。不读文件内容，便于每次请求都能廉价地判断
+ * fixtures/<kind>/ 这类只读来源有没有被开发者改动；改动后重新复制为新的不可变副本。
+ */
+export function sourceFingerprint(sourceRoot: string): string | null {
+  if (!existsSync(sourceRoot)) return null;
+  const hash = createHash("sha256");
+  for (const relativePath of listFiles(sourceRoot).filter((path) => !path.startsWith("_studio/")).sort()) {
+    const stats = statSync(join(sourceRoot, relativePath));
+    hash.update(`${relativePath} ${stats.size} ${Math.round(stats.mtimeMs)}
+`);
+  }
+  return hash.digest("hex");
+}
+
+const fingerprintCache = new Map<string, { value: string | null; checkedAt: number }>();
+const FINGERPRINT_TTL_MS = 2_000;
+
+function cachedSourceFingerprint(sourceRoot: string) {
+  const cached = fingerprintCache.get(sourceRoot);
+  const now = Date.now();
+  if (cached && now - cached.checkedAt < FINGERPRINT_TTL_MS) return cached.value;
+  const value = sourceFingerprint(sourceRoot);
+  fingerprintCache.set(sourceRoot, { value, checkedAt: now });
+  return value;
+}
+
+function readManifest(manifestPath: string): Record<string, unknown> | null {
+  try {
+    return existsSync(manifestPath) ? JSON.parse(readFileSync(manifestPath, "utf8")) as Record<string, unknown> : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * 把只读来源（fixtures/<kind>/ 或 1.0 产物目录）落成 1.1 的版本化副本。
+ * 来源指纹与副本清单里记录的不一致时（例如开发者改了固定游戏源码），删掉旧副本重新复制并重建清单，
+ * 保证“改了源目录就生效”，同时副本本身仍是完整、可追溯的不可变产物。
+ */
 export function ensureV11FixtureArtifact(sourceRoot: string, artifactRoot: string, project: ProjectDetail) {
+  const manifestPath = join(artifactRoot, "_studio", "V11_BUILD.json");
+  const fingerprint = cachedSourceFingerprint(sourceRoot);
+  const manifest = readManifest(manifestPath);
+  const recorded = typeof manifest?.sourceFingerprint === "string" ? manifest.sourceFingerprint : null;
+  const stale = Boolean(fingerprint && recorded && recorded !== fingerprint);
+  if (stale && existsSync(artifactRoot)) rmSync(artifactRoot, { recursive: true, force: true });
   if (!existsSync(artifactRoot)) {
+    if (!existsSync(sourceRoot)) return artifactRoot;
     mkdirSync(dirname(artifactRoot), { recursive: true });
     copyDirectory(sourceRoot, artifactRoot);
   }
-  const manifestPath = join(artifactRoot, "_studio", "V11_BUILD.json");
   if (!existsSync(manifestPath)) writeV11BuildMetadata(artifactRoot, project);
   else refreshRuntimeInspector(artifactRoot);
+  if (fingerprint) {
+    const current = readManifest(manifestPath) ?? {};
+    if (current.sourceFingerprint !== fingerprint) {
+      writeFileSync(manifestPath, JSON.stringify({ ...current, sourceRoot: sourceRoot.replaceAll("\\", "/"), sourceFingerprint: fingerprint, sourceSyncedAt: new Date().toISOString() }, null, 2), "utf8");
+    }
+  }
   return artifactRoot;
 }
 
