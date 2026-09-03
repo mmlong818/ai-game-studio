@@ -345,6 +345,22 @@ export const GAME_TEMPLATES: GameTemplate[] = [
     ),
     redirectExamples: ["对战", "联机", "开放世界", "多人"],
   },
+  {
+    id: "popup-rotate-3d",
+    name: "立体书旋转迷宫",
+    genre: "3D 空间谜题",
+    pitch: "把整本立体书按 90 度转动，桥和台阶只在特定角度接上，走到出口门并寻找隐藏的折纸星。",
+    coreLoop: "观察 → 转书 → 行走跳跃 → 抵达出口",
+    coreRules: ["整本书按 90° 转动", "桥与台阶只在特定角度接上", "隐藏星只在非默认角度可见", "跳空或被障碍碰到回到检查点", "抵达出口门通关"],
+    capabilities: ["3d-rotation", "grid-reachability", "angle-gated-links", "checkpoint-save", "camera", "fixed-camera"],
+    suggestions: commonSuggestions(
+      "popup-rotate-3d",
+      "90 度转动、角度门控、检查点和出口结算保持不变",
+      "替换章节主题、纸艺装饰、色板与关卡布局。",
+      "只加入一种机关或一种移动障碍。",
+    ),
+    redirectExamples: ["自由旋转镜头", "联机", "开放世界", "多人"],
+  },
 ];
 
 export const MECHANIC_LIBRARY: MechanicDefinition[] = [

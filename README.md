@@ -105,6 +105,7 @@ npm run test:browsers
 - 包含运行时、全部本地资源、规格、规则、来源与质量报告的 ZIP 导出能力。
 - “现有滑动合成改造”和“全新虫虫攀枝”两类完整流程，以及 14 个模板的专属动作回归。
 - 队列经营、章节叙事、卡牌连携、单人手柄输入和 WebGL 空间谜题五类独立玩法循环；均通过桌面与手机浏览器回归。
+- 官方 3D 示范游戏「纸境 · 立体书迷宫」：第三种 3D 模式 `threeMode = "popup"`，整本立体书按 90° 转动、桥与折纸星只在特定角度接上或可见；20 关四章由数据描述并经求解器与浏览器探针逐关验证。参照合同见 [docs/54](docs/54-paper-popup-3d-best-template-reference.md)，入库脚本 `node scripts/seed-paper-popup.mjs`，贴图生成 `NODE_USE_ENV_PROXY=1 node scripts/generate-paper-popup-art.mjs`，批量审计 `npm run audit:stage-f -- popup=<artifact-root>`。
 
 本地 AI 位图生成通过开发服务调用 Codex `imagegen` CLI，使用 `gpt-image-2`。密钥从服务端进程环境或 `.env.local` 读取，不进入浏览器、项目或交付包。当前机器尚未配置该密钥，因此真实图片调用会明确失败并保留旧版本，不会生成虚假占位资源。
 

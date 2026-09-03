@@ -28,6 +28,13 @@ export const FIXTURE_TEMPLATE_TO_DOMAIN: Record<string, string> = {
   freecell: "solitaire-freecell",
 };
 
+/** 3D 项目不看服务端模板，按 threeMode 映射。 */
+export const THREE_MODE_TO_DOMAIN: Record<string, string> = {
+  collector: "collect-escape-3d",
+  arena: "arena-3d",
+  popup: "popup-rotate-3d",
+};
+
 /** 玩法模板 id → 服务端已有封面所属的模板目录，供创作页当图标用。 */
 export const DOMAIN_TEMPLATE_ART: Record<string, string> = {
   "turn-duel-match3": "signal-hunt",
@@ -55,8 +62,9 @@ export function resolveGeneratedTemplate(idea: string): GameTemplate | undefined
   return GAME_TEMPLATES.find((template) => mechanics.every((mechanic) => template.capabilities.includes(mechanic)));
 }
 
-export function resolveTemplateForGame(game: { template: string; idea: string; fixtureKind?: string | null }): GameTemplate | undefined {
+export function resolveTemplateForGame(game: { template: string; idea: string; fixtureKind?: string | null; threeMode?: string | null }): GameTemplate | undefined {
   if (game.fixtureKind && FIXTURE_TEMPLATE_TO_DOMAIN[game.fixtureKind]) return getTemplate(FIXTURE_TEMPLATE_TO_DOMAIN[game.fixtureKind]);
+  if (game.threeMode && THREE_MODE_TO_DOMAIN[game.threeMode]) return getTemplate(THREE_MODE_TO_DOMAIN[game.threeMode]);
   if (game.template === "generated") return resolveGeneratedTemplate(game.idea);
   return getTemplate(SERVER_TEMPLATE_TO_DOMAIN[game.template] ?? null);
 }

@@ -62,8 +62,10 @@ export type StageEQualityResult = {
   evidence: Record<string, unknown>;
 };
 
+export type StageF3DMode = "collector" | "arena" | "popup";
+
 export type StageF3DQualityResult = {
-  mode: "collector" | "arena";
+  mode: StageF3DMode;
   completedRuns: number;
   failedRuns: number;
   evidence: Record<string, unknown>;
@@ -1366,7 +1368,18 @@ export async function inspectShooterContinuousInput(
   }
 }
 
-export async function inspectStageF3DInBrowser(root: string, expectedMode: "collector" | "arena"): Promise<StageF3DQualityResult> {
+/** 纸境立体书：在浏览器里按求解器给出的角度序列真实回放一关，等待抵达出口。 */
+async function replayPopupLevel(page: Page, level: number, beatMs: number) {
+  await page.evaluate(({ level, beatMs }) => {
+    const debug = (window as any).__GAME_DEBUG__;
+    debug.setLevel(level);
+    debug.replay(undefined, beatMs);
+  }, { level, beatMs });
+  await page.waitForFunction(() => ["stage-complete", "won"].includes(document.body.dataset.gameState ?? ""), undefined, { timeout: 25_000 });
+  return page.evaluate(() => (window as any).__GAME_DEBUG__.getState());
+}
+
+export async function inspectStageF3DInBrowser(root: string, expectedMode: StageF3DMode): Promise<StageF3DQualityResult> {
   const executablePath = requireBrowserExecutable("3D 真检");
   const { server, url } = await startArtifactServer(root);
   let browser: Browser | null = null;
@@ -1377,6 +1390,10 @@ export async function inspectStageF3DInBrowser(root: string, expectedMode: "coll
   let hiddenRenderPaused = false;
   let arenaProjectileVerified = false;
   let arenaUpgradeVerified = false;
+  let popupCheckpointRecoveries = 0;
+  let popupHiddenStarVerified = false;
+  let popupBridgeRotationVerified = false;
+  const popupLevelsCompleted: number[] = [];
   mkdirSync(join(root, "_studio"), { recursive: true });
   try {
     browser = await chromium.launch({ executablePath, headless: true, args: ["--enable-unsafe-swiftshader", "--use-angle=swiftshader"] });
@@ -1397,7 +1414,64 @@ export async function inspectStageF3DInBrowser(root: string, expectedMode: "coll
         if (!initial.shell || initial.shell.width < 300 || initial.shell.height < 560) throw new Error("3D 主体未充分利用画幅");
         await page.screenshot({ path: join(root, "_studio", `stage-f-${expectedMode}-${viewport.name}-playing.png`), fullPage: true });
         performanceTier = String(initial.state?.performanceTier ?? "");
-        if (expectedMode === "collector") {
+        if (expectedMode === "popup") {
+          const popup = initial.state?.popup as Record<string, any> | undefined;
+          if (popup?.blueprintCount !== 20 || popup.uniqueSignatures !== 20 || popup.chapterCount !== 4 || !Array.isArray(popup.hiddenStarIndexes) || popup.hiddenStarIndexes.length === 0 || popup.rotationModel !== "book-90-degree-steps") {
+            throw new Error(`3D 立体书没有形成 20 个唯一关卡、四章与旋转模型：${JSON.stringify(popup)}`);
+          }
+          // 默认角度下隐藏星不可见；转到它的角度后可见（规则在真实运行时里生效）。
+          const hiddenStar = await page.evaluate(() => {
+            const debug = (window as any).__GAME_DEBUG__;
+            const before = debug.getState().popup;
+            const index = before.hiddenStarIndexes[0];
+            const star = before.stars[index];
+            const visibleAtDefault = before.visibleStarIndexes.includes(index);
+            let rotations = 0;
+            while (debug.getState().model.o !== star.angles[0] && rotations < 4) { debug.rotate("cw"); rotations += 1; }
+            const visibleAtAngle = debug.getState().popup.visibleStarIndexes.includes(index);
+            while (debug.getState().model.o !== 0) debug.rotate("cw");
+            return { index, angles: star.angles, visibleAtDefault, visibleAtAngle, rotations };
+          });
+          if (hiddenStar.visibleAtDefault || !hiddenStar.visibleAtAngle) throw new Error(`3D 立体书的隐藏星没有随角度显隐：${JSON.stringify(hiddenStar)}`);
+          popupHiddenStarVerified = true;
+          // 角度桥：默认角度折起，转到指定角度后接上。
+          const bridge = await page.evaluate(() => {
+            const debug = (window as any).__GAME_DEBUG__;
+            const state = debug.getState().popup;
+            const blueprint = state.blueprint;
+            const link = blueprint.links.find((item: any) => Array.isArray(item.angles));
+            const openAtDefault = state.links.find((item: any) => item.id === link.id).open;
+            while (debug.getState().model.o !== link.angles[0]) debug.rotate("cw");
+            const openAtAngle = debug.getState().popup.links.find((item: any) => item.id === link.id).open;
+            while (debug.getState().model.o !== 0) debug.rotate("cw");
+            return { id: link.id, angles: link.angles, openAtDefault, openAtAngle };
+          });
+          if (bridge.openAtDefault || !bridge.openAtAngle) throw new Error(`3D 立体书的角度桥没有随转动开合：${JSON.stringify(bridge)}`);
+          popupBridgeRotationVerified = true;
+          // 真实失败：跳空，回到最近检查点（首关起点），不整局重来。
+          const fall = await page.evaluate(() => {
+            const debug = (window as any).__GAME_DEBUG__;
+            const before = debug.getState();
+            const ok = debug.jumpIntoVoid();
+            const after = debug.getState();
+            return { ok, before: before.model, after: after.model, respawn: after.popup.respawn, state: document.body.dataset.gameState };
+          });
+          if (!fall.ok || fall.after.mistakes !== fall.before.mistakes + 1 || fall.after.x !== fall.respawn.x || fall.after.z !== fall.respawn.z || fall.state !== "playing") {
+            throw new Error(`3D 立体书跳空后没有回到检查点继续：${JSON.stringify(fall)}`);
+          }
+          popupCheckpointRecoveries += 1;
+          if (viewport.name === "desktop") {
+            // 20 关逐关由探针按正确角度序列真实完成。
+            for (let level = 1; level <= 20; level += 1) {
+              const finished = await replayPopupLevel(page, level, 45);
+              if (!finished?.model?.done || finished.mistakes !== 0) throw new Error(`3D 立体书第 ${level} 关探针回放没有干净完成：${JSON.stringify(finished?.model)}`);
+              popupLevelsCompleted.push(level);
+              if (level === 20) await page.screenshot({ path: join(root, "_studio", `stage-f-${expectedMode}-${viewport.name}-final-level.png`), fullPage: true });
+            }
+            completedRuns += 1;
+            await page.evaluate(() => { const debug = (window as any).__GAME_DEBUG__; debug.setLevel(1); debug.restart(); });
+          }
+        } else if (expectedMode === "collector") {
           const collector = initial.state?.collector as Record<string, unknown> | undefined;
           if (collector?.blueprintCount !== 20 || collector.uniqueSignatures !== 20 || collector.chapterCount !== 5 || collector.optionalCollectibles !== true) {
             throw new Error(`3D 收集模板没有形成 20 个唯一蓝图、五章和可选收集分层：${JSON.stringify(collector)}`);
@@ -1468,7 +1542,10 @@ export async function inspectStageF3DInBrowser(root: string, expectedMode: "coll
         hiddenRenderPaused = afterSuspend === beforeSuspend;
         await page.evaluate(() => (window as Window & { __GAME_DEBUG__?: { suspend: (value: boolean) => void } }).__GAME_DEBUG__?.suspend(false));
 
-        if (expectedMode === "collector") {
+        if (expectedMode === "popup") {
+          // 完成一局：按求解器的角度序列以真实节拍回放首关（不使用瞬移作弊）。
+          await replayPopupLevel(page, 1, 90);
+        } else if (expectedMode === "collector") {
           await page.evaluate(() => {
             const debug = (window as Window & { __GAME_DEBUG__?: { reachCheckpoint: () => void; collectAll: () => void; moveToExit: () => void } }).__GAME_DEBUG__;
             debug?.reachCheckpoint(); debug?.collectAll(); debug?.moveToExit();
@@ -1510,7 +1587,7 @@ export async function inspectStageF3DInBrowser(root: string, expectedMode: "coll
     await closeServer(server);
   }
   if (!hiddenRenderPaused) throw new Error("3D 后台停渲染探针失败");
-  const result: StageF3DQualityResult = { mode: expectedMode, completedRuns, failedRuns, evidence: { viewportsChecked, performanceTier, hiddenRenderPaused, ...(expectedMode === "arena" ? { arenaProjectileVerified, arenaUpgradeVerified } : {}) } };
+  const result: StageF3DQualityResult = { mode: expectedMode, completedRuns, failedRuns, evidence: { viewportsChecked, performanceTier, hiddenRenderPaused, ...(expectedMode === "arena" ? { arenaProjectileVerified, arenaUpgradeVerified } : {}), ...(expectedMode === "popup" ? { popupHiddenStarVerified, popupBridgeRotationVerified, popupCheckpointRecoveries, popupLevelsCompleted } : {}) } };
   writeFileSync(join(root, "_studio", "STAGE_F_3D_REPORT.json"), `${JSON.stringify({ checkedAt: new Date().toISOString(), ...result }, null, 2)}\n`, "utf8");
   return result;
 }
