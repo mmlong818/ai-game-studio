@@ -41,7 +41,7 @@ test("阶段 C 三款实时游戏通过模板专属真实浏览器验收", { ski
 
       if (template === "snake") {
         const names = ["snake-head", "snake-body-straight", "snake-body-corner", "snake-tail", "snake-food", "snake-obstacle", "snake-eat", "snake-danger", "snake-complete"];
-        const paths = names.map((name) => join(artifactRoot, "assets", "stage-c", `${name}-v2.png`));
+        const paths = names.map((name) => join(artifactRoot, "assets", "stage-c", `${name}-${["snake-head", "snake-body-straight", "snake-tail"].includes(name) ? "v3" : "v2"}.png`));
         paths.forEach((path) => assert.ok(statSync(path).size > 1_000));
         assert.equal(new Set(paths.map(digest)).size, names.length);
       }

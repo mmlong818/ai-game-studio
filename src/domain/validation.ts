@@ -1,4 +1,4 @@
-import { getTemplate } from "./templates";
+import { getTemplate, getGameplayBundle } from "./templates";
 import type { StudioDraft, ValidationResult } from "./types";
 
 export function validateDraft(draft: StudioDraft): ValidationResult {
@@ -6,6 +6,7 @@ export function validateDraft(draft: StudioDraft): ValidationResult {
   const warnings: string[] = [];
 
   if (draft.creationMode === "template-remix") {
+    if (getGameplayBundle(draft.templateId)?.remixable === false) errors.push("该官方游戏仅供游玩，不提供模板改造，请选择其他游戏。");
     const template = getTemplate(draft.templateId);
     if (!template) {
       errors.push("请选择一个成熟玩法作为改造起点。");

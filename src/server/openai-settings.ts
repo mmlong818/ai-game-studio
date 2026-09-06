@@ -1,5 +1,8 @@
 import { readFileSync } from "node:fs";
 import { z } from "zod";
+import { createHash } from "node:crypto";
+import { fetchModelCatalog } from "./openai-model-catalog.js";
+import type { OpenAIModelCatalog } from "../shared/contracts.js";
 import type { OpenAISettingsStatus } from "../shared/contracts.js";
 
 export const OPENAI_TEXT_MODEL = "gpt-5.6" as const;
@@ -33,6 +36,8 @@ function readKeyFile(keyFilePath: string): string | null {
 }
 
 export class OpenAISettings {
+  private models = { text: String(OPENAI_TEXT_MODEL), image: String(OPENAI_IMAGE_MODEL) };
+  private catalogCache: { fingerprint: string; expires: number; catalog: OpenAIModelCatalog } | null = null;
   private sessionKey: string | null = null;
   private readonly fileKey: string | null;
   private readonly environmentKey: string | null;
@@ -47,10 +52,7 @@ export class OpenAISettings {
       provider: "openai",
       configured: Boolean(this.sessionKey ?? this.fileKey ?? this.environmentKey),
       source: this.sessionKey ? "session" : this.fileKey ? "file" : this.environmentKey ? "environment" : null,
-      models: {
-        text: OPENAI_TEXT_MODEL,
-        image: OPENAI_IMAGE_MODEL,
-      },
+      models: { ...this.models },
     };
   }
 
@@ -61,10 +63,35 @@ export class OpenAISettings {
 
   clearSessionKey(): OpenAISettingsStatus {
     this.sessionKey = null;
+    this.models = { text: OPENAI_TEXT_MODEL, image: OPENAI_IMAGE_MODEL };
+    this.catalogCache = null;
     return this.status();
   }
 
   getApiKey(): string | null {
     return this.sessionKey ?? this.fileKey ?? this.environmentKey;
+  }
+
+  async listModels(input: unknown = {}, fetcher?: typeof fetch): Promise<OpenAIModelCatalog> {
+    const draft = z.object({ apiKey: z.string().optional() }).parse(input);
+    const key = draft.apiKey?.trim() ? openAIKeyInputSchema.parse(draft).apiKey : this.getApiKey();
+    if (!key) throw new Error("请先输入 API Key。");
+    const fingerprint = createHash("sha256").update(key).digest("hex");
+    if (this.catalogCache?.fingerprint === fingerprint && this.catalogCache.expires > Date.now()) return this.catalogCache.catalog;
+    const catalog = await fetchModelCatalog(key, fetcher);
+    this.catalogCache = { fingerprint, expires: Date.now() + 60000, catalog };
+    return catalog;
+  }
+
+  async save(input: unknown, fetcher?: typeof fetch): Promise<OpenAISettingsStatus> {
+    const draft = z.object({ apiKey: z.string().optional(), models: z.object({ text: z.string(), image: z.string() }).optional() }).parse(input);
+    const catalog = await this.listModels(draft, fetcher);
+    const selected = draft.models ?? catalog.recommended;
+    if (!selected.text || !catalog.text.some(m => m.id === selected.text)) throw new Error("没有可用的文本模型，请重新获取列表。");
+    if (!selected.image || !catalog.image.some(m => m.id === selected.image)) throw new Error("没有可用的图像模型，请检查账号权限。");
+    // Commit only after both roles are validated; preview never changes active settings.
+    if (draft.apiKey?.trim()) this.sessionKey = openAIKeyInputSchema.parse(draft).apiKey;
+    this.models = { text: selected.text, image: selected.image };
+    return this.status();
   }
 }

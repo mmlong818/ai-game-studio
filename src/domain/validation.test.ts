@@ -28,11 +28,11 @@ describe("validateDraft", () => {
       ...INITIAL_DRAFT,
       creationMode: "mechanic-composition",
       newGameBrief: brief,
-      selectedMechanicIds: ["lane-dodge", "collect-escape"],
+      selectedMechanicIds: ["lane-dodge", "collect-charge"],
       changeLevel: "R3",
       referenceDossier: createReferenceDossier(brief, [
         "lane-dodge",
-        "collect-escape",
+        "collect-charge",
       ]),
     });
 

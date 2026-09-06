@@ -1,0 +1,64 @@
+{
+  "version":"meadow-railway-prototype-v2-2026-09-06",
+  "releaseStatus":"official-play-only",
+  "releaseDecision":"2026-09-06 用户要求转官方仅游玩作品；不提供用户改造模板，以下待验证项仍保留。",
+  "codeSha256":{
+    "app.js":"D48192FA3412560C4FBC92F896D3F51308A988AEBA387AA3356600BC960B9FBE",
+    "game-core.js":"3D5AEA23A8A0A8333874155F4FAD9980769F8CD08B1ACF08EA532991514C0B77",
+    "scene.js":"35A96B1321DF1E180353EE30506C7401E07611FA9E002D4D11D34831192B19D0",
+    "styles.css":"481FABAB7CF78B6A8303847B2165BE3F2CCD46CAC37B615EC2B2E4871722617F"
+  },
+  "passed":[
+    "10 deterministic rule tests including reversing-train loop wrap, loaded-loop opening, route-removal position normalization and legal scenic loop",
+    "1 production-CSP Chromium browser scenario with desktop clicks/mobile touch, save/reload, direct loop opening, invalid preview, scenic preset, 14 wheels/2 rods, view toggle and blur pause",
+    "8 undo/redo rebuilds: GPU geometry count stays 226; default loop 188 calls/66600 triangles, budget below 220 calls",
+    "2 official catalog tests and 9 official registry tests",
+    "App and server TypeScript checks",
+    "No browser console errors or runtime resource 404s in regression"
+  ],
+  "normalPlaySample":{
+    "scenario":"18-piece scenic loop with bridge, ramps and two arch tunnels; normal play button, no advance probe",
+    "durationMs":40002.4,
+    "simulatedSecondsAdvanced":40,
+    "completedCircuitsDuringSample":1,
+    "viewport":[1264,569],
+    "dpr":1,
+    "browser":"Windows HeadlessChrome 152.0.0.0",
+    "gpu":"ANGLE NVIDIA GeForce RTX 5080 Direct3D11",
+    "frames":6601,
+    "meanFrameMs":6.060,
+    "p95FrameMs":6.2,
+    "drawCalls":230,
+    "triangles":96692,
+    "geometries":240,
+    "textures":3,
+    "caveat":"Headless test-machine sample only, not a user-device or mobile FPS guarantee. Browser regression also ran in another isolated browser during the first part of sampling. Scenic layout costs more than default layout; the existing below-220 assertion applies to the default loop, not all possible layouts."
+  },
+  "historicalV1Sample":{
+    "scenario":"Eight-piece closed loop, normal play button, no probe advance used during sample",
+    "durationMs":23002,
+    "simulatedSecondsAdvanced":23,
+    "completedCircuitsDuringSample":1,
+    "viewport":[1264,569],
+    "dpr":1,
+    "browser":"Windows HeadlessChrome 152.0.0.0",
+    "gpu":"ANGLE NVIDIA GeForce RTX 5080 Direct3D11",
+    "frames":3765,
+    "meanFrameMs":6.109,
+    "p95FrameMs":6.2,
+    "drawCalls":100,
+    "triangles":41044,
+    "geometries":101,
+    "textures":3,
+    "caveat":"Headless test-machine sample only. Does not establish user preview or mobile performance. CSS touch-target sizing was changed after this sample; simulation and rendering code were unchanged."
+  },
+  "pending":[
+    "Human aesthetic and gameplay approval against reference",
+    "Target mobile hardware full-session frame timing",
+    "Firefox and WebKit",
+    "Maximum 96-piece stress layout and train/build behavior at that budget",
+    "Additional portrait/landscape viewport matrix beyond desktop 1366x768 and mobile 390x844"
+  ],
+  "screenshots":"Repository output/meadow-railway/: help-desktop, loop-desktop, invalid-preview-desktop, bridge-tunnel-desktop, scenic-desktop, train-detail-desktop, driving-mobile and scenic-mobile.",
+  "knownLimits":["Single continuous railway only; no junctions or multiple trains","No online sharing or day/night","Short arch tunnel rather than terrain excavation","Manual device-local save only"]
+}

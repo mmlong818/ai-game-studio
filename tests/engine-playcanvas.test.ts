@@ -17,7 +17,6 @@ import { createBehaviorRuntime, createEventBus, createGrid } from "../src/engine
 import { createRuleBridge } from "../src/engine/playcanvas/runtime/rules.js";
 import { createDebugApi } from "../src/engine/playcanvas/runtime/debug.js";
 import { buildEngineDemoArtifact, loadDemoProject, validateDemoProject } from "../examples/engine-playcanvas-demo/build";
-import { paperRenderPreset, popupControlButtons } from "../src/server/playcanvas-popup-runtime";
 
 // ---- 假 PlayCanvas：只实现引擎层片段用到的最小接口，让几何 / 材质 / 实体 / 场景图 / 行为 / 规则桥能在 Node 里跑。 ----
 class FakeVec3 { x: number; y: number; z: number; constructor(x = 0, y = 0, z = 0) { this.x = x; this.y = y; this.z = z; } }
@@ -53,12 +52,12 @@ const fakeApp = { assets: { add() {}, load() {} } };
 function cleanup(root: string) { const safe = resolve(root); if (safe.startsWith(resolve(tmpdir()))) rmSync(safe, { recursive: true, force: true }); }
 
 test("渲染预设：JS 字面量序列化保留裸键（tiltShift: true 可被静态探针读到）且可逆", () => {
-  const literal = toJsLiteral(paperRenderPreset);
+  const literal = toJsLiteral(studioRenderPreset);
   assert.match(literal, /tiltShift: true/);
   assert.match(literal, /performanceProfiles: \{/);
-  assert.deepEqual(new Function(`return ${literal};`)(), paperRenderPreset);
-  assert.deepEqual(Object.keys(manifestPerformanceProfiles(paperRenderPreset)), ["low", "medium", "high"]);
-  assert.deepEqual(manifestPerformanceProfiles(paperRenderPreset).high, { pixelRatio: 1.5, shadows: true, tiltShift: true });
+  assert.deepEqual(new Function(`return ${literal};`)(), studioRenderPreset);
+  assert.deepEqual(Object.keys(manifestPerformanceProfiles(studioRenderPreset)), ["low", "medium", "high"]);
+  assert.deepEqual(manifestPerformanceProfiles(studioRenderPreset).high, { pixelRatio: 1.5, shadows: true, tiltShift: true });
   assert.equal(studioRenderPreset.id, "studio-lowpoly");
   assert.throws(() => toJsLiteral(() => 1));
 });
@@ -249,7 +248,7 @@ test("调试骨架：通用字段 + 扩展字段合并，扩展可覆盖 getStat
   assert.equal(api.setPerformanceTier("low"), "low");
   assert.equal(api.engine().book, "book"); assert.equal(api.engine().root, fakeEngine.app.root);
   assert.equal(api.tickNow().mode, "custom");
-  assert.equal(controlBarHtml("转书与跳跃", popupControlButtons), '<div class="three-controls" aria-label="转书与跳跃"><button type="button" data-key="ccw" aria-label="向左转动书本">⟲</button><button type="button" data-key="jump" class="popup-jump" aria-label="跳跃">跃</button><button type="button" data-key="cw" aria-label="向右转动书本">⟳</button></div>');
+  assert.match(controlBarHtml("操作", [{key: "jump", label: "跳跃", ariaLabel: "跳跃"}]), /data-key="jump"/);
   assert.equal(controlButtonsHtml([{ key: "a<b", label: "x", ariaLabel: 'q"' }]), '<button type="button" data-key="a&lt;b" aria-label="q&quot;">x</button>');
 });
 

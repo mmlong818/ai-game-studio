@@ -1,0 +1,33 @@
+import {createState,edit,undo,step,decodeSave,starter,loop,scenicLoop,buildRoute,removeLast,validateAddition} from './game-core.js';
+import {createScene} from './scene.js';
+const $=id=>document.getElementById(id),KEY='meadow-railway.world.v1',HELP='meadow-railway.help.v1';
+let saved=null;try{saved=decodeSave(localStorage.getItem(KEY));}catch{}
+const state=createState(saved??starter());let scene;
+try{scene=createScene($('world'));scene.buildTrack(state.route);scene.fit();}catch(error){console.error(error);$('fatal').hidden=false;throw error;}
+let color=0,toastTime=0,viewing=false,sound=false,audio=null,previousTrips=0,previewType='left';
+function toast(text){$('toast').textContent=text;$('toast').classList.add('show');toastTime=performance.now()+3300;}
+function chime(high=false){if(!sound)return;audio??=new AudioContext();if(audio.state==='suspended')audio.resume();const o=audio.createOscillator(),g=audio.createGain();o.type='sine';o.frequency.setValueAtTime(high?659:392,audio.currentTime);o.frequency.exponentialRampToValueAtTime(high?880:523,audio.currentTime+.12);g.gain.setValueAtTime(.055,audio.currentTime);g.gain.exponentialRampToValueAtTime(.001,audio.currentTime+.3);o.connect(g).connect(audio.destination);o.start();o.stop(audio.currentTime+.3);}
+function showPreview(type=previewType){previewType=type;const reason=validateAddition(state.pieces,type);scene.preview(type,!reason);$('build-hint').textContent=state.route.closed?'环线接通了，也可以拆开后重新设计':reason||'浅色轨道是下一段的位置 · 点击即可接上';$('build-hint').classList.toggle('invalid',Boolean(reason)&&!state.route.closed);}
+function refresh(){scene.buildTrack(state.route);$('track-count').textContent=state.pieces.length+' 段轨道';$('journey-text').textContent=state.route.closed?'已经闭环 · 小火车可以一直旅行':state.pieces.length===7&&!saved?'再接一个左弯，让火车绕一圈':'未闭环也能运行 · 火车到末端自动返回';$('undo').disabled=!state.history.length;$('redo').disabled=!state.future.length;$('open-loop').hidden=!state.route.closed;document.body.classList.toggle('closed',state.route.closed);document.querySelectorAll('[data-piece]').forEach(b=>b.disabled=state.route.closed);showPreview();}
+function toggle(){state.running=!state.running;$('play').textContent=state.running?'暂停':'发车';$('play').setAttribute('aria-pressed',String(state.running));if(state.running)chime(true);}
+document.querySelectorAll('[data-piece]').forEach(button=>button.onclick=()=>{const error=edit(state,button.dataset.piece,color);if(error){toast(error);return;}refresh();scene.fit();$('follow').classList.remove('active');chime();toast(state.route.closed?'接通了！你的第一条环线已经准备出发':'已接上'+button.textContent.trim());});
+document.querySelectorAll('[data-piece]').forEach(button=>{button.addEventListener('pointerenter',()=>showPreview(button.dataset.piece));button.addEventListener('focus',()=>showPreview(button.dataset.piece));button.addEventListener('pointerdown',()=>showPreview(button.dataset.piece));});
+$('open-loop').onclick=()=>{if(removeLast(state)){refresh();scene.fit();toast('环线已打开，浅色轨道显示下一段的位置');}};
+document.querySelectorAll('[data-color]').forEach(button=>button.onclick=()=>{color=Number(button.dataset.color);document.querySelectorAll('[data-color]').forEach(b=>{b.classList.toggle('selected',b===button);b.setAttribute('aria-pressed',String(b===button));});});
+$('play').onclick=toggle;$('station').onclick=()=>{state.distance=3.8;state.previous=3.8;state.direction=1;state.wait=0;toast('列车已回到车站');};
+for(const [id,redo]of[['undo',false],['redo',true]])$(id).onclick=()=>{if(undo(state,redo)){refresh();toast(redo?'已重做':'已撤销，可以继续设计');}};
+$('rotate').onclick=()=>scene.rotate();$('zoom-in').onclick=()=>scene.zoom(-7);$('zoom-out').onclick=()=>scene.zoom(7);$('home').onclick=()=>{scene.fit();$('follow').classList.remove('active');};$('follow').onclick=()=>{$('follow').classList.toggle('active',scene.follow());};
+$('view').onclick=()=>{viewing=!viewing;document.body.classList.toggle('viewing',viewing);$('view').textContent=viewing?'搭建':'观赏';$('mode-label').textContent=viewing?'静静看一会儿':'自由搭建';};
+$('sound').onclick=()=>{sound=!sound;$('sound').textContent=sound?'声音开':'声音关';$('sound').setAttribute('aria-pressed',String(sound));chime();};
+$('save').onclick=()=>{try{localStorage.setItem(KEY,JSON.stringify({version:1,pieces:state.pieces}));toast('线路已保存在这台设备，下次打开就能继续');}catch{toast('浏览器未允许保存，当前线路仍可以继续玩');}};
+function guide(){if(state.running)toggle();$('guide').showModal();}$('help').onclick=guide;$('begin').onclick=()=>{$('guide').close();try{localStorage.setItem(HELP,'1');}catch{}};
+try{if(!localStorage.getItem(HELP))guide();}catch{guide();}
+$('new').onclick=()=>{if(state.running)toggle();$('new-dialog').showModal();};$('cancel-new').onclick=()=>$('new-dialog').close();
+function preset(pieces){state.history.push(JSON.parse(JSON.stringify(state.pieces)));state.future=[];state.pieces=pieces;state.route=buildRoute(pieces);state.distance=3.8;state.previous=3.8;state.direction=1;state.wait=0;refresh();scene.fit();$('new-dialog').close();toast('新线路已经准备好了');}
+$('preset-loop').onclick=()=>preset(loop());$('preset-start').onclick=()=>preset([{type:'straight',color:0}]);
+$('preset-scenic').onclick=()=>preset(scenicLoop());
+addEventListener('keydown',e=>{if(document.querySelector('dialog[open]'))return;if(e.code==='Space'&&e.target===document.body){e.preventDefault();toggle();}if((e.ctrlKey||e.metaKey)&&e.code==='KeyZ'){e.preventDefault();if(undo(state,e.shiftKey))refresh();}if(e.code==='Escape'&&state.running)toggle();});
+function pause(){scene.release();if(state.running){toggle();toast('已暂停，点击发车继续');}}addEventListener('blur',pause);document.addEventListener('visibilitychange',()=>{if(document.hidden)pause();});
+let last=performance.now(),accumulator=0;refresh();
+function frame(now){const dt=Math.min((now-last)/1000,.05);last=now;accumulator+=dt;while(accumulator>=1/60){step(state,1/60);accumulator-=1/60;}scene.update(state,dt,accumulator*60);if(now>toastTime)$('toast').classList.remove('show');if(state.trips!==previousTrips){previousTrips=state.trips;toast(state.route.closed?'小火车绕完一圈啦':'到达线路末端，稍停后返回');chime(true);}requestAnimationFrame(frame);}requestAnimationFrame(frame);
+if(new URLSearchParams(location.search).has('probe'))window.__railway={state:()=>JSON.parse(JSON.stringify({pieces:state.pieces,distance:state.distance,running:state.running,direction:state.direction,trips:state.trips,length:state.route.length,closed:state.route.closed,time:state.time})),details:()=>scene.details(),graphics:()=>({quality:scene.quality(),calls:scene.renderer.info.render.calls,triangles:scene.renderer.info.render.triangles,geometries:scene.renderer.info.memory.geometries,textures:scene.renderer.info.memory.textures}),advance:seconds=>{for(let i=0;i<seconds*60;i++)step(state,1/60);}};

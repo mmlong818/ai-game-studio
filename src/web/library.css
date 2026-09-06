@@ -260,6 +260,25 @@
   background-size: 26px 26px;
 }
 
+.library-dimension-badge {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  z-index: 1;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 9px;
+  border: 1px solid rgba(255, 255, 255, .5);
+  border-radius: 8px;
+  background: #183b50;
+  color: #fff;
+  font-size: 12px;
+  font-weight: 800;
+  line-height: 1.2;
+  pointer-events: none;
+}
+
 .library-art-image {
   position: absolute;
   inset: 0;

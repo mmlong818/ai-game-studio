@@ -6,6 +6,9 @@ dist-server/
 test-results/
 playwright-report/
 coverage/
+/output/
+/dogfood-output/
+.resource-quarantine/
 /data/logs/
 /data/artifacts/
 /data/artifacts-v1.1/
@@ -17,3 +20,8 @@ npm-debug.log*
 
 # Claude Code 隔离工作树
 .claude/
+
+# Downloaded development source packs; curated runtime meshes/licenses are tracked separately.
+/assets/source-packs/kenney/*.zip
+/assets/source-packs/kenney/car-kit/
+/assets/source-packs/kenney/nature-kit/

@@ -12,7 +12,6 @@ VERSIONS = [
     ("space-shooter", "b4c6a5c7-f0f2-48df-87f9-c80db5fd50d5"),
     ("merge-2048", "767b4ede-0109-4ae3-b205-8f4f5a18ed8c"),
     ("snake", "2303778b-d844-4862-bc98-6c2bba60851b"),
-    ("maze", "358a00ed-1a3c-487b-889f-0175c14abf6d"),
     ("klotski", "e69e8949-1fd5-4ba0-890d-421a04161b85"),
     ("breakout", "3f8501a8-0ab5-4f70-b460-2c34c76ba266"),
     ("puzzle", "a2958b93-cd87-4fa7-976d-926fd4832a28"),

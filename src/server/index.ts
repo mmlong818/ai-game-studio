@@ -1,9 +1,13 @@
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
-import { getTemplateCatalog, projectInputSchema } from "../shared/contracts.js";
+import { generateGameSpec, getTemplateCatalog, projectInputSchema } from "../shared/contracts.js";
 import { PLATFORM_VERSION_INFO } from "../shared/platform-version.js";
-import { OFFICIAL_SERVER_TEMPLATE_IDS } from "../shared/official-games/index.js";
+import { OFFICIAL_GAMES, OFFICIAL_SERVER_TEMPLATE_IDS } from "../shared/official-games/index.js";
+import { createDesignKnowledgeShadow } from "../shared/game-design-knowledge/shadow.js";
+import { MECHANIC_ATLAS_SUMMARY, searchMechanicAtlas } from "../shared/game-design-knowledge/mechanic-atlas.js";
+import { LOCAL_DESIGN_SOURCE_SUMMARY } from "../shared/game-design-knowledge/local-design-sources.js";
+import { createResourcePlanningForGameSpec } from "../shared/resource-planning/index.js";
 import { AccessControl } from "./access-control.js";
 import { openDatabase } from "./database.js";
 import { BuildOrchestrator } from "./build-orchestrator.js";
@@ -17,6 +21,8 @@ import { ProjectLifecycle } from "./project-lifecycle.js";
 import { importLegacySqliteIfEmpty } from "./sqlite-migration.js";
 import { sendStaticFile, workbenchContentSecurityPolicy } from "./static-files.js";
 import { StudioRepository } from "./studio-repository.js";
+import { ResearchPrototypeService } from "./research-prototype.js";
+import { loadCuratedResourceLibrary } from "./resource-library.js";
 import { ensureV11FixtureArtifact } from "./v11-build-metadata.js";
 
 const port = Number.parseInt(process.env.PORT ?? "4312", 10);
@@ -31,9 +37,13 @@ const connectionString = process.env.DATABASE_URL ?? "postgresql://studio@127.0.
 const legacySqlitePath = process.env.LEGACY_SQLITE_PATH ?? process.env.DATABASE_PATH ?? join(projectRoot, "data", "studio.db");
 const database = await openDatabase(connectionString);
 const importedProjectCount = await importLegacySqliteIfEmpty(database, legacySqlitePath);
-const repository = new StudioRepository(database, publicOrigin, publicGameOrigin);
+const resourceFamilies = await loadCuratedResourceLibrary(join(projectRoot, "assets", "library", "curated"));
+const promotedResourceRoot = join(projectRoot, "data", "resource-library", "promoted");
+if (existsSync(promotedResourceRoot)) resourceFamilies.push(...await loadCuratedResourceLibrary(promotedResourceRoot, { requireCurated: false }));
+const repository = new StudioRepository(database, publicOrigin, publicGameOrigin, resourceFamilies);
 const legacyArtifactRoot = join(projectRoot, "data", "artifacts");
 const artifactRoot = join(projectRoot, "data", "artifacts-v1.1");
+const researchPrototypeRoot = join(projectRoot, "data", "research-prototypes");
 const openAIKeyFile = process.env.OPENAI_API_KEY_FILE ?? join(projectRoot, "data", "secrets", "openai-api-key.txt");
 const openAISettings = new OpenAISettings(process.env.OPENAI_API_KEY, openAIKeyFile);
 // Node 的全局 fetch 默认不走 HTTP(S)_PROXY;在设置了代理但未开启 NODE_USE_ENV_PROXY 的环境里,
@@ -49,15 +59,19 @@ const orchestrator = new BuildOrchestrator(repository, artifactRoot, {
   designContracts,
   coverArt,
   codeGenerator,
+  resourceFamilies,
   maxConcurrentBuilds: Number.parseInt(process.env.BUILD_CONCURRENCY ?? "2", 10) || 2,
 });
 const accessControl = new AccessControl(process.env.STUDIO_ACCESS_TOKEN?.trim() || null);
+const researchPrototypes = new ResearchPrototypeService(repository, researchPrototypeRoot, publicGameOrigin, undefined, promotedResourceRoot);
 const projectLifecycle = new ProjectLifecycle(repository, artifactRoot);
 // 创作页可用的模板封面目录：由官方游戏登记表派生（含固定游戏所落的 signal-hunt）。
 const templateArtIds = new Set<string>(OFFICIAL_SERVER_TEMPLATE_IDS);
 await repository.failInterruptedBuilds();
 await repository.reconcilePublishedStatuses();
 await repository.initializeCatalogScopes();
+await repository.ensureInitialDesignResearchTasks();
+await repository.ensureInitialGameplayRadarSignals();
 const officialFixtureIds = await repository.ensureOfficialFixtures();
 // 1.0 固定游戏源目录保持只读；1.1 首次启动时复制为版本化不可变产物并补齐结构化工程、变更集与运行观测。
 for (const [fixtureKind, projectId] of Object.entries(officialFixtureIds)) {
@@ -129,13 +143,17 @@ async function handleApi(request: IncomingMessage, response: ServerResponse, pat
     sendJson(response, 200, { projects: await repository.list({ archived: true }) });
     return true;
   }
+  if (pathname === "/api/settings/openai/models" && request.method === "POST") {
+    sendJson(response, 200, await openAISettings.listModels(await readJson(request)));
+    return true;
+  }
   if (pathname === "/api/settings/openai") {
     if (request.method === "GET") {
       sendJson(response, 200, openAISettings.status());
       return true;
     }
     if (request.method === "PUT") {
-      sendJson(response, 200, openAISettings.set(await readJson(request)));
+      sendJson(response, 200, await openAISettings.save(await readJson(request)));
       return true;
     }
     if (request.method === "DELETE") {
@@ -150,6 +168,149 @@ async function handleApi(request: IncomingMessage, response: ServerResponse, pat
   if (request.method === "POST" && pathname === "/api/play-events") {
     sendJson(response, 202, await repository.recordPlayEvent(await readJson(request)));
     return true;
+  }
+  if (request.method === "GET" && pathname === "/api/design-knowledge/review") {
+    sendJson(response, 200, await repository.designKnowledgeReview());
+    return true;
+  }
+  if (pathname === "/api/design-knowledge/reviews") {
+    if (request.method === "GET") {
+      sendJson(response, 200, { reviews: await repository.listDesignKnowledgeReviews() });
+      return true;
+    }
+    if (request.method === "POST") {
+      sendJson(response, 201, { review: await repository.captureDesignKnowledgeReview(await readJson(request)) });
+      return true;
+    }
+  }
+  const designReviewDecision = pathname.match(/^\/api\/design-knowledge\/reviews\/([^/]+)\/decisions$/)?.[1];
+  if (request.method === "POST" && designReviewDecision) {
+    sendJson(response, 201, { decision: await repository.recordDesignKnowledgeDecision(decodeURIComponent(designReviewDecision), await readJson(request)) });
+    return true;
+  }
+  const designReviewChangeSet = pathname.match(/^\/api\/design-knowledge\/reviews\/([^/]+)\/change-set$/)?.[1];
+  if (request.method === "POST" && designReviewChangeSet) {
+    sendJson(response, 201, { changeSet: await repository.createDesignKnowledgeChangeSet(decodeURIComponent(designReviewChangeSet)) });
+    return true;
+  }
+  if (request.method === "GET" && pathname === "/api/design-knowledge/change-sets") {
+    sendJson(response, 200, { changeSets: await repository.listDesignKnowledgeChangeSets() });
+    return true;
+  }
+  const designChangeSetAction = pathname.match(/^\/api\/design-knowledge\/change-sets\/([^/]+)\/(review|export|publish)$/);
+  if (designChangeSetAction?.[1] && designChangeSetAction[2] === "review" && request.method === "POST") {
+    sendJson(response, 200, { changeSet: await repository.reviewDesignKnowledgeChangeSet(decodeURIComponent(designChangeSetAction[1]), await readJson(request)) });
+    return true;
+  }
+  if (designChangeSetAction?.[1] && designChangeSetAction[2] === "export" && request.method === "GET") {
+    sendJson(response, 200, { export: await repository.exportDesignKnowledgeChangeSet(decodeURIComponent(designChangeSetAction[1])) });
+    return true;
+  }
+  if (designChangeSetAction?.[1] && designChangeSetAction[2] === "publish" && request.method === "POST") {
+    sendJson(response, 201, { release: await repository.publishDesignKnowledgeChangeSet(decodeURIComponent(designChangeSetAction[1])) });
+    return true;
+  }
+  if (request.method === "GET" && pathname === "/api/design-knowledge/releases") {
+    sendJson(response, 200, { releases: await repository.listDesignKnowledgeReleases() });
+    return true;
+  }
+  if (request.method === "POST" && pathname === "/api/design-knowledge/releases/rollback") {
+    sendJson(response, 201, { release: await repository.rollbackDesignKnowledgeRelease(await readJson(request)) });
+    return true;
+  }
+  if (request.method === "GET" && pathname === "/api/design-knowledge/insights") {
+    sendJson(response, 200, { insights: await repository.designKnowledgeInsights() });
+    return true;
+  }
+  if (request.method === "GET" && pathname === "/api/design-knowledge/mechanic-atlas") {
+    const parameters = new URL(request.url ?? pathname, "http://127.0.0.1").searchParams;
+    const family = parameters.get("family") || undefined;
+    sendJson(response, 200, {
+      summary: MECHANIC_ATLAS_SUMMARY,
+      localSources: LOCAL_DESIGN_SOURCE_SUMMARY,
+      result: searchMechanicAtlas({
+        query: parameters.get("query") || undefined,
+        family: family as NonNullable<Parameters<typeof searchMechanicAtlas>[0]>["family"],
+        offset: Number(parameters.get("offset") || 0), limit: Number(parameters.get("limit") || 30),
+      }),
+    });
+    return true;
+  }
+  if (pathname === "/api/design-knowledge/radar") {
+    if (request.method === "GET") {
+      sendJson(response, 200, { clusters: await repository.listGameplayRadar() });
+      return true;
+    }
+    if (request.method === "POST") {
+      sendJson(response, 201, { cluster: await repository.ingestGameplayRadarSignal(await readJson(request)) });
+      return true;
+    }
+  }
+  const gameplayRadarResearch = pathname.match(/^\/api\/design-knowledge\/radar\/([^/]+)\/research$/)?.[1];
+  if (request.method === "POST" && gameplayRadarResearch) {
+    sendJson(response, 201, await repository.startGameplayRadarResearch(decodeURIComponent(gameplayRadarResearch), await readJson(request)));
+    return true;
+  }
+  if (pathname === "/api/design-knowledge/research") {
+    if (request.method === "GET") {
+      sendJson(response, 200, { tasks: await repository.listDesignResearchTasks() });
+      return true;
+    }
+    if (request.method === "POST") {
+      sendJson(response, 201, { task: await repository.createDesignResearchTask(await readJson(request)) });
+      return true;
+    }
+  }
+  const designResearchAction = pathname.match(/^\/api\/design-knowledge\/research\/([^/]+)\/(sources|synthesis|candidate|decision|change-set)$/);
+  if (request.method === "POST" && designResearchAction?.[1]) {
+    const taskId = decodeURIComponent(designResearchAction[1]);
+    if (designResearchAction[2] === "sources") sendJson(response, 200, { task: await repository.addDesignResearchSource(taskId, await readJson(request)) });
+    if (designResearchAction[2] === "synthesis") sendJson(response, 200, { task: await repository.submitDesignResearchSynthesis(taskId, await readJson(request)) });
+    if (designResearchAction[2] === "candidate") sendJson(response, 200, { task: await repository.attachDesignResearchCandidate(taskId, await readJson(request)) });
+    if (designResearchAction[2] === "decision") sendJson(response, 200, { task: await repository.decideDesignResearchTask(taskId, await readJson(request)) });
+    if (designResearchAction[2] === "change-set") sendJson(response, 201, { changeSet: await repository.createDesignResearchChangeSet(taskId) });
+    return true;
+  }
+  const designResearchEvaluation = pathname.match(/^\/api\/design-knowledge\/research\/([^/]+)\/evaluation(?:\/(probes|browser|playtests|run|acquisition))?$/);
+  if (request.method === "POST" && designResearchEvaluation?.[1]) {
+    const taskId = decodeURIComponent(designResearchEvaluation[1]);
+    if (!designResearchEvaluation[2]) sendJson(response, 201, { task: await repository.createDesignResearchEvaluation(taskId) });
+    if (designResearchEvaluation[2] === "probes") sendJson(response, 200, { task: await repository.recordDesignResearchProbeRun(taskId, await readJson(request)) });
+    if (designResearchEvaluation[2] === "browser") sendJson(response, 200, { task: await repository.recordDesignResearchBrowserRun(taskId, await readJson(request)) });
+    if (designResearchEvaluation[2] === "playtests") sendJson(response, 200, { task: await repository.recordDesignResearchPlaytest(taskId, await readJson(request)) });
+    if (designResearchEvaluation[2] === "run") sendJson(response, 200, await researchPrototypes.run(taskId));
+    if (designResearchEvaluation[2] === "acquisition") sendJson(response, 201, { task: await repository.createDesignResearchResourceAcquisitionTask(taskId) });
+    return true;
+  }
+  const designResearchResourceWork = pathname.match(/^\/api\/design-knowledge\/research\/([^/]+)\/evaluation\/acquisition\/([^/]+)\/(submit|review)$/);
+  if (request.method === "POST" && designResearchResourceWork?.[1] && designResearchResourceWork[2]) {
+    const taskId = decodeURIComponent(designResearchResourceWork[1]);
+    const requirementId = decodeURIComponent(designResearchResourceWork[2]);
+    if (designResearchResourceWork[3] === "submit") sendJson(response, 200, { task: await repository.submitDesignResearchResourceAcquisitionWork(taskId, requirementId, await readJson(request)) });
+    if (designResearchResourceWork[3] === "review") sendJson(response, 200, { task: await repository.reviewDesignResearchResourceAcquisitionWork(taskId, requirementId, await readJson(request)) });
+    return true;
+  }
+  const designResearchResourceIntake = pathname.match(/^\/api\/design-knowledge\/research\/([^/]+)\/evaluation\/resource-intake(?:\/(review))?$/);
+  if (request.method === "POST" && designResearchResourceIntake?.[1]) {
+    const taskId = decodeURIComponent(designResearchResourceIntake[1]);
+    if (designResearchResourceIntake[2] === "review") sendJson(response, 200, { task: await repository.reviewDesignResearchResourceIntake(taskId, await readJson(request)) });
+    else sendJson(response, 200, await researchPrototypes.intake(taskId));
+    return true;
+  }
+  const designResearchResourcePromotion = pathname.match(/^\/api\/design-knowledge\/research\/([^/]+)\/evaluation\/resource-promotion$/)?.[1];
+  if (request.method === "POST" && designResearchResourcePromotion) {
+    sendJson(response, 200, await researchPrototypes.promoteResources(decodeURIComponent(designResearchResourcePromotion)));
+    return true;
+  }
+  if (pathname === "/api/design-knowledge/playtests") {
+    if (request.method === "GET") {
+      sendJson(response, 200, { playtests: await repository.listDesignPlaytests() });
+      return true;
+    }
+    if (request.method === "POST") {
+      sendJson(response, 201, { playtest: await repository.recordDesignPlaytest(await readJson(request)) });
+      return true;
+    }
   }
   const activityPlayerId = pathname.match(/^\/api\/play-activity\/(player-[0-9a-f-]{36})$/i)?.[1];
   if (request.method === "GET" && activityPlayerId) {
@@ -166,6 +327,9 @@ async function handleApi(request: IncomingMessage, response: ServerResponse, pat
     const experimentalDimensions = analysis.dimensions === "3d" ? "3d" as const : "2d" as const;
     const input = experimental ? { ...rawInput, template: "generated" as const, dimensions: experimentalDimensions } : rawInput;
     const designProfile = await designContracts.generate(input, analysis);
+    // 影子策划评估只写入规格供比较和审计；当前生产模板选择仍由 IdeaAnalyzer 决定。
+    const designKnowledge = createDesignKnowledgeShadow(input, analysis, await repository.currentDesignKnowledgeLibrary());
+    const resourcePlanning = createResourcePlanningForGameSpec(generateGameSpec(input, analysis, designProfile, designKnowledge), resourceFamilies);
     if (experimental && !designProfile) {
       const supported = [...new Set(getTemplateCatalog().map((entry) => entry.genre))].join("、");
       sendJson(response, 422, {
@@ -173,7 +337,7 @@ async function handleApi(request: IncomingMessage, response: ServerResponse, pat
       });
       return true;
     }
-    sendJson(response, 201, { project: await repository.create(input, analysis, designProfile) });
+    sendJson(response, 201, { project: await repository.create(input, analysis, designProfile, designKnowledge, resourcePlanning) });
     return true;
   }
 
@@ -300,15 +464,33 @@ async function handleGame(response: ServerResponse, pathname: string) {
   });
 }
 
+function handleResearchPrototype(response: ServerResponse, pathname: string) {
+  const match = pathname.match(/^\/research-prototype\/([^/]+)(\/.*)?$/);
+  if (!match?.[1]) return false;
+  const artifactId = decodeURIComponent(match[1]);
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(artifactId)) return false;
+  const relativePath = !match[2] || match[2] === "/" ? "index.html" : decodeURIComponent(match[2].slice(1));
+  return sendStaticFile(response, join(researchPrototypeRoot, artifactId), relativePath, false, { frameAncestors: [`'self'`, originWithoutSlash(publicOrigin)].join(" ") });
+}
+
 function originWithoutSlash(origin: string) {
   return origin.endsWith("/") ? origin.slice(0, -1) : origin;
 }
 
 function handleTemplateArt(response: ServerResponse, pathname: string) {
+  if (pathname.startsWith('/media/official-cover/')) {
+    const cover = OFFICIAL_GAMES.find(game => game.lobbyCover && pathname === `/media/official-cover/${game.lobbyCover.split('/').pop()}`)?.lobbyCover;
+    if (cover && sendStaticFile(response, join(projectRoot, 'assets/library/covers'), cover.split('/').pop()!, true)) return true;
+    sendJson(response, 404, { error: '游戏封面不存在。' });
+    return true;
+  }
   const match = pathname.match(/^\/media\/template-art\/([^/]+)\/(cover|gameplay-atlas)\.png$/);
   if (!match?.[1] || !match[2]) return false;
   const template = decodeURIComponent(match[1]);
-  if (!templateArtIds.has(template)) return false;
+  if (!templateArtIds.has(template)) {
+    sendJson(response, 404, { error: "模板资源不存在。" });
+    return true;
+  }
   const artRoot = template === "signal-hunt"
     ? join(projectRoot, "assets", "starter", "signal-studio")
     : join(projectRoot, "assets", "templates", "packs", template);
@@ -342,6 +524,7 @@ const server = createServer(async (request, response) => {
       sendJson(response, 404, { error: "游戏版本不存在。" });
       return;
     }
+    if (request.method === "GET" && url.pathname.startsWith("/research-prototype/") && handleResearchPrototype(response, url.pathname)) return;
     if (request.method === "GET" && handleTemplateArt(response, url.pathname)) return;
     if (request.method === "GET" && handleWorkbench(response, url.pathname)) return;
     sendJson(response, 404, { error: "页面不存在。" });
@@ -369,6 +552,7 @@ const gameServer = createServer(async (request, response) => {
       sendJson(response, 404, { error: "游戏版本不存在。" });
       return;
     }
+    if (request.method === "GET" && url.pathname.startsWith("/research-prototype/") && handleResearchPrototype(response, url.pathname)) return;
     if (request.method === "GET" && handleTemplateArt(response, url.pathname)) return;
     sendJson(response, 404, { error: "页面不存在。" });
   } catch (error) {

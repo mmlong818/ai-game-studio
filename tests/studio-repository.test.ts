@@ -7,6 +7,9 @@ import { BuildOrchestrator } from "../src/server/build-orchestrator";
 import { openTestDatabase } from "../src/server/database";
 import { ProjectLifecycle } from "../src/server/project-lifecycle";
 import { StudioRepository } from "../src/server/studio-repository";
+import { loadCuratedResourceLibrary } from "../src/server/resource-library";
+import { generateGameSpec } from "../src/shared/contracts";
+import { createResourcePlanningForGameSpec } from "../src/shared/resource-planning";
 
 async function createRepository() {
   const database = await openTestDatabase();
@@ -28,6 +31,39 @@ async function waitForBuild(repository: StudioRepository, projectId: string) {
   throw new Error(`等待构建完成超时：${JSON.stringify(lastBuild)}`);
 }
 
+test("玩法雷达跨榜去重、持久化并以幂等方式进入研究队列", async () => {
+  const { database, repository } = await createRepository();
+  try {
+    const seeded = await repository.ensureInitialGameplayRadarSignals();
+    assert.equal(seeded.length, 3);
+    const fauna = seeded.find(({ gameTitle }) => gameTitle === "Art of Fauna");
+    assert.ok(fauna);
+    assert.equal(fauna.signals.length, 2);
+
+    const signal = {
+      gameTitle: "Art of Fauna", sourceTitle: "独立平台复核", sourceUrl: "https://example.org/art-of-fauna",
+      sourceType: "editorial-list" as const, platform: "mobile" as const, observedAt: "2026-09-05", publishedAt: null,
+      signalSummary: "独立来源再次指出重排与辅助访问组合。", playerVerbs: ["重排", "阅读"], mechanicTags: ["puzzle", "accessibility", "reorder"],
+    };
+    await Promise.all([repository.ingestGameplayRadarSignal(signal), repository.ingestGameplayRadarSignal(signal)]);
+    const restored = (await repository.listGameplayRadar()).find(({ id }) => id === fauna.id);
+    assert.ok(restored);
+    assert.equal(restored.signals.length, 3);
+    assert.equal(restored.distinctSourceCount, 2);
+
+    const [first, second] = await Promise.all([
+      repository.startGameplayRadarResearch(fauna.id, { refresh: false }, new Date("2026-09-05T08:00:00Z")),
+      repository.startGameplayRadarResearch(fauna.id, { refresh: false }, new Date("2026-09-05T08:00:00Z")),
+    ]);
+    assert.equal(first.task.id, second.task.id);
+    assert.equal(first.task.status, "queued");
+    assert.equal(first.task.candidateDraft, null);
+    assert.equal((await repository.listDesignResearchTasks()).filter(({ id }) => id === first.task.id).length, 1);
+  } finally {
+    await database.close();
+  }
+});
+
 const testAiPng = Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), Buffer.alloc(600)]);
 const testCoverArt = {
   generate: async () => testAiPng,
@@ -39,6 +75,87 @@ const testCoverArt = {
   }],
 };
 
+test("默认创作资源规划随项目规格持久化，重新读取仍保留候选与生成决策", async () => {
+  const { database, repository } = await createRepository();
+  const artifactRoot = mkdtempSync(join(tmpdir(), "resource-plan-artifact-"));
+  try {
+    const input = { title: "资源规划样本", dimensions: "2d" as const, idea: "玩家滑动彩色方块完成合并，在棋盘填满前获得目标分数。", template: "merge-2048" as const, visualStyle: "cute" as const };
+    const resourceFamilies = await loadCuratedResourceLibrary(resolve("assets/library/curated"));
+    const resourcePlanning = createResourcePlanningForGameSpec(generateGameSpec(input), resourceFamilies);
+    const created = await repository.create(input, null, null, null, resourcePlanning);
+    const restored = await repository.get(created.id);
+    assert.ok(restored?.spec.designContract);
+    assert.equal(restored.spec.designContract.projectId, created.id);
+    assert.deepEqual(restored.spec.designContract.content.beats.map(({ pressure }) => pressure), ["safe", "normal", "high"]);
+    assert.deepEqual(new Set(restored.spec.designContract.acceptance.map(({ kind }) => kind)), new Set(["onboarding", "progression", "assistance", "content-variation"]));
+    assert.ok(restored?.spec.resourcePlanning);
+    assert.equal(restored.spec.resourcePlanning.summary.total, restored.spec.resourcePlanning.requirements.length);
+    assert.ok(restored.spec.resourcePlanning.decisions.some(({ selectedFamilyId }) => selectedFamilyId === "clean-blue-ui-2d"));
+    assert.ok(restored.spec.resourcePlanning.decisions.some(({ selectedRecipeId, action }) => selectedRecipeId === "merge-2048-classic-puzzle-slots" && action === "reuse-approved"));
+    assert.ok(restored.spec.resourcePlanning.decisions.some(({ action }) => action === "generate-missing-variants"));
+    const orchestrator = new BuildOrchestrator(repository, artifactRoot, { coverArt: testCoverArt, browserAudit: false, resourceFamilies });
+    await orchestrator.start(created.id);
+    assert.equal((await waitForBuild(repository, created.id)).status, "succeeded");
+    const built = await repository.get(created.id);
+    assert.ok(built);
+    const deliveredPlan = JSON.parse(readFileSync(join(artifactRoot, built.version.id, "_studio", "RESOURCE_PLAN.json"), "utf8"));
+    const deliveredDesign = JSON.parse(readFileSync(join(artifactRoot, built.version.id, "_studio", "GAME_DESIGN_CONTRACT.json"), "utf8"));
+    assert.deepEqual(deliveredDesign, built.spec.designContract);
+    assert.equal(deliveredDesign.projectId, built.id);
+    assert.equal(deliveredPlan.schemaVersion, "resource-planning-v1");
+    assert.equal(deliveredPlan.decisions.length, built.spec.resourcePlanning?.decisions.length);
+  } finally {
+    rmSync(artifactRoot, { recursive: true, force: true });
+    await database.close();
+  }
+});
+
+test("2048 与打砖块构建会实际覆盖黄金精灵槽位，并把精选资源与 AI 来源分开归档", async () => {
+  const { database, repository } = await createRepository();
+  const artifactRoot = mkdtempSync(join(tmpdir(), "curated-golden-build-"));
+  const conflictingArt = {
+    generate: async () => testAiPng,
+    generateDynamicArt: async () => [
+      { file: "assets/background.png", role: "局内背景", bytes: testAiPng, prompt: "为自动化测试游戏生成一张不含文字的局内场景背景位图。" },
+      { file: "assets/sprites/sprite-05.png", role: "角色精灵", bytes: testAiPng, prompt: "为自动化测试生成一个本应被精选资源覆盖的角色精灵位图。" },
+    ],
+  };
+  try {
+    const cases = [
+      { title: "精选资源 2048", idea: "滑动数字方块合并到目标数字，并提供撤销与提示。", template: "merge-2048" as const, expectedAssets: 7 },
+      { title: "精选资源打砖块", idea: "移动挡板反弹小球清除砖块，并提供渐进关卡。", template: "breakout" as const, expectedAssets: 3 },
+    ];
+    for (const item of cases) {
+      const project = await repository.create({ ...item, dimensions: "2d", difficulty: "standard" });
+      const orchestrator = new BuildOrchestrator(repository, artifactRoot, { browserAudit: false, coverArt: conflictingArt });
+      await orchestrator.start(project.id);
+      const build = await waitForBuild(repository, project.id);
+      assert.equal(build.status, "succeeded");
+      const completed = await repository.get(project.id);
+      assert.ok(completed);
+      const root = join(artifactRoot, completed.version.id);
+      const curated = JSON.parse(readFileSync(join(root, "_studio", "CURATED_RESOURCES.json"), "utf8"));
+      const dynamic = JSON.parse(readFileSync(join(root, "_studio", "DYNAMIC_ART.json"), "utf8"));
+      assert.equal(curated.template, item.template);
+      assert.equal(curated.schemaVersion, "curated-resource-bindings-v2");
+      assert.equal(curated.bindings[0].familyId, "classic-puzzle-2d");
+      assert.ok(curated.bindings[0].requirementIds.some((id: string) => id.startsWith("ASSET-MECHANIC-")));
+      assert.equal(curated.assets.length, item.expectedAssets);
+      assert.equal(dynamic.entries.some((entry: { file: string }) => entry.file === "assets/sprites/sprite-05.png"), false);
+      const fifth = curated.assets.find((entry: { target: string }) => entry.target === "assets/sprites/sprite-05.png");
+      assert.ok(fifth, `${item.template} 必须绑定第五精灵槽位`);
+      assert.deepEqual(
+        readFileSync(join(root, fifth.target)),
+        readFileSync(resolve("assets/library/curated", fifth.familyId, fifth.source)),
+      );
+      assert.match(build.steps[3]?.output ?? "", /运行时槽位使用 classic-puzzle-2d 精选资源/);
+    }
+  } finally {
+    rmSync(artifactRoot, { recursive: true, force: true });
+    await database.close();
+  }
+});
+
 test("黄金游戏会写入数据库并产生稳定网址与版本网址", async () => {
   const { database, repository } = await createRepository();
   try {
@@ -49,7 +166,7 @@ test("黄金游戏会写入数据库并产生稳定网址与版本网址", async
     assert.equal(project.status, "published");
     assert.equal(project.fixtureKind, "star-dream-duel");
     assert.equal(project.isOfficial, true);
-    assert.equal(project.spec.acceptanceCriteria.length, 15);
+    assert.equal(project.spec.acceptanceCriteria.length, 17);
     assert.ok(project.spec.acceptanceCriteria.every((item) => item.status === "passed"));
     assert.equal(project.version.qualityStatus, "passed");
     assert.equal(project.version.artReviewStatus, "passed");
@@ -203,12 +320,12 @@ test("2D 项目会留下公开步骤、真实文件和可玩不可变版本", as
     assert.equal(build.status, "succeeded");
     assert.equal(build.steps.length, 6);
     assert.ok(build.steps.every((step) => step.status === "succeeded"));
-    assert.match(build.steps[4]?.output ?? "", /16\/16 静态探针通过/);
+    assert.match(build.steps[4]?.output ?? "", /静态探针通过/);
     assert.equal(completed?.status, "playable");
     assert.equal(completed?.version.number, 2);
     assert.equal(completed?.version.qualityStatus, "passed");
     assert.equal(completed?.version.artReviewStatus, "pending");
-    assert.match(completed?.version.qualitySummary ?? "", /16\/16/);
+    assert.match(completed?.version.qualitySummary ?? "", /项自动验收通过/);
     assert.ok(build.versionId);
     assert.equal(existsSync(join(artifactRoot, build.id, "index.html")), true);
     assert.equal(existsSync(join(artifactRoot, build.id, "_studio", "GAME_DESIGN.md")), true);
@@ -250,6 +367,9 @@ test("重新构建会套用最新玩法合同，同时保留用户已选的风�
     assert.equal(completed?.spec.visualStyle, "line-art");
     assert.equal(completed?.spec.difficulty, "challenging");
     assert.equal(completed?.spec.aspectRatio, "4:3");
+    assert.ok(completed?.spec.designContract);
+    assert.equal(completed?.spec.designContract.projectId, project.id);
+    assert.ok(existsSync(join(artifactRoot, completed!.version.id, "_studio", "GAME_DESIGN_CONTRACT.json")));
     assert.ok(completed?.spec.acceptanceCriteria.some((item) => item.id === "AC-STYLE"));
     assert.ok(completed?.spec.acceptanceCriteria.some((item) => item.id === "AC-ASPECT"));
     assert.ok(completed?.spec.acceptanceCriteria.filter((item) => item.probeType !== "visual").every((item) => item.status === "passed"));
@@ -327,7 +447,7 @@ test("3D 项目会生成真实 Three.js 场景并通过独立试玩探针", asyn
 
     assert.equal(build.status, "succeeded");
     assert.ok(build.steps.every((step) => step.status === "succeeded"));
-    assert.match(build.steps[4]?.output ?? "", /20\/20 静态探针通过/);
+    assert.match(build.steps[4]?.output ?? "", /静态探针通过/);
     assert.equal((await repository.get(project.id))?.status, "playable");
     assert.equal(existsSync(join(artifactRoot, build.id, "vendor", "three.module.js")), true);
     assert.equal(existsSync(join(artifactRoot, build.id, "assets", "ambient-loop.wav")), true);
@@ -342,6 +462,35 @@ test("3D 项目会生成真实 Three.js 场景并通过独立试玩探针", asyn
     await database.close();
     const safeRoot = resolve(artifactRoot);
     if (safeRoot.startsWith(resolve(tmpdir()))) rmSync(safeRoot, { recursive: true, force: true });
+  }
+});
+
+test("3D 项目会按最终玩法模式持久化对应的策划知识与新手教学合同", async () => {
+  const { database, repository } = await createRepository();
+  try {
+    const collector = await repository.create({
+      title: "遗迹收集教学",
+      dimensions: "3d",
+      idea: "玩家以第三人称在 3D 遗迹中收集五块碎片，必须在出口关闭前返回。",
+    });
+    const arena = await repository.create({
+      title: "竞技场射击教学",
+      dimensions: "3d",
+      idea: "玩家在 3D 竞技场中移动并射击不断出现的敌人，完成三波挑战。",
+    });
+
+    assert.equal(collector.spec.threeMode, "collector");
+    assert.equal(collector.spec.designKnowledge?.plan.selectedPatternId, "third-person-collection");
+    assert.deepEqual(collector.spec.designContract?.onboarding.map(({ successSignal }) => successSignal), ["player-moved"]);
+    assert.equal(arena.spec.threeMode, "arena");
+    assert.equal(arena.spec.designKnowledge?.plan.selectedPatternId, "wave-shooter");
+    assert.deepEqual(arena.spec.designContract?.onboarding.map(({ successSignal }) => successSignal), ["shot-fired"]);
+
+    const restoredArena = await repository.get(arena.id);
+    assert.equal(restoredArena?.spec.designKnowledge?.plan.selectedPatternId, "wave-shooter");
+    assert.deepEqual(restoredArena?.spec.designContract?.onboarding.map(({ successSignal }) => successSignal), ["shot-fired"]);
+  } finally {
+    await database.close();
   }
 });
 

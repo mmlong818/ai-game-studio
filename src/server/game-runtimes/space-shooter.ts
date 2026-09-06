@@ -56,6 +56,102 @@ let shooterBossPhase = 0;
 let shooterHitFlashUntil = 0;
 let shooterWaveBannerUntil = 0;
 let shooterWaveBannerText = "";
+let shooterUpgradeLevel = 0;
+let shooterSupplyHistory = [];
+let shooterWaveHits = 0;
+let shooterCleanWaves = 0;
+let shooterPausedAt = null;
+let shooterActiveMs = 0;
+let shooterStageStartedMs = 0;
+
+function shiftShooterDeadlines(delta) {
+  nextEnemyAt += delta; nextShotAt += delta; shooterStartedAt += delta;
+  shipInvulnerableUntil += delta; lastKillAt += delta; rapidFireUntil += delta;
+  shooterIntermissionUntil += delta; shooterHitFlashUntil += delta; shooterWaveBannerUntil += delta;
+  
+  if (shooterPulseEffect) { shooterPulseEffect.startedAt += delta; shooterPulseEffect.until += delta; }
+  enemies.forEach((enemy) => { enemy.warningUntil += delta; enemy.shotAt += delta; enemy.bornAt += delta; if (enemy.aimUntil) enemy.aimUntil += delta; });
+  enemyBullets.forEach((bullet) => { bullet.bornAt += delta; });
+  pickups.forEach((pickup) => { pickup.bornAt += delta; });
+}
+
+function toggleShooterPause() {
+  if (gameSessionState === "playing") {
+    shooterPausedAt = performance.now();
+    cancelAnimationFrame(shooterFrame);
+    shooterPointerTarget = null; shooterHeld = { left: false, right: false, up: false, down: false };
+    setGameSessionState("paused");
+    setStatus("已暂停 · 作战计时与攻击预警均已冻结。");
+  } else if (gameSessionState === "paused" && shooterPausedAt !== null) {
+    shiftShooterDeadlines(performance.now() - shooterPausedAt);
+    shooterPausedAt = null; shooterLast = 0;
+    setGameSessionState("playing");
+    setStatus("继续飞行 · 移动规避，主炮自动射击。");
+    shooterFrame = requestAnimationFrame(shooterLoop);
+  }
+}
+
+const shooterPauseButton = document.createElement("button");
+shooterPauseButton.type = "button"; shooterPauseButton.className = "secondary shooter-pause";
+shooterPauseButton.textContent = "暂停";
+shooterPauseButton.style.cssText = "position:fixed;left:140px;top:8px;z-index:20;min-height:44px;padding:0 14px";
+shooterPauseButton.hidden = true;
+document.body.appendChild(shooterPauseButton);
+const shooterCoachStyle=document.createElement('style');
+shooterCoachStyle.textContent='body[data-template=space-shooter] .onboarding-coach{bottom:100px}';
+document.head.appendChild(shooterCoachStyle);
+shooterPauseButton.addEventListener("click", toggleShooterPause);
+window.addEventListener("game:state-change", () => {
+  shooterPauseButton.hidden = !["playing", "paused"].includes(gameSessionState);
+  shooterPauseButton.textContent = gameSessionState === "paused" ? "继续" : "暂停";
+});
+document.addEventListener("visibilitychange", () => { if (document.hidden && gameSessionState === "playing") toggleShooterPause(); });
+
+// Upgrades are selected after the result, never during a wave.
+const shooterRewardPanel = document.createElement("section");
+shooterRewardPanel.className = "shooter-rewards";
+shooterRewardPanel.hidden = true;
+const shooterRewardStyle = document.createElement("style");
+shooterRewardStyle.textContent = ".shooter-rewards{margin:12px 0;padding:12px;border:1px solid #70eedb66;border-radius:14px;background:#122d3e;color:#edffff}.shooter-rewards h3{margin:0 0 10px;font:700 16px inherit}.shooter-rewards>div{display:flex;gap:8px}.shooter-rewards button{flex:1;min-height:48px;padding:10px 6px;font-size:14px;border:1px solid #70eedb;background:#193b4d;color:#edffff}.shooter-rewards button[aria-pressed=true]{background:#70eedb;color:#122d3e}.shooter-rewards p{font-size:12px;margin:8px 0 0}";
+document.head.appendChild(shooterRewardStyle);
+startButton.before(shooterRewardPanel);
+function readShooterRewards() {
+  try { return JSON.parse(safeStorage.getItem(config.campaignStorageKey + ":shooter-rewards:v1") || "{}") || {}; } catch { return {}; }
+}
+function renderShooterReward(completedNumber) {
+  (overlay.querySelector(".victory-summary") || overlay).appendChild(shooterRewardPanel);
+  shooterRewardPanel.replaceChildren();
+  if (completedNumber >= config.campaignLevels.length) { shooterRewardPanel.hidden = true; return; }
+  const rewards = readShooterRewards();
+  const title = document.createElement("h3"); title.textContent = "航道突破 · 选择下一关强化";
+  const row = document.createElement("div");
+  const note = document.createElement("p"); note.textContent = "三选一，下一关及其重试有效；也可直接继续。";
+  for (const [type, label] of [["upgrade", "主炮强化"], ["shield", "开局护盾"], ["pulse", "满充脉冲"]]) {
+    const button = document.createElement("button");
+    button.type = "button"; button.textContent = label; button.dataset.shooterReward = type;
+    button.setAttribute("aria-pressed", String(rewards[completedNumber] === type));
+    button.addEventListener("click", () => {
+      if (!["stage-complete", "won"].includes(gameSessionState)) return;
+      const saved = readShooterRewards();
+      if (saved[completedNumber]) return;
+      saved[completedNumber] = type;
+      safeStorage.setItem(config.campaignStorageKey + ":shooter-rewards:v1", JSON.stringify(saved));
+      shooterSupplyHistory.push(type);
+      renderShooterReward(completedNumber);
+      playSound("reward");
+    });
+    button.disabled = Boolean(rewards[completedNumber]);
+    row.appendChild(button);
+  }
+  if (rewards[completedNumber]) note.textContent = "强化已装配，进入下一关生效；刷新或重试不会丢失。";
+  shooterRewardPanel.append(title, row, note); shooterRewardPanel.hidden = false;
+}
+function finishShooterLevel() {
+  const completedNumber = currentCampaignLevel().number;
+  running = false;
+  showResult(true, "星环航道已打开", "连续突破三段封锁，击破 " + kills + " 架敌机，最高连击 ×" + shooterBestCombo + "，得分 " + shooterScore + "。有效作战 " + Math.floor(shooterActiveMs / 1000) + " 秒，无伤通过 " + shooterCleanWaves + " 段。");
+  renderShooterReward(completedNumber);
+}
 
 function shooterSceneHeight() {
   return gameSceneHeight();
@@ -84,7 +180,7 @@ function shooterLevelBlueprints() {
     guardian
       ? { label: "守环者", count: 1, kinds: ["boss"], boss: true }
       : { label: tier < 2 ? "精英封锁" : "全型编队", count: 8 + tier, kinds: [pick(2), pick(3), tier >= 2 ? "shield" : "scout"], elite: true },
-  ];
+  ].map((plan) => ({ ...plan, count: Math.ceil(estimatedShooterSessionSeconds() / 3 / 1.8), durationMs: estimatedShooterSessionSeconds() * 1000 / 3 }));
 }
 
 function syncShooterLoadoutUi() {
@@ -172,8 +268,9 @@ function firePlayerBullet(timestamp) {
   if (!ship || timestamp < nextShotAt) return;
   const loadout = currentShooterLoadout();
   const rapid = timestamp < rapidFireUntil ? .62 : 1;
-  const positions = loadout.id === "lancer" ? [-17, 17] : [0];
-  positions.forEach((offset) => bullets.push({ x: ship.x + ship.width / 2 - 7 + offset, y: ship.y - 24, width: 14, height: 34, speed: 730, damage: loadout.id === "lancer" ? 1.05 : 1 }));
+  const positions = shooterUpgradeLevel >= 2 ? [-22, 0, 22] : loadout.id === "lancer" ? [-17, 17] : [0];
+  positions.forEach((offset) => bullets.push({ x: ship.x + ship.width / 2 - 7 + offset, y: ship.y - 24, width: 14, height: 34, speed: 730, damage: (loadout.id === "lancer" ? 1.05 : 1) * (1 + shooterUpgradeLevel * .18) }));
+  if (shooterPointerMoves > 0 || shooterHeld.left || shooterHeld.right || shooterHeld.up || shooterHeld.down) signalOnboarding("shot-fired");
   nextShotAt = timestamp + loadout.fireDelay * rapid;
   if (shooterFrameCount % 18 === 0) playSound("move");
 }
@@ -250,6 +347,7 @@ function damageShip(timestamp) {
     setStatus("护盾吸收了一次命中 · 能量未损失。");
     return;
   }
+  shooterWaveHits += 1;
   shooterLives -= 1;
   shooterCombo = 0;
   burst(ship.x + ship.width / 2, ship.y + ship.height / 2, "#ff6a5d", 24, 180);
@@ -290,13 +388,21 @@ function aimShooterBullet(enemy, speed, angleOffset = 0, radius = 9) {
   if (!ship || enemyBullets.length >= 90) return;
   const dx = ship.x + ship.width / 2 - (enemy.x + enemy.width / 2);
   const dy = ship.y + ship.height / 2 - (enemy.y + enemy.height / 2);
-  const base = Math.atan2(dy, dx) + angleOffset;
+  const base = (typeof enemy.lockedAim === "number" ? enemy.lockedAim : Math.atan2(dy, dx)) + angleOffset;
   const difficulty = shooterDifficultyProfile();
   enemyBullets.push({ x: enemy.x + enemy.width / 2, y: enemy.y + enemy.height * .72, vx: Math.cos(base) * speed * difficulty.bulletSpeed, vy: Math.sin(base) * speed * difficulty.bulletSpeed, radius, kind: enemy.kind, grazed: false, bornAt: performance.now() });
 }
 
 function fireShooterEnemy(enemy, timestamp) {
   if (enemy.dead || timestamp < enemy.warningUntil || timestamp < enemy.shotAt || enemy.y < 18) return;
+  if (enemy.kind === "boss" || enemy.kind === "turret") {
+    if (!enemy.aimUntil) {
+      enemy.lockedAim = Math.atan2(ship.y + ship.height / 2 - (enemy.y + enemy.height / 2), ship.x + ship.width / 2 - (enemy.x + enemy.width / 2));
+      enemy.aimUntil = timestamp + (enemy.kind === "boss" ? 850 : 650);
+      return;
+    }
+    if (timestamp < enemy.aimUntil) return;
+  }
   const difficulty = shooterDifficultyProfile();
   const tier = currentCampaignLevel().tier;
   if (enemy.kind === "scout") aimShooterBullet(enemy, 178 + tier * 8, 0, 8);
@@ -306,6 +412,8 @@ function fireShooterEnemy(enemy, timestamp) {
     const count = shooterBossPhase === 2 ? 7 : 5;
     for (let index = 0; index < count; index += 1) aimShooterBullet(enemy, 170 + tier * 9, (index - (count - 1) / 2) * .16, shooterBossPhase === 2 ? 11 : 9);
   }
+  enemy.aimUntil = 0;
+  enemy.lockedAim = undefined;
   enemy.shotAt = timestamp + shooterEnemyStats(enemy.kind).delay / difficulty.fireRate;
 }
 
@@ -358,17 +466,22 @@ function updateShooterEnemy(enemy, seconds, timestamp) {
 
 function shooterWaveComplete(timestamp) {
   const plan = shooterWavePlans[shooterWaveIndex];
-  if (!plan || shooterWaveSpawned < plan.count || enemies.some((enemy) => !enemy.dead)) return false;
+  if (!plan || plan.settled || shooterActiveMs - shooterStageStartedMs < plan.durationMs || shooterWaveSpawned < plan.count || enemies.some((enemy) => !enemy.dead)) return false;
+  plan.settled = true;
+  if (shooterWaveHits === 0) shooterCleanWaves += 1;
   if (shooterWaveIndex >= shooterWaveCount - 1) {
-    if (!shooterInputAuditActive) showResult(true, "星环航道已打开", "你完成三波作战，击破 " + kills + " 架敌机，最高连击 ×" + shooterBestCombo + "，得分 " + shooterScore + "。");
+    if (!shooterInputAuditActive) finishShooterLevel();
     return true;
   }
   shooterWaveIndex += 1;
   shooterWaveSpawned = 0;
   shooterWaveDefeated = 0;
-  shooterIntermissionUntil = timestamp + 1650;
+  shooterWaveHits = 0;
+  shooterStageStartedMs = shooterActiveMs;
+  shooterIntermissionUntil = timestamp;
+  nextEnemyAt = timestamp;
   shooterWaveBannerText = "WAVE " + (shooterWaveIndex + 1) + " · " + shooterWavePlans[shooterWaveIndex].label;
-  shooterWaveBannerUntil = timestamp + 2100;
+  shooterWaveBannerUntil = timestamp;
   setStatus("第 " + (shooterWaveIndex + 1) + " 波即将进入 · " + shooterWavePlans[shooterWaveIndex].label + "。");
   return false;
 }
@@ -389,10 +502,19 @@ function updateShooter(delta, timestamp) {
   }
   ship.x = Math.max(18, Math.min(720 - ship.width - 18, ship.x));
   ship.y = Math.max(142, Math.min(shooterSceneHeight() - ship.height - 26, ship.y));
-  firePlayerBullet(timestamp);
+  const tutorialMovement = shooterPointerMoves > 0 || horizontal !== 0 || vertical !== 0;
+  if ((!onboardingIsActive() || tutorialMovement)) firePlayerBullet(timestamp);
+  if (onboardingIsActive()) {
+    shooterStartedAt += delta;
+    particles.forEach((particle) => { particle.x += particle.vx * seconds; particle.y += particle.vy * seconds; particle.vx *= .985; particle.vy *= .985; particle.life -= seconds; });
+    particles = particles.filter((particle) => particle.life > 0);
+    setMetric("移动试试");
+    return;
+  }
+  shooterActiveMs += Math.max(0, Math.min(100, delta));
   const plan = shooterWavePlans[shooterWaveIndex];
-  if (plan && timestamp >= shooterIntermissionUntil && shooterWaveSpawned < plan.count && timestamp >= nextEnemyAt) {
-    const kind = plan.kinds[shooterWaveSpawned % plan.kinds.length];
+  if (plan && timestamp >= shooterIntermissionUntil && shooterWaveSpawned < plan.count && timestamp >= nextEnemyAt && shooterActiveMs - shooterStageStartedMs >= shooterWaveSpawned * plan.durationMs / (plan.count - 1)) {
+    const kind = plan.boss ? (shooterWaveSpawned === plan.count - 1 ? "boss" : shooterEnemyKinds[shooterWaveSpawned % Math.min(3, currentCampaignLevel().tier + 1)]) : plan.kinds[shooterWaveSpawned % plan.kinds.length];
     spawnShooterEnemy(kind, timestamp);
     shooterWaveSpawned += 1;
     const baseDelay = plan.boss ? 1000 : Math.max(430, 820 - currentCampaignLevel().tier * 55);
@@ -489,6 +611,15 @@ function drawShooterEnemy(enemy, timestamp) {
   ctx.save();
   if (enemy.kind === "weaver") { ctx.strokeStyle = "rgba(95,232,225,.82)"; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(enemy.x - 8, enemy.y + enemy.height * .55); ctx.lineTo(enemy.x + enemy.width / 2, enemy.y + enemy.height * .28); ctx.lineTo(enemy.x + enemy.width + 8, enemy.y + enemy.height * .55); ctx.stroke(); }
   if (enemy.kind === "turret") { ctx.strokeStyle = "#ffbd68"; ctx.lineWidth = 4; ctx.beginPath(); ctx.arc(enemy.x + enemy.width / 2, enemy.y + enemy.height / 2, enemy.width * .52, 0, Math.PI * 2); ctx.stroke(); }
+  if (enemy.aimUntil && timestamp < enemy.aimUntil) {
+    const x = enemy.x + enemy.width / 2; const y = enemy.y + enemy.height * .72;
+    ctx.strokeStyle = "rgba(255,193,111,.72)"; ctx.lineWidth = 2; ctx.setLineDash([10, 10]);
+    const rays = enemy.kind === "boss" ? Array.from({length:shooterBossPhase === 2 ? 7 : 5}, (_,index) => (index - (shooterBossPhase === 2 ? 3 : 2)) * .16) : [-.28, 0, .28];
+    rays.forEach((offset) => { const angle = enemy.lockedAim + offset; ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x + Math.cos(angle) * 850, y + Math.sin(angle) * 850); ctx.stroke(); });
+    ctx.setLineDash([]);
+    ctx.fillStyle = "#ffce83"; ctx.textAlign = "center"; ctx.font = "800 24px Inter, sans-serif";
+    ctx.fillText("锁定 · 离开虚线方向", x, y - 24);
+  }
   if (enemy.shield > 0) { ctx.strokeStyle = "rgba(97,216,255,.92)"; ctx.lineWidth = 4; ctx.shadowColor = "#55d9ff"; ctx.shadowBlur = 12; ctx.beginPath(); ctx.ellipse(enemy.x + enemy.width / 2, enemy.y + enemy.height / 2, enemy.width * .62, enemy.height * .68, 0, 0, Math.PI * 2); ctx.stroke(); }
   if (!enemy.boss && enemy.hp < enemy.maxHp) { ctx.fillStyle = "rgba(0,0,0,.6)"; ctx.fillRect(enemy.x, enemy.y - 10, enemy.width, 5); ctx.fillStyle = enemy.elite ? "#ffb668" : "#68ebe3"; ctx.fillRect(enemy.x, enemy.y - 10, enemy.width * Math.max(0, enemy.hp / enemy.maxHp), 5); }
   ctx.restore();
@@ -531,7 +662,7 @@ function drawShooter(timestamp = 0) {
     drawBitmapSprite(0, ship.x - 14, ship.y - 14, ship.width + 28, ship.height + 28, { fallback: "#65e6df" }); drawBitmapSprite(7, ship.x + ship.width / 2 - 14, ship.y + ship.height - 10, 28, 42, { fallback: "#ffd16a", padding: 8, alpha: .94 });
   }
   if (shooterPulseEffect) { const progress = Math.min(1, Math.max(0, (timestamp - shooterPulseEffect.startedAt) / (shooterPulseEffect.until - shooterPulseEffect.startedAt))); ctx.strokeStyle = "rgba(133,255,249," + (1 - progress) + ")"; ctx.lineWidth = 9 * (1 - progress) + 2; ctx.shadowColor = "#7ffcf5"; ctx.shadowBlur = 20; ctx.beginPath(); ctx.arc(shooterPulseEffect.x, shooterPulseEffect.y, shooterPulseEffect.radius * progress, 0, Math.PI * 2); ctx.stroke(); ctx.shadowBlur = 0; }
-  drawShooterHud(timestamp); drawShooterPulseControl(timestamp);
+  drawShooterHud(timestamp);
   if (timestamp < rapidFireUntil) { ctx.fillStyle = "#ffd06a"; ctx.font = "800 12px ui-monospace, Consolas, monospace"; ctx.textAlign = "left"; ctx.fillText("OVERDRIVE " + Math.max(0, Math.ceil((rapidFireUntil - timestamp) / 1000)) + "s", 28, 128); }
   if (timestamp < shooterWaveBannerUntil) { const alpha = Math.min(1, Math.max(0, (shooterWaveBannerUntil - timestamp) / 420)); ctx.fillStyle = "rgba(3,18,27," + Math.min(.78, alpha) + ")"; ctx.fillRect(0, shooterSceneHeight() * .42 - 42, 720, 84); ctx.fillStyle = "rgba(235,255,255," + alpha + ")"; ctx.font = "900 25px Inter, sans-serif"; ctx.textAlign = "center"; ctx.fillText(shooterWaveBannerText, 360, shooterSceneHeight() * .42 + 7); }
   if (flash) { ctx.fillStyle = "rgba(255,83,72,.16)"; ctx.fillRect(0, 0, 720, shooterSceneHeight()); }
@@ -549,6 +680,11 @@ function shooterLoop(timestamp) {
 function startGame() {
   if (shooterFrame) cancelAnimationFrame(shooterFrame);
   resetCampaignRandom();
+  shooterRewardPanel.hidden = true;
+  shooterActiveMs = 0; shooterStageStartedMs = 0;
+  shooterUpgradeLevel = 0; shooterSupplyHistory = []; shooterWaveHits = 0; shooterCleanWaves = 0; shooterPausedAt = null;
+  const reward = readShooterRewards()[currentCampaignLevel().number - 1];
+  shooterUpgradeLevel = reward === "upgrade" ? 1 : 0;
   const loadout = currentShooterLoadout();
   shooterWavePlans = shooterLevelBlueprints();
   killTarget = shooterWavePlans.reduce((total, wave) => total + wave.count, 0);
@@ -558,6 +694,8 @@ function startGame() {
   shooterMaxLives = Math.max(3, loadout.maxLives + difficultyLives); shooterLives = shooterMaxLives; shooterShield = loadout.id === "bulwark" ? 1 : 0;
   shooterHeld = { left: false, right: false, up: false, down: false }; shooterLast = 0; nextEnemyAt = performance.now() + 900; nextShotAt = 0; shipInvulnerableUntil = 0; shooterStartedAt = performance.now(); shooterPointerId = null; shooterCombo = 0; shooterBestCombo = 0; lastKillAt = 0; rapidFireUntil = 0; shooterGrazeCount = 0; shooterPointerMoves = 0; shooterFrameCount = 0; shooterMaxFrameGapMs = 0; shooterLastPointerMoveAt = 0; shooterMaxPointerGapMs = 0; shooterPointerTarget = null; shooterPointerType = "none";
   shooterWaveIndex = 0; shooterWaveSpawned = 0; shooterWaveDefeated = 0; shooterIntermissionUntil = performance.now() + 650; shooterPulseCharge = loadout.id === "bulwark" ? 50 : 35; shooterPulseEffect = null; shooterPulseReadyNotified = false; shooterBoss = null; shooterBossPhase = 0; shooterHitFlashUntil = 0;
+  if (reward === "shield") shooterShield += 1;
+  if (reward === "pulse") shooterPulseCharge = 100;
   shooterWaveBannerText = "WAVE 1 · " + shooterWavePlans[0].label; shooterWaveBannerUntil = performance.now() + 2100;
   running = true; hideOverlay(); syncShooterAbilityControl(); setMetric("W1/3 · 0/" + killTarget); setStatus(currentShooterLoadout().label + "出击 · 第 1 波 " + shooterWavePlans[0].label + "；移动规避，主武器自动射击。"); startAmbient(); shooterFrame = requestAnimationFrame(shooterLoop);
 }
@@ -590,8 +728,6 @@ function moveShipTowardPointer(event) {
 
 canvas.addEventListener("pointerdown", (event) => {
   if (!running) return;
-  const point = eventScenePoint(event);
-  if (point.x > 588 && point.y > shooterSceneHeight() - 156 && shooterPulseCharge >= 100) { activateShooterPulse(); if (event.cancelable) event.preventDefault(); return; }
   shooterPointerId = event.pointerId; shooterPointerType = event.pointerType || "mouse"; shooterLastPointerMoveAt = performance.now(); moveShipTowardPointer(event); try { canvas.setPointerCapture(event.pointerId); } catch {} if (event.cancelable) event.preventDefault();
 });
 
@@ -600,12 +736,14 @@ function releaseShooterPointer(event) { if (event.pointerId !== shooterPointerId
 canvas.addEventListener("pointerup", releaseShooterPointer); canvas.addEventListener("pointercancel", releaseShooterPointer); canvas.addEventListener("pointerleave", (event) => { if ((event.pointerType === "mouse" || !event.pointerType) && shooterPointerId === null) shooterPointerTarget = null; });
 
 function estimatedShooterSessionSeconds() {
-  const tier = currentCampaignLevel().tier;
-  const guardian = currentCampaignLevel().number % 4 === 0;
-  return Math.round((92 + tier * 6 + (guardian ? 12 : 0)) / campaignScale("densityMultiplier") * 10) / 10;
+  const number = currentCampaignLevel().number;
+  return number === 1 ? 120 : 180 + Math.floor((number - 2) / 4) * 30;
 }
 
 runtimeDebugActions = {
+  protectForTimingReview: () => { shipInvulnerableUntil = performance.now() + 1000000; },
+  previewCompletedLevel: () => { shooterActiveMs = estimatedShooterSessionSeconds() * 1000; finishShooterLevel(); },
+  previewLockedAttack: () => { enemies = []; enemyBullets = []; const now = performance.now(); const enemy = spawnShooterEnemy("turret", now - 2000); enemy.x = 319; enemy.y = 210; enemy.warningUntil = 0; enemy.shotAt = now; fireShooterEnemy(enemy, now); },
   beginContinuousInputAudit: () => { shooterInputAuditActive = true; startGame(); },
   endContinuousInputAudit: () => { shooterInputAuditActive = false; },
   damageOnce: () => { shooterInputAuditActive = false; shipInvulnerableUntil = 0; shooterShield = 0; damageShip(performance.now()); },
@@ -620,6 +758,8 @@ runtimeDebugActions = {
 
 runtimeDebugState = () => ({
   level: currentCampaignLevel().number, tier: currentCampaignLevel().tier, loadout: shooterLoadout, loadoutCount: Object.keys(shooterLoadouts).length,
+  supplyChoice: null, upgradeLevel: shooterUpgradeLevel, supplyHistory: [...shooterSupplyHistory], cleanWaves: shooterCleanWaves,
+  attackWarnings: enemies.filter((enemy) => enemy.aimUntil).map((enemy) => ({ kind: enemy.kind, aim: enemy.lockedAim, until: enemy.aimUntil })),
   kills, killTarget, score: shooterScore, lives: shooterLives, maxLives: shooterMaxLives, shield: shooterShield,
   currentWave: shooterWaveIndex + 1, waveCount: shooterWaveCount, waveLabel: shooterWavePlans[shooterWaveIndex]?.label || "待命", waveSpawned: shooterWaveSpawned, waveDefeated: shooterWaveDefeated,
   enemyCount: enemies.length, enemyBulletCount: enemyBullets.length, enemyArchetypeCount: shooterEnemyKinds.length, enemyArchetypes: [...shooterEnemyKinds],
@@ -629,7 +769,7 @@ runtimeDebugState = () => ({
   shipPosition: { x: Math.round(ship.x), y: Math.round(ship.y) }, pointerControl: "mouse-hover-touch-hold-drag", abilityControl: "space-f-touch-button",
   bulletVisual: { width: 14, height: 34, glowRadius: 20, bitmapPadding: 2, highContrastCore: true }, enemyBulletVisual: { warmSolidCore: true, shapeDistinctFromPlayer: true, minimumRadius: 8 }, hudContract: "energy-wave-score-boss",
   inputAuditActive: shooterInputAuditActive, frameCount: shooterFrameCount, maxFrameGapMs: Math.round(shooterMaxFrameGapMs * 10) / 10, maxPointerGapMs: Math.round(shooterMaxPointerGapMs * 10) / 10,
-  estimatedSessionSeconds: estimatedShooterSessionSeconds(), elapsedMs: shooterStartedAt ? Math.max(0, performance.now() - shooterStartedAt) : 0,
+  estimatedSessionSeconds: estimatedShooterSessionSeconds(), elapsedMs: shooterActiveMs, stageElapsedMs: shooterActiveMs - shooterStageStartedMs, stageDurationMs: shooterWavePlans[shooterWaveIndex]?.durationMs || 0,
 });
 
 syncShooterLoadoutUi();

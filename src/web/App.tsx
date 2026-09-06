@@ -26,6 +26,7 @@ import { ProjectStudio } from "./ProjectStudio";
 import { SiteHeader } from "./SiteHeader";
 import { AdvancedStudioApp } from "../App";
 import { usePreferences, type ResolvedLocale } from "./preferences";
+import { DesignKnowledgeConsole } from "./DesignKnowledgeConsole";
 
 function projectIdFromLocation() {
   return new URLSearchParams(window.location.search).get("project");
@@ -310,5 +311,6 @@ export function App() {
   if (["/", "", "/games"].includes(window.location.pathname)) return <GameLibrary />;
   if (window.location.pathname === "/projects") return <StudioHome />;
   if (window.location.pathname === "/create") return <CreatePage />;
+  if (window.location.pathname === "/design-knowledge") return <DesignKnowledgeConsole />;
   return <NotFoundPage />;
 }

@@ -24,6 +24,7 @@ import {
   validateMove,
 } from "./game-core.js";
 import { heicTo } from "./vendor/heic-to-csp.js";
+import {LESSONS,lessonState,lessonAccepts} from './lessons.js';
 
 const PROGRESS_KEY = "freecell.progress.v1";
 const SESSION_KEY = "freecell.session.v1";
@@ -120,6 +121,9 @@ const game = {
   cursor: { row: 1, index: 0 },
   keyboardMode: false,
   hint: null,
+  sessionId:0,
+  practice:null,
+  hintCount:0,
 };
 
 function elapsedMs() {
@@ -134,6 +138,7 @@ function formatTime(ms) {
 }
 
 function saveSession() {
+  if(game.practice)return;
   writeJson(SESSION_KEY, {
     level: game.level,
     state: game.state,
@@ -141,6 +146,7 @@ function saveSession() {
     moves: game.moves,
     elapsed: elapsedMs(),
     won: game.won,
+    hints:game.hintCount,
   });
 }
 
@@ -155,10 +161,14 @@ function restoreSession() {
   game.elapsedBefore = Number(session.elapsed) || 0;
   game.startedAt = game.moves > 0 ? Date.now() : null;
   game.won = false;
+  game.hintCount=Number(session.hints)||0;
   return true;
 }
 
 function startLevel(level, { deal = true } = {}) {
+  if(game.practice)endPractice();
+  game.sessionId++;game.cascading=false;dom.body.dataset.cascading='false';dom.body.classList.remove('is-celebrating');
+  game.hintCount=0;
   game.level = level;
   game.state = createState(level);
   game.history = [];
@@ -243,7 +253,8 @@ function computeMetrics() {
   metrics.topRowY = 0;
   metrics.columnsY = metrics.cardH + gap * 1.6;
   metrics.tableHeight = rect.height - 8;
-  metrics.stackOffset = Math.max(12, Math.min(Math.round(metrics.cardH * 0.3), 34));
+  // Use the available vertical table space so mobile ranks are not packed into tiny strips.
+  metrics.stackOffset = Math.max(20, Math.min(Math.round(metrics.cardH * 0.65), 56));
   dom.table.style.setProperty("--card-w", `${metrics.cardW}px`);
   dom.table.style.setProperty("--card-h", `${metrics.cardH}px`);
   dom.table.style.setProperty("--gap", `${gap}px`);
@@ -259,7 +270,7 @@ function slotPosition(slot) {
 
 function columnOffset(length) {
   if (length <= 1) return metrics.stackOffset;
-  const available = Math.max(metrics.cardH * 2, metrics.tableHeight - metrics.columnsY - metrics.cardH);
+  const available = Math.max(0, metrics.tableHeight - metrics.columnsY - metrics.cardH);
   return Math.max(9, Math.min(metrics.stackOffset, Math.floor(available / (length - 1))));
 }
 
@@ -267,6 +278,23 @@ function placeCard(element, x, y, z) {
   element.style.setProperty("--x", `${Math.round(x)}px`);
   element.style.setProperty("--y", `${Math.round(y)}px`);
   element.style.zIndex = String(z);
+}
+
+const cardFlights = new Map();
+let cardFlightOrder = 0;
+const CARD_FLIGHT_MS = 640;
+function flyCard(element, x, y, z, fromTransform = getComputedStyle(element).transform) {
+  const from = new DOMMatrixReadOnly(fromTransform);
+  cardFlights.get(element)?.cancel();
+  element.style.setProperty('--flight-z', String(1000 + ++cardFlightOrder));
+  placeCard(element, x, y, z);
+  const animation = element.animate([
+    { transform: `translate3d(${from.m41}px,${from.m42}px,0) scale(1)` },
+    { transform: `translate3d(${(from.m41+x)/2}px,${(from.m42+y)/2-24}px,0) scale(1.06)`, offset: .5 },
+    { transform: `translate3d(${x}px,${y}px,0) scale(1)` },
+  ], { duration: CARD_FLIGHT_MS, easing: 'cubic-bezier(.3,.05,.65,.95)' });
+  cardFlights.set(element, animation);
+  animation.onfinish = () => { if(cardFlights.get(element)===animation)cardFlights.delete(element); };
 }
 
 function cardPosition(state, card) {
@@ -302,8 +330,9 @@ function render() {
     element.classList.toggle("is-capped", capped.has(card));
     element.classList.toggle("is-hint", Boolean(game.hint && game.hint.cards.includes(card)));
     const covered = state.foundations[suitOf(card)] > rankOf(card) + 1;
-    element.hidden = covered;
-    if (!covered) placeCard(element, position.x, position.y, position.z + (selected.has(card) ? 40 : 0));
+    const flying = element.classList.contains("is-flying");
+    element.hidden = covered && !flying;
+    if (!covered || flying) placeCard(element, position.x, position.y, position.z + (selected.has(card) ? 40 : 0));
   }
   renderSlots();
   renderMeta();
@@ -323,7 +352,7 @@ function renderStuck() {
 function renderSlots() {
   const targets = new Set(game.selection ? validTargets(game.selection).map(slotKey) : []);
   const cursorKey = slotKey(cursorSlot());
-  const hintKey = game.hint ? slotKey(game.hint.move.to) : null;
+  const hintKey = game.hint?.revealed ? slotKey(game.hint.move.to) : null;
   for (const slot of dom.table.querySelectorAll(".slot")) {
     const key = slot.dataset.slot;
     slot.classList.toggle("is-target", targets.has(key));
@@ -333,6 +362,7 @@ function renderSlots() {
 }
 
 function renderMeta() {
+  renderLearningBar();
   dom.level.textContent = String(game.level);
   dom.moves.textContent = String(game.moves);
   dom.moves.dataset.prefix = "步";
@@ -425,13 +455,19 @@ function startTimerIfNeeded() {
 
 /** 执行玩家移动:记录历史、自动收牌、检测胜利。返回是否成功。 */
 function performMove(move, { announce = true } = {}) {
-  if (game.won) return false;
+  if (game.won || dom.body.dataset.dealing === "true") return false;
   const verdict = validateMove(game.state, move);
   if (!verdict.ok) {
     rejectMove(move, verdict);
     return false;
   }
   if (game.cascading) return false;
+  if(game.practice){
+    game.state=applyMove(game.state,move);game.selection=null;game.hint=null;
+    if(lessonAccepts(game.practice.index,{...move,count:move.count??1})){game.practice.passed=true;setStatus('完成！你可以继续下一段练习。');}
+    else setStatus('这是合法移动。要完成本练习，请按上方说明操作；也可点“重练”。');
+    render();return true;
+  }
   startTimerIfNeeded();
   game.history.push({ state: game.state, moves: game.moves });
   if (game.history.length > 500) game.history.shift();
@@ -449,42 +485,48 @@ function performMove(move, { announce = true } = {}) {
   }
   render();
   // 会话直接保存收牌完成后的局面:刷新后不会卡在收牌中途。
-  writeJson(SESSION_KEY, { level: game.level, state: auto.state, history: game.history, moves: game.moves, elapsed: elapsedMs(), won: false });
+  writeJson(SESSION_KEY, { level: game.level, state: auto.state, history: game.history, moves: game.moves, elapsed: elapsedMs(), won: false,hints:game.hintCount });
   if (auto.moves.length > 0) runCascade(auto.state);
-  else if (isWon(game.state)) finishLevel();
+  else if (isWon(game.state)) celebrateThenFinish();
   return true;
 }
 
-const REDUCED_MOTION = typeof matchMedia === "function" && matchMedia("(prefers-reduced-motion: reduce)").matches;
-
 /** 自动收牌:一张一张飞向收牌堆;全部到位后再结算。牌越多间隔越短,整段不超过约 4 秒。 */
 function runCascade(finalState) {
-  if (REDUCED_MOTION) {
-    game.state = finalState;
-    render();
-    if (isWon(game.state)) finishLevel();
-    return;
-  }
+  const sessionId=game.sessionId;
   const total = autoPlayAll(game.state).moves.length;
   const interval = Math.max(70, Math.min(160, Math.floor(3600 / Math.max(1, total))));
   game.cascading = true;
   dom.body.dataset.cascading = "true";
   const step = () => {
+    if(sessionId!==game.sessionId)return;
     const move = nextAutoMove(game.state);
     if (!move) {
-      game.cascading = false;
-      dom.body.dataset.cascading = "false";
-      game.state = finalState;
-      render();
-      if (isWon(game.state)) celebrateThenFinish();
+      // Let the final card land before exposing the result or accepting another move.
+      setTimeout(() => {
+        if(sessionId!==game.sessionId)return;
+        game.cascading = false;
+        dom.body.dataset.cascading = "false";
+        game.state = finalState;
+        render();
+        if (isWon(game.state)) celebrateThenFinish();
+      }, CARD_FLIGHT_MS + 30);
       return;
     }
     const card = move.from.type === "cell" ? game.state.cells[move.from.index] : game.state.columns[move.from.index].at(-1);
     const element = cardElements.get(card);
+    const from = getComputedStyle(element).transform;
     element.classList.add("is-flying");
-    setTimeout(() => element.classList.remove("is-flying"), 520);
+    setTimeout(() => {
+      if(sessionId!==game.sessionId)return;
+      element.classList.remove("is-flying");
+      element.hidden = game.state.foundations[suitOf(card)] > rankOf(card) + 1;
+    }, CARD_FLIGHT_MS + 30);
     game.state = applyMove(game.state, move);
     render();
+    // render() updates the destination; start the visible flight from the pre-move position.
+    const destination = cardPosition(game.state, card);
+    if(destination)flyCard(element,destination.x,destination.y,300,from);
     setTimeout(step, interval);
   };
   step();
@@ -492,14 +534,22 @@ function runCascade(finalState) {
 
 /** 通关时先让四个收牌堆依次弹一下,再弹出结算面板。 */
 function celebrateThenFinish() {
+  const sessionId=game.sessionId;
+  game.cascading = true;
+  dom.body.dataset.cascading = "true";
   dom.body.classList.add("is-celebrating");
   setTimeout(() => {
+    if(sessionId!==game.sessionId)return;
     dom.body.classList.remove("is-celebrating");
+    game.cascading = false;
+    dom.body.dataset.cascading = "false";
     finishLevel();
   }, 1100);
 }
 
 function undo() {
+  if (dom.body.dataset.dealing === "true") return;
+  if(game.practice){loadPracticeStep(game.practice.index);return;}
   if (game.cascading) return;
   const previous = game.history.pop();
   if (!previous || game.won) return;
@@ -528,7 +578,7 @@ function isMovableRun(from, count) {
 }
 
 function select(from, count) {
-  if (game.cascading) return false;
+  if (game.cascading || dom.body.dataset.dealing === "true") return false;
   if (!isMovableRun(from, count)) {
     setStatus("只能拿起底部连续交替颜色、点数递减的牌组。");
     return false;
@@ -804,7 +854,12 @@ dom.table.addEventListener("blur", renderSlots);
 // ---------- 提示 ----------
 
 function showHint() {
-  if (game.won) return;
+  if (game.won||game.cascading||game.practice) return;
+  const signature=JSON.stringify(game.state);
+  if(game.hint?.signature===signature){
+    const move=game.hint.move,target=move.to.type==='foundation'?'收牌堆':move.to.type==='cell'?`空档 ${move.to.index+1}`:`第 ${move.to.index+1} 列`;
+    game.hint.revealed=true;setStatus(`下一步：把 ${game.hint.cards.map(cardName).join('、')} 移到${target}。`);render();return;
+  }
   const result = solve(game.state, { maxNodes: 40_000 });
   const move = result.moves[0]?.move;
   if (!move) {
@@ -812,15 +867,17 @@ function showHint() {
     return;
   }
   const verdict = validateMove(game.state, move);
-  game.hint = { move, cards: verdict.cards ?? [] };
+  game.hintCount++;saveSession();
+  game.hint = { move, cards: verdict.cards ?? [],signature,revealed:false };
   const target = move.to.type === "foundation" ? "收牌堆" : move.to.type === "cell" ? `空档 ${move.to.index + 1}` : `第 ${move.to.index + 1} 列`;
-  setStatus(`提示:把 ${verdict.cards.map(cardName).join("、")} 移到${target}。`);
+  setStatus(move.to.type==='foundation'?'先找可按花色收入的下一张牌。再点提示查看下一步。':move.to.type==='cell'?'借用一个空档，释放被压住的牌。再点提示查看下一步。':'检查亮起的牌组：异色递减能否接到另一列？再点提示查看下一步。');
   render();
 }
 
 // ---------- 关卡与结算 ----------
 
 function finishLevel() {
+  if(game.practice||game.won)return;
   game.won = true;
   game.elapsedBefore = elapsedMs();
   game.startedAt = null;
@@ -843,6 +900,9 @@ function finishLevel() {
   dom.winMoves.textContent = String(game.moves);
   dom.winTime.textContent = formatTime(game.elapsedBefore);
   dom.winBest.textContent = String(best);
+  let growth=dom.winDialog.querySelector('.growth-summary');
+  if(!growth){growth=document.createElement('p');growth.className='growth-summary';dom.winDialog.querySelector('.win-stats').after(growth);}
+  growth.textContent='52 张归位 · 四门全收。'+(previous&&game.moves<previous.bestMoves?`比自己的最佳纪录少 ${previous.bestMoves-game.moves} 步。`:'完成整副牌的空间规划。')+` 使用方向提示 ${game.hintCount} 次。`;
   dom.nextLevel.hidden = game.level >= LEVEL_COUNT;
   renderMeta();
   setStatus(`第 ${game.level} 关完成!${game.moves} 步,用时 ${formatTime(game.elapsedBefore)}。`);
@@ -1044,47 +1104,47 @@ function resetCardBack() {
 // ---------- 发牌动画 ----------
 
 function dealAnimation() {
+  const sessionId = ++game.sessionId;
+  for(const animation of cardFlights.values())animation.cancel();
+  cardFlights.clear();
   computeMetrics();
   const deckX = metrics.left + (metrics.cardW + metrics.gap) * 3.5;
   const deckY = metrics.topRowY;
-  const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  const order = [];
+  for (let row = 0; row < Math.max(...game.state.columns.map(column => column.length)); row++) {
+    for (const column of game.state.columns) if (column[row] !== undefined) order.push(column[row]);
+  }
+  for (const card of game.state.cells) if (card !== null) order.push(card);
+  for (let suit = 0; suit < 4; suit++) if (game.state.foundations[suit]) order.push((game.state.foundations[suit] - 1) * 4 + suit);
   for (let card = 0; card < 52; card += 1) {
     const element = cardElements.get(card);
-    element.hidden = false;
-    element.classList.remove("is-dealing", "is-selected", "is-hint");
+    element.hidden = !order.includes(card);
+    element.classList.remove("is-dealing", "is-flying", "is-on-foundation", "is-selected", "is-hint");
     element.classList.add("is-facedown");
     element.style.transition = "none";
     placeCard(element, deckX, deckY, 100 + card);
   }
   // 强制回流,让起始位置生效后再开启过渡。
   void dom.cards.offsetWidth;
-  const order = [];
-  for (let row = 0; row < 7; row += 1) {
-    for (let column = 0; column < COLUMN_COUNT; column += 1) {
-      const card = game.state.columns[column][row];
-      if (card !== undefined) order.push(card);
-    }
-  }
   order.forEach((card, index) => {
     const element = cardElements.get(card);
     element.style.transition = "";
-    if (reduced) {
-      element.classList.remove("is-facedown");
-      return;
-    }
     element.classList.add("is-dealing");
     setTimeout(() => {
+      if(sessionId!==game.sessionId)return;
       element.classList.remove("is-facedown");
       const position = cardPosition(game.state, card);
-      if (position) placeCard(element, position.x, position.y, position.z);
-    }, 16 + index * 14);
-    setTimeout(() => element.classList.remove("is-dealing"), 700 + index * 14);
+      if (position) flyCard(element, position.x, position.y, position.z);
+    }, 32 + index * 24);
+    setTimeout(() => { if(sessionId===game.sessionId)element.classList.remove("is-dealing"); }, 720 + index * 24);
   });
   dom.body.dataset.dealing = "true";
   setTimeout(() => {
+    if(sessionId!==game.sessionId)return;
     dom.body.dataset.dealing = "false";
     render();
-  }, reduced ? 0 : 760 + order.length * 14);
+    window.dispatchEvent(new Event('freecell:deal-complete'));
+  }, 760 + order.length * 24);
   renderSlots();
   renderMeta();
 }
@@ -1129,12 +1189,47 @@ dom.stuckRestart.addEventListener("click", () => restartLevel());
 
 // ---------- 启动 ----------
 
+const learningBar=document.createElement('section');learningBar.className='learning-bar';learningBar.setAttribute('aria-label','空间与学习');
+document.querySelector('.topbar').after(learningBar);
+function renderLearningBar(){
+  if(!game.state)return;
+  if(game.practice){const lesson=LESSONS[game.practice.index];
+    learningBar.innerHTML=`<div><strong>练习 ${game.practice.index+1} / 3 · ${lesson.name}</strong><p>${lesson.detail}</p></div><div class="learning-actions"><button type="button" data-learn="retry">重练</button><button type="button" data-learn="next" ${game.practice.passed?'':'disabled'}>${game.practice.index===2?'练习完成':'下一练习'}</button><button type="button" data-learn="close">回到牌局</button></div>`;
+  }else{
+    const collected=game.state.foundations.reduce((sum,count)=>sum+count,0),cells=game.state.cells.filter(card=>card===null).length;
+    learningBar.innerHTML=`<div><strong>归位 ${collected} / 52</strong><p>空档 ${cells} / 4 · 现可搬 ${maxMovableCount(game.state,false)} 张到非空列</p></div><button type="button" data-learn="start">新手练习</button>`;
+  }
+}
+function loadPracticeStep(index){
+  game.practice.index=index;game.practice.passed=false;game.state=lessonState(index);game.selection=null;game.hint=null;
+  render();select({type:'column',index:0},LESSONS[index].cards.length);
+}
+function beginPractice(){
+  if(game.practice||game.cascading||game.won||dom.body.dataset.dealing==='true')return;
+  saveSession();const elapsed=elapsedMs();
+  game.practice={index:0,passed:false,bookmark:{state:game.state,history:game.history,moves:game.moves,elapsed,started:Boolean(game.startedAt)}};
+  game.startedAt=null;game.history=[];loadPracticeStep(0);
+}
+function endPractice(){
+  if(!game.practice)return;
+  const bookmark=game.practice.bookmark;game.state=bookmark.state;game.history=bookmark.history;game.moves=bookmark.moves;game.elapsedBefore=bookmark.elapsed;
+  game.startedAt=bookmark.started?Date.now():null;game.practice=null;game.selection=null;game.hint=null;
+  writeJson('freecell.learning.v1',{seen:true});render();saveSession();setStatus('已回到原牌局，练习不会改变正式成绩。');
+}
+learningBar.addEventListener('click',event=>{
+  const action=event.target.closest('[data-learn]')?.dataset.learn;
+  if(action==='start')beginPractice();if(action==='close')endPractice();
+  if(action==='retry'&&game.practice)loadPracticeStep(game.practice.index);
+  if(action==='next'&&game.practice?.passed){if(game.practice.index===2)endPractice();else loadPracticeStep(game.practice.index+1);}
+});
+
 dom.body.dataset.cascading = "false";
 loadCardBack();
 if (restoreSession()) {
   dom.body.dataset.gameState = "playing";
   setStatus(`已恢复第 ${game.level} 关的进度。`);
-  render();
+  renderMeta();
+  dealAnimation();
 } else {
   const session = readJson(SESSION_KEY, null);
   const resumeLevel = session?.won && Number.isInteger(session.level) ? Math.min(progress.unlocked, session.level + 1) : progress.unlocked;
@@ -1144,8 +1239,9 @@ if (restoreSession()) {
 // 测试与调试钩子:只读状态、按规则执行移动、求解当前局面。不暴露任何跳过规则的捷径。
 window.__freecell = {
   getState: () => JSON.parse(JSON.stringify(game.state)),
-  getMeta: () => ({ level: game.level, moves: game.moves, won: game.won, unlocked: progress.unlocked, historyLength: game.history.length }),
+  getMeta: () => ({ level: game.level, moves: game.moves, won: game.won, unlocked: progress.unlocked, historyLength: game.history.length,practice:game.practice?{index:game.practice.index,passed:game.practice.passed}:null }),
   validateMove: (move) => validateMove(game.state, move),
   solve: (options) => solve(game.state, options),
   cardLabel,
 };
+if(!readJson('freecell.learning.v1',null))window.addEventListener('freecell:deal-complete',()=>setTimeout(()=>{if(!game.moves&&!game.won)beginPractice();},200),{once:true});

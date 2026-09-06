@@ -107,16 +107,16 @@ const SOURCES: Record<string, ResearchReference> = {
 };
 
 const mechanicSource = (mechanicId: string): ResearchReference => {
-  if (mechanicId === "grid-merge") return SOURCES.merge;
-  if (mechanicId === "lane-dodge" || mechanicId === "projectile-combat") {
+  if (mechanicId === "grid-slide-merge") return SOURCES.merge;
+  if (mechanicId === "lane-dodge" || mechanicId === "projectile-wave") {
     return SOURCES.controls;
   }
   if (mechanicId === "constraint-deduction") return SOURCES.scratch;
-  if (mechanicId === "queue-management") return SOURCES.queue;
-  if (mechanicId === "chapter-branch") return SOURCES.narrative;
-  if (mechanicId === "deck-combo") return SOURCES.deck;
-  if (mechanicId === "gamepad-control") return SOURCES.gamepad;
-  if (mechanicId === "spatial-puzzle-3d") return SOURCES.spatial3d;
+  if (mechanicId === "sort-and-serve") return SOURCES.queue;
+  if (mechanicId === "choice-consequence") return SOURCES.narrative;
+  if (mechanicId === "deck-synergy") return SOURCES.deck;
+  if (mechanicId === "gamepad-equivalent-control") return SOURCES.gamepad;
+  if (mechanicId === "spatial-rotation-path") return SOURCES.spatial3d;
   return SOURCES.templates;
 };
 

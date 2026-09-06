@@ -6,11 +6,11 @@ import { buildSimplePlayableRevision, createMockGeneratedImage } from "./simpleP
 import { INITIAL_DRAFT } from "./storage";
 
 const mechanicIds = [
-  "queue-management",
-  "chapter-branch",
-  "deck-combo",
-  "gamepad-control",
-  "spatial-puzzle-3d",
+  "sort-and-serve",
+  "choice-consequence",
+  "deck-synergy",
+  "gamepad-equivalent-control",
+  "spatial-rotation-path",
 ];
 
 const draftFor = (mechanicId: string) => ({
@@ -38,13 +38,13 @@ describe("P2 单人游戏能力包", () => {
   });
 
   it("为章节、经营、卡牌、手柄和立体谜题声明正确的平台能力", () => {
-    expect(buildGameSpec(draftFor("chapter-branch")).progression.mode).toBe("chapter-based");
-    expect(buildGameSpec(draftFor("queue-management")).progression.mode).toBe("round-based");
-    expect(buildGameSpec(draftFor("deck-combo")).progression.mode).toBe("round-based");
-    const gamepad = buildGameSpec(draftFor("gamepad-control"));
+    expect(buildGameSpec(draftFor("choice-consequence")).progression.mode).toBe("chapter-based");
+    expect(buildGameSpec(draftFor("sort-and-serve")).progression.mode).toBe("round-based");
+    expect(buildGameSpec(draftFor("deck-synergy")).progression.mode).toBe("round-based");
+    const gamepad = buildGameSpec(draftFor("gamepad-equivalent-control"));
     expect(gamepad.capabilities.inputs).toContain("gamepad");
     expect(generateRuntimeFiles(gamepad)["app.js"]).toContain("getGamepads");
-    const spatial = buildGameSpec(draftFor("spatial-puzzle-3d"));
+    const spatial = buildGameSpec(draftFor("spatial-rotation-path"));
     expect(spatial.capabilities.dimensions).toBe("limited-3d");
     expect(generateRuntimeFiles(spatial)["app.js"]).toContain("getContext('webgl'");
   });

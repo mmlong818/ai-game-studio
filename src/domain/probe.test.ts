@@ -29,9 +29,9 @@ describe("GameProbe", () => {
       creationMode: "mechanic-composition",
       templateId: null,
       newGameBrief: brief,
-      selectedMechanicIds: ["lane-dodge", "collect-escape"],
+      selectedMechanicIds: ["lane-dodge", "collect-charge"],
       changeLevel: "R3",
-      referenceDossier: createReferenceDossier(brief, ["lane-dodge", "collect-escape"]),
+      referenceDossier: createReferenceDossier(brief, ["lane-dodge", "collect-charge"]),
     }));
     const result = await createBuild(project, "ladybug-runtime-v1");
     const accepted = runGameplayAcceptance(project, result.build, createProbe(project.spec));
@@ -58,9 +58,9 @@ describe("GameProbe", () => {
       creationMode: "mechanic-composition",
       templateId: null,
       newGameBrief: brief,
-      selectedMechanicIds: ["lane-dodge", "collect-escape"],
+      selectedMechanicIds: ["lane-dodge", "collect-charge"],
       changeLevel: "R3",
-      referenceDossier: createReferenceDossier(brief, ["lane-dodge", "collect-escape"]),
+      referenceDossier: createReferenceDossier(brief, ["lane-dodge", "collect-charge"]),
     }));
     const build = await createBuild(project, "ladybug-runtime-broken");
     const probe = new LadybugClimbProbe();

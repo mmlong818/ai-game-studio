@@ -1,5 +1,5 @@
 import { visualStyleOptions, type GameTemplate, type ProjectDetail } from "../shared/contracts.js";
-import { OPENAI_IMAGE_MODEL, type OpenAISettings } from "./openai-settings.js";
+import { type OpenAISettings } from "./openai-settings.js";
 
 const DEFAULT_ENDPOINT = "https://api.openai.com/v1/images/generations";
 const DEFAULT_TIMEOUT_MS = 90_000;
@@ -29,9 +29,6 @@ const roleArtPlan: Partial<Record<GameTemplate, RoleArtSpec[]>> = {
   snake: [
     { file: "assets/stage-c/snake-food-v2.png", role: "食物", hint: "蛇要收集的食物,单个主体、可爱诱人、轮廓清晰" },
     { file: "assets/stage-c/snake-obstacle-v2.png", role: "障碍物", hint: "致命的固定障碍物,单个主体、有明确危险感但不血腥" },
-  ],
-  maze: [
-    { file: "assets/sprites/sprite-04.png", role: "出口目标", hint: "迷宫终点的目标物,单个主体、发光醒目、值得奔赴" },
   ],
 };
 
@@ -140,6 +137,8 @@ export class CoverArtGenerator {
     this.timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   }
 
+  get model() { return this.settings.status().models.image; }
+
   /** 返回 PNG 封面字节；没有密钥或生成失败时返回 null，由构建门禁中断本次构建。 */
   async generate(project: ProjectDetail): Promise<Buffer | null> {
     return this.tryImage("封面", {
@@ -207,7 +206,7 @@ export class CoverArtGenerator {
       return await this.requestImage(request, apiKey);
     } catch (error) {
       const reason = error instanceof Error ? error.message : "生成失败。";
-      console.warn(`${label} gpt-image-2 生成失败：${reason}`);
+      console.warn(`${label} ${this.model} 生成失败：${reason}`);
       return null;
     }
   }
@@ -226,7 +225,7 @@ export class CoverArtGenerator {
           },
           signal: controller.signal,
           body: JSON.stringify({
-            model: OPENAI_IMAGE_MODEL,
+            model: this.settings.status().models.image,
             prompt: request.prompt,
             size: request.size,
             output_format: "png",

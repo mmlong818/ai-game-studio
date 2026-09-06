@@ -6,6 +6,19 @@ import test from "node:test";
 
 const core = await import("../fixtures/star-dream-duel/game-core.js");
 
+test('双方技能使用相同解锁、回合和能量条件', () => {
+  for (const actor of ['player', 'ai']) for (const [skill, cost] of Object.entries(core.SKILL_COSTS)) {
+    const state = { phase: actor, playerEnergy: { [skill]: cost }, aiEnergy: { [skill]: cost } };
+    assert.equal(core.canUseBattleSkill({ allowSkills: false }, state, actor, skill), false);
+    assert.equal(core.canUseBattleSkill({ allowSkills: true }, state, actor, skill), true);
+    state[actor === 'player' ? 'playerEnergy' : 'aiEnergy'][skill] = cost - 1;
+    assert.equal(core.canUseBattleSkill({ allowSkills: true }, state, actor, skill), false);
+    state[actor === 'player' ? 'playerEnergy' : 'aiEnergy'][skill] = cost;
+    state.phase = 'resolving';
+    assert.equal(core.canUseBattleSkill({ allowSkills: true }, state, actor, skill), false);
+  }
+});
+
 test("星梦对决六类棋子有不同战术职责，四连给予额外回合", () => {
   const board = Array.from({ length: 8 }, () => Array(8).fill("cloud"));
   board[7] = ["star", "star", "star", "star", "heart", "drop", "flower", "moon"];

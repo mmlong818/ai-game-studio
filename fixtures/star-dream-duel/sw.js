@@ -1,10 +1,12 @@
-const CACHE_NAME = 'star-dream-duel-v7';
+const CACHE_NAME = 'star-dream-duel-v16';
 const APP_SHELL = [
   './',
   './index.html',
-  './styles.css?v=7',
-  './app.js?v=7',
-  './game-core.js?v=7',
+  './styles.css?v=14',
+  './app.js?v=16',
+  './new-player-help.js?v=15',
+  './game-core.js?v=10',
+  './solo-mode.js?v=8',
   './manifest.webmanifest?v=7',
   './assets/tiles-v2/moon.png',
   './assets/tiles-v2/cloud.png',
@@ -24,7 +26,7 @@ self.addEventListener('install', (event) => {
 self.addEventListener('activate', (event) => {
   event.waitUntil(
     caches.keys()
-      .then((keys) => Promise.all(keys.filter((key) => key !== CACHE_NAME).map((key) => caches.delete(key))))
+      .then((keys) => Promise.all(keys.filter((key) => key.startsWith('star-dream-duel-v') && key !== CACHE_NAME).map((key) => caches.delete(key))))
       .then(() => self.clients.claim())
   );
 });

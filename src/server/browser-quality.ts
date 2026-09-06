@@ -51,7 +51,7 @@ export type CampaignQualityResult = {
 
 export type StageCRealtimeTemplate = "space-shooter" | "snake" | "breakout";
 export type StageDClassicTemplate = "tetris" | "merge-2048" | "klotski" | "puzzle" | "block-place" | "polyomino-fit";
-export type StageETemplate = "region-logic" | "maze" | "mahjong-roguelite";
+export type StageETemplate = "region-logic" | "mahjong-roguelite";
 
 export type StageCQualityResult = {
   template: StageCRealtimeTemplate;
@@ -65,6 +65,76 @@ export type StageDQualityResult = {
   evidence: Record<string, unknown>;
 };
 
+export type OnboardingQualityResult = {
+  completedStepIds: string[];
+  acceptedSignals: Array<{ stepId: string; signal: string }>;
+  ignoredWrongDirection: boolean;
+  persistedCompletion: boolean;
+  replayedAndSkipped: boolean;
+};
+
+
+export type TemplateOnboardingQualityResult = {
+  template: "tetris" | "breakout" | "snake" | "space-shooter";
+  completedStepIds: string[];
+  acceptedSignals: Array<{ stepId: string; signal: string }>;
+  safePressurePaused: boolean;
+  persistedCompletion: boolean;
+  replayedAndSkipped: boolean;
+};
+
+export type NonRealtimeOnboardingTemplate = "klotski" | "puzzle" | "block-place" | "polyomino-fit" | "region-logic" | "mahjong-roguelite";
+
+export type NonRealtimeOnboardingQualityResult = {
+  template: NonRealtimeOnboardingTemplate;
+  completedStepIds: string[];
+  acceptedSignals: Array<{ stepId: string; signal: string }>;
+  safeWaitingPreserved: boolean;
+  persistedCompletion: boolean;
+  replayedAndSkipped: boolean;
+};
+
+export type StageF3DMode = "collector" | "arena";
+
+export type VariationRehearsalTemplate = "signal-hunt" | "tetris" | "breakout" | "snake" | "space-shooter" | "merge-2048" | NonRealtimeOnboardingTemplate | StageF3DMode;
+
+export type VariationRehearsalQualityResult = {
+  template: VariationRehearsalTemplate;
+  sourceLevel: number;
+  rehearsalLevel: number;
+  sourceModifier: string;
+  rehearsalModifier: string;
+  expectedSignals: string[];
+  observedSignals: string[];
+};
+
+export type FailureAssistanceTemplate = "signal-hunt" | "tetris" | "breakout" | "snake" | "space-shooter" | VariationRehearsalTemplate;
+
+export type FailureAssistanceQualityResult = {
+  template: FailureAssistanceTemplate;
+  observedActions: string[];
+  persistedFailureCount: number;
+  resetAfterWin: boolean;
+  hiddenAdaptation: false;
+};
+
+export type DifficultyProgressionQualityResult = {
+  template: FailureAssistanceTemplate;
+  levelsChecked: number;
+  beatTransitionsChecked: number;
+  tierSignatures: string[];
+  maximumMultiplierStep: number;
+};
+
+export type SignalHuntOnboardingQualityResult = {
+  completedStepIds: string[];
+  acceptedSignals: Array<{ stepId: string; signal: string }>;
+  safeTimerPaused: boolean;
+  timerResumedAfterLearning: boolean;
+  persistedCompletion: boolean;
+  replayedAndSkipped: boolean;
+};
+
 export type StageEQualityResult = {
   template: StageETemplate | "star-dream-duel";
   completedRuns: number;
@@ -72,13 +142,20 @@ export type StageEQualityResult = {
   evidence: Record<string, unknown>;
 };
 
-export type StageF3DMode = "collector" | "arena" | "popup";
-
 export type StageF3DQualityResult = {
   mode: StageF3DMode;
   completedRuns: number;
   failedRuns: number;
   evidence: Record<string, unknown>;
+};
+
+export type ThreeOnboardingQualityResult = {
+  mode: StageF3DMode;
+  completedStepIds: string[];
+  acceptedSignals: Array<{ stepId: string; signal: string }>;
+  safePressurePaused: boolean;
+  persistedCompletion: boolean;
+  replayedAndSkipped: boolean;
 };
 
 export type ShooterLongRunResult = {
@@ -118,7 +195,7 @@ function findBrowserExecutable() {
   return candidates.find((candidate) => existsSync(candidate));
 }
 
-function requireBrowserExecutable(purpose = "自动验收") {
+export function requireBrowserExecutable(purpose = "自动验收") {
   const executablePath = findBrowserExecutable();
   if (executablePath) return executablePath;
   throw new Error(`没有找到可用于${purpose}的 Chromium。请在项目目录运行 npm run setup:browsers；也可以安装 Chrome/Edge，或设置 PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH。`);
@@ -128,7 +205,7 @@ export function browserQualityAvailable() {
   return Boolean(findBrowserExecutable());
 }
 
-function startArtifactServer(root: string) {
+export function startArtifactServer(root: string) {
   const safeRoot = resolve(root);
   const server = createServer((request, response) => {
     const rawPath = new URL(request.url ?? "/", "http://127.0.0.1").pathname;
@@ -161,17 +238,510 @@ function startArtifactServer(root: string) {
   });
 }
 
-function closeServer(server: Server) {
+export function closeServer(server: Server) {
   return new Promise<void>((resolveClose) => server.close(() => resolveClose()));
 }
 
 // 生成物的调试探针（window.__GAME_DEBUG__）只在带 `probe` 查询参数时挂载，
 // 避免真实玩家打开控制台就能一键作弊。自动验收在这里统一追加该参数。
-function probeUrl(target: string) {
+export function probeUrl(target: string) {
   const withProbe = new URL(target);
   withProbe.searchParams.set("probe", "1");
   return withProbe.toString();
 }
+
+export async function inspectMergeOnboardingInBrowser(root: string): Promise<OnboardingQualityResult> {
+  const executablePath = requireBrowserExecutable("2048 新手教学验收");
+  const { server, url } = await startArtifactServer(root);
+  let browser: Browser | null = null;
+  try {
+    browser = await chromium.launch({ executablePath, headless: true, args: ["--enable-unsafe-swiftshader", "--use-angle=swiftshader"] });
+    const page = await browser.newPage({ viewport: { width: 390, height: 844 } });
+    const runtimeErrors: string[] = [];
+    page.on("pageerror", (error) => runtimeErrors.push(`pageerror: ${error.message}`));
+    page.on("console", (message) => { if (message.type() === "error" && !message.text().includes("Failed to load resource")) runtimeErrors.push(`console: ${message.text()}`); });
+    await page.goto(probeUrl(url), { waitUntil: "domcontentloaded", timeout: 8_000 });
+    await page.waitForFunction(() => Boolean((window as Window & { __GAME_DEBUG__?: unknown }).__GAME_DEBUG__), undefined, { timeout: 8_000 });
+    await page.locator("#start").click();
+    const initial = await page.evaluate(() => (window as any).__GAME_DEBUG__.getState());
+    if (initial.onboarding.activeStepId !== "ONBOARD-SLIDE" || initial.runtime.tutorialMode !== "slide") throw new Error("首局没有进入安全滑动教学。 ");
+
+    await page.keyboard.press("ArrowLeft");
+    const afterWrongDirection = await page.evaluate(() => (window as any).__GAME_DEBUG__.getState());
+    const ignoredWrongDirection = afterWrongDirection.onboarding.activeStepId === "ONBOARD-SLIDE"
+      && afterWrongDirection.onboarding.completedStepIds.length === 0
+      && afterWrongDirection.runtime.tutorialMode === "slide";
+    if (!ignoredWrongDirection) throw new Error("错误方向被错误地计为教学成功。 ");
+
+    await page.keyboard.press("ArrowRight");
+    await page.waitForFunction(() => (window as any).__GAME_DEBUG__.getOnboarding().activeStepId === "ONBOARD-MERGE", undefined, { timeout: 2_000 });
+    const afterSlide = await page.evaluate(() => (window as any).__GAME_DEBUG__.getState());
+    if (afterSlide.runtime.tutorialMode !== "merge" || afterSlide.onboarding.acceptedSignals[0]?.signal !== "board-slid") throw new Error("真实滑动没有产生 board-slid 成功信号。 ");
+
+    await page.keyboard.press("ArrowLeft");
+    await page.waitForFunction(() => (window as any).__GAME_DEBUG__.getOnboarding().status === "completed", undefined, { timeout: 2_000 });
+    const completed = await page.evaluate(() => (window as any).__GAME_DEBUG__.getOnboarding());
+    if (completed.acceptedSignals[1]?.signal !== "equal-merged-once") throw new Error("真实合并没有产生 equal-merged-once 成功信号。 ");
+
+    await page.reload({ waitUntil: "domcontentloaded" });
+    await page.waitForFunction(() => Boolean((window as Window & { __GAME_DEBUG__?: unknown }).__GAME_DEBUG__), undefined, { timeout: 8_000 });
+    const restored = await page.evaluate(() => (window as any).__GAME_DEBUG__.getOnboarding());
+    const persistedCompletion = restored.status === "completed" && restored.completedStepIds.length === 2;
+    if (!persistedCompletion) throw new Error("刷新后没有恢复已完成教学状态。 ");
+
+    // The coach is available inside the game; the setup remains unobstructed.
+    await page.locator("#start").click();
+    await page.getByRole("button", { name: "重看" }).click();
+    const replayed = await page.evaluate(() => (window as any).__GAME_DEBUG__.getOnboarding());
+    await page.getByRole("button", { name: "跳过教学" }).click();
+    const skipped = await page.evaluate(() => (window as any).__GAME_DEBUG__.getOnboarding());
+    const replayedAndSkipped = replayed.status === "active" && replayed.activeStepId === "ONBOARD-SLIDE" && skipped.status === "skipped" && skipped.skippedStepIds.length === 2;
+    if (!replayedAndSkipped) throw new Error("重看或明确跳过教学不可用。 ");
+    if (runtimeErrors.length) throw new Error(`新手教学浏览器错误：${runtimeErrors.join(" | ")}`);
+
+    const result = {
+      completedStepIds: completed.completedStepIds,
+      acceptedSignals: completed.acceptedSignals,
+      ignoredWrongDirection,
+      persistedCompletion,
+      replayedAndSkipped,
+    };
+    mkdirSync(join(root, "_studio"), { recursive: true });
+    writeFileSync(join(root, "_studio", "ONBOARDING_QUALITY_REPORT.json"), `${JSON.stringify({ checkedAt: new Date().toISOString(), ...result }, null, 2)}\n`, "utf8");
+    return result;
+  } finally {
+    await browser?.close();
+    await closeServer(server);
+  }
+}
+
+export async function inspectTemplateOnboardingInBrowser(
+  root: string,
+  template: TemplateOnboardingQualityResult["template"],
+): Promise<TemplateOnboardingQualityResult> {
+  const expected = {
+    tetris: { key: "ArrowUp", signal: "piece-rotated" },
+    breakout: { key: "ArrowLeft", signal: "paddle-moved" },
+    snake: { key: "ArrowUp", signal: "direction-changed" },
+    "space-shooter": { key: "ArrowLeft", signal: "shot-fired" },
+  }[template];
+  const executablePath = requireBrowserExecutable(`${template} 新手教学验收`);
+  const { server, url } = await startArtifactServer(root);
+  let browser: Browser | null = null;
+  try {
+    browser = await chromium.launch({ executablePath, headless: true, args: ["--enable-unsafe-swiftshader", "--use-angle=swiftshader"] });
+    const page = await browser.newPage({ viewport: { width: 390, height: 844 } });
+    const runtimeErrors: string[] = [];
+    page.on("pageerror", (error) => runtimeErrors.push(`pageerror: ${error.message}`));
+    page.on("console", (message) => { if (message.type() === "error" && !message.text().includes("Failed to load resource")) runtimeErrors.push(`console: ${message.text()}`); });
+    await page.goto(probeUrl(url), { waitUntil: "domcontentloaded", timeout: 8_000 });
+    await page.waitForFunction(() => Boolean((window as Window & { __GAME_DEBUG__?: unknown }).__GAME_DEBUG__), undefined, { timeout: 8_000 });
+    await page.locator("#start").click();
+    const beforeSafeAttempt = await page.evaluate(() => (window as any).__GAME_DEBUG__.getState());
+    await page.waitForTimeout(1_600);
+    const afterSafeAttempt = await page.evaluate(() => (window as any).__GAME_DEBUG__.getState());
+    const safePressurePaused = template === "tetris"
+      ? afterSafeAttempt.runtime.currentPiece?.y === beforeSafeAttempt.runtime.currentPiece?.y
+      : template === "breakout"
+        ? afterSafeAttempt.runtime.physicsStepCount === beforeSafeAttempt.runtime.physicsStepCount
+        : template === "snake"
+          ? afterSafeAttempt.runtime.stats.distance === beforeSafeAttempt.runtime.stats.distance
+          : afterSafeAttempt.runtime.enemyCount === 0 && afterSafeAttempt.runtime.waveSpawned === 0 && afterSafeAttempt.runtime.lives === beforeSafeAttempt.runtime.lives;
+    if (!safePressurePaused) throw new Error(`${template} 在首次教学操作前仍然推进了危险或自动压力。`);
+    if (template === "space-shooter") {
+      await page.keyboard.down(expected.key);
+      await page.waitForTimeout(140);
+      await page.keyboard.up(expected.key);
+    } else await page.keyboard.press(expected.key);
+    await page.waitForFunction(() => (window as any).__GAME_DEBUG__.getOnboarding().status === "completed", undefined, { timeout: 2_000 });
+    const completed = await page.evaluate(() => (window as any).__GAME_DEBUG__.getOnboarding());
+    if (completed.acceptedSignals[0]?.signal !== expected.signal) throw new Error(`${template} 的真实操作没有产生 ${expected.signal} 教学信号。`);
+
+    await page.reload({ waitUntil: "domcontentloaded" });
+    await page.waitForFunction(() => Boolean((window as Window & { __GAME_DEBUG__?: unknown }).__GAME_DEBUG__), undefined, { timeout: 8_000 });
+    const restored = await page.evaluate(() => (window as any).__GAME_DEBUG__.getOnboarding());
+    const persistedCompletion = restored.status === "completed" && restored.completedStepIds.length === 1;
+    if (!persistedCompletion) throw new Error(`${template} 刷新后没有恢复教学完成状态。`);
+    await page.getByRole("button", { name: "重看" }).click();
+    const replayed = await page.evaluate(() => (window as any).__GAME_DEBUG__.getOnboarding());
+    await page.getByRole("button", { name: "跳过教学" }).click();
+    const skipped = await page.evaluate(() => (window as any).__GAME_DEBUG__.getOnboarding());
+    const replayedAndSkipped = replayed.status === "active" && skipped.status === "skipped" && skipped.skippedStepIds.length === 1;
+    if (!replayedAndSkipped) throw new Error(`${template} 的重看或跳过教学不可用。`);
+    if (runtimeErrors.length) throw new Error(`${template} 新手教学浏览器错误：${runtimeErrors.join(" | ")}`);
+
+    const result = { template, completedStepIds: completed.completedStepIds, acceptedSignals: completed.acceptedSignals, safePressurePaused, persistedCompletion, replayedAndSkipped };
+    mkdirSync(join(root, "_studio"), { recursive: true });
+    writeFileSync(join(root, "_studio", "ONBOARDING_QUALITY_REPORT.json"), `${JSON.stringify({ checkedAt: new Date().toISOString(), ...result }, null, 2)}\n`, "utf8");
+    return result;
+  } finally {
+    await browser?.close();
+    await closeServer(server);
+  }
+}
+
+export async function inspectNonRealtimeOnboardingInBrowser(
+  root: string,
+  template: NonRealtimeOnboardingTemplate,
+): Promise<NonRealtimeOnboardingQualityResult> {
+  const executablePath = requireBrowserExecutable(`${template} 新手教学验收`);
+  const manifest = JSON.parse(readFileSync(join(root, "game-manifest.json"), "utf8")) as { onboardingPlan?: { steps?: Array<{ id: string; successSignal: string }> } };
+  const expectedSteps = manifest.onboardingPlan?.steps ?? [];
+  if (!expectedSteps.length) throw new Error(`${template} 缺少可执行的新手教学计划。`);
+  const { server, url } = await startArtifactServer(root);
+  let browser: Browser | null = null;
+  try {
+    browser = await chromium.launch({ executablePath, headless: true, args: ["--enable-unsafe-swiftshader", "--use-angle=swiftshader"] });
+    const page = await browser.newPage({ viewport: { width: 390, height: 844 } });
+    const runtimeErrors: string[] = [];
+    page.on("pageerror", (error) => runtimeErrors.push(`pageerror: ${error.message}`));
+    page.on("console", (message) => { if (message.type() === "error" && !message.text().includes("Failed to load resource")) runtimeErrors.push(`console: ${message.text()}`); });
+    await page.goto(probeUrl(url), { waitUntil: "domcontentloaded", timeout: 8_000 });
+    await page.waitForFunction(() => Boolean((window as any).__GAME_DEBUG__), undefined, { timeout: 8_000 });
+    await page.locator("#start:visible, #setup-start:visible").first().click();
+    await page.waitForFunction(() => (window as any).__GAME_DEBUG__.getOnboarding().status === "active", undefined, { timeout: 2_000 });
+    await page.waitForTimeout(650);
+    const waiting = await page.evaluate(() => ({ gameState: document.body.dataset.gameState, onboarding: (window as any).__GAME_DEBUG__.getOnboarding(), choosingRoute: Boolean((window as any).__GAME_DEBUG__.getState().runtime?.awaitingRoute) }));
+    const safeWaitingPreserved = (["playing", "stage-complete"].includes(waiting.gameState ?? "") || template === "mahjong-roguelite" && waiting.gameState === "paused" && waiting.choosingRoute) && waiting.onboarding.status === "active" && waiting.onboarding.completedStepIds.length === 0;
+    if (!safeWaitingPreserved) throw new Error(`${template} 在玩家首次操作前没有保持安全等待。`);
+
+    const action = {
+      klotski: "legalMove",
+      puzzle: "dragFirstPiece",
+      "block-place": "legalAction",
+      "polyomino-fit": "legalAction",
+      "region-logic": "cycleFirstCell",
+      "mahjong-roguelite": "matchFirstFreePair",
+    }[template];
+    for (let attempt = 0; attempt < expectedSteps.length; attempt += 1) {
+      const acted = await page.evaluate((name) => (window as any).__GAME_DEBUG__?.[name]?.(), action);
+      if (acted === false) throw new Error(`${template} 没有可用于完成教学的真实合法操作。`);
+      const status = await page.evaluate(() => (window as any).__GAME_DEBUG__.getOnboarding().status);
+      if (status === "completed") break;
+    }
+    await page.waitForFunction(() => (window as any).__GAME_DEBUG__.getOnboarding().status === "completed", undefined, { timeout: 3_000 });
+    const completed = await page.evaluate(() => (window as any).__GAME_DEBUG__.getOnboarding());
+    const expectedSignals = expectedSteps.map(({ successSignal }) => successSignal);
+    const actualSignals = completed.acceptedSignals.map(({ signal }: { signal: string }) => signal);
+    if (JSON.stringify(actualSignals) !== JSON.stringify(expectedSignals)) throw new Error(`${template} 教学信号顺序不符：期望 ${expectedSignals.join(" → ")}，实际 ${actualSignals.join(" → ") || "无"}。`);
+
+    await page.reload({ waitUntil: "domcontentloaded" });
+    await page.waitForFunction(() => Boolean((window as any).__GAME_DEBUG__), undefined, { timeout: 8_000 });
+    const restored = await page.evaluate(() => (window as any).__GAME_DEBUG__.getOnboarding());
+    const persistedCompletion = restored.status === "completed" && restored.completedStepIds.length === expectedSteps.length;
+    if (!persistedCompletion) throw new Error(`${template} 刷新后没有恢复教学完成状态。`);
+    // 华容的教学入口属于局内，开始页不显示悬浮教练以免遮住开始按钮。
+    if (template === "klotski") {
+      await page.locator("#start:visible, #setup-start:visible").first().click();
+      await page.waitForFunction(() => document.body.dataset.gameState === "playing");
+    }
+    await page.getByRole("button", { name: "重看" }).click();
+    const replayed = await page.evaluate(() => (window as any).__GAME_DEBUG__.getOnboarding());
+    await page.getByRole("button", { name: "跳过教学" }).click();
+    const skipped = await page.evaluate(() => (window as any).__GAME_DEBUG__.getOnboarding());
+    const replayedAndSkipped = replayed.status === "active" && skipped.status === "skipped" && skipped.skippedStepIds.length === expectedSteps.length;
+    if (!replayedAndSkipped) throw new Error(`${template} 的重看或明确跳过教学不可用。`);
+    if (runtimeErrors.length) throw new Error(`${template} 新手教学浏览器错误：${runtimeErrors.join(" | ")}`);
+    const result = { template, completedStepIds: completed.completedStepIds, acceptedSignals: completed.acceptedSignals, safeWaitingPreserved, persistedCompletion, replayedAndSkipped };
+    mkdirSync(join(root, "_studio"), { recursive: true });
+    writeFileSync(join(root, "_studio", "ONBOARDING_QUALITY_REPORT.json"), `${JSON.stringify({ checkedAt: new Date().toISOString(), ...result }, null, 2)}\n`, "utf8");
+    return result;
+  } finally {
+    await browser?.close();
+    await closeServer(server);
+  }
+}
+
+export async function inspectVariationRehearsalInBrowser(root: string, template: VariationRehearsalTemplate): Promise<VariationRehearsalQualityResult> {
+  const executablePath = requireBrowserExecutable(`${template} 变化情境复验`);
+  const manifest = JSON.parse(readFileSync(join(root, "game-manifest.json"), "utf8")) as { onboardingPlan?: { steps?: Array<{ successSignal?: string }> } };
+  const expectedSignals = manifest.onboardingPlan?.steps?.flatMap(({ successSignal }) => successSignal ? [successSignal] : []) ?? [];
+  if (!expectedSignals.length) throw new Error(`${template} 缺少可用于变化复验的教学信号。`);
+  const { server, url } = await startArtifactServer(root);
+  let browser: Browser | null = null;
+  try {
+    browser = await chromium.launch({ executablePath, headless: true, args: ["--enable-unsafe-swiftshader", "--use-angle=swiftshader"] });
+    const page = await browser.newPage({ viewport: { width: 390, height: 844 } });
+    const runtimeErrors: string[] = [];
+    page.on("pageerror", (error) => runtimeErrors.push(`pageerror: ${error.message}`));
+    page.on("console", (message) => { if (message.type() === "error" && !message.text().includes("Failed to load resource")) runtimeErrors.push(`console: ${message.text()}`); });
+    await page.goto(probeUrl(url), { waitUntil: "domcontentloaded", timeout: 8_000 });
+    await page.waitForFunction(() => Boolean((window as any).__GAME_DEBUG__), undefined, { timeout: 8_000 });
+    await page.locator("#start:visible, #setup-start:visible").first().click();
+    await page.evaluate(() => {
+      const debug = (window as any).__GAME_DEBUG__;
+      debug.skipOnboarding?.();
+      (window as any).__variationSignals = [];
+      addEventListener("forge:mechanic-signal", (event: any) => (window as any).__variationSignals.push(event.detail?.signal));
+    });
+    const source = await page.evaluate(() => (window as any).__GAME_DEBUG__.getState());
+    await page.evaluate(() => {
+      const debug = (window as any).__GAME_DEBUG__;
+      debug.setLevel(9); debug.restart(); debug.skipOnboarding?.();
+    });
+    await page.waitForFunction(() => (window as any).__GAME_DEBUG__.getState()?.campaign?.level?.number === 9, undefined, { timeout: 3_000 });
+    const rehearsal = await page.evaluate(() => (window as any).__GAME_DEBUG__.getState());
+
+    if (template === "collector") {
+      await page.keyboard.down("ArrowUp");
+      await page.waitForTimeout(220);
+      await page.keyboard.up("ArrowUp");
+    } else if (template === "arena") {
+      await page.evaluate(() => { const debug = (window as any).__GAME_DEBUG__; debug.prepareArenaShot?.(); debug.attack?.(); });
+    } else if (template === "tetris") {
+      await page.keyboard.press("ArrowUp");
+    } else if (template === "breakout") {
+      await page.keyboard.press("ArrowLeft");
+    } else if (template === "snake") {
+      await page.keyboard.press("ArrowUp");
+    } else if (template === "space-shooter") {
+      await page.keyboard.down("ArrowLeft");
+      // 主武器自动射击；首帧可能在按键前已经发射，因此跨过一个完整射击间隔。
+      await page.waitForTimeout(900);
+      await page.keyboard.up("ArrowLeft");
+    } else if (template === "signal-hunt") {
+      await page.evaluate(() => (window as any).__GAME_DEBUG__.collect());
+    } else if (template === "puzzle") {
+      const dragged = await page.evaluate(() => (window as any).__GAME_DEBUG__.dragFirstPiece?.());
+      if (!dragged) throw new Error("拼图变化复验没有可拖动拼块。");
+    } else if (template === "merge-2048") {
+      await page.evaluate(() => (window as any).__GAME_DEBUG__.prepareMerge());
+      await page.evaluate(() => (window as any).__GAME_DEBUG__.control("left"));
+      await page.evaluate(() => (window as any).__GAME_DEBUG__.finishAnimation());
+    } else {
+      const action = {
+        klotski: "legalMove",
+        "block-place": "legalAction",
+        "polyomino-fit": "legalAction",
+        "region-logic": "cycleFirstCell",
+        "mahjong-roguelite": "matchFirstFreePair",
+      }[template];
+      await page.evaluate((name) => (window as any).__GAME_DEBUG__?.[name]?.(), action);
+    }
+    try {
+      await page.waitForFunction((signals) => signals.every((signal: string) => (window as any).__variationSignals.includes(signal)), expectedSignals, { timeout: 4_000 });
+    } catch {
+      const observed = await page.evaluate(() => (window as any).__variationSignals ?? []);
+      throw new Error(`${template} 第 9 关没有复现全部教学信号；期望 ${expectedSignals.join("、")}，实际 ${observed.join("、") || "无"}。`);
+    }
+    const observedSignals = await page.evaluate(() => [...new Set((window as any).__variationSignals)] as string[]);
+    const summarizeLevel = (level: any) => `${String(level?.tierLabel ?? "未知阶段")} · ${String(level?.ruleModifier ?? "未知规则")} · 目标×${String(level?.goalMultiplier ?? "?")} · 密度×${String(level?.densityMultiplier ?? "?")}`;
+    const variationSignature = (level: any) => JSON.stringify({ tier: level?.tier, variant: level?.variant, goalMultiplier: level?.goalMultiplier, speedMultiplier: level?.speedMultiplier, densityMultiplier: level?.densityMultiplier, ruleModifier: level?.ruleModifier });
+    const sourceModifier = summarizeLevel(source?.campaign?.level);
+    const rehearsalModifier = summarizeLevel(rehearsal?.campaign?.level);
+    if (source?.campaign?.level?.number !== 1 || rehearsal?.campaign?.level?.number !== 9 || variationSignature(source?.campaign?.level) === variationSignature(rehearsal?.campaign?.level)) {
+      throw new Error(`${template} 没有从首关切换到规则变化后的第 9 关：${sourceModifier} → ${rehearsalModifier}。`);
+    }
+    if (runtimeErrors.length) throw new Error(`${template} 变化情境复验浏览器错误：${runtimeErrors.join(" | ")}`);
+    const result = { template, sourceLevel: 1, rehearsalLevel: 9, sourceModifier, rehearsalModifier, expectedSignals, observedSignals };
+    mkdirSync(join(root, "_studio"), { recursive: true });
+    writeFileSync(join(root, "_studio", "VARIATION_QUALITY_REPORT.json"), `${JSON.stringify({ checkedAt: new Date().toISOString(), ...result }, null, 2)}\n`, "utf8");
+    return result;
+  } finally {
+    await browser?.close();
+    await closeServer(server);
+  }
+}
+
+export async function inspectFailureAssistanceInBrowser(root: string, template: FailureAssistanceTemplate): Promise<FailureAssistanceQualityResult> {
+  const executablePath = requireBrowserExecutable(`${template} 失败辅助验收`);
+  const manifest = JSON.parse(readFileSync(join(root, "game-manifest.json"), "utf8")) as { assistancePlan?: { hiddenAdaptation?: boolean; steps?: Array<{ afterFailures: number; action: string; message: string; explicitToPlayer: boolean }> } };
+  const plan = manifest.assistancePlan;
+  if (!plan?.steps?.length || plan.hiddenAdaptation !== false) throw new Error(`${template} 缺少显式失败辅助计划，或仍允许暗中调难度。`);
+  const { server, url } = await startArtifactServer(root);
+  let browser: Browser | null = null;
+  try {
+    browser = await chromium.launch({ executablePath, headless: true, args: ["--enable-unsafe-swiftshader", "--use-angle=swiftshader"] });
+    const page = await browser.newPage({ viewport: { width: 390, height: 844 } });
+    const runtimeErrors: string[] = [];
+    page.on("pageerror", (error) => runtimeErrors.push(`pageerror: ${error.message}`));
+    page.on("console", (message) => { if (message.type() === "error" && !message.text().includes("Failed to load resource")) runtimeErrors.push(`console: ${message.text()}`); });
+    await page.goto(probeUrl(url), { waitUntil: "domcontentloaded", timeout: 8_000 });
+    await page.waitForFunction(() => Boolean((window as any).__GAME_DEBUG__?.forceLose), undefined, { timeout: 8_000 });
+    await page.locator("#start:visible").click();
+    await page.evaluate(() => (window as any).__GAME_DEBUG__.skipOnboarding?.());
+    const observedActions: string[] = [];
+    for (let failureCount = 1; failureCount <= 4; failureCount += 1) {
+      const cause = `验收失败原因 ${failureCount}`;
+      await page.evaluate((value) => (window as any).__GAME_DEBUG__.forceLose(value), cause);
+      await page.waitForFunction(() => document.body.dataset.gameState === "lost", undefined, { timeout: 2_000 });
+      const expected = [...plan.steps].filter(({ afterFailures }) => afterFailures <= failureCount).at(-1)!;
+      const evidence = await page.evaluate(() => {
+        const card = document.querySelector<HTMLElement>("#failure-assistance");
+        return {
+          state: (window as any).__GAME_DEBUG__.getAssistance(),
+          visible: Boolean(card && !card.hidden && card.getBoundingClientRect().height > 0),
+          action: card?.dataset.action,
+          message: document.querySelector("#failure-assistance-message")?.textContent ?? "",
+          meta: document.querySelector("#failure-assistance-meta")?.textContent ?? "",
+        };
+      });
+      if (!evidence.visible || evidence.state.active?.failureCount !== failureCount || evidence.action !== expected.action || evidence.state.active?.explicitToPlayer !== true) {
+        throw new Error(`${template} 第 ${failureCount} 次失败没有显式执行 ${expected.action}：${JSON.stringify(evidence)}。`);
+      }
+      if (!evidence.message.includes(cause) || !evidence.message.includes(expected.message) || !evidence.meta.includes(`连续失败 ${failureCount} 次`)) {
+        throw new Error(`${template} 第 ${failureCount} 次失败帮助没有同时说明真实原因、合同建议和连续次数。`);
+      }
+      observedActions.push(String(evidence.action));
+      if (failureCount < 4) {
+        await page.locator("#start:visible, #restart:visible").first().click();
+        await page.evaluate(() => {
+          const debug = (window as any).__GAME_DEBUG__;
+          if (debug?.getState?.()?.runtime?.awaitingRoute) debug.chooseFirstRoute?.();
+        });
+        await page.waitForFunction(() => document.body.dataset.gameState === "playing", undefined, { timeout: 3_000 })
+          .catch(async () => { throw new Error(`${template} 第 ${failureCount} 次失败后点击“再来一局”没有恢复 playing，当前为 ${await page.locator("body").getAttribute("data-game-state")}。`); });
+      }
+    }
+    await page.reload({ waitUntil: "domcontentloaded" });
+    await page.waitForFunction(() => Boolean((window as any).__GAME_DEBUG__?.getAssistance), undefined, { timeout: 8_000 });
+    const restored = await page.evaluate(() => ({ state: (window as any).__GAME_DEBUG__.getAssistance(), visible: !document.querySelector<HTMLElement>("#failure-assistance")?.hidden }));
+    if (restored.state.active?.failureCount !== 4 || !restored.visible) throw new Error(`${template} 刷新后没有恢复第 4 次失败帮助。`);
+    await page.locator("#start:visible").click();
+    await page.evaluate(() => (window as any).__GAME_DEBUG__.forceWin());
+    const reset = await page.evaluate(() => (window as any).__GAME_DEBUG__.getAssistance());
+    const resetAfterWin = reset.active === null && Object.keys(reset.consecutiveFailuresByLevel ?? {}).length === 0;
+    if (!resetAfterWin) throw new Error(`${template} 成功后没有清除连续失败计数。`);
+    if (runtimeErrors.length) throw new Error(`${template} 失败辅助浏览器错误：${runtimeErrors.join(" | ")}`);
+    const result: FailureAssistanceQualityResult = { template, observedActions, persistedFailureCount: 4, resetAfterWin, hiddenAdaptation: false };
+    mkdirSync(join(root, "_studio"), { recursive: true });
+    writeFileSync(join(root, "_studio", "ASSISTANCE_QUALITY_REPORT.json"), `${JSON.stringify({ checkedAt: new Date().toISOString(), ...result }, null, 2)}\n`, "utf8");
+    return result;
+  } finally {
+    await browser?.close();
+    await closeServer(server);
+  }
+}
+
+function runtimeDifficultySignature(template: FailureAssistanceTemplate, runtime: any) {
+  const signatures: Record<FailureAssistanceTemplate, unknown> = {
+    "signal-hunt": { tier: runtime.tier, goal: runtime.goal, duration: runtime.duration, targetStepX: runtime.targetStepX, targetStepY: runtime.targetStepY },
+    tetris: { tier: runtime.tier, target: runtime.lineTarget, fall: runtime.fallInterval, lock: runtime.lockDelayMs },
+    breakout: { chapter: runtime.chapter, pattern: runtime.pattern, formation: runtime.formationIndex, bricks: runtime.brickCount, armor: runtime.armoredBricks, special: runtime.specialBrickCounts },
+    snake: { tier: runtime.tier, name: runtime.levelName, layout: runtime.layoutSignature, target: runtime.target, obstacles: runtime.obstacleCount, step: runtime.stepDelay },
+    "space-shooter": { tier: runtime.tier, target: runtime.killTarget, waves: runtime.waveCount, archetypes: runtime.enemyArchetypeCount, lives: runtime.maxLives },
+    "merge-2048": { name: runtime.blueprintName, target: runtime.target, mission: runtime.missionType, missionValue: runtime.missionValue, moveLimit: runtime.moveLimit, undo: runtime.undoCredits },
+    klotski: { tier: runtime.tier, name: runtime.blueprintName, optimal: runtime.optimalReference, pieces: runtime.pieceState },
+    puzzle: { chapter: runtime.chapter, name: runtime.levelName, pieces: runtime.pieceCount, grid: runtime.grid, edgeOnly: runtime.edgeOnly, hints: runtime.hintsRemaining },
+    "block-place": { tier: runtime.tier, chapter: runtime.chapter, name: runtime.levelName, target: runtime.target, hardShapeRate: runtime.hardShapeRate, opening: runtime.openingSignature },
+    "polyomino-fit": { tier: runtime.tier, chapter: runtime.chapter, name: runtime.levelName, targetCells: runtime.targetCellCount, board: runtime.boardSize, pieces: runtime.pieceCount, contour: runtime.contourSignature },
+    "region-logic": { chapter: runtime.chapter, name: runtime.name, size: runtime.size, stars: runtime.starsPerUnit, logic: runtime.logicTraceSteps, contradictions: runtime.contradictionSteps, layout: runtime.layoutSignature },
+    "mahjong-roguelite": { tier: runtime.tier, rule: runtime.rule, remaining: runtime.remaining, sealed: runtime.sealedCount, routePool: runtime.routePoolSize },
+    collector: { tier: runtime.tier, checkpoints: runtime.checkpointTarget, obstacles: runtime.obstacleCount, hazards: runtime.hazardCount, movingHazards: runtime.movingHazardCount, duration: runtime.duration },
+    arena: { tier: runtime.tier, enemyTypes: runtime.enemyTypes, obstacles: runtime.obstacleCount, waveEnemies: runtime.waveEnemyCount, duration: runtime.duration },
+  };
+  return JSON.stringify(signatures[template]);
+}
+
+export async function inspectDifficultyProgressionInBrowser(root: string, template: FailureAssistanceTemplate): Promise<DifficultyProgressionQualityResult> {
+  const executablePath = requireBrowserExecutable(`${template} 难度递进验收`);
+  const contract = JSON.parse(readFileSync(join(root, "_studio", "GAME_DESIGN_CONTRACT.json"), "utf8")) as { content?: { beats?: Array<{ difficulty?: Record<string, number> }> } };
+  const beats = contract.content?.beats ?? [];
+  const dimensions = ["cognition", "operation", "space", "resources", "combination", "punishment"];
+  for (let index = 1; index < beats.length; index += 1) {
+    const jumped = dimensions.filter((dimension) => Number(beats[index].difficulty?.[dimension]) - Number(beats[index - 1].difficulty?.[dimension]) > 1);
+    if (jumped.length > 1) throw new Error(`${template} 设计合同在阶段 ${index + 1} 同时突升 ${jumped.join("、")}。`);
+  }
+  const { server, url } = await startArtifactServer(root);
+  let browser: Browser | null = null;
+  try {
+    browser = await chromium.launch({ executablePath, headless: true, args: ["--enable-unsafe-swiftshader", "--use-angle=swiftshader"] });
+    const page = await browser.newPage({ viewport: { width: 390, height: 844 } });
+    const runtimeErrors: string[] = [];
+    page.on("pageerror", (error) => runtimeErrors.push(`pageerror: ${error.message}`));
+    page.on("console", (message) => { if (message.type() === "error" && !message.text().includes("Failed to load resource")) runtimeErrors.push(`console: ${message.text()}`); });
+    await page.goto(probeUrl(url), { waitUntil: "domcontentloaded", timeout: 8_000 });
+    await page.waitForFunction(() => Boolean((window as any).__GAME_DEBUG__?.setLevel), undefined, { timeout: 8_000 });
+    await page.locator("#start:visible").click();
+    await page.evaluate(() => (window as any).__GAME_DEBUG__.skipOnboarding?.());
+    const levels: Array<{ campaign: any; runtime: any }> = [];
+    for (let level = 1; level <= 20; level += 1) {
+      await page.evaluate((value) => {
+        const debug = (window as any).__GAME_DEBUG__;
+        debug.setLevel(value); debug.restart();
+        if (debug.getState?.()?.runtime?.awaitingRoute) debug.chooseFirstRoute?.();
+      }, level);
+      await page.waitForFunction((value) => {
+        const state = (window as any).__GAME_DEBUG__?.getState?.();
+        return state?.campaign?.level?.number === value && (state?.runtime?.level == null || state.runtime.level === value);
+      }, level, { timeout: 5_000 });
+      levels.push(await page.evaluate(() => {
+        const state = (window as any).__GAME_DEBUG__.getState();
+        return { campaign: state.campaign.level, runtime: state.runtime };
+      }));
+    }
+    let maximumMultiplierStep = 0;
+    for (let index = 1; index < levels.length; index += 1) {
+      for (const key of ["goalMultiplier", "speedMultiplier", "densityMultiplier"] as const) {
+        const step = Number((Number(levels[index].campaign[key]) - Number(levels[index - 1].campaign[key])).toFixed(3));
+        maximumMultiplierStep = Math.max(maximumMultiplierStep, step);
+        if (step < 0 || step > .12) throw new Error(`${template} 第 ${index}→${index + 1} 关的 ${key} 变化 ${step} 超出平滑范围。`);
+      }
+    }
+    const tierSignatures = [1, 5, 9, 13, 17].map((level) => runtimeDifficultySignature(template, levels[level - 1].runtime));
+    if (new Set(tierSignatures).size !== tierSignatures.length) throw new Error(`${template} 五个难度阶段没有形成五种不同的运行时结构。`);
+    if (runtimeErrors.length) throw new Error(`${template} 难度递进浏览器错误：${runtimeErrors.join(" | ")}`);
+    const result: DifficultyProgressionQualityResult = { template, levelsChecked: levels.length, beatTransitionsChecked: Math.max(0, beats.length - 1), tierSignatures, maximumMultiplierStep };
+    mkdirSync(join(root, "_studio"), { recursive: true });
+    writeFileSync(join(root, "_studio", "DIFFICULTY_QUALITY_REPORT.json"), `${JSON.stringify({ checkedAt: new Date().toISOString(), ...result }, null, 2)}\n`, "utf8");
+    return result;
+  } finally {
+    await browser?.close();
+    await closeServer(server);
+  }
+}
+
+export async function inspectSignalHuntOnboardingInBrowser(root: string): Promise<SignalHuntOnboardingQualityResult> {
+  const executablePath = requireBrowserExecutable("信号捕获新手教学验收");
+  const { server, url } = await startArtifactServer(root);
+  let browser: Browser | null = null;
+  try {
+    browser = await chromium.launch({ executablePath, headless: true, args: ["--enable-unsafe-swiftshader", "--use-angle=swiftshader"] });
+    const page = await browser.newPage({ viewport: { width: 390, height: 844 } });
+    const runtimeErrors: string[] = [];
+    page.on("pageerror", (error) => runtimeErrors.push(`pageerror: ${error.message}`));
+    page.on("console", (message) => { if (message.type() === "error" && !message.text().includes("Failed to load resource")) runtimeErrors.push(`console: ${message.text()}`); });
+    await page.goto(probeUrl(url), { waitUntil: "domcontentloaded", timeout: 8_000 });
+    await page.waitForFunction(() => Boolean((window as Window & { __GAME_DEBUG__?: unknown }).__GAME_DEBUG__), undefined, { timeout: 8_000 });
+    await page.locator("#start").click();
+    const initial = await page.evaluate(() => (window as any).__GAME_DEBUG__.getState());
+    await page.waitForTimeout(1_150);
+    const beforeLearning = await page.evaluate(() => (window as any).__GAME_DEBUG__.getState());
+    const safeTimerPaused = beforeLearning.remaining === initial.remaining && beforeLearning.onboarding.status === "active";
+    if (!safeTimerPaused) throw new Error("首次捕获前倒计时没有暂停，玩家未获得安全尝试。 ");
+
+    await page.locator("#target").click();
+    await page.waitForFunction(() => (window as any).__GAME_DEBUG__.getOnboarding().status === "completed", undefined, { timeout: 2_000 });
+    const completed = await page.evaluate(() => (window as any).__GAME_DEBUG__.getOnboarding());
+    if (completed.acceptedSignals[0]?.signal !== "target-collected") throw new Error("真实点击目标没有产生 target-collected 教学信号。 ");
+    await page.waitForTimeout(1_150);
+    const afterLearning = await page.evaluate(() => (window as any).__GAME_DEBUG__.getState());
+    const timerResumedAfterLearning = afterLearning.remaining < beforeLearning.remaining;
+    if (!timerResumedAfterLearning) throw new Error("完成首次捕获后倒计时没有恢复。 ");
+
+    await page.reload({ waitUntil: "domcontentloaded" });
+    await page.waitForFunction(() => Boolean((window as Window & { __GAME_DEBUG__?: unknown }).__GAME_DEBUG__), undefined, { timeout: 8_000 });
+    const restored = await page.evaluate(() => (window as any).__GAME_DEBUG__.getOnboarding());
+    const persistedCompletion = restored.status === "completed" && restored.completedStepIds.length === 1;
+    if (!persistedCompletion) throw new Error("信号捕获教学完成状态没有在刷新后恢复。 ");
+    await page.getByRole("button", { name: "重看" }).click();
+    const replayed = await page.evaluate(() => (window as any).__GAME_DEBUG__.getOnboarding());
+    await page.getByRole("button", { name: "跳过教学" }).click();
+    const skipped = await page.evaluate(() => (window as any).__GAME_DEBUG__.getOnboarding());
+    const replayedAndSkipped = replayed.status === "active" && skipped.status === "skipped" && skipped.skippedStepIds.length === 1;
+    if (!replayedAndSkipped) throw new Error("信号捕获教学的重看或跳过不可用。 ");
+    if (runtimeErrors.length) throw new Error(`信号捕获教学浏览器错误：${runtimeErrors.join(" | ")}`);
+
+    const result = { completedStepIds: completed.completedStepIds, acceptedSignals: completed.acceptedSignals, safeTimerPaused, timerResumedAfterLearning, persistedCompletion, replayedAndSkipped };
+    mkdirSync(join(root, "_studio"), { recursive: true });
+    writeFileSync(join(root, "_studio", "ONBOARDING_QUALITY_REPORT.json"), `${JSON.stringify({ checkedAt: new Date().toISOString(), game: "signal-hunt", ...result }, null, 2)}\n`, "utf8");
+    return result;
+  } finally {
+    await browser?.close();
+    await closeServer(server);
+  }
+}
+
 
 async function collectLayout(page: Page) {
   return page.evaluate(() => {
@@ -219,7 +789,14 @@ async function takeScreenshot(page: Page, target: string, screenshotPaths: strin
   screenshotPaths.push(target);
 }
 
+async function dismissFirstVisitHelp(page: Page) {
+  // Exercise the intentional first-visit modal through its public close button.
+  const help = page.locator('#game-help-dialog[open] #game-help-close');
+  if (await help.isVisible()) await help.click();
+}
+
 async function runInteractionProbe(page: Page) {
+  await dismissFirstVisitHelp(page);
   const initialState = await page.locator("body").getAttribute("data-game-state");
   const illegalState = await page.evaluate(() => {
     const body = document.body;
@@ -345,6 +922,8 @@ export async function inspectCampaignInBrowser(
     if (initial.enabledValues.join(",") !== expectedInitialValues.join(",")) throw new Error(`初始可选关卡范围错误：${initial.enabledValues.join(",")}。`);
     if (initial.state?.campaign?.total !== 20 || initial.state?.campaign?.level?.number !== 1) throw new Error("运行时没有从第 1 / 20 关开始。 ");
 
+    await dismissFirstVisitHelp(page);
+
     await page.locator("#start:visible, #setup-start:visible").first().click();
     await page.evaluate(() => {
       const debug = (window as Window & { __GAME_DEBUG__?: { getState?: () => any; chooseFirstRoute?: () => void } }).__GAME_DEBUG__;
@@ -435,74 +1014,17 @@ export async function inspectStageEInBrowser(root: string, template: StageETempl
     });
     await page.goto(probeUrl(url), { waitUntil: "domcontentloaded", timeout: 8_000 });
     await page.waitForFunction(() => Boolean((window as Window & { __GAME_DEBUG__?: unknown }).__GAME_DEBUG__), undefined, { timeout: 8_000 });
-    if (template === "maze") await page.locator("[data-maze-shortest]").check();
     if (template === "mahjong-roguelite") await page.locator("[data-mahjong-mode]").selectOption("daily");
     await page.locator("#start").click();
     let routeOffer: any = null;
     if (template === "mahjong-roguelite") {
-      await page.waitForFunction(() => document.body.dataset.gameState === "stage-complete", undefined, { timeout: 4_000 });
+      await page.waitForFunction(() => document.body.dataset.gameState === "paused" && (window as any).__GAME_DEBUG__.getState().runtime.awaitingRoute, undefined, { timeout: 4_000 });
       routeOffer = await stageEDebugState(page);
       if (!routeOffer?.runtime?.awaitingRoute || routeOffer.runtime.routeChoices.length !== 3) throw new Error("月港雀旅开局没有提供三选一路线。 ");
       await stageEDebugAction(page, "chooseFirstRoute");
     }
     await page.waitForFunction(() => document.body.dataset.gameState === "playing", undefined, { timeout: 4_000 });
     const initial = await stageEDebugState(page);
-    let mazeSurvey: any[] | null = null;
-    let mazeInteraction: any = null;
-    if (template === "maze") {
-      mazeSurvey = [];
-      mkdirSync(join(root, "_studio", "quality"), { recursive: true });
-      await stageEDebugAction(page, "unlockAllLevels");
-      for (let level = 1; level <= 20; level += 1) {
-        const state = await page.evaluate((number) => {
-          const debug = (window as any).__GAME_DEBUG__;
-          debug.setLevel(number);
-          debug.restart();
-          return debug.getState().runtime;
-        }, level);
-        mazeSurvey.push(state);
-        if ([9, 13, 15, 20].includes(level)) await page.screenshot({ path: join(root, "_studio", "quality", `maze-level-${String(level).padStart(2, "0")}.png`), fullPage: true });
-      }
-      if (new Set(mazeSurvey.map((state) => state.name)).size !== 20 || new Set(mazeSurvey.map((state) => state.layoutSignature)).size !== 20) throw new Error("苔径迷庭没有形成 20 个唯一名称与布局签名。 ");
-      if (new Set(mazeSurvey.map((state) => state.chapter)).size !== 5) throw new Error("苔径迷庭没有形成五章机制进程。 ");
-      if (mazeSurvey.some((state) => !state.validation?.goalReachable || !state.validation?.objectivesReachable || state.loopCount < 5 || state.alternativeSegments < 3)) throw new Error("苔径迷庭存在不可解目标或退化成单路径的关卡。 ");
-      if (mazeSurvey.some((state) => state.optimalSteps < state.directOptimalSteps || state.challengeTarget <= state.optimalSteps)) throw new Error("苔径迷庭竞径目标没有计入星钥任务路线。 ");
-      if (mazeSurvey[8].fogRadius < 1 || mazeSurvey[12].iceCount < 1 || mazeSurvey[14].keyCount < 1 || mazeSurvey[16].timeLimit < 1) throw new Error("苔径迷庭的雾、冰、星钥门或暮钟机制没有按章节出现。 ");
-      await page.evaluate(() => { const debug = (window as any).__GAME_DEBUG__; debug.setLevel(1); debug.restart(); });
-      await page.waitForTimeout(720);
-      await stageEDebugAction(page, "useMazeHint");
-      const hinted = await stageEDebugState(page);
-      if (hinted.runtime.hintUses !== 2 || hinted.runtime.hintPathLength < 1 || hinted.runtime.hintPathLength > 4) throw new Error("苔径迷庭的有限下一段提示没有生效。 ");
-      await stageEDebugAction(page, "pauseMaze");
-      const paused = await stageEDebugState(page);
-      const pausedSessionState = await page.locator("body").getAttribute("data-game-state");
-      if (!paused.runtime.paused || pausedSessionState !== "paused") throw new Error("苔径迷庭暂停状态没有锁定。 ");
-      await page.keyboard.press("p");
-      const resumed = await stageEDebugState(page);
-      if (resumed.runtime.paused) throw new Error("苔径迷庭按 P 后没有恢复。 ");
-      const direction = resumed.runtime.openDirections[0];
-      const before = resumed.runtime.player;
-      const box = await page.locator("#game-canvas").boundingBox();
-      if (!direction || !box) throw new Error("苔径迷庭没有可测试的开局方向或画布。 ");
-      const startX = box.x + box.width / 2;
-      const startY = box.y + box.height / 2;
-      await page.mouse.move(startX, startY);
-      await page.mouse.down();
-      await page.mouse.move(startX + direction.dx * 48, startY + direction.dy * 48, { steps: 3 });
-      await page.mouse.up();
-      await page.waitForTimeout(160);
-      const swiped = await stageEDebugState(page);
-      if (swiped.runtime.player.x === before.x && swiped.runtime.player.y === before.y) throw new Error("苔径迷庭真实画布滑动没有移动玩家。 ");
-      await page.locator("#back-to-setup").click();
-      await page.locator("[data-maze-control-mode=buttons]").click();
-      await page.locator("#start").click();
-      const buttons = await stageEDebugState(page);
-      if (buttons.runtime.controlMode !== "buttons") throw new Error("苔径迷庭启动页四键模式没有生效。 ");
-      await page.locator("#back-to-setup").click();
-      await page.locator("[data-maze-control-mode=swipe]").click();
-      await page.locator("#start").click();
-      mazeInteraction = { hinted: hinted.runtime, paused: paused.runtime, resumed: resumed.runtime, swiped: swiped.runtime, buttons: buttons.runtime };
-    }
     let restored: any = null;
     let advanced: any = null;
     let selectedCue: any = null;
@@ -542,7 +1064,10 @@ export async function inspectStageEInBrowser(root: string, template: StageETempl
       await stageEDebugAction(page, "redoRegion");
       const redone = await stageEDebugState(page);
       const hintsBefore = redone.runtime.hints;
-      await stageEDebugAction(page, "hintRegion");
+      await page.locator('[data-control="hint"]').click();
+      const observed = await stageEDebugState(page);
+      if (observed.runtime.hints !== hintsBefore || observed.runtime.hintStage !== "observe") throw new Error("星灵巡格首次观察应免费。");
+      await page.locator('[data-control="hint"]').click();
       const hinted = await stageEDebugState(page);
       if (cycled.runtime.stars !== 1 || undone.runtime.stars !== 0 || redone.runtime.stars !== 1 || redone.runtime.futureDepth !== 0) throw new Error("星灵巡格的循环输入、撤销或重做没有形成可恢复历史。 ");
       if (hinted.runtime.hints !== hintsBefore - 1 || !hinted.runtime.hintRule || hinted.runtime.hintUsesSolution !== false || hinted.runtime.stars !== redone.runtime.stars) throw new Error("星灵巡格的提示没有只解释一步推理。 ");
@@ -572,8 +1097,8 @@ export async function inspectStageEInBrowser(root: string, template: StageETempl
       restored = await stageEDebugState(page);
       if (!restored?.runtime?.restored) throw new Error("月港雀旅刷新后没有恢复长局。 ");
     }
-    const completeAction = template === "region-logic" ? "solveRegion" : template === "maze" ? "solveMaze" : "completeMahjongStage";
-    const failAction = template === "region-logic" ? "failRegion" : template === "maze" ? "failMazeChallenge" : "failMahjong";
+    const completeAction = template === "region-logic" ? "solveRegion" : "completeMahjongStage";
+    const failAction = template === "region-logic" ? "failRegion" : "failMahjong";
     for (let run = 0; run < 3; run += 1) {
       if (template === "mahjong-roguelite") {
         for (let stage = 0; stage < 3; stage += 1) {
@@ -604,8 +1129,6 @@ export async function inspectStageEInBrowser(root: string, template: StageETempl
     if (template === "region-logic" && (initial?.runtime?.catalogSize !== 20 || initial.runtime.campaignSignatureCount !== 20 || initial.runtime.uniqueSolutions !== 1 || !initial.runtime.regionsConnected || initial.runtime.hintUsesSolution !== false)) throw new Error(`星灵巡格首关合同不完整：${JSON.stringify(initial.runtime)}`);
     if (template === "region-logic" && (initial.runtime.size !== 6 || initial.runtime.starsPerUnit !== 1 || initial.runtime.boardAreaVersion < 2)) throw new Error("星灵巡格首关没有形成 6×6 一星大棋盘。 ");
     if (template === "region-logic" && (advanced?.runtime?.size !== 10 || advanced.runtime.starsPerUnit !== 2 || advanced.runtime.targetStars !== 20 || advanced.runtime.logicTraceSteps <= initial.runtime.logicTraceSteps)) throw new Error("星灵巡格后期关没有形成更长的 10×10 双星推理链。 ");
-    if (template === "maze" && (!initial?.runtime?.challenge || initial.runtime.optimalSteps < 1 || initial.runtime.challengeTarget <= initial.runtime.optimalSteps)) throw new Error("苔径迷庭竞径目标没有形成有效的可选挑战。 ");
-    if (template === "maze" && (initial.runtime.loopCount < 5 || initial.runtime.junctionCount < 3 || initial.runtime.alternativeSegments < 3 || !initial.runtime.hasMultipleRoutes)) throw new Error("苔径迷庭仍然只有单一路线，没有形成环路与有效岔口。 ");
     if (template === "mahjong-roguelite" && (initial?.runtime?.relicPoolSize ?? 0) < 12) throw new Error("月港雀旅遗物池不足 12 件。 ");
     if (template === "mahjong-roguelite" && (routeOffer?.runtime?.routePoolSize ?? 0) < 5) throw new Error("月港雀旅路线池不足 5 条。 ");
     if (template === "mahjong-roguelite" && (initial?.runtime?.visualCueVersion ?? 0) < 3) throw new Error("月港雀旅没有用固定几何区分自由牌、被压牌、选中牌和配对目标。 ");
@@ -622,7 +1145,7 @@ export async function inspectStageEInBrowser(root: string, template: StageETempl
     }
     if (template === "mahjong-roguelite" && ((completedState?.runtime?.routeHistory?.length ?? 0) < 3 || !completedState?.runtime?.ending)) throw new Error("月港雀旅完成长局后没有路线历史或差异化结局。 ");
     if (runtimeErrors.length) throw new Error(`阶段 E 浏览器错误：${runtimeErrors.join(" | ")}`);
-    const result: StageEQualityResult = { template, completedRuns: 3, failedRuns: 2, evidence: { routeOffer: routeOffer?.runtime ?? null, initial: initial?.runtime, mazeSurvey, mazeInteraction, regionSurvey, regionInteraction, selectedCue: selectedCue?.runtime ?? null, advanced: advanced?.runtime ?? null, restored: restored?.runtime ?? null, completed: completedState?.runtime ?? null } };
+    const result: StageEQualityResult = { template, completedRuns: 3, failedRuns: 2, evidence: { routeOffer: routeOffer?.runtime ?? null, initial: initial?.runtime, regionSurvey, regionInteraction, selectedCue: selectedCue?.runtime ?? null, advanced: advanced?.runtime ?? null, restored: restored?.runtime ?? null, completed: completedState?.runtime ?? null } };
     mkdirSync(join(root, "_studio"), { recursive: true });
     writeFileSync(join(root, "_studio", "STAGE_E_QUALITY_REPORT.json"), `${JSON.stringify({ checkedAt: new Date().toISOString(), ...result }, null, 2)}\n`, "utf8");
     return result;
@@ -647,6 +1170,9 @@ export async function inspectStarDreamStageEInBrowser(root: string): Promise<Sta
     });
     await page.goto(probeUrl(url), { waitUntil: "domcontentloaded", timeout: 8_000 });
     await page.waitForFunction(() => Boolean((window as Window & { __GAME_DEBUG__?: unknown }).__GAME_DEBUG__), undefined, { timeout: 8_000 });
+    if (await page.locator('#game-help-dialog').isVisible()) await page.locator('#game-help-close').click();
+    await page.locator('button[data-game-mode="duel"]').click();
+    if (await page.locator('#game-help-dialog').isVisible()) await page.locator('#game-help-close').click();
     await page.locator("#ai-difficulty").selectOption("challenging");
     await page.locator("#start, #setup-start").click();
     await page.waitForFunction(() => {
@@ -714,6 +1240,7 @@ export async function inspectStarDreamStageEInBrowser(root: string): Promise<Sta
     if (mobileOverflow > 1) throw new Error(`星梦对决 390×844 仍纵向溢出 ${mobileOverflow}px。`);
     await page.screenshot({ path: join(qualityRoot, "star-dream-duel-final-phone.png"), fullPage: true });
     await page.reload({ waitUntil: "domcontentloaded" });
+    await page.locator('button[data-game-mode="duel"]').click();
     await page.locator("#ai-difficulty").selectOption("challenging");
     await page.locator("#start, #setup-start").click();
     const restored = await stageEDebugState(page);
@@ -776,6 +1303,9 @@ export async function inspectStageDClassicInBrowser(root: string, template: Stag
 
     if (template === "tetris") {
       const tierOne = await stageCDebugState(page);
+      await page.keyboard.press("ArrowUp");
+      const taught = await stageCDebugState(page);
+      if (taught.runtime.currentPiece?.rotation !== 0 || taught.runtime.landing?.clearRows?.length !== 1) throw new Error("旋转教学后没有恢复可直接完成的首课。 ");
       await stageCDebugAction(page, "softDrop");
       const softDropped = await stageCDebugState(page);
       await stageCDebugAction(page, "prepareWallKick");
@@ -826,14 +1356,14 @@ export async function inspectStageDClassicInBrowser(root: string, template: Stag
       await page.evaluate(() => { const debug = (window as any).__GAME_DEBUG__; debug.setLevel(17); debug.restart(); });
       const tierFive = await stageCDebugState(page);
       if (tierOne.runtime.blueprintCount !== 20 || tierOne.runtime.uniqueBlueprintNames !== 20) throw new Error("2048 二十关开局蓝图不唯一。 ");
-      if (moving.runtime.animation?.duration !== 168) throw new Error("2048 连续位移动画时长合同不完整。 ");
+      if (moving.runtime.animation?.duration !== 168) throw new Error(`2048 连续位移动画时长合同不完整：${JSON.stringify(moving.runtime.animation ?? null)}。 `);
       if (merged.runtime.score !== 4 || !merged.runtime.canUndo || !merged.runtime.spawnAnimated) throw new Error("2048 合并、生成动画或撤销快照不完整：" + JSON.stringify({ score: merged.runtime.score, canUndo: merged.runtime.canUndo, spawnAnimated: merged.runtime.spawnAnimated, board: merged.runtime.board, animation: merged.runtime.animation }) + "。 ");
       if (undone.runtime.score !== 0 || undone.runtime.undoCredits !== 1 || undone.runtime.canUndo) throw new Error("2048 限次回溯没有恢复完整状态。 ");
       if (doubleMerged.runtime.score !== 8 || doubleMerged.runtime.board?.[3]?.[0] !== 4 || doubleMerged.runtime.board?.[3]?.[1] !== 4) throw new Error("2048 的 2、2、2、2 没有按一次一并规则得到 4、4。 ");
       if (!danger.runtime.danger) throw new Error("2048 临近锁死时没有危险状态。 ");
       if (!(tierFive.runtime.target > tierOne.runtime.target)) throw new Error("2048 高阶关卡目标没有提升。 ");
       if (!tierOne.runtime.directSwipe || tierOne.runtime.spawnDistribution !== "90/10") throw new Error("2048 直接滑动或标准生成概率合同不完整。 ");
-      checks.push("二十个独立关卡", "一次一并规则", "168ms 位移动画", "下一块预告", "限次回溯", "直接滑动", "标准 90/10 生成", "危险与限步任务");
+      checks.push("二十个独立关卡", "一次一并规则", "168ms 位移动画", "下一块预告", "限次回溯", "直接滑动", "标准 90/10 生成", "危险状态与递进目标");
       evidence.tierOne = tierOne.runtime; evidence.moving = moving.runtime; evidence.merged = merged.runtime; evidence.undone = undone.runtime; evidence.doubleMerged = doubleMerged.runtime; evidence.danger = danger.runtime; evidence.tierFive = tierFive.runtime;
     }
 
@@ -870,18 +1400,18 @@ export async function inspectStageDClassicInBrowser(root: string, template: Stag
       await page.evaluate(() => { const debug = (window as any).__GAME_DEBUG__; debug.setLevel(20); debug.restart(); });
       await stageCDebugAction(page, "hint");
       const finalLevel = await stageCDebugState(page);
-      if (initial.runtime.layoutCount !== 20 || initial.runtime.uniqueBlueprints !== 20 || initial.runtime.boardWidthRatio < 82 || initial.runtime.boardWidthRatio > 90) throw new Error("华容道独立布局数或棋盘占比不达标。 ");
+      if (initial.runtime.layoutCount !== 23 || initial.runtime.uniqueBlueprints !== 23 || initial.runtime.boardWidthRatio < 82 || initial.runtime.boardWidthRatio > 90) throw new Error("华容道独立布局数或棋盘占比不达标。 ");
       if (initial.runtime.transitionMs < 160 || initial.runtime.transitionMs > 220 || !initial.runtime.identityUsesShapeAndBitmap) throw new Error("华容道过渡或棋子识别方式不达标。 ");
-      if (initial.runtime.pieceGap < 8 || initial.runtime.pieceOutlineWidth < 4 || !initial.runtime.incompleteArtIsCropped) throw new Error("华容道棋子边界或残缺素材裁切不达标。 ");
-      if (!initial.runtime.optimalExact || initial.runtime.optimalReference !== 8 || finalLevel.runtime.optimalReference !== 120) throw new Error("华容道没有使用求解器验证的分档最优步参考。 ");
+      if (initial.runtime.pieceGap < 8 || initial.runtime.pieceOutlineWidth < 2 || initial.runtime.selectedOutlineWidth < 4 || !initial.runtime.incompleteArtIsCropped) throw new Error("华容道棋子边界或残缺素材裁切不达标。 ");
+      if (!initial.runtime.optimalExact || initial.runtime.optimalReference !== 6 || initial.runtime.courseRooms !== 4 || finalLevel.runtime.courseRooms !== 3 || finalLevel.runtime.totalOptimal < initial.runtime.totalOptimal) throw new Error("华容题组没有呈现已验证的入门题和递进综合内容。 ");
       if (!initial.runtime.directDrag) throw new Error("华容道没有启用棋盘直接拖动。 ");
       if (dragged.runtime.moves !== 1 || !dragged.runtime.canUndo) throw new Error("华容道真实指针拖动没有完成一步移动。 ");
-      if (!hinted.runtime.hint?.id || Math.abs(hinted.runtime.hint.dx) + Math.abs(hinted.runtime.hint.dy) !== 1 || !hinted.runtime.hintLegal || hinted.runtime.hintDistance !== 8) throw new Error("华容道首关没有给出可执行的最短路径下一步。 ");
-      if (!finalLevel.runtime.hintLegal || finalLevel.runtime.hintDistance !== 120) throw new Error("华容道末关没有给出求解器验证的 120 步路径。 ");
+      if (!hinted.runtime.hint?.id || Math.abs(hinted.runtime.hint.dx) + Math.abs(hinted.runtime.hint.dy) !== 1 || !hinted.runtime.hintLegal || hinted.runtime.hintDistance !== initial.runtime.optimalReference) throw new Error("华容道首庭没有给出可执行的最短路径下一步。 ");
+      if (!finalLevel.runtime.hintLegal || finalLevel.runtime.hintDistance !== finalLevel.runtime.optimalReference) throw new Error("华容道末关首庭没有给出与当前题面相符的最短路径。 ");
       if (moved.runtime.moves !== 1 || !moved.runtime.canUndo || undone.runtime.moves !== 0) throw new Error("华容道移动与撤销不可用。 ");
       if (!undone.runtime.canRedo || redone.runtime.moves !== 1 || redone.runtime.canRedo) throw new Error("华容道重做没有恢复移动状态。 ");
       if (beforeReplay.runtime.replayLength < 2 || replayed.runtime.replaying || replayed.runtime.moves !== beforeReplay.runtime.replayLength) throw new Error("华容道操作回放没有完整复现。 ");
-      checks.push("20 个求解器验证牌局", "8–120 步分档", "棋盘直接拖动", "82%–90% 棋盘占比", "形状与位图双重识别", "清晰棋子边界与完整素材裁切", "160–220ms 移动", "撤销、重做与回放");
+      checks.push("23 个基础布局", "主题题组与精确单庭步数", "棋盘直接拖动", "82%–90% 棋盘占比", "形状与位图双重识别", "清晰棋子边界与完整素材裁切", "160–220ms 移动", "撤销、重做与回放");
       evidence.initial = initial.runtime; evidence.dragged = dragged.runtime; evidence.hinted = hinted.runtime; evidence.moved = moved.runtime; evidence.undone = undone.runtime; evidence.redone = redone.runtime; evidence.replayed = replayed.runtime; evidence.finalLevel = finalLevel.runtime;
     }
 
@@ -904,7 +1434,10 @@ export async function inspectStageDClassicInBrowser(root: string, template: Stag
       const placed = await stageCDebugState(page);
       await stageCDebugAction(page, "connectPair");
       const connected = await stageCDebugState(page);
-      await stageCDebugAction(page, "hint");
+      await page.locator('[data-control="hint"]').click();
+      const observed = await stageCDebugState(page);
+      if (observed.runtime.hintsRemaining !== connected.runtime.hintsRemaining || observed.runtime.workshop?.hintStage !== "reason") throw new Error("拼图首次线索应免费解释。");
+      await page.locator('[data-control="hint"]').click();
       const hinted = await stageCDebugState(page);
       await stageCDebugAction(page, "zoomIn");
       const zoomed = await stageCDebugState(page);
@@ -1107,6 +1640,14 @@ export async function inspectStageCRealtimeInBrowser(root: string, template: Sta
     await page.goto(probeUrl(url), { waitUntil: "domcontentloaded", timeout: 8_000 });
     await page.waitForFunction(() => Boolean((window as Window & { __GAME_DEBUG__?: unknown }).__GAME_DEBUG__), undefined, { timeout: 8_000 });
     await page.waitForFunction(() => [...document.images].every((image) => image.complete && image.naturalWidth > 0), undefined, { timeout: 8_000 });
+    // 新手教学由独立浏览器用例验证。阶段 C 深度玩法验收先明确跳过，
+    // 避免安全暂停把聚光、弹幕、碰撞等后续系统误判为失效。
+    await page.evaluate(() => {
+      const debug = (window as any).__GAME_DEBUG__;
+      debug.restart();
+      debug.replayOnboarding();
+      debug.skipOnboarding();
+    });
 
     if (template === "space-shooter") {
       await page.evaluate(() => {
@@ -1150,7 +1691,8 @@ export async function inspectStageCRealtimeInBrowser(root: string, template: Sta
         throw new Error("玩家弹体的尺寸或高对比核心不足。 ");
       }
       if (!heldState.runtime.enemyBulletVisual?.warmSolidCore || !heldState.runtime.enemyBulletVisual?.shapeDistinctFromPlayer) throw new Error("敌弹没有与玩家弹形成多重视觉区分。 ");
-      if (heldState.runtime.estimatedSessionSeconds < 90 || heldState.runtime.estimatedSessionSeconds > 150) throw new Error(`标准局估算时长不在 90–150 秒：${heldState.runtime.estimatedSessionSeconds} 秒。`);
+      const expectedShooterSeconds = heldState.runtime.level === 1 ? 120 : 180 + Math.floor((heldState.runtime.level - 2) / 4) * 30;
+      if (heldState.runtime.estimatedSessionSeconds !== expectedShooterSeconds) throw new Error(`关卡有效作战基准应为 ${expectedShooterSeconds} 秒，实际为 ${heldState.runtime.estimatedSessionSeconds} 秒。`);
       await stageCDebugAction(page, "spawnThreatWave");
       const threatenedState = await stageCDebugState(page);
       if (threatenedState.runtime.enemyBulletCount < 5) throw new Error("敌机攻击没有形成可验证的弹幕压力。 ");
@@ -1179,7 +1721,7 @@ export async function inspectStageCRealtimeInBrowser(root: string, template: Sta
       if (await page.locator("body").getAttribute("data-game-state") !== "playing") throw new Error("失败后重开没有恢复 playing。 ");
       await stageCDebugAction(page, "forceWin");
       if (await page.locator("body").getAttribute("data-game-state") !== "stage-complete") throw new Error("胜利分支没有进入关卡完成状态。 ");
-      checks.push("三波任务", "五类敌机", "三种机体", "高对比双向弹体", "桌面鼠标悬停跟随", "手机按住拖动", "连续指针捕获", "主动脉冲清弹", "分阶段守关 Boss", "90–150 秒标准局", "受击与无敌", "修复掉落", "失败、胜利与重开");
+      checks.push("三阶段连续作战", "五类敌机", "三种机体", "高对比双向弹体", "桌面鼠标悬停跟随", "手机按住拖动", "连续指针捕获", "主动脉冲清弹", "分阶段守关 Boss", "首关120秒、后续180–300秒基准", "受击与无敌", "修复掉落", "失败、胜利与重开");
       evidence.session = heldState.runtime;
       evidence.threat = threatenedState.runtime;
       evidence.pulse = pulsedState.runtime;
@@ -1214,11 +1756,13 @@ export async function inspectStageCRealtimeInBrowser(root: string, template: Sta
         }, level));
       }
       if (new Set(levels.map((state) => state.levelName)).size !== 20 || new Set(levels.map((state) => state.layoutSignature)).size !== 20) throw new Error("青玉长游二十关没有形成独立名称与固定场型。 ");
+      if (levels.some(state => state.foods.length !== state.foragePlan.population || state.foods.length < state.foragePlan.quota * state.foragePlan.phases)) throw new Error("青玉长游固定食物不足以支持整关采集目标。");
       if (new Set(levels.filter((_, index) => index % 4 === 0).map((state) => state.chapter)).size !== 5) throw new Error("青玉长游没有形成五个章节。 ");
       await page.evaluate(() => { const debug = (window as any).__GAME_DEBUG__; debug.setLevel(1); debug.restart(); });
-      await stageCDebugAction(page, "queueTurnSequence");
+      await stageCDebugAction(page, "aimDiagonal");
+      await page.waitForFunction(() => { const state = (window as any).__GAME_DEBUG__.getState().runtime; return state.direction.x > .2 && state.direction.y < -.2 && state.renderedFrames >= 8; });
       const turned = await stageCDebugState(page);
-      if (turned.runtime.direction.x !== -1 || turned.runtime.direction.y !== 0 || turned.runtime.stats.turns !== 2) throw new Error(`双转向缓冲吞掉了第二次合法转向：${JSON.stringify(turned.runtime)}。`);
+      if (turned.runtime.motionVersion !== 2 || turned.runtime.grid.columns < 42 || turned.runtime.grid.rows < 48) throw new Error("连续转向或大地图未启用。");
       await stageCDebugAction(page, "sampleReachableFood");
       const foodProbe = await stageCDebugState(page);
       if (foodProbe.runtime.foodProbe?.count !== 100 || !foodProbe.runtime.foodProbe?.valid) throw new Error("连续 100 次食物生成出现了不可达或占位错误。 ");
@@ -1232,7 +1776,7 @@ export async function inspectStageCRealtimeInBrowser(root: string, template: Sta
       await page.mouse.move(box.x + box.width * .55, box.y + box.height * .38, { steps: 4 });
       await page.mouse.up();
       const swipeQueued = await stageCDebugState(page);
-      if (swipeQueued.runtime.directionQueue?.[0]?.y !== -1) throw new Error("手机真实滑动没有提交向上转向。 ");
+      if (!(swipeQueued.runtime.targetHeading < 0)) throw new Error("真实画布指向没有提交向上转向。 ");
       await stageCDebugAction(page, "pause");
       const pausedHead = (await stageCDebugState(page)).runtime.head;
       await page.waitForTimeout(Math.ceil(swipeStart.runtime.stepDelay * 1.4));
@@ -1241,16 +1785,16 @@ export async function inspectStageCRealtimeInBrowser(root: string, template: Sta
       await page.keyboard.press("p");
       const resumed = await stageCDebugState(page);
       if (resumed.runtime.paused) throw new Error("键盘 P 没有恢复游戏。 ");
-      if (turned.runtime.rendering !== "requestAnimationFrame-interpolation" || turned.runtime.staticLayerCached !== true || turned.runtime.estimatedFps < 45 || turned.runtime.renderedFrames < 8) throw new Error(`青玉长游没有保持逐帧插值或稳定刷新：${JSON.stringify(turned.runtime)}。`);
+      if (turned.runtime.rendering !== "requestAnimationFrame-continuous" || turned.runtime.estimatedFps < 45 || turned.runtime.renderedFrames < 8) throw new Error(`青玉长游没有保持连续移动或稳定刷新：${JSON.stringify(turned.runtime)}。`);
       await stageCDebugAction(page, "previewCompletion");
       const completion = await stageCDebugState(page);
       if (!completion.runtime.completionActive) throw new Error("目标完成演出没有进入可见时段。 ");
-      checks.push("头身转角尾九类位图", "20 个固定场型与五章", "三档多维难度", "双转向缓冲", "真实画布滑动", "100 次可达食物", "暂停与恢复", "逐帧插值与稳定刷新", "进食、危险与完成演出");
+      checks.push("九类独立位图资源", "20 个固定场型与五章", "三档多维难度", "连续角度转向与大地图", "真实画布指向", "100 次可达食物", "暂停与恢复", "连续移动与稳定刷新", "进食、危险与完成演出");
       evidence.profiles = profiles;
       evidence.turned = turned.runtime;
       evidence.levels = levels.map((state) => ({ level: state.level, name: state.levelName, chapter: state.chapter, pattern: state.pattern, signature: state.layoutSignature }));
       evidence.foodProbe = foodProbe.runtime.foodProbe;
-      evidence.swipe = swipeQueued.runtime.directionQueue;
+      evidence.swipe = { targetHeading: swipeQueued.runtime.targetHeading };
       evidence.pause = paused.runtime;
     }
 
@@ -1389,15 +1933,70 @@ export async function inspectShooterContinuousInput(
   }
 }
 
-/** 纸境立体书：在浏览器里按求解器给出的角度序列真实回放一关，等待抵达出口。 */
-async function replayPopupLevel(page: Page, level: number, beatMs: number) {
-  await page.evaluate(({ level, beatMs }) => {
-    const debug = (window as any).__GAME_DEBUG__;
-    debug.setLevel(level);
-    debug.replay(undefined, beatMs);
-  }, { level, beatMs });
-  await page.waitForFunction(() => ["stage-complete", "won"].includes(document.body.dataset.gameState ?? ""), undefined, { timeout: 25_000 });
-  return page.evaluate(() => (window as any).__GAME_DEBUG__.getState());
+
+export async function inspectThreeOnboardingInBrowser(root: string, mode: StageF3DMode): Promise<ThreeOnboardingQualityResult> {
+  const executablePath = requireBrowserExecutable(`3D ${mode} 新手教学验收`);
+  const { server, url } = await startArtifactServer(root);
+  let browser: Browser | null = null;
+  try {
+    browser = await chromium.launch({ executablePath, headless: true, args: ["--enable-unsafe-swiftshader", "--use-angle=swiftshader"] });
+    const page = await browser.newPage({ viewport: { width: 390, height: 844 } });
+    const errors: string[] = [];
+    page.on("pageerror", (error) => errors.push(error.message));
+    await page.goto(probeUrl(url), { waitUntil: "domcontentloaded", timeout: 8_000 });
+    await page.waitForFunction(() => Boolean((window as any).__GAME_DEBUG__), undefined, { timeout: 8_000 });
+    await page.locator("#start").click();
+    const initial = await page.evaluate(() => (window as any).__GAME_DEBUG__.getState());
+    await page.waitForTimeout(1_100);
+    const waiting = await page.evaluate(() => (window as any).__GAME_DEBUG__.getState());
+    const safePressurePaused = waiting.remaining === initial.remaining
+        && waiting.health === initial.health
+        && (mode === "collector" ? waiting.mistakes === initial.mistakes : waiting.projectileHits === initial.projectileHits);
+    if (!safePressurePaused || waiting.onboarding?.status !== "active") throw new Error(`3D ${mode} 教学前仍在推进计时或危险。`);
+
+    if (mode === "collector") {
+      await page.keyboard.down("ArrowUp");
+      await page.waitForTimeout(180);
+      await page.keyboard.up("ArrowUp");
+    } else if (mode === "arena") await page.keyboard.press("Space");
+    else {
+      await page.evaluate(() => {
+        const debug = (window as any).__GAME_DEBUG__;
+        for (const action of debug.solution()) {
+          if (debug.getOnboarding().acceptedSignals.some(({ signal }: { signal: string }) => signal === "cell-entered")) break;
+          if (action === "cw" || action === "ccw") debug.rotate(action);
+          else { debug.enqueue([action]); debug.tickNow(); }
+        }
+        debug.rotate("cw");
+      });
+    }
+    await page.waitForTimeout(260);
+    const afterAction = await page.evaluate(() => (window as any).__GAME_DEBUG__.getState());
+    const completed = await page.evaluate(() => (window as any).__GAME_DEBUG__.getOnboarding());
+    if (completed.status !== "completed") throw new Error(`3D ${mode} 教学操作后未完成：${JSON.stringify({ onboarding: completed, player: afterAction.player, shotsFired: afterAction.shotsFired, enemyCount: afterAction.enemyCount })}`);
+    const expectedSignals = mode === "collector" ? ["player-moved"] : mode === "arena" ? ["shot-fired"] : ["cell-entered", "world-rotated"];
+    if (JSON.stringify(completed.acceptedSignals.map(({ signal }: { signal: string }) => signal)) !== JSON.stringify(expectedSignals)) throw new Error(`3D ${mode} 的真实操作没有依次产生 ${expectedSignals.join("、")}。`);
+
+    await page.reload({ waitUntil: "domcontentloaded", timeout: 8_000 });
+    await page.waitForFunction(() => Boolean((window as any).__GAME_DEBUG__), undefined, { timeout: 8_000 });
+    const restored = await page.evaluate(() => (window as any).__GAME_DEBUG__.getOnboarding());
+    const persistedCompletion = restored.status === "completed" && restored.completedStepIds.length === expectedSignals.length;
+    if (!persistedCompletion) throw new Error(`3D ${mode} 教学完成状态未恢复。`);
+    await page.getByRole("button", { name: "重看" }).click();
+    const replayed = await page.evaluate(() => (window as any).__GAME_DEBUG__.getOnboarding());
+    await page.getByRole("button", { name: "跳过教学" }).click();
+    const skipped = await page.evaluate(() => (window as any).__GAME_DEBUG__.getOnboarding());
+    const replayedAndSkipped = replayed.status === "active" && skipped.status === "skipped" && skipped.skippedStepIds.length === expectedSignals.length;
+    if (!replayedAndSkipped) throw new Error(`3D ${mode} 的重看或跳过不可用。`);
+    if (errors.length) throw new Error(`3D ${mode} 教学浏览器错误：${errors.join(" | ")}`);
+    const result = { mode, completedStepIds: completed.completedStepIds, acceptedSignals: completed.acceptedSignals, safePressurePaused, persistedCompletion, replayedAndSkipped };
+    mkdirSync(join(root, "_studio"), { recursive: true });
+    writeFileSync(join(root, "_studio", "ONBOARDING_QUALITY_REPORT.json"), `${JSON.stringify({ checkedAt: new Date().toISOString(), ...result }, null, 2)}\n`, "utf8");
+    return result;
+  } finally {
+    await browser?.close();
+    await closeServer(server);
+  }
 }
 
 export async function inspectStageF3DInBrowser(root: string, expectedMode: StageF3DMode): Promise<StageF3DQualityResult> {
@@ -1409,12 +2008,9 @@ export async function inspectStageF3DInBrowser(root: string, expectedMode: Stage
   const viewportsChecked: string[] = [];
   let performanceTier = "";
   let hiddenRenderPaused = false;
+  let collectorCuratedModelsVerified = false;
   let arenaProjectileVerified = false;
   let arenaUpgradeVerified = false;
-  let popupCheckpointRecoveries = 0;
-  let popupHiddenStarVerified = false;
-  let popupBridgeRotationVerified = false;
-  const popupLevelsCompleted: number[] = [];
   mkdirSync(join(root, "_studio"), { recursive: true });
   try {
     browser = await chromium.launch({ executablePath, headless: true, args: ["--enable-unsafe-swiftshader", "--use-angle=swiftshader"] });
@@ -1426,6 +2022,11 @@ export async function inspectStageF3DInBrowser(root: string, expectedMode: Stage
         await page.goto(probeUrl(url), { waitUntil: "domcontentloaded", timeout: 8_000 });
         await page.locator("#start").click();
         await page.waitForFunction(() => Boolean((window as Window & { __GAME_DEBUG__?: unknown }).__GAME_DEBUG__), undefined, { timeout: 8_000 });
+        await page.evaluate(() => {
+          const debug = (window as any).__GAME_DEBUG__;
+          debug.replayOnboarding?.();
+          debug.skipOnboarding?.();
+        });
         const initial = await page.evaluate(() => {
           const debug = (window as Window & { __GAME_DEBUG__?: { getState: () => Record<string, unknown> } }).__GAME_DEBUG__;
           const shell = document.querySelector(".three-shell")?.getBoundingClientRect();
@@ -1435,68 +2036,20 @@ export async function inspectStageF3DInBrowser(root: string, expectedMode: Stage
         if (!initial.shell || initial.shell.width < 300 || initial.shell.height < 560) throw new Error("3D 主体未充分利用画幅");
         await page.screenshot({ path: join(root, "_studio", `stage-f-${expectedMode}-${viewport.name}-playing.png`), fullPage: true });
         performanceTier = String(initial.state?.performanceTier ?? "");
-        if (expectedMode === "popup") {
-          const popup = initial.state?.popup as Record<string, any> | undefined;
-          if (popup?.blueprintCount !== 20 || popup.uniqueSignatures !== 20 || popup.chapterCount !== 4 || !Array.isArray(popup.hiddenStarIndexes) || popup.hiddenStarIndexes.length === 0 || popup.rotationModel !== "book-90-degree-steps") {
-            throw new Error(`3D 立体书没有形成 20 个唯一关卡、四章与旋转模型：${JSON.stringify(popup)}`);
-          }
-          // 默认角度下隐藏星不可见；转到它的角度后可见（规则在真实运行时里生效）。
-          const hiddenStar = await page.evaluate(() => {
-            const debug = (window as any).__GAME_DEBUG__;
-            const before = debug.getState().popup;
-            const index = before.hiddenStarIndexes[0];
-            const star = before.stars[index];
-            const visibleAtDefault = before.visibleStarIndexes.includes(index);
-            let rotations = 0;
-            while (debug.getState().model.o !== star.angles[0] && rotations < 4) { debug.rotate("cw"); rotations += 1; }
-            const visibleAtAngle = debug.getState().popup.visibleStarIndexes.includes(index);
-            while (debug.getState().model.o !== 0) debug.rotate("cw");
-            return { index, angles: star.angles, visibleAtDefault, visibleAtAngle, rotations };
-          });
-          if (hiddenStar.visibleAtDefault || !hiddenStar.visibleAtAngle) throw new Error(`3D 立体书的隐藏星没有随角度显隐：${JSON.stringify(hiddenStar)}`);
-          popupHiddenStarVerified = true;
-          // 角度桥：默认角度折起，转到指定角度后接上。
-          const bridge = await page.evaluate(() => {
-            const debug = (window as any).__GAME_DEBUG__;
-            const state = debug.getState().popup;
-            const blueprint = state.blueprint;
-            const link = blueprint.links.find((item: any) => Array.isArray(item.angles));
-            const openAtDefault = state.links.find((item: any) => item.id === link.id).open;
-            while (debug.getState().model.o !== link.angles[0]) debug.rotate("cw");
-            const openAtAngle = debug.getState().popup.links.find((item: any) => item.id === link.id).open;
-            while (debug.getState().model.o !== 0) debug.rotate("cw");
-            return { id: link.id, angles: link.angles, openAtDefault, openAtAngle };
-          });
-          if (bridge.openAtDefault || !bridge.openAtAngle) throw new Error(`3D 立体书的角度桥没有随转动开合：${JSON.stringify(bridge)}`);
-          popupBridgeRotationVerified = true;
-          // 真实失败：跳空，回到最近检查点（首关起点），不整局重来。
-          const fall = await page.evaluate(() => {
-            const debug = (window as any).__GAME_DEBUG__;
-            const before = debug.getState();
-            const ok = debug.jumpIntoVoid();
-            const after = debug.getState();
-            return { ok, before: before.model, after: after.model, respawn: after.popup.respawn, state: document.body.dataset.gameState };
-          });
-          if (!fall.ok || fall.after.mistakes !== fall.before.mistakes + 1 || fall.after.x !== fall.respawn.x || fall.after.z !== fall.respawn.z || fall.state !== "playing") {
-            throw new Error(`3D 立体书跳空后没有回到检查点继续：${JSON.stringify(fall)}`);
-          }
-          popupCheckpointRecoveries += 1;
-          if (viewport.name === "desktop") {
-            // 20 关逐关由探针按正确角度序列真实完成。
-            for (let level = 1; level <= 20; level += 1) {
-              const finished = await replayPopupLevel(page, level, 45);
-              if (!finished?.model?.done || finished.mistakes !== 0) throw new Error(`3D 立体书第 ${level} 关探针回放没有干净完成：${JSON.stringify(finished?.model)}`);
-              popupLevelsCompleted.push(level);
-              if (level === 20) await page.screenshot({ path: join(root, "_studio", `stage-f-${expectedMode}-${viewport.name}-final-level.png`), fullPage: true });
-            }
-            completedRuns += 1;
-            await page.evaluate(() => { const debug = (window as any).__GAME_DEBUG__; debug.setLevel(1); debug.restart(); });
-          }
-        } else if (expectedMode === "collector") {
+        if (expectedMode === "collector") {
           const collector = initial.state?.collector as Record<string, unknown> | undefined;
           if (collector?.blueprintCount !== 20 || collector.uniqueSignatures !== 20 || collector.chapterCount !== 5 || collector.optionalCollectibles !== true) {
             throw new Error(`3D 收集模板没有形成 20 个唯一蓝图、五章和可选收集分层：${JSON.stringify(collector)}`);
           }
+          await page.waitForFunction(() => {
+            const models = (window as any).__GAME_DEBUG__?.getState?.()?.collector?.curatedModels;
+            return Boolean(models && models.loaded + models.failed.length >= models.requested);
+          }, undefined, { timeout: 8_000 });
+          const curatedModels = await page.evaluate(() => (window as any).__GAME_DEBUG__?.getState?.()?.collector?.curatedModels);
+          if (curatedModels?.requested !== 3 || curatedModels.loaded !== 3 || curatedModels.failed.length !== 0 || curatedModels.meshCount < 3 || curatedModels.visibleObjects !== 3) {
+            throw new Error(`3D 收集模板没有把三个精选 GLB 解析为可见场景对象：${JSON.stringify(curatedModels)}`);
+          }
+          collectorCuratedModelsVerified = true;
           const jumpProbe = await page.evaluate(() => (window as any).__GAME_DEBUG__?.prepareJumpObstacle?.());
           if (!jumpProbe?.obstacle) throw new Error("3D 收集模板没有可执行的低障碍跳跃探针");
           await page.keyboard.down("ArrowUp");
@@ -1563,10 +2116,7 @@ export async function inspectStageF3DInBrowser(root: string, expectedMode: Stage
         hiddenRenderPaused = afterSuspend === beforeSuspend;
         await page.evaluate(() => (window as Window & { __GAME_DEBUG__?: { suspend: (value: boolean) => void } }).__GAME_DEBUG__?.suspend(false));
 
-        if (expectedMode === "popup") {
-          // 完成一局：按求解器的角度序列以真实节拍回放首关（不使用瞬移作弊）。
-          await replayPopupLevel(page, 1, 90);
-        } else if (expectedMode === "collector") {
+        if (expectedMode === "collector") {
           await page.evaluate(() => {
             const debug = (window as Window & { __GAME_DEBUG__?: { reachCheckpoint: () => void; collectAll: () => void; moveToExit: () => void } }).__GAME_DEBUG__;
             debug?.reachCheckpoint(); debug?.collectAll(); debug?.moveToExit();
@@ -1608,7 +2158,7 @@ export async function inspectStageF3DInBrowser(root: string, expectedMode: Stage
     await closeServer(server);
   }
   if (!hiddenRenderPaused) throw new Error("3D 后台停渲染探针失败");
-  const result: StageF3DQualityResult = { mode: expectedMode, completedRuns, failedRuns, evidence: { viewportsChecked, performanceTier, hiddenRenderPaused, ...(expectedMode === "arena" ? { arenaProjectileVerified, arenaUpgradeVerified } : {}), ...(expectedMode === "popup" ? { popupHiddenStarVerified, popupBridgeRotationVerified, popupCheckpointRecoveries, popupLevelsCompleted } : {}) } };
+  const result: StageF3DQualityResult = { mode: expectedMode, completedRuns, failedRuns, evidence: { viewportsChecked, performanceTier, hiddenRenderPaused, ...(expectedMode === "collector" ? { collectorCuratedModelsVerified } : {}), ...(expectedMode === "arena" ? { arenaProjectileVerified, arenaUpgradeVerified } : {}) } };
   writeFileSync(join(root, "_studio", "STAGE_F_3D_REPORT.json"), `${JSON.stringify({ checkedAt: new Date().toISOString(), ...result }, null, 2)}\n`, "utf8");
   return result;
 }
@@ -1640,6 +2190,9 @@ export async function inspectGeneratedGameInBrowser(root: string): Promise<Brows
   const screenshotPaths: string[] = [];
   const failures: string[] = [];
   const evidence: string[] = [];
+  let progressionReport: Record<string, unknown> | null = null;
+  let variationReport: Record<string, unknown> | null = null;
+  let assistanceReport: Record<string, unknown> | null = null;
   const generatedViewports = [
     { name: "phone-small", width: 360, height: 640 },
     { name: "phone-standard", width: 390, height: 844 },
@@ -1676,15 +2229,118 @@ export async function inspectGeneratedGameInBrowser(root: string): Promise<Brows
         if (viewport.name === "phone-standard") {
           await page.locator("#start").click({ timeout: 3_000 });
           await page.waitForFunction(() => document.body.dataset.gameState === "playing", undefined, { timeout: 5_000 });
+          const onboardingWaiting = await page.evaluate(() => {
+            const onboarding = (window as any).__FORGE_ONBOARDING__;
+            const debug = (window as any).__GAME_DEBUG__;
+            return { onboarding: onboarding?.getState?.(), plan: onboarding?.plan, game: debug?.getState?.(), visible: Boolean(document.querySelector(".forge-onboarding:not([hidden])")) };
+          });
           await page.waitForTimeout(600);
+          const pressureAfterWait = await page.evaluate(() => (window as any).__GAME_DEBUG__?.getState?.()?.pressureClock);
+          if (onboardingWaiting.onboarding?.status !== "active" || !onboardingWaiting.visible || !Array.isArray(onboardingWaiting.plan?.steps)) {
+            failures.push("开始后没有进入可见的合同教学状态。");
+          }
+          if (!Number.isFinite(onboardingWaiting.game?.pressureClock) || pressureAfterWait !== onboardingWaiting.game?.pressureClock) {
+            failures.push(`教学等待期自动压力仍在推进：${String(onboardingWaiting.game?.pressureClock)} → ${String(pressureAfterWait)}。`);
+          }
           await takeScreenshot(page, join(qualityRoot, `${viewport.name}-playing.png`), screenshotPaths);
           const hooks = await page.evaluate(() => {
-            const debug = (window as Window & { __GAME_DEBUG__?: { getState?: () => unknown; forceWin?: () => void; forceLose?: () => void } }).__GAME_DEBUG__;
-            return { hasState: Boolean(debug?.getState), hasWin: Boolean(debug?.forceWin), hasLose: Boolean(debug?.forceLose) };
+            const debug = (window as any).__GAME_DEBUG__;
+            return { hasState: Boolean(debug?.getState), hasWin: Boolean(debug?.forceWin), hasLose: Boolean(debug?.forceLose), hasOnboardingProbe: Boolean(debug?.performOnboardingStep) };
           });
-          if (!hooks.hasState || !hooks.hasWin || !hooks.hasLose) {
-            failures.push("probe 模式缺少 __GAME_DEBUG__ 的 getState/forceWin/forceLose 钩子。");
+          if (!hooks.hasState || !hooks.hasWin || !hooks.hasLose || !hooks.hasOnboardingProbe) {
+            failures.push("probe 模式缺少 __GAME_DEBUG__ 的 getState/forceWin/forceLose/performOnboardingStep 钩子。");
           } else {
+            const stepCount = onboardingWaiting.plan?.steps?.length ?? 0;
+            for (let index = 0; index < stepCount; index += 1) {
+              await page.evaluate(() => (window as any).__GAME_DEBUG__.performOnboardingStep());
+              await page.waitForFunction((completed) => (window as any).__FORGE_ONBOARDING__?.getState?.()?.completedStepIds?.length > completed, index, { timeout: 3_000 })
+                .catch(() => failures.push(`第 ${index + 1} 个教学探针没有通过正常玩法处理器完成。`));
+            }
+            const completedOnboarding = await page.evaluate(() => {
+              const api = (window as any).__FORGE_ONBOARDING__;
+              return { state: api.getState(), expectedSignals: api.plan.steps.map((step: any) => step.successSignal) };
+            });
+            const actualSignals = completedOnboarding.state?.acceptedSignals?.map(({ signal }: { signal: string }) => signal) ?? [];
+            if (completedOnboarding.state?.status !== "completed" || JSON.stringify(actualSignals) !== JSON.stringify(completedOnboarding.expectedSignals)) {
+              failures.push(`教学没有按合同信号顺序完成：${JSON.stringify({ expected: completedOnboarding.expectedSignals, actual: actualSignals })}。`);
+            }
+            await page.reload({ waitUntil: "domcontentloaded", timeout: 10_000 });
+            await page.waitForFunction(() => Boolean((window as any).__FORGE_ONBOARDING__ && (window as any).__GAME_DEBUG__), undefined, { timeout: 5_000 });
+            const restoredOnboarding = await page.evaluate(() => (window as any).__FORGE_ONBOARDING__.getState());
+            if (restoredOnboarding.status !== "completed" || restoredOnboarding.completedStepIds.length !== stepCount) failures.push("教学完成状态刷新后没有恢复。");
+            const replaySkip = await page.evaluate(() => {
+              const api = (window as any).__FORGE_ONBOARDING__;
+              api.replay(); const replayed = api.getState(); api.skip(); const skipped = api.getState();
+              return { replayed, skipped };
+            });
+            if (replaySkip.replayed.status !== "active" || replaySkip.skipped.status !== "skipped" || replaySkip.skipped.skippedStepIds.length !== stepCount) failures.push("教学重看或跳过不可用。");
+            await page.locator("#start").click({ timeout: 3_000 });
+            await page.waitForFunction(() => document.body.dataset.gameState === "playing", undefined, { timeout: 5_000 });
+            const levelStates: Array<{ level: number; difficulty: Record<string, number>; contentVariant: string; runtimeSignature: string; mechanicsActive: string[] }> = [];
+            for (let level = 1; level <= 20; level += 1) {
+              const state = await page.evaluate((targetLevel) => {
+                const debug = (window as any).__GAME_DEBUG__;
+                debug.setLevel(targetLevel); debug.restart();
+                return { ...debug.getState(), __gameState: document.body.dataset.gameState };
+              }, level);
+              if (state?.level !== level || state?.__gameState !== "playing") failures.push(`第 ${level} 关没有通过 setLevel/restart 真实进入 playing。`);
+              const difficulty = state?.difficulty;
+              if (![difficulty?.goalMultiplier, difficulty?.speedMultiplier, difficulty?.densityMultiplier].every(Number.isFinite)) failures.push(`第 ${level} 关缺少可验证的三维难度倍率。`);
+              if (!state?.contentVariant || !state?.runtimeSignature || !Array.isArray(state?.mechanicsActive) || state.mechanicsActive.length === 0) failures.push(`第 ${level} 关缺少结构变化证据。`);
+              levelStates.push({ level, difficulty, contentVariant: state?.contentVariant, runtimeSignature: state?.runtimeSignature, mechanicsActive: state?.mechanicsActive });
+            }
+            let maximumMultiplierStep = 0;
+            for (let index = 1; index < levelStates.length; index += 1) {
+              for (const key of ["goalMultiplier", "speedMultiplier", "densityMultiplier"] as const) {
+                const step = Number((Number(levelStates[index].difficulty?.[key]) - Number(levelStates[index - 1].difficulty?.[key])).toFixed(3));
+                maximumMultiplierStep = Math.max(maximumMultiplierStep, step);
+                if (step < 0 || step > .12) failures.push(`第 ${index}→${index + 1} 关 ${key} 变化 ${step} 超出平滑范围。`);
+              }
+            }
+            const milestoneStates = [1, 5, 9, 13, 17].map((level) => levelStates[level - 1]);
+            if (new Set(milestoneStates.map(({ contentVariant }) => contentVariant)).size !== 5 || new Set(milestoneStates.map(({ runtimeSignature }) => runtimeSignature)).size !== 5) failures.push("第 1/5/9/13/17 关没有形成五种不同的规则与运行结构。");
+            progressionReport = { checkedAt: new Date().toISOString(), levelsChecked: levelStates.length, maximumMultiplierStep, milestones: milestoneStates };
+
+            const expectedVariationSignals = onboardingWaiting.plan.steps.map((step: any) => step.successSignal);
+            await page.evaluate(`window.__forgeObservedSignals=[];window.__forgeSignalListener=function(event){window.__forgeObservedSignals.push(event.detail&&event.detail.signal)};addEventListener("forge:mechanic-signal",window.__forgeSignalListener);`);
+            await page.evaluate(() => { const debug = (window as any).__GAME_DEBUG__; debug.setLevel(9); debug.restart(); });
+            for (let index = 0; index < expectedVariationSignals.length; index += 1) {
+              await page.evaluate(() => (window as any).__GAME_DEBUG__.performOnboardingStep());
+              await page.waitForTimeout(30);
+            }
+            const variation = await page.evaluate(() => {
+              const forgeWindow = window as any;
+              removeEventListener("forge:mechanic-signal", forgeWindow.__forgeSignalListener);
+              return { state: forgeWindow.__GAME_DEBUG__.getState(), observed: [...forgeWindow.__forgeObservedSignals] };
+            });
+            if (!expectedVariationSignals.every((signal: string) => variation.observed.includes(signal)) || variation.state?.level !== 9) failures.push(`第 9 关没有通过正常玩法处理器复演全部教学机制：${JSON.stringify({ expected: expectedVariationSignals, observed: variation.observed })}。`);
+            variationReport = { checkedAt: new Date().toISOString(), sourceLevel: 1, rehearsalLevel: 9, expectedSignals: expectedVariationSignals, observedSignals: variation.observed, contentVariant: variation.state?.contentVariant, runtimeSignature: variation.state?.runtimeSignature };
+
+            const assistanceActions: string[] = [];
+            await page.evaluate(() => { const debug = (window as any).__GAME_DEBUG__; debug.setLevel(1); debug.restart(); });
+            for (let failureCount = 1; failureCount <= 4; failureCount += 1) {
+              const cause = `生成玩法验收失败原因 ${failureCount}`;
+              await page.evaluate((value) => (window as any).__GAME_DEBUG__.forceLose(value), cause);
+              await page.waitForFunction(() => document.body.dataset.gameState === "lost" && Boolean((window as any).__FORGE_DESIGN__?.getAssistance?.()?.active), undefined, { timeout: 3_000 });
+              const shown = await page.evaluate(() => ({ assistance: (window as any).__FORGE_DESIGN__.getAssistance(), visible: Boolean(document.querySelector<HTMLElement>(".forge-assistance:not([hidden])")?.getBoundingClientRect().height), message: document.querySelector("[data-forge-assistance-message]")?.textContent ?? "" }));
+              const expected = [...(await page.evaluate(() => (window as any).__FORGE_DESIGN__.assistancePlan.steps))].filter((step: any) => step.afterFailures <= failureCount).at(-1) as any;
+              if (shown.assistance.active?.failureCount !== failureCount || shown.assistance.active?.action !== expected.action || !shown.visible || !shown.message.includes(cause) || !shown.message.includes(expected.message)) failures.push(`第 ${failureCount} 次失败没有显式呈现真实原因和 ${expected.action} 合同帮助。`);
+              assistanceActions.push(String(shown.assistance.active?.action));
+              if (failureCount < 4) await page.evaluate(() => (window as any).__GAME_DEBUG__.restart());
+            }
+            await page.reload({ waitUntil: "domcontentloaded", timeout: 10_000 });
+            await page.waitForFunction(() => Boolean((window as any).__FORGE_DESIGN__ && (window as any).__GAME_DEBUG__), undefined, { timeout: 5_000 });
+            const restoredAssistance = await page.evaluate(() => (window as any).__FORGE_DESIGN__.getAssistance());
+            if (restoredAssistance.active?.failureCount !== 4) failures.push("刷新后没有恢复第 4 次失败帮助。");
+            await page.locator("#start").click({ timeout: 3_000 });
+            await page.evaluate(() => (window as any).__GAME_DEBUG__.forceWin());
+            await page.waitForTimeout(30);
+            const resetAssistance = await page.evaluate(() => (window as any).__FORGE_DESIGN__.getAssistance());
+            if (resetAssistance.active !== null || Object.keys(resetAssistance.consecutiveFailuresByLevel ?? {}).length !== 0) failures.push("成功后没有清除连续失败帮助状态。");
+            assistanceReport = { checkedAt: new Date().toISOString(), observedActions: assistanceActions, persistedFailureCount: restoredAssistance.active?.failureCount, resetAfterWin: resetAssistance.active === null, hiddenAdaptation: false };
+            await page.locator("#restart").click({ timeout: 3_000 });
+            if (await page.locator("body").getAttribute("data-game-state") === "idle") await page.locator("#start").click({ timeout: 3_000 });
+            await page.waitForFunction(() => document.body.dataset.gameState === "playing", undefined, { timeout: 5_000 });
             await page.evaluate(() => (window as Window & { __GAME_DEBUG__?: { forceWin?: () => void } }).__GAME_DEBUG__?.forceWin?.());
             await page.waitForFunction(() => document.body.dataset.gameState === "won", undefined, { timeout: 3_000 })
               .catch(() => failures.push("forceWin 后状态没有进入 won。"));
@@ -1704,7 +2360,7 @@ export async function inspectGeneratedGameInBrowser(root: string): Promise<Brows
             await page.waitForFunction(() => document.body.dataset.gameState === "lost", undefined, { timeout: 3_000 })
               .catch(() => failures.push("forceLose 后状态没有进入 lost。"));
           }
-          evidence.push("390×844 已验证 idle→开始→playing→won→重开→再开局→lost 完整状态环。");
+          evidence.push("390×844 已验证教学安全等待→真实动作逐步完成→刷新恢复→重看/跳过，以及 idle→playing→won→重开→lost 完整状态环。");
         }
         if (runtimeErrors.length) failures.push(`${viewport.name} 浏览器错误：${runtimeErrors.join(" | ")}`);
         evidence.push(`${viewport.width}×${viewport.height}: 无横向溢出，首屏可开局。`);
@@ -1722,7 +2378,14 @@ export async function inspectGeneratedGameInBrowser(root: string): Promise<Brows
     { id: "GEN-BROWSER-CONTRACT", label: "生成游戏运行时契约（状态机、开始、胜负、重开）", status: failures.length ? "failed" : "passed", evidence: evidence.join(" ") },
     { id: "GEN-BROWSER-LAYOUT", label: "三档画幅布局与触控可达", status: failures.length ? "failed" : "passed", evidence: "360/390/1366 宽度均无横向溢出且可开局。" },
     { id: "GEN-BROWSER-ERRORS", label: "浏览器错误监听", status: failures.length ? "failed" : "passed", evidence: "已监听控制台错误与未处理异常。" },
+    { id: "GEN-BROWSER-ONBOARDING", label: "生成游戏合同教学（安全状态、真实信号、恢复、重看与跳过）", status: failures.length ? "failed" : "passed", evidence: "已核对 pressureClock 停止、逐步动作探针、合同信号顺序与持久化状态。" },
+    { id: "PROGRESSION-RUNTIME", label: "生成游戏二十关倍率平滑且五阶段结构不同", status: failures.length ? "failed" : "passed", evidence: "已逐关调用 setLevel/restart，并比较三维倍率、阶段规则与运行结构签名。" },
+    { id: "CONTENT-VARIATION-REHEARSAL", label: "生成游戏在第 9 关复演全部教学机制", status: failures.length ? "failed" : "passed", evidence: "第 9 关通过正常玩法处理器重新产生全部合同教学信号。" },
+    { id: "ASSISTANCE-RUNTIME", label: "生成游戏连续失败显式分层帮助且成功清零", status: failures.length ? "failed" : "passed", evidence: "已验证第 1–4 次真实失败原因、合同帮助、刷新恢复与成功清零。" },
   ];
+  if (progressionReport) writeFileSync(join(root, "_studio", "DIFFICULTY_QUALITY_REPORT.json"), `${JSON.stringify(progressionReport, null, 2)}\n`, "utf8");
+  if (variationReport) writeFileSync(join(root, "_studio", "VARIATION_QUALITY_REPORT.json"), `${JSON.stringify(variationReport, null, 2)}\n`, "utf8");
+  if (assistanceReport) writeFileSync(join(root, "_studio", "ASSISTANCE_QUALITY_REPORT.json"), `${JSON.stringify(assistanceReport, null, 2)}\n`, "utf8");
   const report = { checkedAt: new Date().toISOString(), executablePath, experimental: true, checks, failures, screenshots: screenshotPaths.map((path) => relative(root, path).replaceAll("\\", "/")) };
   writeFileSync(join(root, "_studio", "BROWSER_QUALITY_REPORT.json"), `${JSON.stringify(report, null, 2)}\n`, "utf8");
   if (failures.length) throw new Error(`生成游戏浏览器验收失败：${failures.join(" ")}`);
@@ -1736,6 +2399,18 @@ export async function inspectGameInBrowser(root: string): Promise<BrowserQuality
   const screenshotPaths: string[] = [];
   const failures: string[] = [];
   const evidence: string[] = [];
+  const curatedManifestPath = join(root, "_studio", "CURATED_RESOURCES.json");
+  const curatedSpriteSlots = existsSync(curatedManifestPath)
+    ? ((JSON.parse(readFileSync(curatedManifestPath, "utf8")) as { assets?: Array<{ target?: string }> }).assets ?? [])
+        .flatMap(({ target }) => {
+          const match = target?.replaceAll("\\", "/").match(/^assets\/sprites\/sprite-(\d+)\.png$/i);
+          return match ? [Number(match[1])] : [];
+        })
+    : [];
+  const curatedModelCount = existsSync(curatedManifestPath)
+    ? ((JSON.parse(readFileSync(curatedManifestPath, "utf8")) as { assets?: Array<{ target?: string }> }).assets ?? [])
+        .filter(({ target }) => target?.toLowerCase().endsWith(".glb")).length
+    : 0;
   const { server, url } = await startArtifactServer(root);
   let browser: Browser | null = null;
   try {
@@ -1769,6 +2444,38 @@ export async function inspectGameInBrowser(root: string): Promise<BrowserQuality
         await takeScreenshot(page, join(qualityRoot, `${viewport.name}-idle.png`), screenshotPaths);
         if (viewport.name === "phone-standard") {
           await runInteractionProbe(page);
+          if (curatedModelCount > 0) {
+            await page.waitForFunction((expected) => {
+              const debug = (window as Window & { __GAME_DEBUG__?: { getState?: () => any } }).__GAME_DEBUG__;
+              const models = debug?.getState?.()?.collector?.curatedModels;
+              return Boolean(models && models.loaded + models.failed.length >= expected);
+            }, curatedModelCount, { timeout: 8_000 });
+            const models = await page.evaluate(() => {
+              const debug = (window as Window & { __GAME_DEBUG__?: { getState?: () => any } }).__GAME_DEBUG__;
+              return debug?.getState?.()?.collector?.curatedModels ?? null;
+            }) as { requested: number; loaded: number; failed: unknown[]; meshCount: number; visibleObjects: number } | null;
+            if (!models || models.requested !== curatedModelCount || models.loaded !== curatedModelCount || models.failed.length > 0 || models.meshCount < curatedModelCount || models.visibleObjects !== curatedModelCount) {
+              failures.push(`精选 GLB 没有全部加载为可见场景对象：${JSON.stringify(models)}。`);
+            }
+            evidence.push(`精选 GLB ${models?.loaded ?? 0}/${curatedModelCount} 已解析，形成 ${models?.meshCount ?? 0} 个网格和 ${models?.visibleObjects ?? 0} 个可见场景对象。`);
+          }
+          if (curatedSpriteSlots.length > 0) {
+            await page.waitForFunction((slots) => {
+              const debug = (window as Window & { __GAME_DEBUG__?: { getState?: () => any } }).__GAME_DEBUG__;
+              const sprites = debug?.getState?.()?.assets?.sprites ?? [];
+              return slots.every((slot) => sprites.find((sprite: { slot?: number }) => sprite.slot === slot)?.loaded);
+            }, curatedSpriteSlots, { timeout: 8_000 });
+            const curatedRuntime = await page.evaluate((slots) => {
+              const debug = (window as Window & { __GAME_DEBUG__?: { getState?: () => any } }).__GAME_DEBUG__;
+              const sprites = debug?.getState?.()?.assets?.sprites ?? [];
+              return sprites.filter((sprite: { slot?: number }) => slots.includes(sprite.slot ?? -1));
+            }, curatedSpriteSlots) as Array<{ slot: number; path: string; loaded: boolean; width: number; height: number; drawCount: number }>;
+            if (curatedRuntime.length !== curatedSpriteSlots.length || curatedRuntime.some((sprite) => !sprite.loaded || sprite.width <= 0 || sprite.height <= 0)) {
+              failures.push(`精选精灵没有全部完成浏览器解码：${JSON.stringify(curatedRuntime)}。`);
+            }
+            if (!curatedRuntime.some((sprite) => sprite.drawCount > 0)) failures.push("精选精灵虽已下载，但画布没有调用任何绑定槽位。 ");
+            evidence.push(`精选精灵槽位 ${curatedSpriteSlots.join("、")} 已全部解码，其中 ${curatedRuntime.filter((sprite) => sprite.drawCount > 0).map((sprite) => sprite.slot).join("、") || "无"} 已进入画布绘制。`);
+          }
           const mobileFlow = await inspectMobilePlayFlow(page);
           if (mobileFlow.playing.surfaceUtilization < .94) failures.push(`手机游玩主体只占可用 9:16 高度的 ${Math.round(mobileFlow.playing.surfaceUtilization * 100)}%。`);
           if (mobileFlow.playing.verticalOverflow > 1) failures.push(`手机游玩状态纵向溢出 ${mobileFlow.playing.verticalOverflow}px。`);

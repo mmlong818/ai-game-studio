@@ -1,0 +1,7 @@
+Use case: stylized-concept
+Asset type: repeatable body-segment sprite for a top-down jade Chinese dragon snake game.
+Primary request: one short straight section of a dragon BACK, STRICT 90-degree overhead orthographic view. Horizontal axis, front toward RIGHT and rear toward LEFT. Broad rounded rectangular jade-scaled back, smooth matching width at both ends so copies overlap into a continuous dragon body. A narrow pale gold dorsal ridge along the horizontal middle. NO head, face, tail, limbs, wings or horns.
+Style: polished hand-painted miniature game illustration, jade-green scales, dark emerald contour, restrained pale gold ridge, crisp simplified scales readable at 40 pixels. Neutral overhead lighting, soft painted volume without side perspective or cast shadow.
+Composition: a single centered horizontal body segment occupying roughly 65 percent of square width and 50 percent height, complete silhouette, generous empty margins.
+Background: absolutely uniform pure magenta #FF00FF for chroma-key removal. No magenta in the subject. No gradient, ground, checkerboard, text or watermark.
+Avoid: sideways belly plates, lateral side view, isometric perspective, a whole dragon, multiple separate segments.

@@ -16,7 +16,6 @@ import { StudioRepository } from "../src/server/studio-repository";
 
 const templates: Array<[StageETemplate, string]> = [
   ["region-logic", "做一个星灵区域逻辑游戏，每行、每列和每个区域各放一个星灵。"],
-  ["maze", "做一个苔石庭院迷宫，支持连续滑动、岔路标记与最短路径挑战。"],
   ["mahjong-roguelite", "做一个三航段肉鸽麻将接龙，带封锁层、潮汐与遗物组合。"],
 ];
 
@@ -45,15 +44,6 @@ test("阶段 E 逻辑、迷宫和长局模板具备计划要求的运行时能�
         assert.match(script, /restartCurrentGame = \(\) =>/);
         assert.match(script, /hintUsesSolution: false/);
         assert.match(script, /regionErrors/);
-      }
-      if (template === "maze") {
-        assert.match(html, /data-maze-shortest/);
-        assert.match(html, /data-maze-control-mode="swipe"/);
-        assert.match(script, /solveMazeShortestPath/);
-        assert.match(script, /lanternKeys=new Set/);
-        assert.match(script, /starKeys=new Set/);
-        assert.match(script, /function missionOptimalSteps/);
-        assert.match(script, /setInterval\(\(\)=>handleControl/);
       }
       if (template === "mahjong-roguelite") {
         assert.match(html, /data-mahjong-mode/);

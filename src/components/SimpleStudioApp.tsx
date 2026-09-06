@@ -417,9 +417,9 @@ export function SimpleStudioApp() {
       </section>
 
       {/* 游戏内的修改不是独立流程：直接进入创作页的“改一个现有游戏”步骤，并预选当前游戏。 */}
-      <a className="remix-edge-button" href={`/create?game=${encodeURIComponent(sourceGame.id)}`}>
+      {sourceTemplateId && <a className="remix-edge-button" href={`/create?game=${encodeURIComponent(sourceGame.id)}`}>
         <span aria-hidden="true">＋</span> 改造这个游戏
-      </a>
+      </a>}
 
       {flow.requestHistory.length > 0 && flow.phase !== "input" && flow.phase !== "playing" && (
         <section className={`process-chat ${processOpen ? "is-open" : "is-collapsed"}`} aria-live="polite">

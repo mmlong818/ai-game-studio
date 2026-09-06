@@ -9,7 +9,7 @@ export const mahjongRoguelite = defineOfficialGame({
   lobbyRank: 3,
   cover: "assets/templates/packs/mahjong-roguelite/cover.png",
   referenceDoc: "docs/36-mahjong-hierarchy-reference.md",
-  mechanicId: "route-choice",
+  knowledge: { patternId: "tile-route-roguelite", mechanicIds: ["route-relic-synergy"], rationale: "局部消除承载路线与遗物构筑。" },
   seed: {
     artStyle: "playful",
     visualStyle: "cute",

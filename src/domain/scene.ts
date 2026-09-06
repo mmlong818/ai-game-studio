@@ -58,7 +58,7 @@ export function createScene(spec: GameSpecV2): SceneNode[] {
   if (spec.capabilities.requiredCapabilities.some((item) => item.includes("dodge") || item.includes("collision"))) {
     nodes.push(makeNode("NODE-OBSTACLE", "危险障碍", "obstacle", 7, spec));
   }
-  if (spec.source.selectedMechanicIds.includes("lane-dodge") && spec.source.selectedMechanicIds.includes("collect-escape")) {
+  if (spec.source.selectedMechanicIds.includes("lane-dodge") && spec.source.selectedMechanicIds.includes("collect-charge")) {
     const player = nodes.find((node) => node.id === "NODE-PLAYER");
     if (player) {
       player.label = "昆虫身体";

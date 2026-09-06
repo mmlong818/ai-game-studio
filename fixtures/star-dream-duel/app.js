@@ -5,6 +5,8 @@ import {
   STARTING_SCORE,
   TACTICAL_RULE_VERSION,
   HEALING_MULTIPLIER,
+  SKILL_COSTS,
+  canUseBattleSkill,
   applyAttack,
   calculateTacticalEffects,
   canOwnerSwap,
@@ -24,7 +26,9 @@ import {
   swapTiles,
   tileBase,
   tileSpecial,
-} from './game-core.js?v=7';
+} from './game-core.js?v=10';
+import { SOLO_LEVELS, createSoloProgress, collectSolo, soloOutcome, soloStars } from './solo-mode.js?v=8';
+import { installGameHelp } from './new-player-help.js?v=15';
 
 const TILE_ART = {
   moon: './assets/tiles-v2/moon.png',
@@ -111,7 +115,6 @@ const soundToggleLabel = document.querySelector('#sound-toggle-label');
 const installButton = document.querySelector('#install-app');
 const resultModal = document.querySelector('#result-modal');
 const fxLayer = document.querySelector('#fx-layer');
-const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
 const gameRoot = document.querySelector('.game');
 const setupModal = document.querySelector('#setup-modal');
 const scoreRange = document.querySelector('#score-range');
@@ -149,23 +152,47 @@ let campaignLevelIndex = 0;
 let campaignMaxUnlocked = 0;
 let aiDifficulty = 'standard';
 let duelStep = 'player-ready';
+let gameMode = 'solo';
+let soloMastery = {};
+let gameHelp;
+const modeButtons = [...document.querySelectorAll('button[data-game-mode]')];
+const isEndless = () => gameMode === 'endless';
+const isSolo = () => gameMode === 'solo' || isEndless();
+const ENDLESS_LEVEL = { ...SOLO_LEVELS[0], name: '无限休闲', tierLabel: '自由消除', mission: '', targets: {}, moves: null };
+const activeLevels = () => isEndless() ? [ENDLESS_LEVEL] : isSolo() ? SOLO_LEVELS : CAMPAIGN_LEVELS;
+const campaignKey = () => isEndless() ? 'star-dream-duel:endless:campaign:v1' : isSolo() ? 'star-dream-duel:solo:campaign:v1' : CAMPAIGN_STORAGE_KEY;
+const sessionKey = () => isEndless() ? 'star-dream-duel:endless:session:v1' : isSolo() ? 'star-dream-duel:solo:session:v1' : DUEL_SESSION_KEY;
+const playerOwner = () => isSolo() ? 'solo' : 'player';
+
+function switchMode(mode) {
+  if (!['solo', 'duel', 'endless'].includes(mode)) return;
+  gameVersion += 1;
+  gameMode = mode;
+  modeButtons.forEach(button => button.setAttribute('aria-pressed', String(button.dataset.gameMode === mode)));
+  document.body.dataset.gameMode = mode;
+  loadCampaignProgress();
+  openSetup();
+}
 
 function currentCampaignLevel() {
-  return CAMPAIGN_LEVELS[campaignLevelIndex];
+  return activeLevels()[campaignLevelIndex];
 }
 
 function saveCampaignProgress() {
   try {
-    localStorage.setItem(CAMPAIGN_STORAGE_KEY, JSON.stringify({ current: campaignLevelIndex, maxUnlocked: campaignMaxUnlocked }));
+    localStorage.setItem(campaignKey(), JSON.stringify({ current: campaignLevelIndex, maxUnlocked: campaignMaxUnlocked, mastery: soloMastery }));
   } catch {}
 }
 
 function loadCampaignProgress() {
+  if (isEndless()) { campaignLevelIndex = 0; campaignMaxUnlocked = 0; soloMastery = {}; return; }
   try {
-    const saved = JSON.parse(localStorage.getItem(CAMPAIGN_STORAGE_KEY) || 'null');
+    const saved = JSON.parse(localStorage.getItem(campaignKey()) || 'null');
+    soloMastery = saved?.mastery && typeof saved.mastery === 'object' ? saved.mastery : {};
     campaignMaxUnlocked = Math.max(0, Math.min(19, Number(saved?.maxUnlocked) || 0));
     campaignLevelIndex = Math.max(0, Math.min(campaignMaxUnlocked, Number(saved?.current) || 0));
   } catch {
+    soloMastery = {};
     campaignLevelIndex = 0;
     campaignMaxUnlocked = 0;
   }
@@ -173,7 +200,7 @@ function loadCampaignProgress() {
 
 function syncCampaignUi() {
   const level = currentCampaignLevel();
-  campaignSelect.replaceChildren(...CAMPAIGN_LEVELS.map((item, index) => {
+  campaignSelect.replaceChildren(...activeLevels().map((item, index) => {
     const option = document.createElement('option');
     option.value = String(index);
     option.textContent = `${String(item.number).padStart(2, '0')} · ${item.tierLabel} · ${item.name}`;
@@ -183,9 +210,19 @@ function syncCampaignUi() {
   }));
   campaignProgress.textContent = `第 ${level.number} / 20 关 · ${level.tierLabel} · ${level.mission}`;
   document.body.dataset.campaignCurrentLevel = String(level.number);
+  document.body.dataset.gameMode = gameMode;
+  document.querySelector('#setup-description').textContent = isSolo()
+    ? '独自探索整张棋盘。交换相邻棋子凑成三个，收集目标即可过关；没有计时，也没有对手。'
+    : '你和露娜共用一张棋盘，各自控制一半区域。不同棋子承担攻击、恢复和充能职责。';
+  document.querySelector('#solo-start-label').hidden = !isSolo();
+  document.querySelector('#duel-start-label').hidden = isSolo();
+  document.querySelector('#result-eyebrow').textContent = isSolo() ? '星梦收藏册' : '对战成果';
+  if (isEndless()) document.querySelector('#setup-description').textContent = '没有目标、没有步数和时间限制。自由交换整张棋盘，享受消除与连锁；随时离开，下次继续。';
+  document.querySelector('#solo-start-label').textContent = isEndless() ? '进入无限休闲' : '开始收集星光';
 }
 
 function setCampaignLevel(levelNumber, allowLocked = false) {
+  if (isEndless()) return;
   const requested = Math.max(0, Math.min(19, Number(levelNumber) - 1));
   campaignLevelIndex = allowLocked ? requested : Math.min(requested, campaignMaxUnlocked);
   if (allowLocked) campaignMaxUnlocked = Math.max(campaignMaxUnlocked, requested);
@@ -204,15 +241,17 @@ function setSessionState(nextState) {
 function saveDuelSession() {
   if (!state || state.phase !== 'player' || document.body.dataset.gameState !== 'playing') return;
   try {
-    localStorage.setItem(DUEL_SESSION_KEY, JSON.stringify({ schemaVersion: 3, level: currentCampaignLevel().number, aiDifficulty, state, updatedAt: Date.now() }));
+    localStorage.setItem(sessionKey(), JSON.stringify({ schemaVersion: 3, mode: gameMode, rngState: rng.getState(), level: currentCampaignLevel().number, aiDifficulty, state, updatedAt: Date.now() }));
   } catch {}
 }
 
 function restoreDuelSession() {
   try {
-    const saved = JSON.parse(localStorage.getItem(DUEL_SESSION_KEY) || 'null');
+    const saved = JSON.parse(localStorage.getItem(sessionKey()) || 'null');
+    if (isSolo() && (saved?.mode !== gameMode || saved?.state?.solo?.version !== 1)) return false;
     if (!saved || saved.schemaVersion !== 3 || saved.level !== currentCampaignLevel().number || saved.aiDifficulty !== aiDifficulty || saved.state?.phase !== 'player') return false;
     state = saved.state;
+    if (Number.isInteger(saved.rngState)) rng.setState(saved.rngState);
     state.selected = null;
     state.skillMode = null;
     duelStep = 'player-ready';
@@ -221,7 +260,7 @@ function restoreDuelSession() {
 }
 
 function clearDuelSession() {
-  try { localStorage.removeItem(DUEL_SESSION_KEY); } catch {}
+  try { localStorage.removeItem(sessionKey()); } catch {}
 }
 
 function formatScore(score) {
@@ -253,7 +292,8 @@ function renderBoard() {
       button.setAttribute('role', 'gridcell');
       const specialLabel = { row: '横向星轨', column: '纵向星轨', nova: '新星', prism: '棱镜' }[special] ?? '';
       button.setAttribute('aria-label', `${row < 4 ? 'AI 区' : '玩家区'}第 ${row + 1} 行第 ${col + 1} 列${blocker ? '封印障碍' : specialLabel || TILE_LABEL[type]}棋子`);
-      button.disabled = blocker || row < 4 || state.phase !== 'player';
+      button.disabled = blocker || (!isSolo() && row < 4) || state.phase !== 'player';
+      if (isSolo()) button.setAttribute('aria-label', `第 ${row + 1} 行第 ${col + 1} 列${TILE_LABEL[type]}棋子`);
       const artType = type === 'prism' ? 'star' : blocker ? 'moon' : type;
       button.innerHTML = `<span class="tile__face"><img src="${TILE_ART[artType]}" alt="" width="512" height="512" draggable="false"></span>${blocker ? '<i class="tile__blocker-mark" aria-hidden="true">×</i>' : ''}${special ? `<i class="tile__special-mark" aria-hidden="true">${{ row: '↔', column: '↕', nova: '✦', prism: '◇' }[special]}</i>` : ''}`;
       if (state.selected && state.selected.row === row && state.selected.col === col) {
@@ -289,17 +329,30 @@ function renderResources() {
     resourceElements[actor].bloom.textContent = String(energy?.bloom ?? 0);
     resourceElements[actor].veil.textContent = String(energy?.veil ?? 0);
   }
-  const costs = { tide: 8, bloom: 10, veil: 10 };
   for (const button of skillButtons) {
     const skill = button.dataset.skill;
     document.querySelector(`#skill-${skill}-value`).textContent = String(state.playerEnergy?.[skill] ?? 0);
-    const available = currentCampaignLevel().allowSkills && state.phase === 'player' && (state.playerEnergy?.[skill] ?? 0) >= costs[skill];
+    const available = canUseBattleSkill(currentCampaignLevel(), state, 'player', skill);
     button.disabled = !available;
     button.classList.toggle('is-armed', state.skillMode === skill);
   }
 }
 
 function renderStatus() {
+  document.querySelector('#play-help').disabled = state.phase !== 'player';
+  if (isEndless()) { hintButton.disabled = state.phase !== 'player'; return; }
+  if (isSolo() && state.solo) {
+    const level = currentCampaignLevel();
+    document.querySelector('#solo-moves').textContent = String(state.solo.movesLeft);
+    document.querySelector('#solo-targets').replaceChildren(...Object.entries(level.targets).map(([type, target]) => {
+      const item = document.createElement('span');
+      const count = Math.min(target, state.solo.collected[type] || 0);
+      item.textContent = `${TILE_LABEL[type]} ${count} / ${target}${count >= target ? ' ✓' : ''}`;
+      return item;
+    }));
+    hintButton.disabled = state.phase !== 'player';
+    return;
+  }
   setScoreDisplay(aiScoreElement, aiScoreBar, state.aiScore);
   setScoreDisplay(playerScoreElement, playerScoreBar, state.playerScore);
   roundCurrent.textContent = String(state.round);
@@ -335,6 +388,10 @@ function addEnergy(actor, gains) {
 }
 
 function applyBattleEffects(actor, effects) {
+  if (isSolo()) {
+    collectSolo(state.solo, effects.counts);
+    return { damage: 0, healing: 0, energy: { tide: 0, bloom: 0, veil: 0 }, absorbed: 0, extraTurn: false };
+  }
   const level = currentCampaignLevel();
   const energy = level.allowSkills ? effects.energy : { tide: 0, bloom: 0, veil: 0 };
   const rawDamage = level.allowShapes ? effects.damage : effects.counts.star * 4 + Math.max(0, (effects.cascadeLevel ?? 1) - 1);
@@ -429,7 +486,7 @@ async function finishAnimations(animations) {
 async function animateSwap(first, second) {
   const firstTile = getTile(first);
   const secondTile = getTile(second);
-  if (!firstTile || !secondTile || reducedMotion.matches) {
+  if (!firstTile || !secondTile) {
     await wait(30);
     return;
   }
@@ -483,7 +540,7 @@ function buildFallPlan(matches) {
 }
 
 async function animateFall(plan) {
-  if (!plan.length || reducedMotion.matches) {
+  if (!plan.length) {
     await wait(30);
     return;
   }
@@ -511,7 +568,6 @@ async function animateFall(plan) {
 }
 
 function emitMatchParticles(matches, groups, actor) {
-  if (reducedMotion.matches) return;
   const shellRect = fxLayer.getBoundingClientRect();
   const colors = actor === 'player'
     ? ['#fff7b2', '#ffffff', '#ff9fbe', '#ffd45d']
@@ -578,10 +634,6 @@ function emitMatchParticles(matches, groups, actor) {
 
 async function animateMatchRemoval(matches, groups, actor) {
   emitMatchParticles(matches, groups, actor);
-  if (reducedMotion.matches) {
-    await wait(80);
-    return;
-  }
   const animations = matches.map((position, index) => getTile(position)?.animate([
     { transform: 'scale(1)', opacity: 1, filter: 'brightness(1)' },
     { transform: 'scale(1.12)', opacity: 1, filter: 'brightness(1.45)', offset: 0.38 },
@@ -680,11 +732,13 @@ async function resolveMatches(actor, version) {
 }
 
 function hasEnded() {
+  if (isEndless()) return false;
+  if (isSolo()) return soloOutcome(currentCampaignLevel(), state.solo) !== 'playing';
   return state.aiScore <= 0 || state.playerScore <= 0;
 }
 
 async function ensurePlayable(version) {
-  if (findValidMoves(state.board, 'player').length && findValidMoves(state.board, 'ai').length) return true;
+  if (findValidMoves(state.board, playerOwner()).length && (isSolo() || findValidMoves(state.board, 'ai').length)) return true;
   showToast('棋局进入星雾，正在重新排列…', 'info', 1500);
   await wait(500);
   if (!isCurrentGame(version)) return false;
@@ -727,6 +781,7 @@ async function executeMove(actor, first, second, version) {
     return;
   }
 
+  if (isSolo() && !isEndless()) state.solo.movesLeft -= 1;
   const outcome = prismEffect ? await resolvePrism(actor, prismEffect, version) : await resolveMatches(actor, version);
   state.lastMovedTo = null;
   if (!isCurrentGame(version)) return;
@@ -737,6 +792,15 @@ async function executeMove(actor, first, second, version) {
   }
 
   if (!(await ensurePlayable(version)) || !isCurrentGame(version)) return;
+
+  if (isSolo()) {
+    state.round += 1;
+    state.phase = 'player';
+    duelStep = 'player-ready';
+    render();
+    saveDuelSession();
+    return;
+  }
 
   if (outcome?.extraTurn && (state.extraTurnStreak ?? 0) < 2) {
     state.extraTurnStreak = (state.extraTurnStreak ?? 0) + 1;
@@ -798,6 +862,8 @@ async function runAiTurn(version) {
 }
 
 function finishGame() {
+  if (isEndless()) return;
+  if (isSolo()) { finishSoloGame(); return; }
   state.phase = 'ended';
   clearDuelSession();
   renderStatus();
@@ -833,6 +899,50 @@ function finishGame() {
   continueButton.focus();
 }
 
+function hintValue(effects) {
+  if (isEndless()) return Object.values(effects.counts).reduce((sum, count) => sum + count, 0);
+  if (!isSolo()) return effects.damage * 6 + effects.healing * 3 + (effects.extraTurn ? 24 : 0);
+  return Object.entries(currentCampaignLevel().targets).reduce((sum, [type, target]) =>
+    sum + Math.min(Math.max(0, target - (state.solo.collected[type] || 0)), effects.counts[type] || 0), 0);
+}
+
+function finishSoloGame() {
+  if (isEndless()) return;
+  if (state.phase === 'ended') return;
+  const level = currentCampaignLevel();
+  const won = soloOutcome(level, state.solo) === 'won';
+  const stars = soloStars(level, state.solo);
+  const previous = Math.max(0, Math.min(3, Number(soloMastery[level.number]) || 0));
+  state.phase = 'ended';
+  clearDuelSession();
+  const next = won && level.number < SOLO_LEVELS.length;
+  if (won) {
+    soloMastery[level.number] = Math.max(previous, stars);
+    if (next) {
+      campaignLevelIndex += 1;
+      campaignMaxUnlocked = Math.max(campaignMaxUnlocked, campaignLevelIndex);
+    }
+    saveCampaignProgress();
+  }
+  setSessionState(next ? 'stage-complete' : won ? 'won' : 'lost');
+  document.querySelector('#result-title').textContent = won ? `${level.name} · 收集完成！` : '只差一点，再试一次';
+  document.querySelector('#result-detail').textContent = won
+    ? `剩余 ${state.solo.movesLeft} 步 · ${stars > previous ? `收藏新增 ${stars - previous} 颗星` : '已保留历史最佳'}。${next ? `下一站：${currentCampaignLevel().name}` : '20 站星梦旅程已全部点亮！'}`
+    : '本关步数已用完。先找目标颜色的三连；随时点击“给我提示”，不会扣步。';
+  const medals = document.querySelector('#solo-result');
+  medals.textContent = won ? '★'.repeat(stars) + '☆'.repeat(3 - stars) : '✧';
+  medals.setAttribute('aria-label', won ? `本关 ${stars} 星，历史最佳 ${Math.max(previous, stars)} 星` : '本关尚未完成');
+  document.querySelector('#solo-result-targets').textContent = Object.entries(level.targets)
+    .map(([type, target]) => `${TILE_LABEL[type]} ${Math.min(target, state.solo.collected[type] || 0)}/${target}`).join(' · ');
+  resultModal.hidden = false;
+  resultModal.classList.add('is-visible');
+  gameRoot.inert = true;
+  playTone(won ? 'win' : 'lose');
+  const button = document.querySelector('#play-again');
+  button.textContent = next ? '前往下一站' : won ? '重玩本关' : '再试本关';
+  button.focus();
+}
+
 function updateScorePicker(value) {
   selectedStartingScore = normalizeStartingScore(value);
   scoreRange.value = String(selectedStartingScore);
@@ -865,14 +975,17 @@ function openSetup() {
   selectedStartingScore = currentCampaignLevel().startingScore;
   updateScorePicker(selectedStartingScore);
   syncCampaignUi();
-  window.setTimeout(() => scoreRange.focus(), 0);
+  gameHelp?.showFirstVisit();
+  window.setTimeout(() => {
+    if (!document.querySelector('#game-help-dialog')?.open) modeButtons.find(button => button.dataset.gameMode === gameMode)?.focus();
+  }, 0);
 }
 
 function startGame(startingScore = selectedStartingScore) {
   gameVersion += 1;
   selectedStartingScore = normalizeStartingScore(startingScore);
   aiDifficulty = aiDifficultySelect.value;
-  rng = createSeededRng(currentCampaignLevel().seed + gameVersion * 997);
+  rng = createSeededRng(currentCampaignLevel().seed + (isSolo() ? 0 : gameVersion * 997));
   const restored = restoreDuelSession();
   if (!restored) state = {
     board: createBoard(rng, { blockers: currentCampaignLevel().blockers }),
@@ -884,7 +997,7 @@ function startGame(startingScore = selectedStartingScore) {
     playerShield: 0,
     aiShield: 0,
     playerEnergy: { tide: 0, bloom: 0, veil: 0 },
-    aiEnergy: { tide: Math.max(0, currentCampaignLevel().tier - 2), bloom: Math.max(0, currentCampaignLevel().tier - 2), veil: Math.max(0, currentCampaignLevel().tier - 2) },
+    aiEnergy: { tide: 0, bloom: 0, veil: 0 },
     playerAttackBoost: 0,
     aiAttackBoost: 0,
     extraTurnStreak: 0,
@@ -893,6 +1006,7 @@ function startGame(startingScore = selectedStartingScore) {
     activeActor: 'player',
     selected: null,
     skillMode: null,
+    solo: isSolo() ? createSoloProgress(currentCampaignLevel()) : null,
     log: [{ actor: 'system', title: '第 1 回合开始', detail: '选择下半区的两枚相邻棋子', icon: '◇' }]
   };
   duelStep = 'player-ready';
@@ -903,14 +1017,14 @@ function startGame(startingScore = selectedStartingScore) {
   gameRoot.inert = false;
   setSessionState('playing');
   render();
-  showToast(restored ? `已恢复第 ${state.round} 回合 · 轮到你` : `第 ${currentCampaignLevel().number} 关 · ${formatScore(selectedStartingScore)} 点生命 · 轮到你`, 'player', 1400);
+  showToast(isEndless() ? (restored ? '已恢复棋盘 · 随心消除，慢慢享受' : '没有目标，没有倒计时 · 随心消除') : isSolo() ? '交换相邻棋子凑成三个；目标收满即可过关' : restored ? `已恢复第 ${state.round} 回合 · 轮到你` : `第 ${currentCampaignLevel().number} 关 · ${formatScore(selectedStartingScore)} 点生命 · 轮到你`, 'player', 1400);
+  saveDuelSession();
 }
 
 function useSkill(actor, skill) {
-  if (!currentCampaignLevel().allowSkills || state.phase !== actor) return false;
+  if (!canUseBattleSkill(currentCampaignLevel(), state, actor, skill)) return false;
   const energy = actorEnergy(actor);
-  const cost = skill === 'tide' ? 8 : 10;
-  if ((energy[skill] ?? 0) < cost) return false;
+  const cost = SKILL_COSTS[skill];
   if (skill === 'tide' && actor === 'player') {
     state.skillMode = 'tide';
     state.selected = null;
@@ -941,8 +1055,8 @@ function useSkill(actor, skill) {
 function maybeUseAiSkill() {
   if (!currentCampaignLevel().allowSkills) return;
   const lifeRatio = state.aiScore / state.startingScore;
-  if (lifeRatio < 0.66 && state.aiEnergy.bloom >= 10) useSkill('ai', 'bloom');
-  else if (state.aiShield < 8 && state.aiEnergy.veil >= 10) useSkill('ai', 'veil');
+  if (lifeRatio < 0.66 && canUseBattleSkill(currentCampaignLevel(), state, 'ai', 'bloom')) useSkill('ai', 'bloom');
+  else if (state.aiShield < 8 && canUseBattleSkill(currentCampaignLevel(), state, 'ai', 'veil')) useSkill('ai', 'veil');
 }
 
 function selectOrMovePlayerTile(position) {
@@ -985,7 +1099,7 @@ function selectOrMovePlayerTile(position) {
   }
 
   const first = state.selected;
-  if (canOwnerSwap(first, position, 'player', state.board)) {
+  if (canOwnerSwap(first, position, playerOwner(), state.board)) {
     executeMove('player', first, position, gameVersion);
   }
 }
@@ -994,7 +1108,7 @@ boardElement.addEventListener('pointerdown', (event) => {
   const tile = event.target.closest('.tile');
   if (!tile || state.phase !== 'player' || state.skillMode === 'tide') return;
   const position = { row: Number(tile.dataset.row), col: Number(tile.dataset.col) };
-  if (position.row < 4) return;
+  if (!isSolo() && position.row < 4) return;
   pointerGesture = { pointerId: event.pointerId, x: event.clientX, y: event.clientY, position };
 });
 
@@ -1012,12 +1126,12 @@ boardElement.addEventListener('pointerup', (event) => {
     ? { row: position.row, col: position.col + Math.sign(deltaX) }
     : { row: position.row + Math.sign(deltaY), col: position.col };
 
-  if (target.row < 4 || target.row > 7 || target.col < 0 || target.col > 7) {
+  if (target.row < (isSolo() ? 0 : 4) || target.row > 7 || target.col < 0 || target.col > 7) {
     showToast('只能在下半区滑动棋子', 'info', 850);
     return;
   }
 
-  if (!canOwnerSwap(position, target, 'player', state.board)) return;
+  if (!canOwnerSwap(position, target, playerOwner(), state.board)) return;
   state.selected = null;
   executeMove('player', position, target, gameVersion);
 });
@@ -1031,21 +1145,21 @@ boardElement.addEventListener('click', (event) => {
   const tile = event.target.closest('.tile');
   if (!tile || state.phase !== 'player') return;
   const position = { row: Number(tile.dataset.row), col: Number(tile.dataset.col) };
-  if (position.row < 4) return;
+  if (!isSolo() && position.row < 4) return;
   selectOrMovePlayerTile(position);
 });
 
 hintButton.addEventListener('click', () => {
   if (state.phase !== 'player') return;
-  const move = findValidMoves(state.board, 'player')
+  const move = findValidMoves(state.board, playerOwner())
     .map((candidate) => ({ ...candidate, board: swapTiles(state.board, candidate.first, candidate.second) }))
     .map((candidate) => ({ ...candidate, effects: calculateTacticalEffects(candidate.board, findMatches(candidate.board), findMatchGroups(candidate.board), 1) }))
-    .sort((left, right) => (right.effects.damage * 6 + right.effects.healing * 3 + (right.effects.extraTurn ? 24 : 0)) - (left.effects.damage * 6 + left.effects.healing * 3 + (left.effects.extraTurn ? 24 : 0)))[0];
+    .sort((left, right) => hintValue(right.effects) - hintValue(left.effects))[0];
   if (!move) return;
   state.selected = null;
   renderBoard();
   highlightPositions([move.first, move.second], 'is-hint');
-  const reason = move.effects.extraTurn ? '形成四连并获得额外回合' : move.effects.damage ? `可造成 ${move.effects.damage} 点星击` : move.effects.healing ? `可恢复 ${move.effects.healing} 点生命` : '可为战术技能充能';
+  const reason = isEndless() ? '这两枚交换后可以消除' : isSolo() ? '优先收集尚未完成的目标；连消也会计入' : move.effects.extraTurn ? '形成四连并获得额外回合' : move.effects.damage ? `可造成 ${move.effects.damage} 点星击` : move.effects.healing ? `可恢复 ${move.effects.healing} 点生命` : '可为战术技能充能';
   showToast(`建议交换：${reason}`, 'player', 1700);
   playTone('select');
 });
@@ -1084,7 +1198,7 @@ window.addEventListener('appinstalled', () => {
 window.addEventListener('load', () => {
   const isNativeAndroidApp = new URLSearchParams(window.location.search).has('native');
   if ('serviceWorker' in navigator && !isNativeAndroidApp) {
-    navigator.serviceWorker.register('./sw.js?v=7').catch((error) => {
+    navigator.serviceWorker.register('./sw.js?v=16').catch((error) => {
       console.warn('离线服务注册失败：', error);
     });
   }
@@ -1099,21 +1213,29 @@ aiDifficultySelect.addEventListener('change', () => { aiDifficulty = aiDifficult
 window.addEventListener('pagehide', saveDuelSession);
 
 document.querySelector('#back-to-setup').addEventListener('click', openSetup);
-document.querySelector('#play-again').addEventListener('click', openSetup);
+document.querySelector('#play-again').addEventListener('click', () => { clearDuelSession(); startGame(currentCampaignLevel().startingScore); });
+document.querySelector('#result-setup').addEventListener('click', openSetup);
+modeButtons.forEach(button => button.addEventListener('click', () => {
+  if (button.dataset.gameMode !== gameMode) switchMode(button.dataset.gameMode);
+}));
 
 window.__GAME_DEBUG__ = {
   getState: () => ({
+    mode: gameMode,
+    solo: state?.solo ? structuredClone(state.solo) : null,
     phase: state?.phase ?? 'idle',
     playerScore: state?.playerScore ?? 0,
     aiScore: state?.aiScore ?? 0,
     campaign: { level: currentCampaignLevel(), maxUnlocked: campaignMaxUnlocked + 1, total: CAMPAIGN_LEVELS.length },
     runtime: {
+      soloTargets: isSolo() ? { ...currentCampaignLevel().targets } : null,
+      soloMoveLimit: isSolo() ? currentCampaignLevel().moves : null,
       startingScore: currentCampaignLevel().startingScore,
       playerDamageMultiplier: currentCampaignLevel().playerDamageMultiplier,
       aiDamageMultiplier: currentCampaignLevel().aiDamageMultiplier,
       aiDifficulty,
       duelStep,
-      recoverable: Boolean(localStorage.getItem(DUEL_SESSION_KEY)),
+      recoverable: Boolean(localStorage.getItem(sessionKey())),
       tacticalRuleVersion: TACTICAL_RULE_VERSION,
       campaignSignatureCount: new Set(CAMPAIGN_LEVELS.map((level) => `${level.name}:${level.mission}:${level.seed}`)).size,
       chapterCount: new Set(CAMPAIGN_LEVELS.map((level) => level.tierLabel)).size,
@@ -1137,15 +1259,19 @@ window.__GAME_DEBUG__ = {
     },
   }),
   async legalAction() {
-    const [move] = findValidMoves(state.board, 'player');
+    const [move] = findValidMoves(state.board, playerOwner());
     if (move) await executeMove('player', move.first, move.second, gameVersion);
   },
   forceWin() {
+    if (isEndless()) return;
+    if (isSolo()) { state.solo.collected = { ...currentCampaignLevel().targets }; finishSoloGame(); return; }
     state.playerScore = Math.max(state.playerScore, 1);
     state.aiScore = 0;
     finishGame();
   },
   forceLose() {
+    if (isEndless()) return;
+    if (isSolo()) { state.solo.movesLeft = 0; state.solo.collected = {}; finishSoloGame(); return; }
     state.playerScore = 0;
     state.aiScore = Math.max(state.aiScore, 1);
     finishGame();
@@ -1175,5 +1301,6 @@ window.__GAME_DEBUG__ = {
   },
 };
 loadCampaignProgress();
+gameHelp = installGameHelp(() => ({ mode: gameMode, level: currentCampaignLevel() }));
 syncCampaignUi();
 openSetup();

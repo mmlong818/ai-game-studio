@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { gameDesignPrinciplesPrompt } from "../shared/game-presentation-policy.js";
 import {
   createDesignProfile,
   gameDesignProfileSchema,
@@ -10,7 +11,7 @@ import {
   type ProjectInput,
 } from "../shared/contracts.js";
 import { commonDesignMistakes, designPillars, playerMotivations } from "../shared/design-knowledge.js";
-import { OPENAI_TEXT_MODEL, type OpenAISettings } from "./openai-settings.js";
+import { type OpenAISettings } from "./openai-settings.js";
 
 const DEFAULT_ENDPOINT = "https://api.openai.com/v1/chat/completions";
 // 设计合同是 13 字段的长结构化生成,明显慢于玩法解析;真实测量 25s 会超时。
@@ -93,6 +94,7 @@ function buildSystemPrompt(template: GameTemplate, baseline: GameDesignProfile, 
       ];
   return [
     "你是一个游戏创作平台的首席游戏设计师,为用户的创意产出专业的游戏设计合同。",
+    gameDesignPrinciplesPrompt(),
     ...ruleSection,
     "设计支柱(合同必须体现):",
     ...designPillars.map((pillar) => `- ${pillar.rule}`),
@@ -345,7 +347,7 @@ export class DesignContractGenerator {
           },
           signal: controller.signal,
           body: JSON.stringify({
-            model: OPENAI_TEXT_MODEL,
+            model: this.settings.status().models.text,
             messages,
             response_format: {
               type: "json_schema",

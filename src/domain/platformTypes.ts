@@ -178,7 +178,7 @@ export interface AcceptanceAssertion {
   sourceRuleIds: string[];
   label: string;
   priority: RulePriority;
-  kind: "rule" | "asset" | "viewport" | "performance" | "accessibility" | "game-feel" | "manual";
+  kind: "rule" | "asset" | "viewport" | "performance" | "accessibility" | "game-feel" | "manual" | "onboarding" | "progression" | "solvability" | "assistance" | "content-variation";
   status: EvidenceStatus;
   message: string;
   evidenceIds: string[];

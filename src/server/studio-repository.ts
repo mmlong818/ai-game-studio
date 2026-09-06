@@ -1,6 +1,42 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { OFFICIAL_GAMES, type OfficialGameDefinition } from "../shared/official-games/index.js";
+import { GAME_DESIGN_KNOWLEDGE_LIBRARY } from "../shared/game-design-knowledge/catalog.js";
+import { validateGameDesignKnowledgeLibrary, type GameDesignKnowledgeLibrary } from "../shared/game-design-knowledge/index.js";
+import { createDesignKnowledgeShadow, type DesignKnowledgeShadow } from "../shared/game-design-knowledge/shadow.js";
+import { integrateGameDesign } from "../shared/game-design-knowledge/integrator.js";
+import { addResearchSource, attachResearchCandidate, createGameResearchTask, decideResearchTask, gameResearchTaskSchema, submitResearchSynthesis, type GameResearchTask } from "../shared/game-design-knowledge/research-queue.js";
+import { createResearchPrototypeEvaluation, recordResearchBrowserRun, recordResearchPlaytest, recordResearchProbeRun } from "../shared/game-design-knowledge/research-evaluation.js";
+import { createResearchResourceAcquisitionTask, reviewResearchResourceAcquisitionWork, submitResearchResourceAcquisitionWork } from "../shared/game-design-knowledge/research-resource-acquisition-task.js";
+import { researchResourceIntakeBatchSchema, reviewResearchResourceIntakeBatch } from "../shared/game-design-knowledge/research-resource-intake.js";
+import { initialDesignResearchTasks } from "../shared/game-design-knowledge/research-seeds.js";
+import { buildGameplayRadarView, createGameplayRadarCluster, createRadarResearchTask, gameplayRadarClusterSchema, gameplayRadarResearchInputSchema, gameplaySignalSchema, linkGameplayRadarResearch, mergeGameplaySignal, normalizeGameplayTitle, type GameplayRadarCluster } from "../shared/game-design-knowledge/gameplay-radar.js";
+import { INITIAL_GAMEPLAY_RADAR_SIGNALS } from "../shared/game-design-knowledge/gameplay-radar-seeds.js";
+import { createGameDesignContractForLegacyProject } from "../shared/game-design-contract/from-legacy.js";
+import type { ResourcePlanningShadow } from "../shared/resource-planning/index.js";
+import { resourceFamilySchema, type ResourceFamily } from "../shared/resource-library/index.js";
 import type { StudioDatabase } from "./database.js";
+import { buildDesignKnowledgeReview, knowledgePatternIdForSpec, type DesignKnowledgeReviewReport } from "./design-knowledge-review.js";
+import {
+  designKnowledgeDecisionInputSchema,
+  designKnowledgeChangeSetReviewInputSchema,
+  designKnowledgeRollbackInputSchema,
+  designResearchCandidateInputSchema,
+  designResearchBrowserRunInputSchema,
+  designResearchCreateInputSchema,
+  designResearchDecisionInputSchema,
+  designResearchPlaytestInputSchema,
+  designResearchProbeRunInputSchema,
+  designResearchSourceInputSchema,
+  designResearchSynthesisInputSchema,
+  designKnowledgeReviewOptionsSchema,
+  designPlaytestInputSchema,
+  type DesignKnowledgeDecision,
+  type DesignKnowledgeChangeSet,
+  type DesignKnowledgeRelease,
+  type DesignKnowledgeInsights,
+  type DesignKnowledgeInsightSummary,
+  type DesignPlaytest,
+} from "./design-knowledge-evidence.js";
 import { officialFixtures } from "./official-fixtures.js";
 import {
   buildSchema,
@@ -53,6 +89,91 @@ class KeyedMutex {
 const SLUG_LOCK_KEY = "slug";
 
 type DateValue = string | Date;
+type DesignReviewRow = {
+  id: string;
+  schema_version: string;
+  window_from: DateValue;
+  window_to: DateValue;
+  minimum_players: number | string;
+  minimum_starts: number | string;
+  report_json: string | DesignKnowledgeReviewReport;
+  created_at: DateValue;
+};
+type DesignDecisionRow = {
+  id: string;
+  review_id: string;
+  pattern_id: string;
+  outcome: DesignKnowledgeDecision["outcome"];
+  rationale: string;
+  evidence_json: string | DesignKnowledgeDecision["evidence"];
+  decided_at: DateValue;
+};
+type DesignPlaytestRow = {
+  id: string;
+  project_id: string;
+  version_id: string;
+  pattern_id: string;
+  tester_segment: DesignPlaytest["testerSegment"];
+  device_class: DesignPlaytest["deviceClass"];
+  input_mode: DesignPlaytest["inputMode"];
+  task_outcome: DesignPlaytest["taskOutcome"];
+  onboarding_clarity: number | string;
+  control_clarity: number | string;
+  perceived_difficulty: number | string;
+  fun_rating: number | string;
+  fairness_rating: number | string;
+  would_replay: boolean | number;
+  completion_seconds: number | string | null;
+  hint_count: number | string;
+  blocker_code: DesignPlaytest["blockerCode"];
+  created_at: DateValue;
+};
+type DesignChangeSetRow = {
+  id: string;
+  review_id: string | null;
+  research_task_id: string | null;
+  schema_version: DesignKnowledgeChangeSet["schemaVersion"];
+  base_schema_version: DesignKnowledgeChangeSet["base"]["schemaVersion"];
+  base_updated_at: string;
+  base_evaluation_version: number | string;
+  base_release_id: string | null;
+  changes_json: string | DesignKnowledgeChangeSet["changes"];
+  status: DesignKnowledgeChangeSet["status"];
+  review_rationale: string | null;
+  reviewed_at: DateValue | null;
+  created_at: DateValue;
+  resolved_at: DateValue | null;
+};
+type DesignResearchRow = {
+  id: string;
+  schema_version: GameResearchTask["schemaVersion"];
+  task_json: string | GameResearchTask;
+  status: GameResearchTask["status"];
+  created_at: DateValue;
+  updated_at: DateValue;
+};
+type GameplayRadarRow = {
+  id: string;
+  schema_version: GameplayRadarCluster["schemaVersion"];
+  normalized_title: string;
+  cluster_json: string | GameplayRadarCluster;
+  state: GameplayRadarCluster["state"];
+  created_at: DateValue;
+  updated_at: DateValue;
+};
+type DesignKnowledgeReleaseRow = {
+  id: string;
+  sequence: number | string;
+  release_kind: DesignKnowledgeRelease["kind"];
+  change_set_id: string | null;
+  rollback_source_release_id: string | null;
+  rationale: string | null;
+  schema_version: DesignKnowledgeRelease["schemaVersion"];
+  library_json: string | GameDesignKnowledgeLibrary;
+  checksum: string;
+  supersedes_release_id: string | null;
+  published_at: DateValue;
+};
 type ProjectRow = {
   id: string;
   title: string;
@@ -159,6 +280,182 @@ function iso(value: DateValue | null) {
   return value instanceof Date ? value.toISOString() : value;
 }
 
+function toDesignKnowledgeDecision(row: DesignDecisionRow): DesignKnowledgeDecision {
+  return {
+    id: row.id,
+    reviewId: row.review_id,
+    patternId: row.pattern_id,
+    outcome: row.outcome,
+    rationale: row.rationale,
+    evidence: typeof row.evidence_json === "string" ? JSON.parse(row.evidence_json) : row.evidence_json,
+    decidedAt: iso(row.decided_at)!,
+  };
+}
+
+function toDesignPlaytest(row: DesignPlaytestRow): DesignPlaytest {
+  return {
+    id: row.id,
+    projectId: row.project_id,
+    versionId: row.version_id,
+    patternId: row.pattern_id,
+    testerSegment: row.tester_segment,
+    deviceClass: row.device_class,
+    inputMode: row.input_mode,
+    taskOutcome: row.task_outcome,
+    onboardingClarity: Number(row.onboarding_clarity),
+    controlClarity: Number(row.control_clarity),
+    perceivedDifficulty: Number(row.perceived_difficulty),
+    funRating: Number(row.fun_rating),
+    fairnessRating: Number(row.fairness_rating),
+    wouldReplay: Boolean(row.would_replay),
+    completionSeconds: row.completion_seconds === null ? null : Number(row.completion_seconds),
+    hintCount: Number(row.hint_count),
+    blockerCode: row.blocker_code,
+    createdAt: iso(row.created_at)!,
+  };
+}
+
+function toDesignKnowledgeChangeSet(row: DesignChangeSetRow): DesignKnowledgeChangeSet {
+  return {
+    id: row.id,
+    reviewId: row.review_id,
+    researchTaskId: row.research_task_id,
+    schemaVersion: row.schema_version,
+    base: {
+      schemaVersion: row.base_schema_version,
+      updatedAt: row.base_updated_at,
+      evaluationVersion: Number(row.base_evaluation_version),
+      releaseId: row.base_release_id,
+    },
+    changes: typeof row.changes_json === "string" ? JSON.parse(row.changes_json) : row.changes_json,
+    status: row.status,
+    reviewRationale: row.review_rationale,
+    reviewedAt: iso(row.reviewed_at),
+    createdAt: iso(row.created_at)!,
+    resolvedAt: iso(row.resolved_at),
+  };
+}
+
+function toDesignResearchTask(row: DesignResearchRow): GameResearchTask {
+  return gameResearchTaskSchema.parse(typeof row.task_json === "string" ? JSON.parse(row.task_json) : row.task_json);
+}
+
+function toGameplayRadarCluster(row: GameplayRadarRow): GameplayRadarCluster {
+  return gameplayRadarClusterSchema.parse(typeof row.cluster_json === "string" ? JSON.parse(row.cluster_json) : row.cluster_json);
+}
+
+function toDesignKnowledgeRelease(row: DesignKnowledgeReleaseRow): DesignKnowledgeRelease {
+  return {
+    id: row.id,
+    sequence: Number(row.sequence),
+    kind: row.release_kind,
+    changeSetId: row.change_set_id,
+    rollbackSourceReleaseId: row.rollback_source_release_id,
+    rationale: row.rationale,
+    schemaVersion: row.schema_version,
+    checksum: row.checksum,
+    supersedesReleaseId: row.supersedes_release_id,
+    publishedAt: iso(row.published_at)!,
+  };
+}
+
+function canonicalJson(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map(canonicalJson).join(",")}]`;
+  if (value && typeof value === "object") {
+    const record = value as Record<string, unknown>;
+    return `{${Object.keys(record).sort().map((key) => `${JSON.stringify(key)}:${canonicalJson(record[key])}`).join(",")}}`;
+  }
+  return JSON.stringify(value);
+}
+
+function knowledgeChecksum(library: GameDesignKnowledgeLibrary) {
+  return createHash("sha256").update(canonicalJson(library)).digest("hex");
+}
+
+function playtestInsightSummary(items: DesignPlaytest[]): DesignKnowledgeInsightSummary {
+  const average = (key: "onboardingClarity" | "controlClarity" | "perceivedDifficulty" | "funRating" | "fairnessRating") => (
+    items.length ? Number((items.reduce((sum, item) => sum + item[key], 0) / items.length).toFixed(2)) : 0
+  );
+  const blockers: Record<string, number> = {};
+  for (const item of items) {
+    if (item.blockerCode !== "none") blockers[item.blockerCode] = (blockers[item.blockerCode] ?? 0) + 1;
+  }
+  return {
+    sampleCount: items.length,
+    completionRate: items.length ? Number((items.filter(({ taskOutcome }) => taskOutcome === "completed").length / items.length).toFixed(3)) : 0,
+    replayRate: items.length ? Number((items.filter(({ wouldReplay }) => wouldReplay).length / items.length).toFixed(3)) : 0,
+    ratings: {
+      onboardingClarity: average("onboardingClarity"),
+      controlClarity: average("controlClarity"),
+      perceivedDifficulty: average("perceivedDifficulty"),
+      funRating: average("funRating"),
+      fairnessRating: average("fairnessRating"),
+    },
+    blockers,
+  };
+}
+
+function groupedPlaytestInsights(items: DesignPlaytest[], key: "testerSegment" | "deviceClass" | "inputMode") {
+  const groups = new Map<string, DesignPlaytest[]>();
+  for (const item of items) groups.set(item[key], [...(groups.get(item[key]) ?? []), item]);
+  return Object.fromEntries([...groups.entries()].sort(([left], [right]) => left.localeCompare(right)).map(([name, group]) => [name, playtestInsightSummary(group)]));
+}
+
+function transitionedLifecycle(
+  lifecycle: "candidate" | "verified" | "deprecated",
+  outcome: "promote" | "demote",
+) {
+  if (outcome === "promote") {
+    if (lifecycle === "candidate") return "verified" as const;
+    if (lifecycle === "deprecated") return "candidate" as const;
+    throw new Error("该玩法已经是已验证状态，不能再次晋级。");
+  }
+  if (lifecycle === "verified") return "candidate" as const;
+  if (lifecycle === "candidate") return "deprecated" as const;
+  throw new Error("该玩法已经是停用状态，不能再次降级。");
+}
+
+function applyDesignKnowledgeChangeSet(library: GameDesignKnowledgeLibrary, activeReleaseId: string | null, changeSet: DesignKnowledgeChangeSet) {
+  if (library.schemaVersion !== changeSet.base.schemaVersion
+    || library.updatedAt !== changeSet.base.updatedAt
+    || library.evaluation.version !== changeSet.base.evaluationVersion
+    || activeReleaseId !== changeSet.base.releaseId) {
+    throw new Error("待发布变更集的基础知识版本已过期，请重新生成复核快照。");
+  }
+  const lifecycleChanges = changeSet.changes.filter((change): change is Extract<DesignKnowledgeChangeSet["changes"][number], { patternId: string }> => "patternId" in change);
+  const addedMechanics = changeSet.changes.filter((change): change is Extract<DesignKnowledgeChangeSet["changes"][number], { kind: "add-mechanic" }> => "kind" in change && change.kind === "add-mechanic");
+  const addedPatterns = changeSet.changes.filter((change): change is Extract<DesignKnowledgeChangeSet["changes"][number], { kind: "add-pattern" }> => "kind" in change && change.kind === "add-pattern");
+  const byPattern = new Map(lifecycleChanges.map((change) => [change.patternId, change]));
+  const patterns = library.patterns.map((pattern) => {
+    const change = byPattern.get(pattern.id);
+    if (!change) return pattern;
+    if (pattern.lifecycle !== change.fromLifecycle || pattern.evaluationVersion !== change.fromEvaluationVersion) {
+      throw new Error(`玩法 ${pattern.id} 的当前状态与待发布变更不一致。`);
+    }
+    return { ...pattern, lifecycle: change.toLifecycle, evaluationVersion: change.toEvaluationVersion };
+  });
+  if (byPattern.size !== lifecycleChanges.length || [...byPattern.keys()].some((patternId) => !library.patterns.some(({ id }) => id === patternId))) {
+    throw new Error("待发布变更集包含知识库中不存在的玩法。");
+  }
+  if (addedMechanics.some(({ mechanic }) => library.mechanics.some(({ id }) => id === mechanic.id))
+    || addedPatterns.some(({ pattern }) => library.patterns.some(({ id }) => id === pattern.id))) {
+    throw new Error("待发布研究候选与当前知识库 ID 冲突，请重新评审候选命名。");
+  }
+  const updatedAt = (changeSet.reviewedAt ?? changeSet.createdAt).slice(0, 10);
+  const candidate = {
+    ...library,
+    updatedAt,
+    mechanics: [...library.mechanics, ...addedMechanics.map(({ mechanic }) => mechanic)],
+    patterns: [...patterns, ...addedPatterns.map(({ pattern }) => pattern)],
+  };
+  const validated = validateGameDesignKnowledgeLibrary(candidate);
+  if (!validated.valid || !validated.library) {
+    const errors = validated.gaps.filter(({ severity }) => severity === "error").map(({ message }) => message).join("；");
+    throw new Error(`待发布知识版本未通过完整性校验：${errors}`);
+  }
+  return validated.library;
+}
+
 function originWithoutSlash(origin: string) {
   return origin.endsWith("/") ? origin.slice(0, -1) : origin;
 }
@@ -167,6 +464,7 @@ function originWithoutSlash(origin: string) {
 // 与工作台 API 的 publicOrigin 分离,让 iframe 试玩获得真实跨源隔离。
 function toSummary(row: ProjectRow, gameOrigin: string): ProjectSummary {
   const origin = originWithoutSlash(gameOrigin);
+  const lobbyCover = row.is_official ? OFFICIAL_GAMES.find(game => matchesOfficialGame(row, game))?.lobbyCover : undefined;
   const spec = typeof row.spec_json === "string" ? JSON.parse(row.spec_json) as GameSpec : row.spec_json;
   return projectSummarySchema.parse({
     id: row.id,
@@ -184,7 +482,7 @@ function toSummary(row: ProjectRow, gameOrigin: string): ProjectSummary {
     fixtureKind: row.fixture_kind,
     threeMode: spec?.threeMode ?? null,
     isOfficial: Boolean(row.is_official),
-    coverUrl: row.publication_status && row.stable_path
+    coverUrl: lobbyCover ? `${origin}/media/official-cover/${lobbyCover.split('/').pop()}` : row.publication_status && row.stable_path
       ? `${origin}${row.stable_path}assets/cover.png`
       : null,
     createdAt: iso(row.created_at),
@@ -284,10 +582,11 @@ async function insertProject(
   fixtureKind: string | null = null,
   preferredSlug?: string,
   isOfficial = false,
+  preferredProjectId?: string,
 ) {
   const now = new Date().toISOString();
   const officialValue = database.provider === "sqlite-test" ? Number(isOfficial) : isOfficial;
-  const projectId = randomUUID();
+  const projectId = preferredProjectId ?? randomUUID();
   const specId = randomUUID();
   const versionId = randomUUID();
   const slug = preferredSlug ?? await uniqueSlug(database, spec.title);
@@ -326,8 +625,23 @@ export class StudioRepository {
 
   private readonly gameOrigin: string;
 
-  constructor(private readonly database: StudioDatabase, private readonly publicOrigin: string, gameOrigin: string | null = null) {
+  constructor(private readonly database: StudioDatabase, private readonly publicOrigin: string, gameOrigin: string | null = null, private readonly resourceFamilies: ResourceFamily[] = []) {
     this.gameOrigin = gameOrigin ?? publicOrigin;
+  }
+
+  private async updateDesignResearchTask(taskId: string, transform: (task: GameResearchTask) => GameResearchTask) {
+    return this.locks.run(`design-research:${taskId}`, async () => {
+      const row = (await this.database.query<DesignResearchRow>(
+        "SELECT * FROM design_research_tasks WHERE id = $1", [taskId],
+      )).rows[0];
+      if (!row) throw new Error("外部玩法研究任务不存在。");
+      const task = transform(toDesignResearchTask(row));
+      await this.database.query(
+        "UPDATE design_research_tasks SET task_json = $1, status = $2, updated_at = $3 WHERE id = $4",
+        [JSON.stringify(task), task.status, task.updatedAt, task.id],
+      );
+      return task;
+    });
   }
 
   async reconcilePublishedStatuses() {
@@ -598,6 +912,704 @@ export class StudioRepository {
     }));
   }
 
+  async currentDesignKnowledgeState(): Promise<{ library: GameDesignKnowledgeLibrary; releaseId: string | null }> {
+    const row = (await this.database.query<DesignKnowledgeReleaseRow>(
+      "SELECT * FROM design_knowledge_releases ORDER BY sequence DESC LIMIT 1",
+    )).rows[0];
+    if (!row) return { library: GAME_DESIGN_KNOWLEDGE_LIBRARY, releaseId: null };
+    const raw = typeof row.library_json === "string" ? JSON.parse(row.library_json) : row.library_json;
+    const validated = validateGameDesignKnowledgeLibrary(raw);
+    if (!validated.valid || !validated.library) throw new Error("已发布的游戏设计知识版本没有通过完整性校验。");
+    if (knowledgeChecksum(validated.library) !== row.checksum) throw new Error("已发布的游戏设计知识版本校验和不一致。");
+    return { library: validated.library, releaseId: row.id };
+  }
+
+  async currentDesignKnowledgeLibrary(): Promise<GameDesignKnowledgeLibrary> {
+    return (await this.currentDesignKnowledgeState()).library;
+  }
+
+  async createDesignResearchTask(rawInput: unknown) {
+    const input = designResearchCreateInputSchema.parse(rawInput);
+    const current = await this.currentDesignKnowledgeLibrary();
+    const task = createGameResearchTask(input, integrateGameDesign(input, current));
+    return this.locks.run(`design-research:${task.id}`, async () => {
+      const existing = (await this.database.query<DesignResearchRow>(
+        "SELECT * FROM design_research_tasks WHERE id = $1", [task.id],
+      )).rows[0];
+      if (existing) return toDesignResearchTask(existing);
+      await this.database.query(
+        `INSERT INTO design_research_tasks (id, schema_version, task_json, status, created_at, updated_at)
+         VALUES ($1,$2,$3,$4,$5,$6)`,
+        [task.id, task.schemaVersion, JSON.stringify(task), task.status, task.createdAt, task.updatedAt],
+      );
+      return task;
+    });
+  }
+
+  async listDesignResearchTasks() {
+    return (await this.database.query<DesignResearchRow>(
+      "SELECT * FROM design_research_tasks ORDER BY updated_at DESC, id LIMIT 100",
+    )).rows.map(toDesignResearchTask);
+  }
+
+  async getDesignResearchTask(taskId: string) {
+    const row = (await this.database.query<DesignResearchRow>(
+      "SELECT * FROM design_research_tasks WHERE id = $1", [taskId],
+    )).rows[0];
+    return row ? toDesignResearchTask(row) : null;
+  }
+
+  async ensureInitialDesignResearchTasks() {
+    const library = await this.currentDesignKnowledgeLibrary();
+    for (const task of initialDesignResearchTasks(library)) {
+      const existing = (await this.database.query<DesignResearchRow>(
+        "SELECT * FROM design_research_tasks WHERE id = $1", [task.id],
+      )).rows[0];
+      if (existing) {
+        const stored = toDesignResearchTask(existing);
+        if (stored.status === "review" && stored.synthesis && !stored.candidateDraft && !stored.evaluation && !stored.decision && task.candidateDraft) {
+          const updatedAt = new Date().toISOString();
+          const upgraded = gameResearchTaskSchema.parse({ ...stored, candidateDraft: task.candidateDraft, updatedAt });
+          await this.database.query(
+            "UPDATE design_research_tasks SET task_json=$2, status=$3, updated_at=$4 WHERE id=$1",
+            [task.id, JSON.stringify(upgraded), upgraded.status, updatedAt],
+          );
+        }
+        continue;
+      }
+      await this.database.query(
+        `INSERT INTO design_research_tasks (id, schema_version, task_json, status, created_at, updated_at)
+         VALUES ($1,$2,$3,$4,$5,$6)`,
+        [task.id, task.schemaVersion, JSON.stringify(task), task.status, task.createdAt, task.updatedAt],
+      );
+    }
+    return this.listDesignResearchTasks();
+  }
+
+  private async saveGameplayRadarCluster(cluster: GameplayRadarCluster) {
+    await this.database.query(
+      `INSERT INTO design_gameplay_radar_clusters (id, schema_version, normalized_title, cluster_json, state, created_at, updated_at)
+       VALUES ($1,$2,$3,$4,$5,$6,$7)
+       ON CONFLICT(id) DO UPDATE SET cluster_json=$4, state=$5, updated_at=$7`,
+      [cluster.id, cluster.schemaVersion, cluster.normalizedTitle, JSON.stringify(cluster), cluster.state, cluster.createdAt, cluster.updatedAt],
+    );
+    return cluster;
+  }
+
+  async ingestGameplayRadarSignal(rawInput: unknown, now = new Date()) {
+    const signal = gameplaySignalSchema.parse(rawInput);
+    const normalizedTitle = normalizeGameplayTitle(signal.gameTitle);
+    return this.locks.run(`gameplay-radar:${normalizedTitle}`, async () => {
+      const row = (await this.database.query<GameplayRadarRow>(
+        "SELECT * FROM design_gameplay_radar_clusters WHERE normalized_title = $1", [normalizedTitle],
+      )).rows[0];
+      const cluster = row ? mergeGameplaySignal(toGameplayRadarCluster(row), signal, now) : createGameplayRadarCluster(signal, now);
+      return this.saveGameplayRadarCluster(cluster);
+    });
+  }
+
+  async ensureInitialGameplayRadarSignals() {
+    for (const signal of INITIAL_GAMEPLAY_RADAR_SIGNALS) await this.ingestGameplayRadarSignal(signal);
+    return this.listGameplayRadar();
+  }
+
+  async listGameplayRadar(now = new Date()) {
+    const [rows, tasks, library] = await Promise.all([
+      this.database.query<GameplayRadarRow>("SELECT * FROM design_gameplay_radar_clusters ORDER BY updated_at DESC, id LIMIT 100"),
+      this.listDesignResearchTasks(),
+      this.currentDesignKnowledgeLibrary(),
+    ]);
+    return rows.rows.map(toGameplayRadarCluster).map((cluster) => buildGameplayRadarView(cluster, tasks, library, now));
+  }
+
+  async startGameplayRadarResearch(clusterId: string, rawInput: unknown, now = new Date()) {
+    const input = gameplayRadarResearchInputSchema.parse(rawInput);
+    return this.locks.run(`gameplay-radar-research:${clusterId}`, async () => {
+      const row = (await this.database.query<GameplayRadarRow>(
+        "SELECT * FROM design_gameplay_radar_clusters WHERE id = $1", [clusterId],
+      )).rows[0];
+      if (!row) throw new Error("玩法雷达观察项不存在。");
+      const cluster = toGameplayRadarCluster(row);
+      const [tasks, library] = await Promise.all([this.listDesignResearchTasks(), this.currentDesignKnowledgeLibrary()]);
+      const view = buildGameplayRadarView(cluster, tasks, library, now);
+      const matchedTask = !input.refresh && view.match.kind === "research-task"
+        ? tasks.find(({ id }) => id === view.match.id) ?? null
+        : null;
+      let task = matchedTask ?? createRadarResearchTask(cluster, view.match, now);
+      if (!matchedTask) {
+        await this.database.query(
+          `INSERT INTO design_research_tasks (id, schema_version, task_json, status, created_at, updated_at)
+           VALUES ($1,$2,$3,$4,$5,$6) ON CONFLICT(id) DO NOTHING`,
+          [task.id, task.schemaVersion, JSON.stringify(task), task.status, task.createdAt, task.updatedAt],
+        );
+        const persisted = (await this.database.query<DesignResearchRow>(
+          "SELECT * FROM design_research_tasks WHERE id = $1", [task.id],
+        )).rows[0];
+        if (persisted) task = toDesignResearchTask(persisted);
+      }
+      const linked = linkGameplayRadarResearch(cluster, task.id, view.match.kind === "knowledge-pattern" ? view.match.id : null, now);
+      await this.saveGameplayRadarCluster(linked);
+      const freshTasks = matchedTask ? tasks : [...tasks, task];
+      return {
+        action: matchedTask ? "linked-existing" as const : "created" as const,
+        task,
+        cluster: buildGameplayRadarView(linked, freshTasks, library, now),
+      };
+    });
+  }
+
+  async addDesignResearchSource(taskId: string, rawInput: unknown) {
+    const input = designResearchSourceInputSchema.parse(rawInput);
+    return this.updateDesignResearchTask(taskId, (task) => addResearchSource(task, input));
+  }
+
+  async submitDesignResearchSynthesis(taskId: string, rawInput: unknown) {
+    const input = designResearchSynthesisInputSchema.parse(rawInput);
+    return this.updateDesignResearchTask(taskId, (task) => submitResearchSynthesis(task, input));
+  }
+
+  async attachDesignResearchCandidate(taskId: string, rawInput: unknown) {
+    const input = designResearchCandidateInputSchema.parse(rawInput);
+    return this.updateDesignResearchTask(taskId, (task) => attachResearchCandidate(task, input));
+  }
+
+  async createDesignResearchEvaluation(taskId: string) {
+    return this.updateDesignResearchTask(taskId, (task) => {
+      const evaluation = createResearchPrototypeEvaluation(task, new Date(), this.resourceFamilies);
+      return evaluation === task.evaluation ? task : { ...task, evaluation, updatedAt: new Date().toISOString() };
+    });
+  }
+
+  async createDesignResearchResourceAcquisitionTask(taskId: string) {
+    return this.updateDesignResearchTask(taskId, (task) => {
+      if (task.status !== "review" || !task.evaluation?.resourceAcquisitionPlan || task.decision) {
+        throw new Error("只有待评审且已有取得计划的研究沙箱可以生成资源执行任务");
+      }
+      if (task.evaluation.resourceAcquisitionTask) return task;
+      const createdAt = new Date();
+      const resourceAcquisitionTask = createResearchResourceAcquisitionTask(task.id, task.evaluation.id, task.evaluation.resourceAcquisitionPlan, createdAt);
+      return gameResearchTaskSchema.parse({
+        ...task,
+        evaluation: { ...task.evaluation, resourceAcquisitionTask, updatedAt: createdAt.toISOString() },
+        updatedAt: createdAt.toISOString(),
+      });
+    });
+  }
+
+  async submitDesignResearchResourceAcquisitionWork(taskId: string, requirementId: string, rawInput: unknown) {
+    return this.updateDesignResearchTask(taskId, (task) => {
+      if (task.status !== "review" || !task.evaluation?.resourceAcquisitionTask || task.decision) throw new Error("只有待评审且已生成资源执行任务的研究沙箱可以提交成果");
+      const updatedAt = new Date();
+      const resourceAcquisitionTask = submitResearchResourceAcquisitionWork(task.evaluation.resourceAcquisitionTask, requirementId, rawInput as never, updatedAt);
+      return gameResearchTaskSchema.parse({ ...task, evaluation: { ...task.evaluation, resourceAcquisitionTask, updatedAt: updatedAt.toISOString() }, updatedAt: updatedAt.toISOString() });
+    });
+  }
+
+  async reviewDesignResearchResourceAcquisitionWork(taskId: string, requirementId: string, rawInput: unknown) {
+    return this.updateDesignResearchTask(taskId, (task) => {
+      if (task.status !== "review" || !task.evaluation?.resourceAcquisitionTask || task.decision) throw new Error("只有待评审且已生成资源执行任务的研究沙箱可以复核成果");
+      const updatedAt = new Date();
+      const resourceAcquisitionTask = reviewResearchResourceAcquisitionWork(task.evaluation.resourceAcquisitionTask, requirementId, rawInput as never, updatedAt);
+      return gameResearchTaskSchema.parse({ ...task, evaluation: { ...task.evaluation, resourceAcquisitionTask, updatedAt: updatedAt.toISOString() }, updatedAt: updatedAt.toISOString() });
+    });
+  }
+
+  async recordDesignResearchResourceIntake(taskId: string, rawBatch: unknown) {
+    const batch = researchResourceIntakeBatchSchema.parse(rawBatch);
+    return this.updateDesignResearchTask(taskId, (task) => {
+      if (task.status !== "review" || !task.evaluation?.resourceAcquisitionTask || task.decision) throw new Error("只有待评审且资源成果全部批准的研究沙箱可以记录隔离入库");
+      if (batch.researchTaskId !== task.id || batch.acquisitionTaskId !== task.evaluation.resourceAcquisitionTask.id) throw new Error("资源入库批次与研究任务不匹配");
+      if (task.evaluation.resourceAcquisitionTask.status !== "completed") throw new Error("资源执行任务尚未全部批准");
+      if (task.evaluation.resourceIntakeBatch) return task;
+      const updatedAt = new Date().toISOString();
+      return gameResearchTaskSchema.parse({ ...task, evaluation: { ...task.evaluation, resourceIntakeBatch: batch, updatedAt }, updatedAt });
+    });
+  }
+
+  async reviewDesignResearchResourceIntake(taskId: string, rawInput: unknown) {
+    return this.updateDesignResearchTask(taskId, (task) => {
+      if (task.status !== "review" || !task.evaluation?.resourceIntakeBatch || task.decision) throw new Error("只有待评审且已隔离入库的研究资源可以安全复核");
+      const updatedAt = new Date();
+      const resourceIntakeBatch = reviewResearchResourceIntakeBatch(task.evaluation.resourceIntakeBatch, rawInput, updatedAt);
+      return gameResearchTaskSchema.parse({ ...task, evaluation: { ...task.evaluation, resourceIntakeBatch, assetRequirements: { ...task.evaluation.assetRequirements!, bindings: resourceIntakeBatch.items.map(({ binding }) => binding) }, updatedAt: updatedAt.toISOString() }, updatedAt: updatedAt.toISOString() });
+    });
+  }
+
+  async recordDesignResearchResourcePromotion(taskId: string, rawFamilies: unknown[]) {
+    const families = rawFamilies.map((family) => resourceFamilySchema.parse(family));
+    const task = await this.updateDesignResearchTask(taskId, (current) => {
+      const batch = current.evaluation?.resourceIntakeBatch;
+      if (current.status !== "review" || !batch || batch.status !== "approved" || current.decision) throw new Error("只有安全复核通过的研究资源可以晋升资源族");
+      if (families.length !== batch.items.length || families.some(({ manifest }) => manifest.schemaVersion !== "research-resource-family-v1" || manifest.researchTaskId !== current.id || manifest.intakeBatchId !== batch.id)) throw new Error("晋升资源族与研究入库批次不匹配");
+      const ids = families.map(({ profile }) => profile.familyId);
+      if ((current.evaluation!.promotedResourceFamilyIds ?? []).length > 0) return current;
+      const updatedAt = new Date().toISOString();
+      return gameResearchTaskSchema.parse({ ...current, evaluation: { ...current.evaluation!, promotedResourceFamilyIds: ids, updatedAt }, updatedAt });
+    });
+    for (const family of families) if (!this.resourceFamilies.some(({ profile }) => profile.familyId === family.profile.familyId)) this.resourceFamilies.push(family);
+    return task;
+  }
+
+  async recordDesignResearchProbeRun(taskId: string, rawInput: unknown) {
+    const input = designResearchProbeRunInputSchema.parse(rawInput);
+    return this.updateDesignResearchTask(taskId, (task) => {
+      if (task.status !== "review" || !task.evaluation || task.decision) throw new Error("只有待评审的研究沙箱可以记录探针结果");
+      const evaluation = recordResearchProbeRun(task.evaluation, input);
+      return { ...task, evaluation, updatedAt: evaluation.updatedAt };
+    });
+  }
+
+  async recordAutomaticDesignResearchProbeRun(taskId: string, rawInput: unknown) {
+    const input = designResearchProbeRunInputSchema.parse(rawInput);
+    return this.updateDesignResearchTask(taskId, (task) => {
+      if (task.status !== "review" || !task.evaluation || task.decision) throw new Error("只有待评审的研究沙箱可以记录自动探针结果");
+      const evaluation = recordResearchProbeRun(task.evaluation, input, new Date(), "automatic");
+      return { ...task, evaluation, updatedAt: evaluation.updatedAt };
+    });
+  }
+
+  async recordDesignResearchBrowserRun(taskId: string, rawInput: unknown) {
+    const input = designResearchBrowserRunInputSchema.parse(rawInput);
+    return this.updateDesignResearchTask(taskId, (task) => {
+      if (task.status !== "review" || !task.evaluation || task.decision) throw new Error("只有待评审的研究沙箱可以记录浏览器结果");
+      const evaluation = recordResearchBrowserRun(task.evaluation, input);
+      return { ...task, evaluation, updatedAt: evaluation.updatedAt };
+    });
+  }
+
+  async recordAutomaticDesignResearchBrowserRun(taskId: string, rawInput: unknown) {
+    const input = designResearchBrowserRunInputSchema.parse(rawInput);
+    return this.updateDesignResearchTask(taskId, (task) => {
+      if (task.status !== "review" || !task.evaluation || task.decision) throw new Error("只有待评审的研究沙箱可以记录自动浏览器结果");
+      const evaluation = recordResearchBrowserRun(task.evaluation, input, new Date(), "automatic");
+      return { ...task, evaluation, updatedAt: evaluation.updatedAt };
+    });
+  }
+
+  async recordDesignResearchPlaytest(taskId: string, rawInput: unknown) {
+    const input = designResearchPlaytestInputSchema.parse(rawInput);
+    return this.updateDesignResearchTask(taskId, (task) => {
+      if (task.status !== "review" || !task.evaluation || task.decision) throw new Error("只有待评审的研究沙箱可以记录试玩结果");
+      const evaluation = recordResearchPlaytest(task.evaluation, input);
+      return { ...task, evaluation, updatedAt: evaluation.updatedAt };
+    });
+  }
+
+  async decideDesignResearchTask(taskId: string, rawInput: unknown) {
+    const input = designResearchDecisionInputSchema.parse(rawInput);
+    return this.updateDesignResearchTask(taskId, (task) => decideResearchTask(task, input.outcome, input.rationale));
+  }
+
+  async createDesignResearchChangeSet(taskId: string) {
+    return this.locks.run(`design-research:${taskId}`, async () => {
+      const existing = (await this.database.query<DesignChangeSetRow>(
+        "SELECT * FROM design_knowledge_change_sets WHERE research_task_id = $1", [taskId],
+      )).rows[0];
+      if (existing) return toDesignKnowledgeChangeSet(existing);
+      const row = (await this.database.query<DesignResearchRow>(
+        "SELECT * FROM design_research_tasks WHERE id = $1", [taskId],
+      )).rows[0];
+      if (!row) throw new Error("外部玩法研究任务不存在。");
+      const task = toDesignResearchTask(row);
+      if (task.status !== "accepted" || !task.decision || !task.candidateDraft) throw new Error("只有已接受且具有结构化候选草案的研究任务才能生成知识变更。");
+      const current = await this.currentDesignKnowledgeState();
+      const changes: DesignKnowledgeChangeSet["changes"] = task.candidateDraft.kind === "mechanic"
+        ? [{ kind: "add-mechanic", mechanic: task.candidateDraft.artifact }]
+        : [{ kind: "add-pattern", pattern: task.candidateDraft.artifact }];
+      const id = randomUUID();
+      const createdAt = new Date().toISOString();
+      const changeSet: DesignKnowledgeChangeSet = {
+        id,
+        reviewId: null,
+        researchTaskId: task.id,
+        schemaVersion: "design-knowledge-change-set-v2",
+        base: { schemaVersion: current.library.schemaVersion, updatedAt: current.library.updatedAt, evaluationVersion: current.library.evaluation.version, releaseId: current.releaseId },
+        changes,
+        status: "pending",
+        reviewRationale: null,
+        reviewedAt: null,
+        createdAt,
+        resolvedAt: null,
+      };
+      applyDesignKnowledgeChangeSet(current.library, current.releaseId, changeSet);
+      await this.database.query(
+        `INSERT INTO design_knowledge_change_sets
+          (id, review_id, research_task_id, schema_version, base_schema_version, base_updated_at, base_evaluation_version, base_release_id,
+           changes_json, status, review_rationale, reviewed_at, created_at, resolved_at)
+         VALUES ($1,NULL,$2,$3,$4,$5,$6,$7,$8,'pending',NULL,NULL,$9,NULL)`,
+        [id, task.id, changeSet.schemaVersion, changeSet.base.schemaVersion, changeSet.base.updatedAt,
+          changeSet.base.evaluationVersion, changeSet.base.releaseId, JSON.stringify(changes), createdAt],
+      );
+      return changeSet;
+    });
+  }
+
+  async listDesignKnowledgeReleases() {
+    return (await this.database.query<DesignKnowledgeReleaseRow>(
+      "SELECT * FROM design_knowledge_releases ORDER BY sequence DESC LIMIT 100",
+    )).rows.map(toDesignKnowledgeRelease);
+  }
+
+  async designKnowledgeInsights(): Promise<DesignKnowledgeInsights> {
+    const reviews = await this.listDesignKnowledgeReviews();
+    const playtests = await this.listDesignPlaytests();
+    const trends = new Map<string, DesignKnowledgeInsights["trends"][number]>();
+    for (const review of [...reviews].reverse()) {
+      for (const pattern of review.report.patterns) {
+        const trend = trends.get(pattern.patternId) ?? { patternId: pattern.patternId, label: pattern.label, points: [] };
+        trend.label = pattern.label;
+        trend.points.push({
+          reviewId: review.id,
+          capturedAt: review.createdAt,
+          window: review.report.window,
+          completionRate: pattern.metrics.completionRate,
+          exitRate: pattern.metrics.exitRate,
+          starts: pattern.samples.starts,
+          recommendation: pattern.recommendation,
+        });
+        trends.set(pattern.patternId, trend);
+      }
+    }
+    const byPattern = new Map<string, DesignPlaytest[]>();
+    for (const playtest of playtests) byPattern.set(playtest.patternId, [...(byPattern.get(playtest.patternId) ?? []), playtest]);
+    return {
+      generatedAt: new Date().toISOString(),
+      trends: [...trends.values()].sort((left, right) => left.patternId.localeCompare(right.patternId)),
+      playtests: [...byPattern.entries()].sort(([left], [right]) => left.localeCompare(right)).map(([patternId, items]) => ({
+        patternId,
+        overall: playtestInsightSummary(items),
+        byTesterSegment: groupedPlaytestInsights(items, "testerSegment"),
+        byDeviceClass: groupedPlaytestInsights(items, "deviceClass"),
+        byInputMode: groupedPlaytestInsights(items, "inputMode"),
+      })),
+    };
+  }
+
+  async designKnowledgeReview(rawOptions: unknown = {}) {
+    const active = await this.currentDesignKnowledgeState();
+    return buildDesignKnowledgeReview(this.database, designKnowledgeReviewOptionsSchema.parse(rawOptions), active.library, active.releaseId);
+  }
+
+  async captureDesignKnowledgeReview(rawOptions: unknown = {}) {
+    const report = await this.designKnowledgeReview(rawOptions);
+    const id = randomUUID();
+    const createdAt = new Date().toISOString();
+    await this.database.query(
+      `INSERT INTO design_knowledge_reviews
+        (id, schema_version, window_from, window_to, minimum_players, minimum_starts, report_json, created_at)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
+      [id, report.schemaVersion, report.window.from, report.window.to, report.evidenceThresholds.minimumPlayers, report.evidenceThresholds.minimumStarts, JSON.stringify(report), createdAt],
+    );
+    return { id, createdAt, report, decisions: [] as DesignKnowledgeDecision[] };
+  }
+
+  async listDesignKnowledgeReviews() {
+    const reviews = (await this.database.query<DesignReviewRow>(
+      "SELECT * FROM design_knowledge_reviews ORDER BY created_at DESC LIMIT 100",
+    )).rows;
+    const decisions = (await this.database.query<DesignDecisionRow>(
+      "SELECT * FROM design_knowledge_decisions ORDER BY decided_at, id",
+    )).rows.map(toDesignKnowledgeDecision);
+    return reviews.map((row) => ({
+      id: row.id,
+      createdAt: iso(row.created_at)!,
+      report: typeof row.report_json === "string" ? JSON.parse(row.report_json) as DesignKnowledgeReviewReport : row.report_json,
+      decisions: decisions.filter(({ reviewId }) => reviewId === row.id),
+    }));
+  }
+
+  async recordDesignKnowledgeDecision(reviewId: string, rawInput: unknown) {
+    const input = designKnowledgeDecisionInputSchema.parse(rawInput);
+    return this.locks.run(`design-review:${reviewId}`, async () => {
+    const review = (await this.database.query<DesignReviewRow>(
+      "SELECT * FROM design_knowledge_reviews WHERE id = $1", [reviewId],
+    )).rows[0];
+    if (!review) throw new Error("玩法复核快照不存在。");
+    const frozen = (await this.database.query<{ id: string }>(
+      "SELECT id FROM design_knowledge_change_sets WHERE review_id = $1", [reviewId],
+    )).rows[0];
+    if (frozen) throw new Error("该复核已经形成版本化变更集，人工决定不能再修改。");
+    const report = typeof review.report_json === "string" ? JSON.parse(review.report_json) as DesignKnowledgeReviewReport : review.report_json;
+    if (!report.patterns.some(({ patternId }) => patternId === input.patternId)) throw new Error("该玩法不在这份复核快照中。");
+    if (input.outcome === "promote" || input.outcome === "demote") {
+      const required = ["telemetry", "playtest", "contract", "browser"] as const;
+      const missing = required.filter((evidence) => !input.evidence.includes(evidence));
+      if (missing.length) throw new Error(`晋级或降级决定缺少必要证据：${missing.join("、")}。`);
+      const playtestCount = Number((await this.database.query<{ count: number | string }>(
+        `SELECT COUNT(*) AS count FROM design_playtests
+         WHERE pattern_id = $1 AND created_at >= $2 AND created_at < $3`,
+        [input.patternId, report.window.from, report.window.to],
+      )).rows[0]?.count ?? 0);
+      if (playtestCount < 1) throw new Error("晋级或降级前必须在本复核周期内保存至少一条结构化真人试玩记录。");
+    }
+    const id = randomUUID();
+    const decidedAt = new Date().toISOString();
+    await this.database.query(
+      `INSERT INTO design_knowledge_decisions
+        (id, review_id, pattern_id, outcome, rationale, evidence_json, decided_at)
+       VALUES ($1,$2,$3,$4,$5,$6,$7)
+       ON CONFLICT(review_id, pattern_id) DO UPDATE SET
+        outcome = EXCLUDED.outcome, rationale = EXCLUDED.rationale,
+        evidence_json = EXCLUDED.evidence_json, decided_at = EXCLUDED.decided_at`,
+      [id, reviewId, input.patternId, input.outcome, input.rationale, JSON.stringify(input.evidence), decidedAt],
+    );
+    const stored = (await this.database.query<DesignDecisionRow>(
+      "SELECT * FROM design_knowledge_decisions WHERE review_id = $1 AND pattern_id = $2",
+      [reviewId, input.patternId],
+    )).rows[0];
+    if (!stored) throw new Error("玩法复核决定保存失败。");
+    return toDesignKnowledgeDecision(stored);
+    });
+  }
+
+  async createDesignKnowledgeChangeSet(reviewId: string) {
+    return this.locks.run(`design-review:${reviewId}`, async () => {
+    const existing = (await this.database.query<DesignChangeSetRow>(
+      "SELECT * FROM design_knowledge_change_sets WHERE review_id = $1", [reviewId],
+    )).rows[0];
+    if (existing) return toDesignKnowledgeChangeSet(existing);
+    const review = (await this.database.query<DesignReviewRow>(
+      "SELECT * FROM design_knowledge_reviews WHERE id = $1", [reviewId],
+    )).rows[0];
+    if (!review) throw new Error("玩法复核快照不存在。");
+    const report = typeof review.report_json === "string" ? JSON.parse(review.report_json) as DesignKnowledgeReviewReport : review.report_json;
+    if (!report.knowledgeBase || !("releaseId" in report.knowledgeBase)) {
+      throw new Error("这份玩法复核快照版本过旧，请基于当前知识版本重新复核。");
+    }
+    const decisions = (await this.database.query<DesignDecisionRow>(
+      `SELECT * FROM design_knowledge_decisions
+       WHERE review_id = $1 AND outcome IN ('promote', 'demote') ORDER BY pattern_id`,
+      [reviewId],
+    )).rows.map(toDesignKnowledgeDecision);
+    if (!decisions.length) throw new Error("这份复核没有已批准的晋级或降级决定，不能生成知识变更集。");
+    const current = await this.currentDesignKnowledgeState();
+    const currentLibrary = current.library;
+    if (current.releaseId !== report.knowledgeBase.releaseId) {
+      throw new Error("玩法复核所依据的知识发布版本已变化，请重新复核。");
+    }
+    const changes: DesignKnowledgeChangeSet["changes"] = decisions.map((decision) => {
+      const reviewed = report.patterns.find(({ patternId }) => patternId === decision.patternId);
+      const current = currentLibrary.patterns.find(({ id }) => id === decision.patternId);
+      if (!reviewed || !current) throw new Error(`玩法 ${decision.patternId} 已不在当前知识库中，请重新复核。`);
+      if (current.lifecycle !== reviewed.currentLifecycle || current.evaluationVersion !== reviewed.evaluationVersion) {
+        throw new Error(`玩法 ${decision.patternId} 在复核后已经变化，请基于新版本重新复核。`);
+      }
+      return {
+        patternId: decision.patternId,
+        fromLifecycle: reviewed.currentLifecycle,
+        toLifecycle: transitionedLifecycle(reviewed.currentLifecycle, decision.outcome as "promote" | "demote"),
+        fromEvaluationVersion: reviewed.evaluationVersion,
+        toEvaluationVersion: reviewed.evaluationVersion + 1,
+        decisionId: decision.id,
+        rationale: decision.rationale,
+        evidence: decision.evidence,
+      };
+    });
+    const id = randomUUID();
+    const createdAt = new Date().toISOString();
+    await this.database.query(
+      `INSERT INTO design_knowledge_change_sets
+        (id, review_id, research_task_id, schema_version, base_schema_version, base_updated_at, base_evaluation_version, base_release_id,
+         changes_json, status, review_rationale, reviewed_at, created_at, resolved_at)
+       VALUES ($1,$2,NULL,$3,$4,$5,$6,$7,$8,'pending',NULL,NULL,$9,NULL)`,
+      [id, reviewId, "design-knowledge-change-set-v1", report.knowledgeBase.schemaVersion,
+        report.knowledgeBase.updatedAt, report.knowledgeBase.evaluationVersion, report.knowledgeBase.releaseId,
+        JSON.stringify(changes), createdAt],
+    );
+    const stored = (await this.database.query<DesignChangeSetRow>(
+      "SELECT * FROM design_knowledge_change_sets WHERE id = $1", [id],
+    )).rows[0];
+    if (!stored) throw new Error("版本化知识变更集保存失败。");
+    return toDesignKnowledgeChangeSet(stored);
+    });
+  }
+
+  async listDesignKnowledgeChangeSets() {
+    return (await this.database.query<DesignChangeSetRow>(
+      "SELECT * FROM design_knowledge_change_sets ORDER BY created_at DESC LIMIT 100",
+    )).rows.map(toDesignKnowledgeChangeSet);
+  }
+
+  async reviewDesignKnowledgeChangeSet(changeSetId: string, rawInput: unknown) {
+    const input = designKnowledgeChangeSetReviewInputSchema.parse(rawInput);
+    return this.locks.run(`design-change-set:${changeSetId}`, async () => {
+      const row = (await this.database.query<DesignChangeSetRow>(
+        "SELECT * FROM design_knowledge_change_sets WHERE id = $1", [changeSetId],
+      )).rows[0];
+      if (!row) throw new Error("版本化知识变更集不存在。");
+      if (row.status !== "pending") throw new Error("只有待审核的知识变更集可以做出审核决定。");
+      const reviewedAt = new Date().toISOString();
+      const status = input.decision === "approve" ? "approved" : "rejected";
+      await this.database.query(
+        `UPDATE design_knowledge_change_sets
+         SET status = $1, review_rationale = $2, reviewed_at = $3, resolved_at = $4
+         WHERE id = $5 AND status = 'pending'`,
+        [status, input.rationale, reviewedAt, status === "rejected" ? reviewedAt : null, changeSetId],
+      );
+      const stored = (await this.database.query<DesignChangeSetRow>(
+        "SELECT * FROM design_knowledge_change_sets WHERE id = $1", [changeSetId],
+      )).rows[0];
+      if (!stored) throw new Error("知识变更集审核结果保存失败。");
+      return toDesignKnowledgeChangeSet(stored);
+    });
+  }
+
+  async exportDesignKnowledgeChangeSet(changeSetId: string) {
+    const row = (await this.database.query<DesignChangeSetRow>(
+      "SELECT * FROM design_knowledge_change_sets WHERE id = $1", [changeSetId],
+    )).rows[0];
+    if (!row) throw new Error("版本化知识变更集不存在。");
+    const changeSet = toDesignKnowledgeChangeSet(row);
+    if (changeSet.status !== "approved" && changeSet.status !== "published") {
+      throw new Error("知识变更集必须审核通过后才能导出。");
+    }
+    let library: GameDesignKnowledgeLibrary;
+    if (changeSet.status === "published") {
+      const release = (await this.database.query<DesignKnowledgeReleaseRow>(
+        "SELECT * FROM design_knowledge_releases WHERE change_set_id = $1", [changeSetId],
+      )).rows[0];
+      if (!release) throw new Error("已发布的知识变更集缺少对应发布版本。");
+      const raw = typeof release.library_json === "string" ? JSON.parse(release.library_json) : release.library_json;
+      const validated = validateGameDesignKnowledgeLibrary(raw);
+      if (!validated.valid || !validated.library || knowledgeChecksum(validated.library) !== release.checksum) {
+        throw new Error("已发布知识版本的导出完整性校验失败。");
+      }
+      library = validated.library;
+    } else {
+      const active = await this.currentDesignKnowledgeState();
+      library = applyDesignKnowledgeChangeSet(active.library, active.releaseId, changeSet);
+    }
+    return {
+      schemaVersion: "design-knowledge-release-candidate-v1" as const,
+      changeSet,
+      library,
+      checksum: knowledgeChecksum(library),
+    };
+  }
+
+  async publishDesignKnowledgeChangeSet(changeSetId: string) {
+    return this.locks.run("design-knowledge-release", async () => {
+      const existing = (await this.database.query<DesignKnowledgeReleaseRow>(
+        "SELECT * FROM design_knowledge_releases WHERE change_set_id = $1", [changeSetId],
+      )).rows[0];
+      if (existing) return toDesignKnowledgeRelease(existing);
+      const exported = await this.exportDesignKnowledgeChangeSet(changeSetId);
+      if (exported.changeSet.status !== "approved") throw new Error("只有审核通过且尚未发布的知识变更集可以发布。");
+      const latest = (await this.database.query<DesignKnowledgeReleaseRow>(
+        "SELECT * FROM design_knowledge_releases ORDER BY sequence DESC LIMIT 1",
+      )).rows[0];
+      const id = randomUUID();
+      const sequence = latest ? Number(latest.sequence) + 1 : 1;
+      const publishedAt = new Date().toISOString();
+      await this.database.transaction(async (transaction) => {
+        const claimed = await transaction.query(
+          `UPDATE design_knowledge_change_sets
+           SET status = 'published', resolved_at = $1 WHERE id = $2 AND status = 'approved'`,
+          [publishedAt, changeSetId],
+        );
+        if (claimed.rowCount !== 1) throw new Error("知识变更集的审核状态已变化，请刷新后重试。");
+        await transaction.query(
+          `INSERT INTO design_knowledge_releases
+            (id, sequence, release_kind, change_set_id, rollback_source_release_id, rationale,
+             schema_version, library_json, checksum, supersedes_release_id, published_at)
+           VALUES ($1,$2,'change-set',$3,NULL,$4,$5,$6,$7,$8,$9)`,
+          [id, sequence, changeSetId, exported.changeSet.reviewRationale, exported.library.schemaVersion, JSON.stringify(exported.library), exported.checksum, latest?.id ?? null, publishedAt],
+        );
+      });
+      return {
+        id,
+        sequence,
+        kind: "change-set",
+        changeSetId,
+        rollbackSourceReleaseId: null,
+        rationale: exported.changeSet.reviewRationale,
+        schemaVersion: exported.library.schemaVersion,
+        checksum: exported.checksum,
+        supersedesReleaseId: latest?.id ?? null,
+        publishedAt,
+      } satisfies DesignKnowledgeRelease;
+    });
+  }
+
+  async rollbackDesignKnowledgeRelease(rawInput: unknown) {
+    const input = designKnowledgeRollbackInputSchema.parse(rawInput);
+    return this.locks.run("design-knowledge-release", async () => {
+      const latest = (await this.database.query<DesignKnowledgeReleaseRow>(
+        "SELECT * FROM design_knowledge_releases ORDER BY sequence DESC LIMIT 1",
+      )).rows[0];
+      if (!latest) throw new Error("当前还没有可回滚的知识发布版本。");
+      if (latest.id === input.sourceReleaseId) throw new Error("所选知识版本已经是当前生效版本。");
+      const source = (await this.database.query<DesignKnowledgeReleaseRow>(
+        "SELECT * FROM design_knowledge_releases WHERE id = $1", [input.sourceReleaseId],
+      )).rows[0];
+      if (!source) throw new Error("要恢复的历史知识版本不存在。");
+      if (latest.release_kind === "rollback" && latest.rollback_source_release_id === source.id) {
+        return toDesignKnowledgeRelease(latest);
+      }
+      const raw = typeof source.library_json === "string" ? JSON.parse(source.library_json) : source.library_json;
+      const validated = validateGameDesignKnowledgeLibrary(raw);
+      if (!validated.valid || !validated.library || knowledgeChecksum(validated.library) !== source.checksum) {
+        throw new Error("历史知识版本未通过完整性校验，不能恢复。");
+      }
+      if (latest.checksum === source.checksum) throw new Error("所选知识内容已经在当前版本生效。");
+      const id = randomUUID();
+      const sequence = Number(latest.sequence) + 1;
+      const publishedAt = new Date().toISOString();
+      await this.database.query(
+        `INSERT INTO design_knowledge_releases
+          (id, sequence, release_kind, change_set_id, rollback_source_release_id, rationale,
+           schema_version, library_json, checksum, supersedes_release_id, published_at)
+         VALUES ($1,$2,'rollback',NULL,$3,$4,$5,$6,$7,$8,$9)`,
+        [id, sequence, source.id, input.rationale, validated.library.schemaVersion, JSON.stringify(validated.library), source.checksum, latest.id, publishedAt],
+      );
+      return {
+        id,
+        sequence,
+        kind: "rollback",
+        changeSetId: null,
+        rollbackSourceReleaseId: source.id,
+        rationale: input.rationale,
+        schemaVersion: validated.library.schemaVersion,
+        checksum: source.checksum,
+        supersedesReleaseId: latest.id,
+        publishedAt,
+      } satisfies DesignKnowledgeRelease;
+    });
+  }
+
+  async recordDesignPlaytest(rawInput: unknown) {
+    const input = designPlaytestInputSchema.parse(rawInput);
+    const version = (await this.database.query<{ spec_json: string | GameSpec }>(
+      `SELECT gs.spec_json FROM versions v JOIN game_specs gs ON gs.id = v.spec_id
+       WHERE v.id = $1 AND v.project_id = $2`,
+      [input.versionId, input.projectId],
+    )).rows[0];
+    if (!version) throw new Error("游戏版本不存在。");
+    const spec = typeof version.spec_json === "string" ? JSON.parse(version.spec_json) as GameSpec : version.spec_json;
+    const patternId = knowledgePatternIdForSpec(spec, await this.currentDesignKnowledgeLibrary());
+    if (!patternId) throw new Error("该版本尚未关联稳定的玩法知识，不能进入结构化复核。");
+    const id = randomUUID();
+    const createdAt = new Date().toISOString();
+    await this.database.query(
+      `INSERT INTO design_playtests
+        (id, project_id, version_id, pattern_id, tester_segment, device_class, input_mode, task_outcome,
+         onboarding_clarity, control_clarity, perceived_difficulty, fun_rating, fairness_rating,
+         would_replay, completion_seconds, hint_count, blocker_code, created_at)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)`,
+      [id, input.projectId, input.versionId, patternId, input.testerSegment, input.deviceClass, input.inputMode, input.taskOutcome,
+        input.onboardingClarity, input.controlClarity, input.perceivedDifficulty, input.funRating, input.fairnessRating,
+        this.database.provider === "sqlite-test" ? (input.wouldReplay ? 1 : 0) : input.wouldReplay,
+        input.completionSeconds ?? null, input.hintCount, input.blockerCode, createdAt],
+    );
+    return { id, patternId, createdAt, ...input } satisfies DesignPlaytest;
+  }
+
+  async listDesignPlaytests() {
+    return (await this.database.query<DesignPlaytestRow>(
+      "SELECT * FROM design_playtests ORDER BY created_at DESC LIMIT 500",
+    )).rows.map(toDesignPlaytest);
+  }
+
   async get(projectId: string): Promise<ProjectDetail | null> {
     const row = (await this.database.query<ProjectRow>(`${projectSelect} WHERE p.id = $1`, [projectId])).rows[0];
     if (!row?.spec_json) return null;
@@ -607,13 +1619,32 @@ export class StudioRepository {
     });
   }
 
-  async create(rawInput: unknown, ideaAnalysis: IdeaAnalysis | null = null, designProfile: GameDesignProfile | null = null) {
+  async create(rawInput: unknown, ideaAnalysis: IdeaAnalysis | null = null, designProfile: GameDesignProfile | null = null, designKnowledge: DesignKnowledgeShadow | null = null, resourcePlanning: ResourcePlanningShadow | null = null) {
     const input = projectInputSchema.parse(rawInput);
-    const spec = generateGameSpec(input, ideaAnalysis, designProfile);
+    const projectId = randomUUID();
+    const createdAt = new Date().toISOString();
+    const preliminarySpec = designKnowledge ? null : generateGameSpec(input, ideaAnalysis, designProfile, null, resourcePlanning);
+    const resolvedKnowledge = designKnowledge ?? createDesignKnowledgeShadow({
+      ...input,
+      template: preliminarySpec!.template,
+      dimensions: preliminarySpec!.dimensions,
+      inputModes: preliminarySpec!.inputModes,
+      threeMode: preliminarySpec!.threeMode,
+    }, ideaAnalysis, await this.currentDesignKnowledgeLibrary());
+    const baseSpec = generateGameSpec(input, ideaAnalysis, designProfile, resolvedKnowledge, resourcePlanning);
+    const designContract = createGameDesignContractForLegacyProject({
+      projectId,
+      title: baseSpec.title,
+      idea: input.idea,
+      createdAt,
+      spec: baseSpec,
+      designKnowledge: resolvedKnowledge,
+    });
+    const spec = gameSpecSchema.parse({ ...baseSpec, designContract });
     // uniqueSlug() checks-then-inserts against the slug UNIQUE constraint; serialize all
     // project creation without a preferred slug through one lock so two concurrent creates
     // with the same title cannot both observe "no such slug yet" and collide.
-    const projectId = await this.locks.run(SLUG_LOCK_KEY, () => insertProject(this.database, input, spec));
+    await this.locks.run(SLUG_LOCK_KEY, () => insertProject(this.database, input, spec, null, undefined, false, projectId));
     const project = await this.get(projectId);
     if (!project) throw new Error("项目写入后无法读取。");
     return project;

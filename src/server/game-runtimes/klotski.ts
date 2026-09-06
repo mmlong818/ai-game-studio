@@ -1,4 +1,5 @@
-export const klotskiScript = String.raw`
+import { klotskiCurriculumScript } from './klotski-curriculum.js';
+export const klotskiScript = klotskiCurriculumScript + String.raw`
 const initialPieces = [
   { id: "cao", label: "队长机器人", x: 1, y: 0, w: 2, h: 2, kind: "hero" },
   { id: "guan", label: "星星包裹", x: 1, y: 2, w: 2, h: 1, kind: "guard" },
@@ -37,14 +38,20 @@ const klotskiBlueprints = [
 ];
 
 function activeKlotskiBlueprint() {
-  return klotskiBlueprints[Math.max(0, Math.min(klotskiBlueprints.length - 1, currentCampaignLevel().number - 1))];
+  if(klotskiRoomIndex===0&&currentCampaignLevel().number<=3){const practice=klotskiPracticeLayouts[currentCampaignLevel().number-1];return [practice.name,practice.optimal,practice.points];}
+  return klotskiBlueprints[currentKlotskiRoom().layout];
 }
 
-function createCampaignKlotskiPieces() {
-  const blueprint = activeKlotskiBlueprint();
+function createCampaignKlotskiPieces(roomIndex=klotskiRoomIndex) {
+  if(roomIndex===0&&currentCampaignLevel().number<=3){
+    const practice=klotskiPracticeLayouts[currentCampaignLevel().number-1];
+    return ["cao","guan","z1","z2","s1","s2"].map((id,index)=>({...initialPieces.find(piece=>piece.id===id),x:practice.points[index][0],y:practice.points[index][1]}));
+  }
+  const blueprint = klotskiBlueprints[currentKlotskiCourse().boards[roomIndex]];
   return klotskiPieceOrder.map((id, index) => {
     const base = initialPieces.find((piece) => piece.id === id);
-    return { ...base, x: blueprint[2][index][0], y: blueprint[2][index][1] };
+    const x=blueprint[2][index][0];
+    return { ...base, x: roomIndex%2===1?4-base.w-x:x, y: blueprint[2][index][1] };
   });
 }
 const courtyardArt = new Image();
@@ -68,13 +75,87 @@ let replaying = false;
 let optimalReference = null;
 let klotskiHint = null;
 let klotskiHintDistance = null;
+let klotskiEpoch = 0;
+let klotskiRestored = false;
+let klotskiHintReason = "";
+let klotskiHintStage=0;
+let klotskiHintSignature="";
+let klotskiFreedCells=[];
+let klotskiFreedUntil=0;
+const klotskiReasonCard=document.createElement("aside");
+klotskiReasonCard.className="klotski-reason";klotskiReasonCard.hidden=true;klotskiReasonCard.setAttribute("aria-live","polite");
+document.body.appendChild(klotskiReasonCard);
+const klotskiHelpStyle=document.createElement("style");
+klotskiHelpStyle.textContent="body[data-template=klotski] .onboarding-coach{bottom:110px;padding:10px;gap:4px}body[data-template=klotski] .onboarding-coach small{display:none}.klotski-reason{position:fixed;z-index:8;top:84px;left:50%;transform:translateX(-50%);width:min(520px,calc(100% - 24px));padding:10px 14px;background:#fff5e3f5;color:#503d32;border:1px solid #bb7564;border-left:5px solid #bb7564;border-radius:8px;font:600 14px/1.5 Inter,'Microsoft YaHei',sans-serif;pointer-events:none}.klotski-reason[hidden]{display:none}";
+document.head.appendChild(klotskiHelpStyle);
+const klotskiCourseHud=document.createElement("section");
+klotskiCourseHud.className="klotski-course-hud";
+klotskiCourseHud.innerHTML='<div class="course-heading"><span data-course-chapter></span><span data-course-progress></span></div><h2 data-course-title></h2><p data-course-purpose></p><div class="course-seals" aria-label="本关闯庭进展"></div>';
+document.body.appendChild(klotskiCourseHud);
+const klotskiRemakeStyle=document.createElement("style");
+klotskiRemakeStyle.textContent="body[data-template=klotski]{background:#182f32}body[data-template=klotski] .klotski-course-hud{position:fixed;z-index:7;top:84px;left:50%;transform:translateX(-50%);width:min(510px,calc(100% - 28px));color:#f6ead2;pointer-events:none}.course-heading{display:flex;justify-content:space-between;font:600 11px/1.3 Inter,sans-serif;letter-spacing:1px;color:#c9b88e}.klotski-course-hud h2{font:700 26px/1.15 'Microsoft YaHei',sans-serif;margin:7px 0}.klotski-course-hud p{margin:0;font:500 12px/1.45 'Microsoft YaHei',sans-serif;color:#ddd5bd}.course-seals{display:flex;gap:6px;margin-top:10px}.course-seals span{flex:1;height:6px;border-radius:3px;background:#5d6d64}.course-seals span.is-cleared{background:#d3b570}.course-seals span.is-current{background:#f1e5b7;box-shadow:0 0 8px #e4c88688}.klotski-reason{top:auto;bottom:116px;width:min(510px,calc(100% - 28px));font-size:12px;border-left-color:#c49651}body[data-template=klotski] .onboarding-coach{bottom:116px}body[data-template=klotski] .game-overlay{border-radius:20px;border:1px solid #cfb787;background:#f5edda;color:#283e38}body[data-template=klotski] .game-overlay h2{font-family:'Microsoft YaHei',sans-serif}.klotski-course-result{margin:12px 0;padding:14px;background:#1e3d39;color:#f8edcf;border-radius:14px;font-size:14px;line-height:1.6}.klotski-course-result strong{font-size:22px;display:block;color:#f4d68d}body[data-template=klotski]:not([data-game-state=playing]) .klotski-course-hud{display:none}body[data-template=klotski] .game-panel .status{display:none}";
+document.head.appendChild(klotskiRemakeStyle);
+klotskiCourseHud.appendChild(klotskiReasonCard);
+const klotskiAnchorStyle=document.createElement("style");
+klotskiAnchorStyle.textContent="body[data-template=klotski] .onboarding-coach{position:fixed;right:auto;bottom:auto;transform:translateX(-50%)}.klotski-course-hud .klotski-reason{position:static;transform:none;width:100%;margin-top:6px;padding:7px 10px;line-height:1.4}.klotski-course-hud:has(.klotski-reason:not([hidden])) [data-course-purpose],.klotski-course-hud:has(.klotski-reason:not([hidden])) .course-seals{display:none}";
+document.head.appendChild(klotskiAnchorStyle);
+klotskiAnchorStyle.textContent+="body[data-template=klotski]:not([data-game-state=playing]) .onboarding-coach{display:none}";
+let klotskiAnchorKey="";
+function syncKlotskiAnchors(){
+  const key=[innerWidth,innerHeight,gameSessionState,onboardingState.status].join("/");
+  if(key===klotskiAnchorKey)return;klotskiAnchorKey=key;
+  const rect=canvas.getBoundingClientRect(),layout=klotskiLayout();
+  const center=rect.x+rect.width/2,width=Math.min(510,rect.width-28);
+  klotskiCourseHud.style.left=center+"px";klotskiCourseHud.style.width=width+"px";klotskiCourseHud.style.top=(rect.y+12)+"px";
+  if(onboardingCoach){
+    onboardingCoach.style.left=center+"px";onboardingCoach.style.width=(onboardingState.status==="active"?rect.width-20:Math.min(190,rect.width-20))+"px";
+    const bottom=rect.y+(gameSceneTop()+layout.originY+layout.cell*5)/canvas.height*rect.height;
+    const height=onboardingCoach.getBoundingClientRect().height;
+    onboardingCoach.style.top=Math.max(bottom+14,Math.min(bottom+24,Math.min(rect.bottom-4,innerHeight-92)-height))+"px";
+  }
+}
+function syncKlotskiCourseHud(){
+  const course=currentKlotskiCourse();
+  klotskiCourseHud.querySelector("[data-course-chapter]").textContent="朱门行旅 · 第 "+currentCampaignLevel().number+" 关";
+  const role=klotskiRoomIndex===0?"入门":klotskiRoomIndex===course.boards.length-1?"综合":"变式";
+  klotskiCourseHud.querySelector("[data-course-progress]").textContent=role+" · "+(klotskiRoomIndex+1)+" / "+course.boards.length+" 庭 · "+moves+" 步";
+  klotskiCourseHud.querySelector("[data-course-title]").textContent=course.name;
+  klotskiCourseHud.querySelector("[data-course-purpose]").textContent=course.intro;
+  const seals=klotskiCourseHud.querySelector(".course-seals");seals.replaceChildren();
+  course.boards.forEach((_,index)=>{const seal=document.createElement("span");seal.className=index<klotskiRoomIndex?"is-cleared":index===klotskiRoomIndex?"is-current":"";seal.setAttribute("aria-label","第 "+(index+1)+" 庭"+(index<klotskiRoomIndex?"已完成":index===klotskiRoomIndex?"进行中":"待解"));seals.appendChild(seal);});
+}
+function completeKlotskiRoom(){
+  if(klotskiRoomHandoff)return;
+  klotskiRoomHandoff=true;
+  const totals=klotskiCourseTotals(),course=currentKlotskiCourse();
+  klotskiRoomResults.push({path:replayPath.map(move=>({...move})),hints:klotskiRoomHints,undos:klotskiRoomUndo});
+  if(klotskiRoomIndex+1<course.boards.length){
+    klotskiRoomIndex+=1;klotskiRoomHints=0;klotskiRoomUndo=0;
+    resetPieces();persistKlotskiSession();syncKlotskiCourseHud();playSound("reward");
+    setStatus("一庭已通 · 继续第 "+(klotskiRoomIndex+1)+" 庭。"+course.intro);
+  }else{
+    const independentRooms=klotskiRoomResults.filter(result=>result.hints===0).length;
+    const bestKey=config.campaignStorageKey+":klotski-course-best:v2:"+currentCampaignLevel().number;
+    let previous=null;try{previous=JSON.parse(safeStorage.getItem(bestKey)||"null");}catch{}
+    const improved=previous&&Number.isFinite(previous.moves)?Math.max(0,previous.moves-totals.moves):0;
+    safeStorage.setItem(bestKey,JSON.stringify({moves:Math.min(previous?.moves??Infinity,totals.moves),independent:Math.max(previous?.independent??0,independentRooms)}));
+    klotskiResultSummary={...totals,independentRooms,rooms:course.boards.length,seconds:Math.round(klotskiMissionMs/1000)};
+    clearKlotskiSession();running=false;
+    showResult(true,"一庭一印 · "+course.name,"完成 "+course.boards.length+" 庭连续练习，共 "+totals.moves+" 步。"+(improved?"比自己的最佳纪录少 "+improved+" 步。":"下次可以尝试更少提示或更短路线。"));
+    const card=document.createElement("section");card.className="klotski-course-result";
+    const headline=document.createElement("strong");headline.textContent=course.boards.length+" 庭全通 · "+course.skill;
+    const detail=document.createElement("div");detail.textContent=independentRooms+" 庭独立解开 · 使用 "+totals.hints+" 次提示 · 有效游玩 "+Math.floor(klotskiMissionMs/60000)+" 分 "+Math.round(klotskiMissionMs/1000)%60+" 秒";
+    card.append(headline,detail);(overlay.querySelector(".victory-summary")||overlay).appendChild(card);
+  }
+  klotskiRoomHandoff=false;
+}
 
 function klotskiLayout() {
   const cell = config.aspectRatio === "9:16" ? 144 : 112;
   return {
     cell,
     originX: (720 - cell * 4) / 2,
-    originY: (gameSceneHeight() - cell * 5) / 2,
+    originY: (gameSceneHeight() - cell * 5) / 2 - 24,
   };
 }
 
@@ -100,14 +181,16 @@ function klotskiStateCanMove(state, piece, dx, dy) {
   return !state.some((other) => other.id !== piece.id && nextX < other.x + other.w && nextX + piece.w > other.x && nextY < other.y + other.h && nextY + piece.h > other.y);
 }
 
-function solveKlotski(source = pieces) {
+function solveKlotski(source = pieces, budget = 80000) {
   const start = source.map(({ id, kind, w, h, x, y }) => ({ id, kind, w, h, x, y }));
   const startKey = klotskiStateKey(start);
   const queue = [start];
   const parents = new Map([[startKey, null]]);
   const parentMoves = new Map();
   let goalKey = null;
-  for (let cursor = 0; cursor < queue.length && cursor < 26000; cursor += 1) {
+  let visited = 0;
+  for (let cursor = 0; cursor < queue.length && cursor < budget; cursor += 1) {
+    visited += 1;
     const state = queue[cursor];
     const stateKey = klotskiStateKey(state);
     const hero = state.find((piece) => piece.id === "cao");
@@ -122,7 +205,7 @@ function solveKlotski(source = pieces) {
       queue.push(next);
     }
   }
-  if (!goalKey) return null;
+  if (!goalKey) return {status:visited < queue.length ? "budget-exhausted" : "unsolvable",first:null,distance:null,visited};
   let cursorKey = goalKey;
   let first = null;
   let distance = 0;
@@ -131,20 +214,44 @@ function solveKlotski(source = pieces) {
     cursorKey = parents.get(cursorKey);
     distance += 1;
   }
-  return { first, distance };
+  return { status:"solved", first, distance, visited };
+}
+
+function explainKlotskiMove(state, move) {
+  const piece=state.find(item=>item.id===move.id);
+  if(!piece || !klotskiStateCanMove(state,piece,move.dx,move.dy))return "";
+  const after=state.map(item=>item.id===piece.id?{...item,x:item.x+move.dx,y:item.y+move.dy}:item);
+  const directions=[[-1,0,"左"],[1,0,"右"],[0,-1,"上"],[0,1,"下"]];
+  const unlocked=[];
+  for(const other of state)if(other.id!==piece.id)for(const [dx,dy,label] of directions){
+    if(!klotskiStateCanMove(state,other,dx,dy)&&klotskiStateCanMove(after,other,dx,dy))unlocked.push(other.label+"可向"+label);
+  }
+  const freed=move.dx?piece.h:piece.w;
+  return unlocked.length?"让路后，"+[...new Set(unlocked)].slice(0,2).join("、")+"。":"这一步释放 "+freed+" 格，继续调整空位；是已验证最短路径中的一步。";
 }
 
 function requestKlotskiHint() {
   if (!running || moveAnimation || replaying) return;
-  const solution = solveKlotski();
+  const signature=pieces.map(piece=>piece.id+":"+piece.x+","+piece.y).join("|");
+  if(signature===klotskiHintSignature&&klotskiHintStage===2){klotskiReasonCard.hidden=false;return;}
+  const solution = signature===klotskiHintSignature&&klotskiHint ? {status:"solved",first:klotskiHint,distance:klotskiHintDistance} : solveKlotski();
   klotskiHint = solution?.first ?? null;
   klotskiHintDistance = solution?.distance ?? null;
-  if (!klotskiHint) { setStatus("当前状态没有可验证解法，请重开本关。"); return; }
+  if (!klotskiHint) { const message=solution.status==="budget-exhausted"?"局面较复杂，本次搜索尚未找到完整解法；这不表示无解，可继续尝试或撤销。":solution.status==="solved"?"队长已到出口。":"已检查可达局面，未找到出口路径；可撤销后重试。";setStatus(message);klotskiReasonCard.textContent=message;klotskiReasonCard.hidden=false;return; }
+  if(signature!==klotskiHintSignature){klotskiHintSignature=signature;klotskiHintStage=1;klotskiRoomHints+=1;persistKlotskiSession();
+    const piece=pieces.find(item=>item.id===klotskiHint.id);
+    selectedId=piece.id;selectedAt=performance.now();
+    klotskiHintReason="观察“"+piece.label+"”周围的空位。"+currentKlotskiCourse().intro;
+    klotskiReasonCard.textContent=klotskiHintReason+" 再点提示查看一步建议。";klotskiReasonCard.hidden=false;setStatus(klotskiHintReason);return;}
+  klotskiHintStage=2;
   selectedId = klotskiHint.id;
   selectedAt = performance.now();
   const arrows = { "-1,0": "左", "1,0": "右", "0,-1": "上", "0,1": "下" };
   const piece = pieces.find((candidate) => candidate.id === klotskiHint.id);
-  setStatus("提示：拖动“" + piece.label + "”向" + arrows[klotskiHint.dx + "," + klotskiHint.dy] + "一格。 ");
+  klotskiHintReason=explainKlotskiMove(pieces,klotskiHint);
+  setStatus("拖动“" + piece.label + "”向" + arrows[klotskiHint.dx + "," + klotskiHint.dy] + "一格。"+klotskiHintReason+" 当前最短剩余 "+klotskiHintDistance+" 步。");
+  klotskiReasonCard.textContent="拖动“"+piece.label+"”向"+arrows[klotskiHint.dx+","+klotskiHint.dy]+"一格。"+klotskiHintReason+" 剩余最短 "+klotskiHintDistance+" 步。";
+  klotskiReasonCard.hidden=false;
   spawnParticles(piece, "select", 10);
 }
 
@@ -187,7 +294,56 @@ function snapshotKlotski() {
   return pieces.map(({ id, x, y }) => ({ id, x, y }));
 }
 
+function rebuildKlotskiPath(initial, path) {
+  if(!Array.isArray(path)||path.length>2000)return null;
+  let state=initial.map(piece=>({...piece}));
+  const history=[];
+  for(const move of path){
+    if(!move||!Number.isInteger(move.dx)||!Number.isInteger(move.dy)||Math.abs(move.dx)+Math.abs(move.dy)!==1)return null;
+    const piece=state.find(item=>item.id===move.id);
+    if(!piece||!klotskiStateCanMove(state,piece,move.dx,move.dy))return null;
+    history.push({snapshot:state.map(({id,x,y})=>({id,x,y})),selectedId:move.id});
+    state=state.map(item=>item.id===move.id?{...item,x:item.x+move.dx,y:item.y+move.dy}:item);
+  }
+  return {state,history};
+}
+function klotskiSessionKey(){return config.campaignStorageKey+":klotski-curriculum:v2:"+currentCampaignLevel().number;}
+function clearKlotskiSession(){safeStorage.removeItem(klotskiSessionKey());}
+function persistKlotskiSession(){
+  if(replaying||exitOpen)return;
+  safeStorage.setItem(klotskiSessionKey(),JSON.stringify({schemaVersion:2,room:klotskiRoomIndex,results:klotskiRoomResults,activeMs:klotskiMissionMs,hints:klotskiRoomHints,undos:klotskiRoomUndo,path:replayPath,redo:klotskiRedo.map(entry=>entry.replayMove),selectedId}));
+}
+function restoreKlotskiSession(){
+  try{
+    const saved=JSON.parse(safeStorage.getItem(klotskiSessionKey())||"null");
+    if(saved?.schemaVersion!==2||!Number.isInteger(saved.room)||saved.room<0||saved.room>=currentKlotskiCourse().boards.length||!Array.isArray(saved.results)||saved.results.length!==saved.room)return;
+    for(let i=0;i<saved.results.length;i++){
+      const result=saved.results[i],proof=rebuildKlotskiPath(createCampaignKlotskiPieces(i),result.path);
+      if(!proof||!proof.state.some(piece=>piece.id==="cao"&&piece.x===1&&piece.y===3)||!Number.isInteger(result.hints)||result.hints<0)return;
+    }
+    klotskiRoomIndex=saved.room;
+    const restored=rebuildKlotskiPath(createCampaignKlotskiPieces(),saved.path);
+    if(!restored||restored.state.some(piece=>piece.id==="cao"&&piece.x===1&&piece.y===3))return;
+    const redo=[];
+    let future=restored.state;
+    if(!Array.isArray(saved.redo)||saved.redo.length>2000)return;
+    for(const move of [...saved.redo].reverse()){
+      const step=rebuildKlotskiPath(future,[move]);if(!step)return;future=step.state;
+      redo.push({snapshot:future.map(({id,x,y})=>({id,x,y})),selectedId:move.id,replayMove:{...move}});
+    }
+    pieces=restored.state.map(piece=>({...piece,renderX:piece.x,renderY:piece.y}));
+    klotskiHistory=restored.history;replayPath=saved.path.map(move=>({...move}));klotskiRedo=redo.reverse();
+    moves=replayPath.length;selectedId=pieces.some(piece=>piece.id===saved.selectedId)?saved.selectedId:"cao";klotskiRestored=true;
+    klotskiRoomResults=saved.results;klotskiMissionMs=Number.isFinite(saved.activeMs)?Math.max(0,saved.activeMs):0;
+    klotskiRoomHints=Number.isInteger(saved.hints)?Math.max(0,saved.hints):0;klotskiRoomUndo=Number.isInteger(saved.undos)?Math.max(0,saved.undos):0;
+    optimalReference=activeKlotskiBlueprint()[1];initialLayoutSnapshot=createCampaignKlotskiPieces().map(({id,x,y})=>({id,x,y}));
+  }catch{}
+}
+
 function restoreKlotski(snapshot) {
+  klotskiHintStage=0;klotskiHintSignature="";
+  klotskiReasonCard.hidden=true;
+  klotskiHint=null;klotskiHintDistance=null;klotskiHintReason="";
   snapshot.forEach((saved) => {
     const piece = pieces.find((candidate) => candidate.id === saved.id);
     if (!piece) return;
@@ -201,13 +357,15 @@ function restoreKlotski(snapshot) {
 function undoKlotskiMove() {
   if (!running || moveAnimation || replaying || !klotskiHistory.length) return;
   const last = klotskiHistory.pop();
+  klotskiRoomUndo += 1;
   const replayMove = replayPath.pop() ?? null;
   klotskiRedo.push({ snapshot: snapshotKlotski(), selectedId, replayMove });
   restoreKlotski(last.snapshot);
   moves = Math.max(0, moves - 1);
   selectedId = last.selectedId;
   selectedAt = performance.now();
-  setMetric(String(moves));
+  setMetric(String(moves));syncKlotskiCourseHud();
+  persistKlotskiSession();
   setStatus("已撤销一步 · 当前 " + moves + " 步 · 最优 " + optimalReference + " 步。 ");
   playSound("move");
 }
@@ -222,6 +380,9 @@ function redoKlotskiMove() {
   selectedAt = performance.now();
   moves += 1;
   setMetric(String(moves));
+  const hero=pieces.find(piece=>piece.id==="cao");
+  if(hero.x===1&&hero.y===3)completeMove({piece:hero,toX:hero.x,toY:hero.y});
+  else persistKlotskiSession();
   setStatus("已重做一步 · 当前 " + moves + " 步 · 最优 " + optimalReference + " 步。 ");
   playSound("move");
 }
@@ -229,6 +390,7 @@ function redoKlotskiMove() {
 async function replayKlotskiMoves() {
   if (!running || moveAnimation || replaying || !replayPath.length) return;
   const path = replayPath.map((move) => ({ ...move }));
+  const epoch=++klotskiEpoch;
   replaying = true;
   restoreKlotski(initialLayoutSnapshot);
   moves = 0;
@@ -236,17 +398,20 @@ async function replayKlotskiMoves() {
   setMetric("0");
   setStatus("正在回放 " + path.length + " 步操作……");
   for (const move of path) {
+    if(epoch!==klotskiEpoch||!running)return;
     selectedId = move.id;
     moveSelected(move.dx, move.dy, true);
     await new Promise((resolve) => setTimeout(resolve, 245));
   }
+  if(epoch!==klotskiEpoch||!running)return;
   replayPath = path;
   replaying = false;
+  persistKlotskiSession();
   setStatus("回放完成 · 可继续操作或撤销。 ");
 }
 
 function moveSelected(dx, dy, fromReplay = false, preserveRedo = false) {
-  if (!running || moveAnimation) return false;
+  if (!running || moveAnimation || (replaying&&!fromReplay)) return false;
   const piece = pieces.find((candidate) => candidate.id === selectedId);
   if (!piece || !canMove(piece, dx, dy)) {
     blockedUntil = performance.now() + 280;
@@ -257,8 +422,14 @@ function moveSelected(dx, dy, fromReplay = false, preserveRedo = false) {
   }
   const fromX = piece.renderX;
   const fromY = piece.renderY;
+  klotskiHintStage=0;klotskiHintSignature="";
+  klotskiFreedCells=[];
+  for(let y=piece.y;y<piece.y+piece.h;y++)for(let x=piece.x;x<piece.x+piece.w;x++)if(x<piece.x+dx||x>=piece.x+dx+piece.w||y<piece.y+dy||y>=piece.y+dy+piece.h)klotskiFreedCells.push({x,y});
+  klotskiFreedUntil=performance.now()+800;
   klotskiHint = null;
   klotskiHintDistance = null;
+  klotskiHintReason = "";
+  klotskiReasonCard.hidden=true;
   if (!fromReplay) {
     if (!preserveRedo) klotskiRedo = [];
     klotskiHistory.push({ snapshot: snapshotKlotski(), selectedId });
@@ -276,10 +447,12 @@ function moveSelected(dx, dy, fromReplay = false, preserveRedo = false) {
     duration: 210,
   };
   moves += 1;
+  syncKlotskiCourseHud();
   setMetric(String(moves));
   setStatus("正在移动“" + piece.label + "”；目标是让队长机器人抵达发光出口。");
   spawnParticles(piece, "move", 5);
   playSound("move");
+  if (!fromReplay) signalOnboarding("block-moved");
   return true;
 }
 
@@ -294,6 +467,7 @@ function completeMove(animation) {
     spawnParticles(animation.piece, "victory", 30);
     setStatus("朱门已经开启，队长机器人正在穿过出口……");
   } else {
+    persistKlotskiSession();
     setStatus("已移动“" + animation.piece.label + "”；继续利用发光方向提示腾出出口。");
   }
 }
@@ -315,18 +489,18 @@ function updateKlotskiEffects(timestamp) {
   particles = particles.filter((particle) => particle.life > 0);
   if (winAt && timestamp >= winAt) {
     winAt = 0;
-    showResult(true, "朱门流光开启", "队长机器人穿过了发光门庭，共移动 " + moves + " 步。");
+    completeKlotskiRoom();
   }
 }
 
 function drawCourtyard() {
   ctx.clearRect(0, 0, canvas.width, canvas.height);
-  ctx.fillStyle = "#f4e4cd";
+  ctx.fillStyle = "#182f32";
   ctx.fillRect(0, 0, canvas.width, canvas.height);
   if (courtyardArt.complete && courtyardArt.naturalWidth) {
     ctx.save();
-    drawImageCover(courtyardArt, 0, 0, canvas.width, canvas.height);
-    ctx.fillStyle = "rgba(255,248,236,.08)";
+    ctx.globalAlpha=.17;drawImageCover(courtyardArt, 0, 0, canvas.width, canvas.height);ctx.globalAlpha=1;
+    ctx.fillStyle = "rgba(24,47,50,.48)";
     ctx.fillRect(0, 0, canvas.width, canvas.height);
     ctx.restore();
   }
@@ -343,6 +517,7 @@ function drawExit(originX, originY, cell, timestamp) {
   ctx.fillStyle = glow;
   ctx.fillRect(exitX - cell * .5, exitY - cell * .6, cell * 3, cell * 1.4);
   drawBitmapSprite(7, exitX, exitY - 2, cell * 2, 44, { fallback: palette.secondary, radius: 14, padding: 8, alpha: exitOpen ? 1 : .9 });
+  ctx.font="700 20px 'Microsoft YaHei',sans-serif";ctx.textAlign="center";ctx.fillStyle="#713f33";ctx.fillText("朱门 · 出口",originX+cell*2,originY+cell*5+15);
   ctx.restore();
 }
 
@@ -399,6 +574,12 @@ function pieceFrameTone(piece) {
 
 function drawBoardGrid(originX, originY, cell) {
   ctx.save();
+  for(let y=0;y<5;y++)for(let x=0;x<4;x++){
+    if(pieces.some(piece=>occupiedBy(piece,x,y)))continue;
+    const freed=performance.now()<klotskiFreedUntil&&klotskiFreedCells.some(point=>point.x===x&&point.y===y);
+    ctx.fillStyle=freed?"rgba(91,185,156,.48)":"rgba(62,113,95,.12)";ctx.fillRect(originX+x*cell+5,originY+y*cell+5,cell-10,cell-10);
+    ctx.strokeStyle=freed?"#408772":"rgba(73,113,95,.48)";ctx.lineWidth=2;ctx.setLineDash([7,7]);ctx.strokeRect(originX+x*cell+15,originY+y*cell+15,cell-30,cell-30);ctx.setLineDash([]);
+  }
   ctx.strokeStyle = "rgba(105,55,58,.24)";
   ctx.lineWidth = 2;
   for (let column = 0; column <= 4; column += 1) {
@@ -452,12 +633,12 @@ function drawPiece(piece, originX, originY, cell, timestamp) {
   ctx.beginPath();
   ctx.roundRect(x + 2, y + 2, width - 4, height - 4, Math.min(18, styleProfile.corner || 12));
   ctx.strokeStyle = selected ? "#ffbf38" : "rgba(82,45,49,.92)";
-  ctx.lineWidth = selected ? 8 : 6;
+  ctx.lineWidth = selected ? 5 : 2;
   ctx.stroke();
   ctx.beginPath();
   ctx.roundRect(x + 8, y + 8, width - 16, height - 16, Math.min(14, styleProfile.corner || 10));
   ctx.strokeStyle = selected ? "rgba(255,255,232,.96)" : frame.stroke;
-  ctx.lineWidth = selected ? 2 : 3;
+  ctx.lineWidth = 1;
   ctx.stroke();
   ctx.restore();
 }
@@ -483,9 +664,9 @@ function drawKlotski(timestamp = performance.now()) {
   const { cell, originX, originY } = klotskiLayout();
   drawPlayfield(originX - 22, originY - 22, cell * 4 + 44, cell * 5 + 44, {
     radius: 34,
-    alpha: .72,
-    fill: "rgba(255,247,230,.76)",
-    stroke: "rgba(185,78,71,.62)",
+    alpha: 1,
+    fill: "#efe6cc",
+    stroke: "#bca575",
     lineWidth: 5,
   });
   drawBoardGrid(originX, originY, cell);
@@ -499,8 +680,11 @@ function drawKlotski(timestamp = performance.now()) {
 }
 
 function animationLoop(timestamp) {
+  if(klotskiClockAt&&running&&!onboardingIsActive()&&!replaying&&!exitOpen&&!document.hidden)klotskiMissionMs+=Math.max(0,Math.min(100,timestamp-klotskiClockAt));
+  klotskiClockAt=timestamp;
   updateKlotskiEffects(timestamp);
   drawKlotski(timestamp);
+  syncKlotskiAnchors();
   requestAnimationFrame(animationLoop);
 }
 
@@ -508,6 +692,7 @@ let klotskiDrag = null;
 let suppressKlotskiClick = false;
 canvas.addEventListener("pointerdown", (event) => {
   if (!running || moveAnimation || replaying) return;
+  klotskiEpoch += 1;
   const { x: px, y: py } = eventScenePoint(event);
   const { cell, originX, originY } = klotskiLayout();
   const gridX = Math.floor((px - originX) / cell);
@@ -536,7 +721,9 @@ canvas.addEventListener("pointerup", async (event) => {
   const distance = horizontal ? Math.abs(deltaX) : Math.abs(deltaY);
   const steps = Math.max(1, Math.min(4, Math.round(distance / klotskiLayout().cell)));
   suppressKlotskiClick = true;
+  const epoch=klotskiEpoch;
   for (let index = 0; index < steps; index += 1) {
+    if(epoch!==klotskiEpoch||!running)break;
     if (!moveSelected(dx, dy, false, index > 0)) break;
     await new Promise((resolve) => setTimeout(resolve, 220));
   }
@@ -546,6 +733,7 @@ canvas.addEventListener("pointercancel", () => { klotskiDrag = null; });
 canvas.addEventListener("lostpointercapture", () => { klotskiDrag = null; });
 
 canvas.addEventListener("click", (event) => {
+  if(!running||replaying)return;
   if (suppressKlotskiClick) return;
   if (moveAnimation) return;
   const { x: px, y: py } = eventScenePoint(event);
@@ -562,6 +750,10 @@ canvas.addEventListener("click", (event) => {
 });
 
 function resetPieces() {
+  klotskiHintStage=0;klotskiHintSignature="";klotskiFreedCells=[];
+  klotskiReasonCard.hidden=true;
+  klotskiEpoch += 1;
+  klotskiRestored = false;
   resetCampaignRandom();
   pieces = createCampaignKlotskiPieces().map((piece) => ({ ...piece, renderX: piece.x, renderY: piece.y }));
   optimalReference = activeKlotskiBlueprint()[1];
@@ -583,13 +775,22 @@ function resetPieces() {
 }
 
 function startGame() {
+  klotskiRoomIndex=0;klotskiRoomResults=[];klotskiMissionMs=0;klotskiRoomHints=0;klotskiRoomUndo=0;klotskiResultSummary=null;
   resetPieces();
+  restoreKlotskiSession();
+  if(!klotskiRestored&&klotskiRoomIndex!==0){klotskiRoomIndex=0;resetPieces();}
   running = true;
   hideOverlay();
-  setMetric("0");
-  setStatus("第 " + currentCampaignLevel().number + " 关 · " + activeKlotskiBlueprint()[0] + " · 最优 " + optimalReference + " 步；拖动棋子让队长机器人抵达出口。");
+  setMetric(String(moves));
+  setStatus((klotskiRestored?"已恢复 "+moves+" 步操作 · ":"")+"第 " + currentCampaignLevel().number + " 关 · " + activeKlotskiBlueprint()[0] + " · 最优 " + optimalReference + " 步；拖动棋子让队长机器人抵达出口。");
   startAmbient();
+  syncKlotskiCourseHud();
 }
+
+restartCurrentGame=()=>{clearKlotskiSession();startGame();};
+window.addEventListener("game:state-change",()=>{
+  if(gameSessionState==="idle"){if(!klotskiResultSummary)persistKlotskiSession();klotskiEpoch+=1;replaying=false;moveAnimation=null;klotskiDrag=null;winAt=0;klotskiReasonCard.hidden=true;}
+});
 
 function handleControl(value) {
   const vectors = { left: [-1, 0], right: [1, 0], up: [0, -1], down: [0, 1] };
@@ -615,9 +816,14 @@ runtimeDebugState = () => {
     to: { x: layout.originX + (dragEntry.piece.x + dragEntry.piece.w / 2 + dragEntry.move.dx) * layout.cell, y: layout.originY + (dragEntry.piece.y + dragEntry.piece.h / 2 + dragEntry.move.dy) * layout.cell },
   } : null;
   const hintedPiece = klotskiHint ? pieces.find((piece) => piece.id === klotskiHint.id) : null;
-  return { level: currentCampaignLevel().number, tier: currentCampaignLevel().tier, blueprintName: activeKlotskiBlueprint()[0], layoutCount: klotskiBlueprints.length, uniqueBlueprints: new Set(klotskiBlueprints.map((item) => JSON.stringify(item[2]))).size, moves, canUndo: klotskiHistory.length > 0, canRedo: klotskiRedo.length > 0, replayLength: replayPath.length, replaying, optimalReference, optimalExact: Number.isInteger(optimalReference), transitionMs: 210, directDrag: true, dragProbe, canvasSize: { width: canvas.width, height: canvas.height }, hint: klotskiHint, hintDistance: klotskiHintDistance, hintLegal: Boolean(hintedPiece && klotskiStateCanMove(pieces, hintedPiece, klotskiHint.dx, klotskiHint.dy)), boardWidthRatio: Number(((layout.cell * 4 + 44) / 720 * 100).toFixed(1)), identityUsesShapeAndBitmap: true, pieceGap: 10, pieceOutlineWidth: 6, incompleteArtIsCropped: true, pieceState: pieces.map(({ id, x, y }) => ({ id, x, y })) };
+  return { courseName:currentKlotskiCourse().name, courseRooms:currentKlotskiCourse().boards.length, roomIndex:klotskiRoomIndex, roomResults:klotskiRoomResults.map(result=>({moves:result.path.length,hints:result.hints})), totalMoves:(klotskiResultSummary||klotskiCourseTotals()).moves, totalOptimal:(klotskiResultSummary||klotskiCourseTotals()).optimal, independentRooms:klotskiResultSummary?.independentRooms||0, activeMs:klotskiMissionMs, hintStage:klotskiHintStage, restored:klotskiRestored, hintReason:klotskiHintReason, level: currentCampaignLevel().number, tier: currentCampaignLevel().tier, blueprintName: activeKlotskiBlueprint()[0], layoutCount: klotskiBlueprints.length + klotskiPracticeLayouts.length, uniqueBlueprints: new Set([...klotskiBlueprints.map((item) => JSON.stringify(item[2])),...klotskiPracticeLayouts.map(item=>JSON.stringify(item.points))]).size, moves, canUndo: klotskiHistory.length > 0, canRedo: klotskiRedo.length > 0, replayLength: replayPath.length, replaying, optimalReference, optimalExact: Number.isInteger(optimalReference), transitionMs: 210, directDrag: true, dragProbe, canvasSize: { width: canvas.width, height: canvas.height }, hint: klotskiHint, hintDistance: klotskiHintDistance, hintLegal: Boolean(hintedPiece && klotskiStateCanMove(pieces, hintedPiece, klotskiHint.dx, klotskiHint.dy)), boardWidthRatio: Number(((layout.cell * 4 + 44) / 720 * 100).toFixed(1)), identityUsesShapeAndBitmap: true, pieceGap: 10, pieceOutlineWidth: 2, selectedOutlineWidth: 5, incompleteArtIsCropped: true, pieceState: pieces.map(({ id, x, y }) => ({ id, x, y })) };
 };
 runtimeDebugActions = {
+  courseMoveProbe(){
+    const solution=solveKlotski();if(!solution.first)return null;
+    const piece=pieces.find(item=>item.id===solution.first.id),layout=klotskiLayout();
+    return {move:solution.first,from:{x:layout.originX+(piece.x+piece.w/2)*layout.cell,y:gameSceneTop()+layout.originY+(piece.y+piece.h/2)*layout.cell},to:{x:layout.originX+(piece.x+piece.w/2+solution.first.dx)*layout.cell,y:gameSceneTop()+layout.originY+(piece.y+piece.h/2+solution.first.dy)*layout.cell},room:klotskiRoomIndex,distance:solution.distance};
+  },
   undo: undoKlotskiMove,
   redo: redoKlotskiMove,
   hint: requestKlotskiHint,

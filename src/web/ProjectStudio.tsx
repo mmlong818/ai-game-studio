@@ -203,10 +203,33 @@ function messageTime(value: string, locale: ResolvedLocale) {
   return new Intl.DateTimeFormat(locale, { hour: "2-digit", minute: "2-digit" }).format(new Date(value));
 }
 
+export function DesignDecisionCards({ project }: { project: ProjectDetail }) {
+  const { t } = usePreferences();
+  const contract = project.spec.designContract;
+  if (!contract) return null;
+  const mechanicLabels = new Map(contract.mechanics.map(({ id, label }) => [id, label]));
+  const learning = contract.onboarding.map(({ requiredAction }) => requiredAction).join(" → ");
+  const progression = contract.content.beats.map(({ label, changeReason }) => `${label}：${changeReason}`).join("；");
+  const assistance = contract.assistance.steps.map(({ afterFailures, message }) => `${afterFailures} 次失败：${message}`).join("；");
+  const variation = contract.content.beats.map((beat) => {
+    const labels = [...beat.introducesMechanicIds, ...beat.practicesMechanicIds].map((id) => mechanicLabels.get(id)).filter(Boolean);
+    return `${beat.label}：${labels.length ? [...new Set(labels)].join("、") : "综合练习"}`;
+  }).join("；");
+  return (
+    <div className="design-decision-grid" role="group" aria-label={t("studio.design.summary")}>
+      <article><strong>{t("studio.design.learning")}</strong><p>{learning}</p></article>
+      <article><strong>{t("studio.design.progression")}</strong><p>{progression}</p></article>
+      <article><strong>{t("studio.design.assistance")}</strong><p>{assistance}</p></article>
+      <article><strong>{t("studio.design.variation")}</strong><p>{variation}</p></article>
+    </div>
+  );
+}
+
 function ConversationContract({ project }: { project: ProjectDetail }) {
   const { t } = usePreferences();
   const style = visualStyleOptions.find((option) => option.id === project.spec.visualStyle)!;
   const passed = project.spec.acceptanceCriteria.filter((criterion) => criterion.status === "passed").length;
+  const resourceSummary = project.spec.resourcePlanning?.summary;
 
   return (
     <section className="workbench-contract" aria-labelledby="contract-heading">
@@ -223,10 +246,21 @@ function ConversationContract({ project }: { project: ProjectDetail }) {
         <div><dt>{t("studio.visual")}</dt><dd>{style.label} · {style.detailLabel}</dd></div>
         <div><dt>{t("studio.aspectFact")}</dt><dd>{project.spec.aspectRatio}</dd></div>
       </dl>
+      {resourceSummary ? (
+        <div className="contract-resource-readiness" role="status">
+          <strong>{t("studio.resources.title")}</strong>
+          <p>{t("studio.resources.summary", {
+            reusable: resourceSummary.reusable,
+            generation: resourceSummary.needsGeneration,
+            review: resourceSummary.needsReview,
+          })}</p>
+        </div>
+      ) : null}
       <div className="contract-loop">
         <span>{t("studio.loop")}</span>
         <ol>{project.spec.designProfile.coreLoop.map((item) => <li key={item}>{item}</li>)}</ol>
       </div>
+      <DesignDecisionCards project={project} />
       <details className="contract-details">
         <summary>{t("studio.contractDetails")}</summary>
         <div className="contract-details-body">
@@ -320,6 +354,7 @@ function ContractConfirmPanel({ project, busy, canConfirm, onConfirm }: {
         <span>{t("studio.loop")}</span>
         <ol>{design.coreLoop.map((item) => <li key={item}>{item}</li>)}</ol>
       </div>
+      <DesignDecisionCards project={project} />
 
       <div className="contract-confirm-cta">
         <button type="button" className="workbench-button button-primary" disabled={busy || !canConfirm} onClick={onConfirm}>

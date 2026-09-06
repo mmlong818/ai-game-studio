@@ -480,6 +480,20 @@ summary:focus-visible {
   padding: 14px 28px 20px;
 }
 
+.model-roster select {
+  width: 100%;
+  min-width: 0;
+  min-height: 44px;
+  padding: 9px;
+  border: 1px solid #728398;
+  border-radius: 8px;
+  background: #fff;
+  color: #183b50;
+  font: inherit;
+}
+.model-roster label { display: block; margin-bottom: 8px; }
+.model-settings-dialog > p { margin: 8px 24px; font-size: 13px; line-height: 1.6; }
+
 .model-roster article {
   display: grid;
   min-width: 0;

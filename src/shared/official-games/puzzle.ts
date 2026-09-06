@@ -7,9 +7,10 @@ export const puzzle = defineOfficialGame({
   kind: "template",
   serverTemplate: "puzzle",
   lobbyRank: 2,
+  lobbyCover: "assets/library/covers/puzzle-v1.webp",
   cover: "assets/templates/packs/puzzle/cover.png",
   referenceDoc: "docs/46-puzzle-best-template-reference.md",
-  mechanicId: "drag-snap",
+  knowledge: { patternId: "drag-assembly-puzzle", mechanicIds: ["drag-snap-assembly"], rationale: "拖拽吸附与邻块成组是核心；按区域组织工作台、轮廓到纹理的课程和分级线索帮助玩家形成自己的拼合策略，不增加强制操作。" },
   seed: {
     artStyle: "botanical",
     visualStyle: "fashion",
@@ -19,8 +20,8 @@ export const puzzle = defineOfficialGame({
     id: "picture-puzzle",
     name: "图片拼图",
     genre: "空间拼合",
-    pitch: "拖动散落拼块，在清晰反馈中还原完整画面。",
-    coreLoop: "观察 → 拖动 → 吸附 → 完成",
+    pitch: "从四角到画面区域，先接小组再还原整幅图；自由整理与分级线索让拼合更从容。",
+    coreLoop: "观察轮廓 → 组织区域 → 连接小组 → 整组归位 → 收藏成图",
     coreRules: ["拼块来源固定", "正确位置会吸附", "全部归位才完成"],
     capabilities: ["drag-snap", "spatial-validation", "progress-save"],
     suggestions: commonSuggestions(

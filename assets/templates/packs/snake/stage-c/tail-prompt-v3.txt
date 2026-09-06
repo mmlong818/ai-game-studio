@@ -1,0 +1,7 @@
+Use case: stylized-concept
+Asset type: tail sprite for a top-down jade Chinese dragon snake game.
+Primary request: one short tapered dragon TAIL viewed from STRICT 90-degree overhead orthographic camera. Body attachment at RIGHT, tail tip toward LEFT, horizontal center axis. A broad jade-green scaled base smoothly tapers to a short elegant pale gold and green fin tip. Both sides symmetric about the horizontal axis. NO head, face, feet, wings or entire body.
+Style: polished hand-painted miniature game illustration, jade-green scales, darker emerald outlines, restrained pale gold dorsal ridge, readable at 48 pixels. Neutral overhead lighting, no cast shadow.
+Composition: centered complete silhouette on square canvas with 12 percent empty margin. Tail attachment width about half its length, clean outline without tiny floating hairs.
+Background: absolutely uniform pure magenta #FF00FF for chroma-key removal. No magenta in the subject. No gradient, ground, checkerboard, text or watermark.
+Avoid: side view, isometric view, three-quarter view, curled pose, full dragon, separate decoration.

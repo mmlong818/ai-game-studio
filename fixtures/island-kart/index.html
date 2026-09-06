@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="zh-CN">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><title>椰风海岛 · 卡丁车</title><link rel="icon" href="data:,"><link rel="stylesheet" href="./styles.css"></head>
+<body>
+  <canvas id="world" aria-label="海岛卡丁车三维赛道"></canvas>
+  <div id="vignette"></div><div id="speed-lines"></div>
+  <header id="hud" hidden>
+    <div class="position"><strong id="rank">3</strong><span id="rank-label">/ 3 名</span><small id="sector">椰林海湾</small></div>
+    <div class="timer"><span>COCONUT COAST</span><strong id="clock">00:00.00</strong><small id="lap-clock">本圈 00:00.00</small></div>
+    <div class="race-info"><div id="lap">1 <span>/ 3 圈</span></div><div class="toolbar"><button id="sound" aria-label="开启声音">♪</button><button id="pause" aria-label="暂停游戏">Ⅱ</button></div></div>
+  </header>
+  <div id="driving-hud" hidden><canvas id="minimap" width="180" height="140" aria-label="赛道小地图"></canvas><div class="speed"><strong id="speed">0</strong><span>km/h</span><div class="energy-track"><i id="energy"></i></div><small id="boost-status">冲刺就绪 · 空格</small></div><div class="wallet"><span>●</span> <b id="coins">0</b><small id="shield"></small></div></div>
+  <div id="countdown" aria-live="polite"></div><div id="toast" role="status"></div>
+  <section id="menu" class="overlay">
+    <div class="menu-card"><div class="eyebrow">COCONUT COAST / 01</div><h1>椰风<span>海岛</span></h1><p class="subtitle">卡丁车大奖赛</p><p class="lead">把海风留在身后。</p><div class="mode-switch" aria-label="玩法选择"><button data-mode="race" class="selected" aria-pressed="true">海岛竞速</button><button data-mode="free" aria-pressed="false">自由驾驶</button></div><p id="mode-description">3 位车手 · 3 圈海岸赛道 · 约 2–3 分钟</p><button id="start" class="primary" disabled>正在准备赛道…</button><div class="settings"><label><input id="assist" type="checkbox" checked> 新手转向辅助</label><span id="record">首次出发</span></div></div>
+    <aside class="guide"><span class="eyebrow">第一次来也能开</span><h2>转弯，超车，冲线。</h2><div><kbd>←</kbd><kbd>→</kbd><p><b>左右转向</b><span>自动前进，不需要一直踩油门</span></p></div><div><kbd class="wide">空格</kbd><p><b>能量冲刺</b><span>捡金币蓄能，直道冲出去</span></p></div><div><span class="item-symbol">?</span><p><b>经过道具箱</b><span>获得护盾或补充冲刺能量</span></p></div><footer>触屏使用下方方向键与冲刺键 · P 暂停<br>碰墙只会减速，随时可以追上来。</footer></aside>
+  </section>
+  <section id="pause-panel" class="overlay center" hidden><div class="dialog"><span class="eyebrow">TAKE A BREATH</span><h2>海风等你</h2><p>← → 转向 · 空格冲刺 · ↓ 减速</p><button id="resume" class="primary">继续驾驶</button><button id="restart" class="secondary">重新起跑</button><button id="back" class="text-button">返回出发点</button></div></section>
+  <section id="results" class="overlay center" hidden><div class="dialog results-card"><span class="eyebrow">COCONUT COAST GRAND PRIX</span><div id="medal">★</div><h2 id="result-title">漂亮的冲线！</h2><p id="result-caption"></p><div class="result-stats"><div><span>完赛用时</span><b id="result-time"></b></div><div><span>最快单圈</span><b id="result-lap"></b></div><div><span>收集金币</span><b id="result-coins"></b></div></div><div id="podium"></div><p id="personal-best"></p><button id="again" class="primary">再跑一场</button><button id="result-home" class="text-button">返回出发点</button></div></section>
+  <nav id="touch" hidden aria-label="驾驶控制"><div><button data-control="left" aria-label="向左转向">◀</button><button data-control="right" aria-label="向右转向">▶</button></div><button data-control="boost" class="boost-button" aria-label="使用能量冲刺">冲刺 <span>↗</span></button></nav>
+  <div id="fatal" class="overlay center" hidden><div class="dialog"><h2>赛道暂时无法启动</h2><p id="fatal-message"></p><button id="reload" class="primary">重新加载</button></div></div>
+  <script type="module" src="./app.js"></script>
+</body></html>

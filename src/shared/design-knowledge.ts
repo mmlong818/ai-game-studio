@@ -1,4 +1,5 @@
 // 游戏设计知识库(机器可用层)。人类可读的完整提炼见 docs/33-game-design-knowledge.md,两边必须同步修订。
+export { GAME_DESIGN_PRINCIPLES, gameDesignPrinciplesPrompt } from './game-presentation-policy.js';
 
 export const designPillars = [
   { id: "clear-goal", rule: "每一关、每一局的目标必须一句话可理解" },

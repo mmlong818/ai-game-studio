@@ -1,0 +1,169 @@
+{
+  "schemaVersion": "curated-resource-family-v1",
+  "familyId": "low-poly-nature-3d",
+  "packId": "kenney-nature-kit-core-3d",
+  "importedAt": "2026-09-05T00:00:00.000Z",
+  "source": {
+    "schemaVersion": "resource-source-v1",
+    "id": "SOURCE-KENNEY-NATURE-KIT",
+    "sourceUrl": "https://kenney.nl/assets/nature-kit",
+    "author": "Kenney",
+    "acquiredAt": "2026-09-05T00:00:00.000Z",
+    "assetClass": "model",
+    "licenseId": "CC0-1.0",
+    "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+    "licenseTextHash": "CB96B75E3560AC78D7A53CE6F083F4CDB5C53FAEA6141B62D63458DCFE1E4B9D",
+    "attributionText": null,
+    "rights": {
+      "commercialUse": true,
+      "modification": true,
+      "redistribution": true,
+      "sourceRedistribution": true
+    },
+    "provenanceNote": "官方资源页标明 3D、330 个文件、CC0；只导入固定清单中的 GLB。",
+    "reviewedBy": "platform-curation",
+    "reviewedAt": "2026-09-05T00:00:00.000Z"
+  },
+  "archive": {
+    "fileName": "kenney_nature-kit.zip",
+    "sha256": "FA7974A0D342BFE63C38664BA9F8EC1A4AAB8EA25F099BDC56870E33588C4D9D",
+    "downloadUrl": "https://kenney.nl/media/pages/assets/nature-kit/37ac38a37b-1677698939/kenney_nature-kit.zip"
+  },
+  "license": {
+    "entry": "License.txt",
+    "sha256": "CB96B75E3560AC78D7A53CE6F083F4CDB5C53FAEA6141B62D63458DCFE1E4B9D"
+  },
+  "selectionRationale": "以 26 个桥梁、营地、植被和地形模块建立首个可组合低多边形 3D 环境族。",
+  "assets": [
+    {
+      "path": "Models/GLTF format/bed.glb",
+      "bytes": 19108,
+      "sha256": "ED064D4D9E6CF0C87F9146CB38A652D0DF5427B60D0486FED190AB74D9510DF4"
+    },
+    {
+      "path": "Models/GLTF format/bed_floor.glb",
+      "bytes": 10688,
+      "sha256": "A59C8878186AB180F43E55249184B5C8E6AF7D6501F908898202AC14C474A05F"
+    },
+    {
+      "path": "Models/GLTF format/bridge_center_stone.glb",
+      "bytes": 5076,
+      "sha256": "F3681603A3D6523F8298DA7D4C8D00E653C6028136C3427AF07952FA3CA10519"
+    },
+    {
+      "path": "Models/GLTF format/bridge_center_wood.glb",
+      "bytes": 5480,
+      "sha256": "ED9EDE934D5BE5737863713F4648D8FFACA48038D299442A2AE2C3A2B6B79984"
+    },
+    {
+      "path": "Models/GLTF format/bridge_side_stone.glb",
+      "bytes": 11408,
+      "sha256": "2DA6236082152F843A29393225BE8BBBD28ABACF597ACC35704C0BB393BC4127"
+    },
+    {
+      "path": "Models/GLTF format/bridge_side_wood.glb",
+      "bytes": 10604,
+      "sha256": "3857C2A286D236375DBAE209897884EEBC379D18E4AF39EE8414F2D9511E2C49"
+    },
+    {
+      "path": "Models/GLTF format/bridge_stone.glb",
+      "bytes": 17708,
+      "sha256": "B8B311F525AD616FCDEBB6463DB8B0C7710AF58EB45308B54C08BCB290A2315E"
+    },
+    {
+      "path": "Models/GLTF format/bridge_stoneNarrow.glb",
+      "bytes": 17724,
+      "sha256": "EA011DBAA2926013456C001AC93D24BE07C2B1BED98FE5B24AAE372F68C5FF24"
+    },
+    {
+      "path": "Models/GLTF format/bridge_wood.glb",
+      "bytes": 15692,
+      "sha256": "3DA4C208B0F72B7F2BA42DB521B62EC4B0278050C75256A6982C40D21AAB5701"
+    },
+    {
+      "path": "Models/GLTF format/bridge_woodNarrow.glb",
+      "bytes": 15708,
+      "sha256": "DF46D1BA2AE557F3C69850C4FAF03BCD16786FFF305BCE772F5B260E50DEF351"
+    },
+    {
+      "path": "Models/GLTF format/cactus_short.glb",
+      "bytes": 8844,
+      "sha256": "81AC9FC4C66EACCEAF4AEBCB6DF3468EA450A2F5081151BB11400282EFBC51BD"
+    },
+    {
+      "path": "Models/GLTF format/cactus_tall.glb",
+      "bytes": 9668,
+      "sha256": "D43A1ACA5952E1F8A104D64A0EDFEC09C39F15102CA6BDC531460DD5A2C53D25"
+    },
+    {
+      "path": "Models/GLTF format/campfire_bricks.glb",
+      "bytes": 10220,
+      "sha256": "ECDCA761C6C07EE417261140D5449872B7F51F3671DF2D536E2A03B65480563F"
+    },
+    {
+      "path": "Models/GLTF format/campfire_logs.glb",
+      "bytes": 9284,
+      "sha256": "98D87CDCF9095B94FD348D0946E911DD4CA6C0956BAC3318CFD2B0030B86055A"
+    },
+    {
+      "path": "Models/GLTF format/campfire_planks.glb",
+      "bytes": 8148,
+      "sha256": "0D26E842F7F5CB607AD37205E930822656B7C6BA570F9D0BA6B039CEA90F8AB7"
+    },
+    {
+      "path": "Models/GLTF format/campfire_stones.glb",
+      "bytes": 17344,
+      "sha256": "54869DB23243A3F4905BC00BD4CD93B1037B28556AB3EF93E7A893A093791E35"
+    },
+    {
+      "path": "Models/GLTF format/canoe.glb",
+      "bytes": 15780,
+      "sha256": "AD9C7A315F55ACCBCE8D1EE3DC853F919F01F97AB4E3096BB235D1815AED6941"
+    },
+    {
+      "path": "Models/GLTF format/canoe_paddle.glb",
+      "bytes": 3952,
+      "sha256": "7F8E0BC5BEACFA1E4AE12F942AB045B1F7A13A04B497859F749BF7999B99D0BD"
+    },
+    {
+      "path": "Models/GLTF format/cliff_blockCave_rock.glb",
+      "bytes": 5432,
+      "sha256": "2C373A596840A4F3BFFA1ABA7A93D7DA9D2AA1DDED54F7A9966E4E4B3FCE7D43"
+    },
+    {
+      "path": "Models/GLTF format/cliff_blockCave_stone.glb",
+      "bytes": 5436,
+      "sha256": "F02A4190D8428722F00583DC751168C84FB1227BAC35C517F2DCAD58CB327C7A"
+    },
+    {
+      "path": "Models/GLTF format/cliff_blockDiagonal_rock.glb",
+      "bytes": 2564,
+      "sha256": "32B61E963BA99695624F213E4D893C5D2AC028DD831BA65BCD220EE5A6006114"
+    },
+    {
+      "path": "Models/GLTF format/cliff_blockDiagonal_stone.glb",
+      "bytes": 2568,
+      "sha256": "62835E048B252FC2283352EF301B671E3F77F5CA511FFC5B6C90A5EAC6869C54"
+    },
+    {
+      "path": "Models/GLTF format/cliff_blockHalf_rock.glb",
+      "bytes": 2788,
+      "sha256": "A3D29368524DD6968D5920F1ABA2BDF6E6D189CCC60123F5D036C56653C31C5E"
+    },
+    {
+      "path": "Models/GLTF format/cliff_blockHalf_stone.glb",
+      "bytes": 2792,
+      "sha256": "FA932C3107DCABEBAFB005F1AEEFEA5BDDB585909320AC7B2781A35CAA0B187C"
+    },
+    {
+      "path": "Models/GLTF format/cliff_blockQuarter_rock.glb",
+      "bytes": 2796,
+      "sha256": "748F3F4C8695E46567819F3AE73BA53BBC7DB827254BC68F9FCA27F01F481666"
+    },
+    {
+      "path": "Models/GLTF format/cliff_blockQuarter_stone.glb",
+      "bytes": 2800,
+      "sha256": "991AFA18FBFCE25D4B1B758B7266C74E14793351A7875F00BE01874B00BC7ABB"
+    }
+  ]
+}

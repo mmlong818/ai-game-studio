@@ -2,7 +2,7 @@
 //
 // 用法（对着一个正在运行的工作室服务）：
 //   npm run seed:showcases                         # 全部模板型与 3D 型登记
-//   npm run seed:showcases -- paper-popup tetris   # 只处理指定登记 id
+//   npm run seed:showcases -- tetris puzzle       # 只处理指定登记 id
 //   STUDIO_ORIGIN=http://127.0.0.1:4312 / REVIEW_ART=1（仅本地或测试环境：自动通过主美复核）
 //
 // 固定游戏（fixture）由 API 服务启动时的 ensureOfficialFixtures() 自动注册，不走这里。

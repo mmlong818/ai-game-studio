@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { CheckCircle2, KeyRound, LoaderCircle, ShieldCheck, X } from "lucide-react";
-import type { OpenAISettingsStatus } from "../shared/contracts";
-import { clearOpenAIKey, getOpenAISettings, saveOpenAIKey } from "./api";
+import type { OpenAISettingsStatus, OpenAIModelCatalog } from "../shared/contracts";
+import { clearOpenAIKey, getOpenAIModels, getOpenAISettings, saveOpenAIKey } from "./api";
 import { usePreferences } from "./preferences";
 
 export function ModelSettingsButton({ compact = false }: { compact?: boolean }) {
@@ -12,6 +12,31 @@ export function ModelSettingsButton({ compact = false }: { compact?: boolean }) 
   const [apiKey, setApiKey] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [catalog, setCatalog] = useState<OpenAIModelCatalog | null>(null);
+  const [models, setModels] = useState({ text: "", image: "" });
+  const [loadingModels, setLoadingModels] = useState(false);
+  const [retry, setRetry] = useState(0);
+  const [saved, setSaved] = useState(false);
+
+  useEffect(() => {
+    if (!open || (!apiKey.trim() && !status?.configured) || (apiKey.trim() && apiKey.trim().length < 20)) return;
+    const controller = new AbortController();
+    setLoadingModels(true);
+    const timer = setTimeout(() => {
+      void getOpenAIModels(apiKey.trim(), controller.signal).then(result => {
+        if (controller.signal.aborted) return;
+        setCatalog(result);
+        setModels({
+          text: !apiKey.trim() && result.text.some(m => m.id === status?.models.text) ? status!.models.text : result.recommended.text ?? "",
+          image: !apiKey.trim() && result.image.some(m => m.id === status?.models.image) ? status!.models.image : result.recommended.image ?? "",
+        });
+        setError("");
+      }).catch((reason: unknown) => {
+        if (!controller.signal.aborted) setError(reason instanceof Error ? reason.message : "模型列表获取失败");
+      }).finally(() => { if (!controller.signal.aborted) setLoadingModels(false); });
+    }, 600);
+    return () => { clearTimeout(timer); controller.abort(); setLoadingModels(false); };
+  }, [open, apiKey, status, retry]);
 
   useEffect(() => {
     const dialog = dialogRef.current;
@@ -35,8 +60,9 @@ export function ModelSettingsButton({ compact = false }: { compact?: boolean }) 
     setBusy(true);
     setError("");
     try {
-      setStatus(await saveOpenAIKey(apiKey));
+      setStatus(await saveOpenAIKey(apiKey.trim(), catalog ? models : undefined));
       setApiKey("");
+      setSaved(true);
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : t("models.saveFailed"));
     } finally {
@@ -50,6 +76,9 @@ export function ModelSettingsButton({ compact = false }: { compact?: boolean }) 
     try {
       setStatus(await clearOpenAIKey());
       setApiKey("");
+      setCatalog(null);
+      setModels({ text: "", image: "" });
+      setSaved(false);
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : t("models.clearFailed"));
     } finally {
@@ -72,6 +101,7 @@ export function ModelSettingsButton({ compact = false }: { compact?: boolean }) 
         type="button"
         onClick={() => setOpen(true)}
         aria-haspopup="dialog"
+        aria-label={t("models.trigger")}
       >
         <KeyRound size={15} aria-hidden="true" />
         <span>{t("models.trigger")}</span>
@@ -79,7 +109,7 @@ export function ModelSettingsButton({ compact = false }: { compact?: boolean }) 
       <dialog
         className="model-settings-dialog"
         ref={dialogRef}
-        onClose={() => setOpen(false)}
+        onClose={() => { setOpen(false); setApiKey(""); setCatalog(null); setSaved(false); }}
         aria-labelledby="model-settings-title"
       >
         <header className="model-settings-heading">
@@ -101,17 +131,27 @@ export function ModelSettingsButton({ compact = false }: { compact?: boolean }) 
         <div className="model-roster" aria-label={t("models.available")}>
           <article>
             <span>{t("models.textRole")}</span>
-            <strong>GPT-5.6</strong>
-            <code>{status?.models.text ?? "gpt-5.6"}</code>
+            <label htmlFor="text-model">文本 / 游戏设计</label>
+            <select id="text-model" value={models.text} disabled={busy || !catalog?.text.length} onChange={e => { setModels(value => ({ ...value, text: e.target.value })); setSaved(false); }}>
+              {!catalog?.text.length ? <option value="">等待远端模型列表</option> : catalog.text.map(model => <option key={model.id} value={model.id}>{model.id}{model.id === catalog.recommended.text ? "（推荐）" : ""}</option>)}
+            </select>
             <p>{t("models.textDetail")}</p>
           </article>
           <article>
             <span>{t("models.imageRole")}</span>
-            <strong>GPT Image 2</strong>
-            <code>{status?.models.image ?? "gpt-image-2"}</code>
+            <label htmlFor="image-model">图像 / 游戏资源</label>
+            <select id="image-model" value={models.image} disabled={busy || !catalog?.image.length} onChange={e => { setModels(value => ({ ...value, image: e.target.value })); setSaved(false); }}>
+              {!catalog?.image.length ? <option value="">等待远端模型列表</option> : catalog.image.map(model => <option key={model.id} value={model.id}>{model.id}{model.id === catalog.recommended.image ? "（推荐）" : ""}</option>)}
+            </select>
             <p>{t("models.imageDetail")}</p>
           </article>
         </div>
+
+        <p aria-live="polite">{loadingModels ? "正在自动获取远端模型列表…" : catalog ? "已按兼容模型的版本排序，优先推荐新版本。可直接保存，也可调整选择。" : "输入完整 Key 后自动获取可用模型。"}
+          {!loadingModels && (apiKey.trim().length >= 20 || status?.configured) ? <button type="button" disabled={busy} onClick={() => { setCatalog(null); setRetry(value => value + 1); }}>重新获取</button> : null}
+        </p>
+        {catalog && (!catalog.text.length || !catalog.image.length) ? <p role="alert">当前账号缺少平台兼容的文本或图像模型，暂不能保存。模型列表权限不等于实际调用额度。</p> : null}
+        {saved ? <p role="status">已保存，后续生成使用所选模型（当前服务会话）。</p> : null}
 
         <form className="model-key-form" onSubmit={save}>
           <label htmlFor="openai-api-key">{t("models.keyLabel")}</label>
@@ -121,11 +161,11 @@ export function ModelSettingsButton({ compact = false }: { compact?: boolean }) 
               id="openai-api-key"
               type="password"
               value={apiKey}
-              onChange={(event) => setApiKey(event.currentTarget.value)}
+              onChange={(event) => { setApiKey(event.currentTarget.value); setCatalog(null); setModels({ text: "", image: "" }); setError(""); setSaved(false); }}
               placeholder="sk-…"
               autoComplete="off"
               spellCheck={false}
-              required
+              required={!status?.configured}
               minLength={20}
               disabled={busy}
             />
@@ -134,7 +174,7 @@ export function ModelSettingsButton({ compact = false }: { compact?: boolean }) 
           {error ? <p className="model-settings-error" role="alert">{error}</p> : null}
           <footer className="model-settings-actions">
             {status?.source === "session" ? <button className="model-key-clear" type="button" onClick={clear} disabled={busy}>{t("models.clear")}</button> : <span />}
-            <button className="model-key-save" type="submit" disabled={busy || apiKey.trim().length < 20}>
+            <button className="model-key-save" type="submit" disabled={busy || (apiKey.trim() ? apiKey.trim().length < 20 : !status?.configured) || Boolean(catalog && (!models.text || !models.image))}>
               {busy ? <LoaderCircle className="spin" size={16} aria-hidden="true" /> : <KeyRound size={16} aria-hidden="true" />}
               {t("models.save")}
             </button>

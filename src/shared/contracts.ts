@@ -2,18 +2,28 @@ import { z } from "zod";
 import { getOpenSourceTemplateReference } from "./open-source-templates.js";
 import { defaultLevelProgression } from "./level-progression.js";
 import { OFFICIAL_SERVER_TEMPLATE_IDS } from "./official-games/index.js";
+import { designKnowledgeShadowSchema, type DesignKnowledgeShadow } from "./game-design-knowledge/shadow.js";
+import { resourcePlanningShadowSchema, type ResourcePlanningShadow } from "./resource-planning/index.js";
+import { gameDesignContractV1Schema } from "./game-design-contract/index.js";
 
 export const openAISettingsStatusSchema = z.object({
   provider: z.literal("openai"),
   configured: z.boolean(),
   source: z.enum(["environment", "session", "file"]).nullable(),
   models: z.object({
-    text: z.literal("gpt-5.6"),
-    image: z.literal("gpt-image-2"),
+    text: z.string().min(1),
+    image: z.string().min(1),
   }),
 });
 
 export type OpenAISettingsStatus = z.infer<typeof openAISettingsStatusSchema>;
+
+export const openAIModelCatalogSchema = z.object({
+  text: z.array(z.object({ id: z.string(), created: z.number() })),
+  image: z.array(z.object({ id: z.string(), created: z.number() })),
+  recommended: z.object({ text: z.string().nullable(), image: z.string().nullable() }),
+});
+export type OpenAIModelCatalog = z.infer<typeof openAIModelCatalogSchema>;
 
 export const dimensionSchema = z.enum(["2d", "3d"]);
 export const runtimeTargetSchema = z.enum(["web-2d", "web-3d"]);
@@ -151,7 +161,7 @@ export const ideaAnalysisSchema = z.object({
   template: gameTemplateSchema.nullable(),
   confidence: z.number().min(0).max(1).nullable().default(null),
   dimensions: dimensionSchema.nullable().default(null),
-  threeMode: z.enum(["collector", "arena", "popup"]).nullable().default(null),
+  threeMode: z.enum(["collector", "arena"]).nullable().default(null),
   mechanics: z.array(z.string().min(1).max(40)).max(12).default([]),
   hardConstraints: z.array(z.string().min(1).max(120)).max(10).default([]),
   summary: z.string().max(280).nullable().default(null),
@@ -184,7 +194,7 @@ export const gameSpecSchema = z.object({
   aspectRatio: gameAspectRatioSchema.default("16:9"),
   cameraMode: cameraModeSchema.default("fixed-stage"),
   inputModes: z.array(inputModeSchema).min(1).max(6).default(["pointer", "keyboard", "touch-buttons"]),
-  threeMode: z.enum(["collector", "arena", "popup"]).nullable().default(null),
+  threeMode: z.enum(["collector", "arena"]).nullable().default(null),
   threeContract: z.object({
     cameraDistance: z.number().min(4).max(24),
     movement: z.string().min(1),
@@ -209,6 +219,9 @@ export const gameSpecSchema = z.object({
   acceptanceCriteria: z.array(acceptanceCriterionSchema).min(4).max(20),
   nonGoalsForThisVersion: z.array(z.string().min(1)).max(10),
   ideaAnalysis: ideaAnalysisSchema.nullable().default(null),
+  designKnowledge: designKnowledgeShadowSchema.nullable().default(null),
+  designContract: gameDesignContractV1Schema.nullable().default(null),
+  resourcePlanning: resourcePlanningShadowSchema.nullable().default(null),
 });
 
 export const projectSummarySchema = z.object({
@@ -225,7 +238,7 @@ export const projectSummarySchema = z.object({
   inputModes: z.array(inputModeSchema).min(1),
   status: z.enum(["contract_ready", "playable", "published"]),
   fixtureKind: z.string().nullable(),
-  threeMode: z.enum(["collector", "arena", "popup"]).nullable().default(null),
+  threeMode: z.enum(["collector", "arena"]).nullable().default(null),
   isOfficial: z.boolean(),
   coverUrl: z.string().url().nullable(),
   createdAt: z.string(),
@@ -431,7 +444,6 @@ const templateSignals: ReadonlyArray<readonly [GameTemplate, readonly string[]]>
   // “小青蛇吃糕越变越长”这类不含“贪吃蛇”三个字的描述曾被兜底成 signal-hunt,
   // 同义特征必须覆盖“吃了会变长/撞到自己”这一规则结构本身。
   ["snake", ["贪吃蛇", "越变越长", "越长越长", "越吃越长", "撞到自己", "咬到自己"]],
-  ["maze", ["走迷宫", "迷宫"]],
   ["puzzle", ["拼图", "滑块拼图"]],
   ["merge-2048", ["2048", "数字合成", "合并数字", "滑动合并"]],
   ["space-shooter", ["太空射击", "飞船射击", "敌机", "清除波次"]],
@@ -443,7 +455,6 @@ const templateDefaults: Record<GameTemplate, { title: string; perspective: GameS
   puzzle: { title: "植光拼图", perspective: "ui", controls: ["拖拽拼块并吸附", "上传自定义图片"], style: "playful" },
   breakout: { title: "漆海碎星", perspective: "side", controls: ["指针或方向键移动挡板", "触控按钮"], style: "pop" },
   klotski: { title: "朱门华容", perspective: "ui", controls: ["直接拖动棋子", "方向键", "Z 撤销 / Y 重做"], style: "playful" },
-  maze: { title: "苔径迷庭", perspective: "top-down", controls: ["方向键移动", "触控方向键"], style: "dreamy" },
   snake: { title: "青玉长游", perspective: "top-down", controls: ["方向键改变方向", "触控方向键"], style: "playful" },
   "merge-2048": { title: "数织矩阵", perspective: "ui", controls: ["棋盘直接滑动", "方向键或 WASD", "Z 键回溯"], style: "pop" },
   "space-shooter": { title: "星环突围", perspective: "top-down", controls: ["左右移动", "持续射击", "触控按钮"], style: "pop" },
@@ -460,7 +471,6 @@ const modernVisualStyles: Record<GameTemplate, VisualStyle> = {
   puzzle: "cute",
   breakout: "fashion",
   klotski: "cute",
-  maze: "cute",
   snake: "cute",
   "merge-2048": "color-block",
   "space-shooter": "fashion",
@@ -499,7 +509,7 @@ export function recommendedAspectRatio(template: GameTemplate, dimensions: "auto
 export function recommendedCameraMode(template: GameTemplate, dimensions: "2d" | "3d"): CameraMode {
   if (dimensions === "3d") return template === "signal-hunt" ? "follow-player" : "orbit";
   if (template === "space-shooter") return "scrolling";
-  if (["tetris", "puzzle", "klotski", "maze", "snake", "merge-2048", "polyomino-fit", "block-place", "region-logic", "mahjong-roguelite"].includes(template)) return "board";
+  if (["tetris", "puzzle", "klotski", "snake", "merge-2048", "polyomino-fit", "block-place", "region-logic", "mahjong-roguelite"].includes(template)) return "board";
   return "fixed-stage";
 }
 
@@ -509,7 +519,7 @@ export function recommendedInputModes(template: GameTemplate, dimensions: "2d" |
   if (template === "klotski") return ["drag", "pointer", "keyboard"];
   if (template === "merge-2048") return ["swipe", "keyboard"];
   if (template === "space-shooter") return ["drag", "keyboard", "touch-buttons"];
-  if (["tetris", "merge-2048", "maze", "snake"].includes(template)) return ["swipe", "keyboard", "touch-buttons"];
+  if (["tetris", "merge-2048", "snake"].includes(template)) return ["swipe", "keyboard", "touch-buttons"];
   return ["pointer", "keyboard", "touch-buttons"];
 }
 
@@ -684,32 +694,18 @@ const designBlueprints: Record<GameTemplate, Omit<z.infer<typeof gameDesignProfi
     accessibility: ["按钮操作不依赖精细拖拽", "木块使用尺寸、标签与颜色共同区分"],
     productionRisks: ["棋盘布局必须保证可解"],
   },
-  maze: {
-    genre: "程序迷宫寻路",
-    targetPlayer: "喜欢短局探索和路线记忆的玩家",
-    playerFantasy: "穿过每局重新生长的庭园，找到远端灯火",
-    sessionLength: "1–5 分钟",
-    coreLoop: ["观察相邻通路", "移动到下一格", "修正错误路线", "抵达出口"],
-    winCondition: "从入口抵达右下角出口",
-    failCondition: "无强制失败；步数记录路线效率",
-    progression: ["探索逐步建立空间记忆", "难度通过迷宫规模、环路数量和岔口密度共同变化"],
-    gameFeel: ["每步移动有格点反馈", "入口、玩家和出口具有稳定视觉层级", "岔口与环路提供真正的路线选择"],
-    onboarding: ["入口和出口在开始前可见", "四向操作与墙体碰撞即时反馈", "开局明确说明每关包含多条可选路线"],
-    accessibility: ["键盘和触控方向键等价", "路径与墙体保持充分明度差"],
-    productionRisks: ["随机生成必须保证入口到出口连通", "不能只生成唯一通路；至少需要一条可绕行的替代路线"],
-  },
   snake: {
     genre: "持续移动与收集",
     targetPlayer: "喜欢逐步提速、风险不断累积的街机玩家",
     playerFantasy: "引导不断生长的玉蛇穿过花园并保持完整",
-    sessionLength: "2–7 分钟",
-    coreLoop: ["预判蛇头方向", "转向收集朱果", "身体增长", "在更小安全空间中继续移动"],
-    winCondition: "收集当前难度要求的全部朱果",
-    failCondition: "撞到边界或自身",
-    progression: ["身体长度持续增加", "难度同时改变速度和目标数量"],
-    gameFeel: ["逻辑仍按格点推进，但画面使用逐帧插值连续移动", "转向只在格点生效避免输入抖动", "收集和失败声音明确区分", "蛇头与身体层级清晰"],
+    sessionLength: "首关至少 2 分钟；后续 3–5 分钟起，采集未达标可延长；无限玩法无时限",
+    coreLoop: ["连续转向选择路线", "选择增长、加分、灵活转向或吸取食物", "管理身体与增益", "完成分段数量和种类目标或无限巡游"],
+    winCondition: "关卡每段至少有效巡游 30 秒，采集进度按段扣除配额且全局至少两类；超额保留，无限玩法无胜利终点",
+    failCondition: "庭石碰撞；标准和挑战额外启用边界及自撞失败",
+    progression: ["4 段逐步增加到 6–10 段", "地图开局固定铺设 40–125 个食物，按目标预留 25% 余量；无限模式每批 64 个", "每枚食物增长一节，青叶提供六秒转向增益，不再用 48 节上限阻止增长"],
+    gameFeel: ["连续角度转向和帧率无关移动", "镜头跟随，食物多形状区分", "收集和失败声音明确区分", "蛇头与身体层级清晰"],
     onboarding: ["开局给出直线路径和明显首个目标", "禁止直接反向并保持规则可预测"],
-    accessibility: ["键盘和触控均支持四向输入", "食物使用形状和亮度与身体区分"],
+    accessibility: ["鼠标指向或单指拖动自由转向，方向键辅助", "食物使用形状和亮度与身体区分"],
     productionRisks: ["快速连续转向不能造成自相交误判", "刷新节奏不能依赖容易抖动的固定间隔定时器"],
   },
   "merge-2048": {
@@ -853,6 +849,8 @@ export function generateGameSpec(
   rawInput: ProjectInput,
   analysis: IdeaAnalysis | null = null,
   designProfile: GameDesignProfile | null = null,
+  designKnowledge: DesignKnowledgeShadow | null = null,
+  resourcePlanning: ResourcePlanningShadow | null = null,
 ): GameSpec {
   const input = projectInputSchema.parse(rawInput);
   const dimensions = input.dimensions !== "auto" ? input.dimensions : analysis?.dimensions ?? inferDimensions(input);
@@ -860,11 +858,9 @@ export function generateGameSpec(
   const title = deriveTitle(input);
   const aspectRatio = input.aspectRatio === "auto" ? recommendedAspectRatio(template, dimensions) : input.aspectRatio;
   const cameraMode = input.cameraMode === "auto" ? recommendedCameraMode(template, dimensions) : input.cameraMode;
-  // 模板 3D 才有 collector/arena/popup 三模合同;generated 3D 的规则完全由设计合同定义。
+  // 模板 3D 才有 collector/arena 两种模式合同;generated 3D 的规则完全由设计合同定义。
   const threeMode = dimensions === "3d" && template !== "generated"
-    ? analysis?.threeMode ?? (/立体书|纸境|纸艺|折纸|翻书|转动整本|旋转迷宫|pop-?up|papercraft/i.test(input.idea)
-      ? "popup"
-      : /竞技场|敌人|波次|射击|战斗|arena|wave/i.test(input.idea) ? "arena" : "collector")
+    ? analysis?.threeMode ?? (/竞技场|敌人|波次|射击|战斗|arena|wave/i.test(input.idea) ? "arena" : "collector")
     : null;
   const spec: GameSpec = {
     schemaVersion: 1,
@@ -886,15 +882,7 @@ export function generateGameSpec(
     cameraMode,
     inputModes: input.inputModes ?? recommendedInputModes(template, dimensions),
     threeMode,
-    threeContract: dimensions === "3d" && template !== "generated" ? (threeMode === "popup" ? {
-      cameraDistance: 14,
-      movement: "固定等角俯视；整本书按 90° 转动，点击地面或方向键按格行走，一个跳跃键越过一格空隙",
-      objective: "转动书本让桥与台阶接上，经过检查点旗抵达出口门；三颗折纸星可选收集",
-      collision: "网格可达性模型：格高差、角度桥、顺序机关、限时门与按节拍移动的纸浪纸鸟",
-      levelBounds: "每关一张 9×9 以内的立体书网格，走不通的方向被规则阻止，跳空回到检查点",
-      performanceTiers: ["low", "medium", "high"],
-      touchScheme: "点击行走、横向滑动转书与一个跳跃键，另配两个转书按钮",
-    } : {
+    threeContract: dimensions === "3d" && template !== "generated" ? ({
       cameraDistance: threeMode === "arena" ? 10 : 8,
       movement: threeMode === "arena" ? "第三人称平面移动，自动朝向最近敌人" : "第三人称平面移动与跳跃",
       objective: threeMode === "arena" ? "完成三波敌人并在升级后存活" : "收集碎片、经过检查点并抵达终点",
@@ -911,6 +899,9 @@ export function generateGameSpec(
     acceptanceCriteria: createAcceptance(dimensions, input.visualStyle),
     nonGoalsForThisVersion: dimensions === "3d" ? ["实时多人", "开放世界"] : ["实时多人"],
     ideaAnalysis: analysis,
+    designKnowledge,
+    designContract: null,
+    resourcePlanning,
   };
   return gameSpecSchema.parse(spec);
 }

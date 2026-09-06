@@ -130,9 +130,9 @@ describe("production capabilities", () => {
       creationMode: "mechanic-composition",
       templateId: null,
       newGameBrief: "控制昆虫高速爬树，收集露珠并躲开树脂后撤离",
-      selectedMechanicIds: ["lane-dodge", "collect-escape"],
+      selectedMechanicIds: ["lane-dodge", "collect-charge"],
     });
-    const project = createProject({ ...INITIAL_DRAFT, creationMode: "mechanic-composition", templateId: null, newGameBrief: "控制昆虫高速爬树，收集露珠并躲开树脂后撤离", selectedMechanicIds: ["lane-dodge", "collect-escape"] });
+    const project = createProject({ ...INITIAL_DRAFT, creationMode: "mechanic-composition", templateId: null, newGameBrief: "控制昆虫高速爬树，收集露珠并躲开树脂后撤离", selectedMechanicIds: ["lane-dodge", "collect-charge"] });
     expect(validateGameFeel(spec, project.scene)).toEqual([]);
     const oversized = project.scene.map((node) => node.role === "player" ? { ...node, size: { ...node.size, width: 40 } } : node);
     expect(validateGameFeel(spec, oversized)).toContain("玩家宽度超过安全路线的 28%，无法稳定躲避");
@@ -150,7 +150,7 @@ describe("production capabilities", () => {
       creationMode: "mechanic-composition",
       templateId: null,
       newGameBrief: "控制昆虫高速爬树，收集露珠并躲开树脂后撤离",
-      selectedMechanicIds: ["lane-dodge", "collect-escape"],
+      selectedMechanicIds: ["lane-dodge", "collect-charge"],
     });
     expect(project.scene.find((node) => node.id === "NODE-HEAD")?.collider.kind).toBe("head");
     expect(project.scene.find((node) => node.id === "NODE-LEGS")?.animation.movableParts).toEqual(["legs"]);

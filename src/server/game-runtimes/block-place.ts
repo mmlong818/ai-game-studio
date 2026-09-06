@@ -1,6 +1,10 @@
 // 核心规则移植自 mkgame-blocks（MIT）；品牌、界面、图像和声音均为本平台原创。
-export const blockPlaceScript = String.raw`
+import { blockPlanningScript } from './block-planning.js';
+export const blockPlaceScript = blockPlanningScript + String.raw`
 const blockBoardSize = 8;
+const blockCoachStyle=document.createElement("style");
+blockCoachStyle.textContent="body[data-template=block-place] .onboarding-coach{bottom:86px;gap:4px;padding:10px}body[data-template=block-place] .onboarding-coach small{display:none}";
+document.head.appendChild(blockCoachStyle);
 const blockBlueprints = [
   ["果冻初醒","空间感",120,2,.08,0],["双线花园","空间感",140,2,.1,1],["转角早餐","空间感",155,2,.12,2],["留白练习","空间感",170,2,.14,3],
   ["三枚约定","三块规划",190,2,.17,4],["长条码头","三块规划",210,2,.19,5],["方糖街区","三块规划",230,2,.21,6],["刷新之前","三块规划",250,2,.23,7],
@@ -33,6 +37,7 @@ let blockDryMoves = 0;
 let blockGeneration = 0;
 let blockSeed = 0x4d595df4;
 let blockClearEffect = null;
+let blockEffectFrame = null;
 let blockHint = null;
 let blockDragPreview = null;
 let blockBatchGuaranteed = true;
@@ -85,13 +90,13 @@ function createBlockOpening(level) {
   return board;
 }
 
-function blockSessionKey(){return config.campaignStorageKey+"-block-place-session-v2";}
+function blockSessionKey(){return config.campaignStorageKey+"-block-place-session-v2"+(blockMode==="journey"?"":"-"+blockMode+(blockMode==="daily"?"-"+blockDailySeed:""));}
 function blockBestKey(){return config.campaignStorageKey+"-block-place-best-"+blockMode+(blockMode==="daily"?"-"+blockDailySeed:"");}
 function clearBlockSession(){try{safeStorage.removeItem(blockSessionKey());}catch{}}
 function readBlockModeBest(){try{return Math.max(0,Number(safeStorage.getItem(blockBestKey()))||0);}catch{return 0;}}
 function updateBlockModeBest(){if(blockScore<=blockModeBest)return;blockModeBest=blockScore;try{safeStorage.setItem(blockBestKey(),String(blockModeBest));}catch{}}
-function persistBlockSession(){if(blockMode!=="journey")return;try{safeStorage.setItem(blockSessionKey(),JSON.stringify({schemaVersion:2,level:currentCampaignLevel().number,board:blockBoard,pieces:blockPieces,selected:selectedBlockPiece,score:blockScore,combo:blockCombo,dryMoves:blockDryMoves,generation:blockGeneration,lines:blockLinesCleared,bestCombo:blockBestCombo,batches:blockBatchesCompleted,hints:blockHintsRemaining,updatedAt:new Date().toISOString()}));}catch{}}
-function restoreBlockSession(){blockRestored=false;if(blockMode!=="journey")return;try{const saved=JSON.parse(safeStorage.getItem(blockSessionKey())||"null");const validBoard=Array.isArray(saved?.board)&&saved.board.length===blockBoardSize&&saved.board.every((row)=>Array.isArray(row)&&row.length===blockBoardSize&&row.every((cell)=>Number.isInteger(cell)&&cell>=0&&cell<=5));const validPieces=Array.isArray(saved?.pieces)&&saved.pieces.length===3&&saved.pieces.every((piece)=>Array.isArray(piece?.cells)&&piece.cells.length>0&&piece.cells.length<=5&&piece.cells.every((cell)=>Array.isArray(cell)&&cell.length===2&&cell.every((value)=>Number.isInteger(value)&&value>=0&&value<blockBoardSize))&&Number.isInteger(piece?.sprite)&&piece.sprite>=0&&piece.sprite<5&&typeof piece?.used==="boolean");if(!saved||saved.schemaVersion!==2||saved.level!==currentCampaignLevel().number||!validBoard||!validPieces)return;blockBoard=saved.board;blockPieces=saved.pieces;selectedBlockPiece=Math.max(0,Math.min(2,Number(saved.selected)||0));blockScore=Math.max(0,Number(saved.score)||0);blockCombo=Math.max(0,Number(saved.combo)||0);blockDryMoves=Math.max(0,Number(saved.dryMoves)||0);blockGeneration=Math.max(0,Number(saved.generation)||0);blockLinesCleared=Math.max(0,Number(saved.lines)||0);blockBestCombo=Math.max(0,Number(saved.bestCombo)||0);blockBatchesCompleted=Math.max(0,Number(saved.batches)||0);blockHintsRemaining=Math.max(0,Number(saved.hints)||0);blockRestored=true;}catch{}}
+function persistBlockSession(){try{safeStorage.setItem(blockSessionKey(),JSON.stringify({schemaVersion:2,mode:blockMode,level:currentCampaignLevel().number,board:blockBoard,pieces:blockPieces,selected:selectedBlockPiece,score:blockScore,combo:blockCombo,dryMoves:blockDryMoves,generation:blockGeneration,lines:blockLinesCleared,bestCombo:blockBestCombo,batches:blockBatchesCompleted,hints:blockHintsRemaining,updatedAt:new Date().toISOString()}));}catch{}}
+function restoreBlockSession(){blockRestored=false;try{const saved=JSON.parse(safeStorage.getItem(blockSessionKey())||"null");const validBoard=Array.isArray(saved?.board)&&saved.board.length===blockBoardSize&&saved.board.every((row)=>Array.isArray(row)&&row.length===blockBoardSize&&row.every((cell)=>Number.isInteger(cell)&&cell>=0&&cell<=5));const validPieces=Array.isArray(saved?.pieces)&&saved.pieces.length===3&&saved.pieces.every((piece)=>Array.isArray(piece?.cells)&&piece.cells.length>0&&piece.cells.length<=5&&piece.cells.every((cell)=>Array.isArray(cell)&&cell.length===2&&cell.every((value)=>Number.isInteger(value)&&value>=0&&value<blockBoardSize))&&Number.isInteger(piece?.sprite)&&piece.sprite>=0&&piece.sprite<5&&typeof piece?.used==="boolean");if(!saved||saved.schemaVersion!==2||(saved.mode||"journey")!==blockMode||saved.level!==currentCampaignLevel().number||!validBoard||!validPieces)return;blockBoard=saved.board;blockPieces=saved.pieces;selectedBlockPiece=Math.max(0,Math.min(2,Number(saved.selected)||0));blockScore=Math.max(0,Number(saved.score)||0);blockCombo=Math.max(0,Number(saved.combo)||0);blockDryMoves=Math.max(0,Number(saved.dryMoves)||0);blockGeneration=Math.max(0,Number(saved.generation)||0);blockLinesCleared=Math.max(0,Number(saved.lines)||0);blockBestCombo=Math.max(0,Number(saved.bestCombo)||0);blockBatchesCompleted=Math.max(0,Number(saved.batches)||0);blockHintsRemaining=Math.max(0,Number(saved.hints)||0);blockRestored=true;}catch{}}
 
 function generateBlockPieces() {
   blockGeneration += 1;
@@ -181,6 +186,7 @@ function blockFirstPlacement(piece) {
 function placeBlockPiece(row, column) {
   const piece = blockPieces[selectedBlockPiece];
   if (!canPlaceBlockPiece(piece, row, column)) {
+    setStatus(blockForecast(blockBoard, piece, row, column, blockCombo).reason);
     blockClearEffect = { invalid: true, until: performance.now() + 190 };
     playSound("fail"); drawBlockPlace();
     return false;
@@ -210,6 +216,7 @@ function placeBlockPiece(row, column) {
   updateBlockModeBest();
   blockHint = null;
   playSound("move");
+  signalOnboarding("piece-placed");
   if (blockPieces.every((candidate) => candidate.used)) { blockBatchesCompleted += 1; blockPieces = generateBlockPieces(); }
   const next = blockPieces.findIndex((candidate) => !candidate.used);
   if (next >= 0) selectedBlockPiece = next;
@@ -217,13 +224,13 @@ function placeBlockPiece(row, column) {
   if (blockMode !== "endless" && blockScore >= blockTarget) {
     clearBlockSession();
     drawBlockPlace();
-    showResult(true, "果冻阵列完成", "你以 " + blockScore + " 分维持了棋盘空间，最高连击为 ×" + Math.max(1, blockCombo) + "。 ");
+    (blockMode==="journey"?showResult:showTerminalResult)(true, "果冻阵列完成", "你以 " + blockScore + " 分完成阵列，消除 " + blockLinesCleared + " 条，最高连击 ×" + blockBestCombo + "，完成 " + blockBatchesCompleted + " 组三块规划。");
     return true;
   }
   if (!hasAnyPlacement()) {
     clearBlockSession();
     drawBlockPlace();
-    showResult(false, "棋盘没有空间了", "本局得到 " + blockScore + " 分；下一局优先保留中央与长条通道。 ");
+    (blockMode==="journey"?showResult:showTerminalResult)(false, "棋盘没有空间了", "本局得到 " + blockScore + " 分；下一局优先保留中央与长条通道。 ");
     return true;
   }
   const placementCounts = blockPieces.filter((candidate) => !candidate.used).map(blockPlacementCount);
@@ -274,6 +281,8 @@ function drawBlockCell(sprite, x, y, size, options = {}) {
 }
 
 function drawBlockPlace() {
+  if(blockEffectFrame)cancelAnimationFrame(blockEffectFrame);
+  blockEffectFrame=null;
   clearCanvas();
   ctx.save();
   ctx.fillStyle = "rgba(249,246,239,.94)";
@@ -320,6 +329,13 @@ function drawBlockPlace() {
     if (blockDragPreview && blockDragPreview.cells.has(row + ":" + column)) {
       ctx.fillStyle = blockDragPreview.valid ? "rgba(133,232,190,.46)" : "rgba(238,77,55,.38)"; ctx.fillRect(x + 4, y + 4, layout.cell - 8, layout.cell - 8);
     }
+    if (blockDragPreview?.forecast?.valid && (blockDragPreview.forecast.rows.includes(row) || blockDragPreview.forecast.columns.includes(column))) {
+      ctx.strokeStyle="#ffe49a";ctx.lineWidth=4;ctx.strokeRect(x+4,y+4,layout.cell-8,layout.cell-8);
+    }
+  }
+  if(blockDragPreview?.forecast){
+    ctx.textAlign="center";ctx.fillStyle=blockDragPreview.valid?"#0b6b53":"#a73a30";ctx.font="700 22px Inter, sans-serif";
+    ctx.fillText(blockDragPreview.forecast.reason,360,layout.y+layout.size+48);
   }
   const tray = blockTrayLayout(layout);
   ctx.save();
@@ -373,18 +389,27 @@ function drawBlockPlace() {
   }
   ctx.restore();
   if (config.visualStyle !== "color-block") finishCanvasStyle();
+  if(blockClearEffect && performance.now()<blockClearEffect.until)blockEffectFrame=requestAnimationFrame(drawBlockPlace);
 }
 
 function hintBlockPlacement() {
+  if(blockHint){selectedBlockPiece=blockHint.index;setStatus(blockHint.reason);drawBlockPlace();return true;}
   if(blockHintsRemaining<=0){setStatus("本关提示已经用完；观察能同时保留三枚候选落点的位置。");return false;}
-  for (let index = 0; index < blockPieces.length; index += 1) {
-    const placement = blockFirstPlacement(blockPieces[index]);
-    if (!placement) continue;
+  const result=blockPlanBatch(blockBoard,blockPieces);
+  if(result.status!=="solved"||!result.plan.length){
+    setStatus(result.status==="budget-exhausted"?"这组局面较复杂，暂未找到完整放法；未扣提示。":"当前三块已无法全部放完；可以先消线争取空间，未扣提示。");
+    return false;
+  }
+  const placement=result.plan[0], index=placement.index;
+  {
     selectedBlockPiece = index;
     const cells = new Set(blockPieces[index].cells.map(([row, column]) => (placement.row + row) + ":" + (placement.column + column)));
-    blockHint = { ...placement, cells };
+    const lines=placement.forecast.rows.length+placement.forecast.columns.length;
+    const reason=(lines?"先消除 "+lines+" 条":"先放第 "+(index+1)+" 块")+"；已验证剩余 "+(result.plan.length-1)+" 块也有连续放法。";
+    blockHint = { ...placement, cells, reason };
     blockHintsRemaining-=1;document.querySelectorAll("[data-control=hint]").forEach((button)=>{button.textContent="提示 "+blockHintsRemaining;button.disabled=blockHintsRemaining<=0;});
-    setStatus("已高亮一个安全落点；仍可自行选择更高分的位置，还可提示 "+blockHintsRemaining+" 次。 "); drawBlockPlace(); return true;
+    persistBlockSession();
+    setStatus(reason); drawBlockPlace(); return true;
   }
   return false;
 }
@@ -416,13 +441,15 @@ function startGame() {
   drawBlockPlace();
 }
 
+restartCurrentGame = () => { clearBlockSession(); startGame(); };
+
 function handleControl(value) { if (value === "hint") hintBlockPlacement(); }
 function handleKey(key) {
   if (["1","2","3"].includes(key)) { selectedBlockPiece = Number(key) - 1; drawBlockPlace(); }
   if (key.toLowerCase() === "h") hintBlockPlacement();
 }
 
-blockModeButtons.forEach((button)=>button.addEventListener("click",()=>{blockModeButtons.forEach((candidate)=>{const selected=candidate===button;candidate.classList.toggle("is-selected",selected);candidate.setAttribute("aria-pressed",String(selected));});clearBlockSession();}));
+blockModeButtons.forEach((button)=>button.addEventListener("click",()=>{blockModeButtons.forEach((candidate)=>{const selected=candidate===button;candidate.classList.toggle("is-selected",selected);candidate.setAttribute("aria-pressed",String(selected));});}));
 
 canvas.addEventListener("pointerdown", (event) => {
   if (!running) return;
@@ -446,6 +473,7 @@ canvas.addEventListener("pointermove", (event) => {
   const piece = blockPieces[selectedBlockPiece];
   const cells = new Set(piece.cells.map(([cellRow, cellColumn]) => (row + cellRow) + ":" + (column + cellColumn)));
   blockDragPreview = { row, column, cells, valid: canPlaceBlockPiece(piece, row, column) };
+  blockDragPreview.forecast = blockForecast(blockBoard,piece,row,column,blockCombo);
   drawBlockPlace();
 });
 
@@ -454,6 +482,7 @@ canvas.addEventListener("pointerup", (event) => {
   const point = eventScenePoint(event);
   const layout = blockLayout();
   if (point.y >= layout.y && point.y <= layout.y + layout.size && point.x >= layout.x && point.x <= layout.x + layout.size) {
+    blockDragPreview = null;
     placeBlockPiece(Math.floor((point.y - layout.y) / layout.cell) - (blockDragState?.liftCells||0), Math.floor((point.x - layout.x) / layout.cell));
     blockDragPreview = null;
     blockDragState = null;
@@ -469,7 +498,10 @@ canvas.addEventListener("pointerup", (event) => {
   blockDragPreview = null;
   blockDragState = null;
   if (canvas.hasPointerCapture(event.pointerId)) canvas.releasePointerCapture(event.pointerId);
+  drawBlockPlace();
 });
+
+canvas.addEventListener("pointercancel",()=>{blockDragState=null;blockDragPreview=null;drawBlockPlace();});
 
 blockBoard = createBlockBoard();
 blockPieces = [
@@ -481,9 +513,16 @@ runtimeDebugState = () => {
   const remaining = blockPieces.filter((piece) => !piece.used);
   const placementCounts = remaining.map(blockPlacementCount);
   const tray = blockTrayLayout();
-  return { level: currentCampaignLevel().number, tier: currentCampaignLevel().tier, levelName:blockBlueprint().name, chapter:blockBlueprint().chapter, blueprintCount:blockBlueprints.length, uniqueBlueprintNames:new Set(blockBlueprints.map((entry)=>entry.name)).size, target: blockTarget, score: blockScore, combo:blockCombo, bestCombo:blockBestCombo, bestScore:blockModeBest, dailySeed:blockDailySeed, candidateSignature:blockPieces.map((piece)=>piece.cells.map((cell)=>cell.join(":" )).join("|")+"@"+piece.sprite).join("/"), linesCleared:blockLinesCleared, batchesCompleted:blockBatchesCompleted, hintsRemaining:blockHintsRemaining, mode:blockMode, hardShapeRate:blockHardShapeRate, openingSignature:blockOpeningSignature, piecesRemaining:remaining.length, batchGuaranteed:blockBatchGuaranteed && blockBatchCanBePlaced(blockBoard,remaining), placementCounts, danger:placementCounts.length > 0 && Math.min(...placementCounts) <= 2, dragPreview:blockDragPreview, dragLiftCells:blockDragState?.liftCells||0, restored:blockRestored, candidateUi:{ style: "floating-pedestals", slotWidth:tray.slotWidth, slotHeight:tray.slotHeight, selectedOutlineWidth:3, selectedHalo:true, greenPlate:blockPieceStyles[2].plate, greenOutline:blockPieceStyles[2].outline, greenContrast: 5.68, numberedSlots:true } };
+  return { board:blockBoard.map(row=>row.slice()), layout:blockLayout(), hint:blockHint?{row:blockHint.row,column:blockHint.column,index:blockHint.index,reason:blockHint.reason}:null, planning:blockPlanBatch(blockBoard,blockPieces).status, level: currentCampaignLevel().number, tier: currentCampaignLevel().tier, levelName:blockBlueprint().name, chapter:blockBlueprint().chapter, blueprintCount:blockBlueprints.length, uniqueBlueprintNames:new Set(blockBlueprints.map((entry)=>entry.name)).size, target: blockTarget, score: blockScore, combo:blockCombo, bestCombo:blockBestCombo, bestScore:blockModeBest, dailySeed:blockDailySeed, candidateSignature:blockPieces.map((piece)=>piece.cells.map((cell)=>cell.join(":" )).join("|")+"@"+piece.sprite).join("/"), linesCleared:blockLinesCleared, batchesCompleted:blockBatchesCompleted, hintsRemaining:blockHintsRemaining, mode:blockMode, hardShapeRate:blockHardShapeRate, openingSignature:blockOpeningSignature, piecesRemaining:remaining.length, batchGuaranteed:blockBatchGuaranteed && blockBatchCanBePlaced(blockBoard,remaining), placementCounts, danger:placementCounts.length > 0 && Math.min(...placementCounts) <= 2, dragPreview:blockDragPreview, dragLiftCells:blockDragState?.liftCells||0, restored:blockRestored, candidateUi:{ style: "floating-pedestals", slotWidth:tray.slotWidth, slotHeight:tray.slotHeight, selectedOutlineWidth:3, selectedHalo:true, greenPlate:blockPieceStyles[2].plate, greenOutline:blockPieceStyles[2].outline, greenContrast: 5.68, numberedSlots:true } };
 };
 runtimeDebugActions = {
+  prepareDailyFinishReview(){const layout=runtimeDebugActions.prepareCrossReview();blockTarget=25;return layout;},
+  prepareCrossReview(){
+    blockBoard=Array.from({length:8},(_,r)=>Array.from({length:8},(_,c)=>(r===3||c===4)?1:0));blockBoard[3][4]=0;
+    blockPieces=[{id:"review",cells:[[0,0]],sprite:0,used:false},{id:"used1",cells:[[0,0]],sprite:1,used:true},{id:"used2",cells:[[0,0]],sprite:2,used:true}];
+    selectedBlockPiece=0;blockScore=0;blockCombo=0;blockLinesCleared=0;blockHint=null;blockHintsRemaining=2;drawBlockPlace();
+    return {layout:blockLayout(),tray:blockTrayLayout(),sceneTop:gameSceneTop()};
+  },
   pointerProbe(){const piece=blockPieces.find((candidate)=>!candidate.used),placement=piece&&blockFirstPlacement(piece),layout=blockLayout(),tray=blockTrayLayout(layout),index=blockPieces.indexOf(piece);if(!piece||!placement||index<0)return null;return{from:{x:tray.x+index*(tray.slotWidth+tray.gap)+tray.slotWidth/2,y:gameSceneTop()+tray.y+tray.slotHeight/2},to:{x:layout.x+(placement.column+.5)*layout.cell,y:gameSceneTop()+layout.y+(placement.row+1.5)*layout.cell},canvas:{width:canvas.width,height:canvas.height}};},
   legalAction() {
     const placement = blockFirstPlacement(blockPieces[selectedBlockPiece]);

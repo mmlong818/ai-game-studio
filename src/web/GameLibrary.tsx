@@ -19,7 +19,6 @@ const templateNameKeys: Record<GameTemplate, MessageKey> = {
   puzzle: "library.template.puzzle",
   breakout: "library.template.breakout",
   klotski: "library.template.klotski",
-  maze: "library.template.maze",
   snake: "library.template.snake",
   "merge-2048": "library.template.merge-2048",
   "space-shooter": "library.template.space-shooter",
@@ -30,12 +29,13 @@ const templateNameKeys: Record<GameTemplate, MessageKey> = {
   generated: "library.template.generated",
 };
 
-function GameArtwork({ game, featured }: { game: ProjectSummary; featured: boolean }) {
+export function GameArtwork({ game, featured }: { game: ProjectSummary; featured: boolean }) {
   const { t } = usePreferences();
   const [failed, setFailed] = useState(false);
   const artworkUrl = game.coverUrl ?? `/media/template-art/${game.template}/cover.png`;
   return (
     <div className="library-art">
+      {game.dimensions === "3d" ? <span className="library-dimension-badge"><Box size={14} aria-hidden="true" />3D</span> : null}
       {failed ? <div className="library-art-fallback" role="img" aria-label={t("library.coverUnavailable")}><Box size={30} aria-hidden="true" /><span>{game.title}</span><small>{t("library.coverUnavailable")}</small></div> : <img
         className="library-art-image"
         src={artworkUrl}
