@@ -1,0 +1,469 @@
+{
+  "schemaVersion": "curated-resource-family-v1",
+  "familyId": "classic-puzzle-2d",
+  "packId": "kenney-puzzle-pack-1-png",
+  "importedAt": "2026-09-05T00:00:00.000Z",
+  "source": {
+    "schemaVersion": "resource-source-v1",
+    "id": "SOURCE-KENNEY-PUZZLE-1",
+    "sourceUrl": "https://kenney.nl/assets/puzzle-pack-1",
+    "author": "Kenney",
+    "acquiredAt": "2026-09-05T00:00:00.000Z",
+    "assetClass": "image",
+    "licenseId": "CC0-1.0",
+    "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+    "licenseTextHash": "1B937A994F3D2C0D181356BEB352E204C029EE999BA6B0BB197CB5132A50ACF4",
+    "attributionText": null,
+    "rights": {
+      "commercialUse": true,
+      "modification": true,
+      "redistribution": true,
+      "sourceRedistribution": true
+    },
+    "provenanceNote": "官方资源页标明 2D、75 个文件、CC0；排除 SVG、SWF 与元数据文件。",
+    "reviewedBy": "platform-curation",
+    "reviewedAt": "2026-09-05T00:00:00.000Z"
+  },
+  "archive": {
+    "fileName": "kenney_puzzle-pack-1.zip",
+    "sha256": "0D143F821CFF40EEC16B3D28C4D377CEA7460D8796F6C7346B178B1534827A7C",
+    "downloadUrl": "https://kenney.nl/media/pages/assets/puzzle-pack-1/627a04c0d3-1774770940/kenney_puzzle-pack-1.zip"
+  },
+  "license": {
+    "entry": "License.txt",
+    "sha256": "1B937A994F3D2C0D181356BEB352E204C029EE999BA6B0BB197CB5132A50ACF4"
+  },
+  "selectionRationale": "为挡板、球、按钮和益智机关提供同风格 PNG 基础件，不导入平台禁止的 SWF/SVG。",
+  "assets": [
+    {
+      "path": "PNG/Default/ballBlue.png",
+      "bytes": 513,
+      "sha256": "BC7D2A23BC4DA8C9C7EC79B86DB6CFD7E866EFCBBF1C45752BE1DA1138E23D24"
+    },
+    {
+      "path": "PNG/Default/ballGrey.png",
+      "bytes": 495,
+      "sha256": "F03C9C2AD5381EAF1E418E6696D9E826F38D6FEE82831C632C7C4C0F8C069A2E"
+    },
+    {
+      "path": "PNG/Default/buttonDefault.png",
+      "bytes": 378,
+      "sha256": "878FFB4C9DE334A5071A9FC8FD85B1E64AA254B04F33E9B5430909A0CCFD4B71"
+    },
+    {
+      "path": "PNG/Default/buttonDefault_bottom.png",
+      "bytes": 116,
+      "sha256": "7717813DB75CAA93642311C603F9B1ECE4BB70BCD4FE2C876D09D4FA472F3D9C"
+    },
+    {
+      "path": "PNG/Default/buttonDefault_bottomleft.png",
+      "bytes": 231,
+      "sha256": "A6E9F02A04A20AEE3CD405BF4E82297539EDBCDB0059B0DB989E91939E351AA7"
+    },
+    {
+      "path": "PNG/Default/buttonDefault_bottomright.png",
+      "bytes": 211,
+      "sha256": "610EEF84FB6E9075EEF308764182A994FF550ACE7EED19BC5F1B3AA61A3FF36E"
+    },
+    {
+      "path": "PNG/Default/buttonDefault_left.png",
+      "bytes": 94,
+      "sha256": "A92926A8342C479624295B16B7AC0ED7926A3675886053C8BED6B0D6F32A1E30"
+    },
+    {
+      "path": "PNG/Default/buttonDefault_mid.png",
+      "bytes": 81,
+      "sha256": "28676C0F5D80BBE32D5E7132116F06719AA8AA219510232FA709FFA66E406D51"
+    },
+    {
+      "path": "PNG/Default/buttonDefault_right.png",
+      "bytes": 96,
+      "sha256": "D757432029852FBF2F1B18D30F04BE297E1F2078EEC6B1E902E78691E095CE3A"
+    },
+    {
+      "path": "PNG/Default/buttonDefault_top.png",
+      "bytes": 100,
+      "sha256": "FA775A43A5535293E83B24404454B51CDCC508DB669FD67AAEF66C5A79272652"
+    },
+    {
+      "path": "PNG/Default/buttonDefault_topleft.png",
+      "bytes": 177,
+      "sha256": "766624C87EF80C52EF9E0B2E66124E53E1BD5ED165C091874C214CE0E200EF0C"
+    },
+    {
+      "path": "PNG/Default/buttonDefault_topright.png",
+      "bytes": 184,
+      "sha256": "A40261E4F0DE807019447586BC41F6CC274B130BB3F13C2E213B099CF3087850"
+    },
+    {
+      "path": "PNG/Default/buttonSelected.png",
+      "bytes": 378,
+      "sha256": "CCFCBC48A3F73983BBC5FB411F9EF81855C73ED6FC331EE281CA04163751EE7B"
+    },
+    {
+      "path": "PNG/Default/buttonSelected_bottom.png",
+      "bytes": 116,
+      "sha256": "0772219B713932E46551A32AAB27B070D4C4A505E0D58BE35095184526EAF96B"
+    },
+    {
+      "path": "PNG/Default/buttonSelected_bottomleft.png",
+      "bytes": 234,
+      "sha256": "FF9E0D7B280A5FB12EDD1A4F774F476525F8B3BA220C2A4030B736075631C459"
+    },
+    {
+      "path": "PNG/Default/buttonSelected_bottomright.png",
+      "bytes": 229,
+      "sha256": "79C919D59B72D2CC746ADF40AB949FE22A711651907A3DE67E07E524F53A5578"
+    },
+    {
+      "path": "PNG/Default/buttonSelected_left.png",
+      "bytes": 94,
+      "sha256": "2994F610DAADEF12A32F4ED95F78A8E60ACB1950385DB78F2835EFB5FAB27F63"
+    },
+    {
+      "path": "PNG/Default/buttonSelected_mid.png",
+      "bytes": 81,
+      "sha256": "94715E654091670B3BEA05B19514EDEFC32F2A1C50A8D0EC57A10AD6B978821C"
+    },
+    {
+      "path": "PNG/Default/buttonSelected_right.png",
+      "bytes": 96,
+      "sha256": "D371C4E2122C28B86BF82AC72CD14482CC022341A130C2703425A4D2C8C1D873"
+    },
+    {
+      "path": "PNG/Default/buttonSelected_top.png",
+      "bytes": 99,
+      "sha256": "A54EF9B4BF79A306BAA5345E8915EFA79EB09BEB79B8420B87CB61297D5FD351"
+    },
+    {
+      "path": "PNG/Default/buttonSelected_topleft.png",
+      "bytes": 189,
+      "sha256": "D37DAFDE6AD42E08BA97296135392D8F3E0DC770997F6CC3C367085D9C4FA95B"
+    },
+    {
+      "path": "PNG/Default/buttonSelected_topright.png",
+      "bytes": 197,
+      "sha256": "20379803E5FCAEBD65FE3D895F7BEFDB53790F4A532142AE6BAC000DCB253F73"
+    },
+    {
+      "path": "PNG/Default/element_blue_diamond.png",
+      "bytes": 479,
+      "sha256": "EB23EC46F0A1E1664996B79F8AA2401E1459667FEE587C9B0879B05CA97574F5"
+    },
+    {
+      "path": "PNG/Default/element_blue_diamond_glossy.png",
+      "bytes": 1004,
+      "sha256": "1DD6177AFC7F6DF9D75DE0DF8B1222DDFD730B70CF18E7C5643BD4EC96DC81F8"
+    },
+    {
+      "path": "PNG/Default/element_blue_polygon.png",
+      "bytes": 1040,
+      "sha256": "E2A6C5C224301EF8C287C90842316E94579F7F23E292A6F392B27D2A393701F0"
+    },
+    {
+      "path": "PNG/Default/element_blue_polygon_glossy.png",
+      "bytes": 1514,
+      "sha256": "F202EEB37C0C3FE0A5895E7CB778AE07F97BAAE903E99DC1A658D65F85A4AF7A"
+    },
+    {
+      "path": "PNG/Default/element_blue_rectangle.png",
+      "bytes": 259,
+      "sha256": "4F845C353B1F16E7A766BD88B41090F0018C7E7B3BF660D3F202EC5132352E3D"
+    },
+    {
+      "path": "PNG/Default/element_blue_rectangle_glossy.png",
+      "bytes": 490,
+      "sha256": "C09FD6660FB3E1E5B6D9A5E0254F691368CBB208CF22CF94E9BA0747D9E0FD0E"
+    },
+    {
+      "path": "PNG/Default/element_blue_square.png",
+      "bytes": 247,
+      "sha256": "0C978316901409A40E02D2CEA3F2ADD9DC89F9D357C6C9CDD388AE4018659EE8"
+    },
+    {
+      "path": "PNG/Default/element_blue_square_glossy.png",
+      "bytes": 476,
+      "sha256": "EAB3DAE6BAEDD9AEEDD86AD2D1E40AA3CE2E7194837F4495FC2194B7CAC8524A"
+    },
+    {
+      "path": "PNG/Default/element_green_diamond.png",
+      "bytes": 482,
+      "sha256": "4F94FFB903AB7B22FCED7A8E73E78926E926AADF875BBAAA8C1A46E2CC2CAC88"
+    },
+    {
+      "path": "PNG/Default/element_green_diamond_glossy.png",
+      "bytes": 982,
+      "sha256": "5281715DFF7CE94F2728E49EE2E47F67FE22B23D32700F92E04905AFC1C3A8ED"
+    },
+    {
+      "path": "PNG/Default/element_green_polygon.png",
+      "bytes": 1030,
+      "sha256": "1D662D135B65E1A1FD3363B7A2C779EB016C721E82601A4E2684DE82DE573989"
+    },
+    {
+      "path": "PNG/Default/element_green_polygon_glossy.png",
+      "bytes": 1503,
+      "sha256": "92F8000782856E8EEA0AF81A03FE3F8F591198351B79D5BD795231DCBE5D8C2F"
+    },
+    {
+      "path": "PNG/Default/element_green_rectangle.png",
+      "bytes": 256,
+      "sha256": "388757A3D7F61BFA69E0E7099A2F277DD739B6A1A42B81FF29D0B86FBB3FE71A"
+    },
+    {
+      "path": "PNG/Default/element_green_rectangle_glossy.png",
+      "bytes": 481,
+      "sha256": "00BD57D3AFBC4C765FA366C2337DC7E6067C049F60FF632C74166DE5795559EC"
+    },
+    {
+      "path": "PNG/Default/element_green_square.png",
+      "bytes": 242,
+      "sha256": "C5DFA1D2902A28139C46C825D0595CE928496BEA2B3FD99EA4BCEDE6B3F47497"
+    },
+    {
+      "path": "PNG/Default/element_green_square_glossy.png",
+      "bytes": 465,
+      "sha256": "8A32B9DE95FB3936A262E4EFB0C1C9CBF724AC0B4E4E2BB8763FB954FD2980F6"
+    },
+    {
+      "path": "PNG/Default/element_grey_diamond.png",
+      "bytes": 479,
+      "sha256": "850528F9168E5A9D16914A3A4E02C3A0B6355E51A04A311F6227321549A8C313"
+    },
+    {
+      "path": "PNG/Default/element_grey_diamond_glossy.png",
+      "bytes": 596,
+      "sha256": "2C487D86EE7D8A4A57EA0046C737673A560BB2854728752C6E1DF1708759092E"
+    },
+    {
+      "path": "PNG/Default/element_grey_polygon.png",
+      "bytes": 924,
+      "sha256": "C4313D412EAE920E02C070FECE15B054FA3515AAF3091BC51A669412CA295210"
+    },
+    {
+      "path": "PNG/Default/element_grey_polygon_glossy.png",
+      "bytes": 1068,
+      "sha256": "B7D9F7D65D1CE804D82310B9F3A4BADDD55116769DF9176F35FEDEF43DC00CDC"
+    },
+    {
+      "path": "PNG/Default/element_grey_rectangle.png",
+      "bytes": 259,
+      "sha256": "ACCE7A7AE74E7B99375A6117955FB9F536A1D9A25FD43A7B8EBEC647F16869FB"
+    },
+    {
+      "path": "PNG/Default/element_grey_rectangle_glossy.png",
+      "bytes": 400,
+      "sha256": "97D4447803C4C14A3BB508941A136FAC136A7672270D04E6E0A18712597C580F"
+    },
+    {
+      "path": "PNG/Default/element_grey_square.png",
+      "bytes": 247,
+      "sha256": "D316B234AF41F4B5FF527457805222DB3E8EC2C2A6A776D26DAF7EFF9AE99895"
+    },
+    {
+      "path": "PNG/Default/element_grey_square_glossy.png",
+      "bytes": 385,
+      "sha256": "7EC9353D19D8663EB9ED10F273FFE01C0DB9C1CC865AA4DBFA0E67B0293F3E0F"
+    },
+    {
+      "path": "PNG/Default/element_purple_cube_glossy.png",
+      "bytes": 451,
+      "sha256": "D72A952C8DDF9F4383AB9453DB42212973955354B37C307D8DAC5F787BCD5A65"
+    },
+    {
+      "path": "PNG/Default/element_purple_diamond.png",
+      "bytes": 506,
+      "sha256": "A6CE4B2BE73D13449311888C721D1A7B9EDA0170074936372BE630DDACD94AFF"
+    },
+    {
+      "path": "PNG/Default/element_purple_diamond_glossy.png",
+      "bytes": 964,
+      "sha256": "5A5E4DA1C26FEE344A2E1C34FC04E602DB5A9EA432D3D8BC6103E098B09D866C"
+    },
+    {
+      "path": "PNG/Default/element_purple_polygon.png",
+      "bytes": 1023,
+      "sha256": "D1512E988913F4AE2EDB9A4AC8C6C8436CD2F08504ABF25E976544662D0B70CE"
+    },
+    {
+      "path": "PNG/Default/element_purple_polygon_glossy.png",
+      "bytes": 1466,
+      "sha256": "3E2DA707844F1830760FF5B66FCA928F3539F1670A0ABF2814F6F99E91A4E42E"
+    },
+    {
+      "path": "PNG/Default/element_purple_rectangle.png",
+      "bytes": 255,
+      "sha256": "98E0D2E29B378515DAC9353186FE763B0677F266725F9A676050DF318762EC03"
+    },
+    {
+      "path": "PNG/Default/element_purple_rectangle_glossy.png",
+      "bytes": 470,
+      "sha256": "E0F858D2C3BF7BDDA63A267774FE93EBF5F5DDBE5EBAA7D86DD9A01E0C4C1651"
+    },
+    {
+      "path": "PNG/Default/element_purple_square.png",
+      "bytes": 250,
+      "sha256": "B0FFD2463C1BBDA404050186FD5B0128E829819F427B8342F3A095F0E8D5ED90"
+    },
+    {
+      "path": "PNG/Default/element_red_diamond.png",
+      "bytes": 506,
+      "sha256": "0F23B4F2E50DC8F68A78E9659DCBC7197BD63E13E92605854807553F813B3D73"
+    },
+    {
+      "path": "PNG/Default/element_red_diamond_glossy.png",
+      "bytes": 1016,
+      "sha256": "CC1B64C697C57807DE0A2582CD557AEF126FC18AA3561407A6911EA72421177F"
+    },
+    {
+      "path": "PNG/Default/element_red_polygon.png",
+      "bytes": 1036,
+      "sha256": "E5F425F79D8132407A4C4ACE7E14B82FBE18D03C1C599BB04D1D640C2A74D2FA"
+    },
+    {
+      "path": "PNG/Default/element_red_polygon_glossy.png",
+      "bytes": 1474,
+      "sha256": "81E49BCDC3DDDB1456C5BDEB893E3DE063E6C39BB1B1244BEC27DE7F4440C201"
+    },
+    {
+      "path": "PNG/Default/element_red_rectangle.png",
+      "bytes": 247,
+      "sha256": "8D62D5884F31F616B476781C3BB00F0E948A6F7C6D18F613CF400BE03324D22F"
+    },
+    {
+      "path": "PNG/Default/element_red_rectangle_glossy.png",
+      "bytes": 478,
+      "sha256": "2BB01EB4FA91197564D2554CDED3DFC52F74AE8657246D7E8D3B8D06A9E20000"
+    },
+    {
+      "path": "PNG/Default/element_red_square.png",
+      "bytes": 251,
+      "sha256": "C1B33561442CAD8541F3DA3F467C0BBE583CC3C87C99B2085C5DEA3E0C0F5C6F"
+    },
+    {
+      "path": "PNG/Default/element_red_square_glossy.png",
+      "bytes": 460,
+      "sha256": "11350F14DE5CD9710A75C7C377AE7892169A123EE6D9998BBF72A6BF69E97B47"
+    },
+    {
+      "path": "PNG/Default/element_yellow_diamond.png",
+      "bytes": 482,
+      "sha256": "5FE1AFBDE90E84D5616504A4DDFFFFCCD5A499B51547CE809A97970D3DD0CA3A"
+    },
+    {
+      "path": "PNG/Default/element_yellow_diamond_glossy.png",
+      "bytes": 1023,
+      "sha256": "1A270C7A40F4138E7FA7CBA5262CE1EC9D0DEBA9F2901137D2959E14102003BD"
+    },
+    {
+      "path": "PNG/Default/element_yellow_polygon.png",
+      "bytes": 1037,
+      "sha256": "29503762EE09F70151440B600A7A224EC31026E9893C06FD34786D8715BB0445"
+    },
+    {
+      "path": "PNG/Default/element_yellow_polygon_glossy.png",
+      "bytes": 1522,
+      "sha256": "BD3A5D26A0E98A45E5B659286B47F37C68B7C1791F3A413F6BC44D1FC0E59F4F"
+    },
+    {
+      "path": "PNG/Default/element_yellow_rectangle.png",
+      "bytes": 256,
+      "sha256": "5D4F798A1CBF2ABA60A72E149757D5ECDF388DB24BA9A938512CDEEB616B3986"
+    },
+    {
+      "path": "PNG/Default/element_yellow_rectangle_glossy.png",
+      "bytes": 489,
+      "sha256": "9B6954E20579151A6DB19B51CC3A5B4E784A8A4668ED12DDF065D8A831321DC7"
+    },
+    {
+      "path": "PNG/Default/element_yellow_square.png",
+      "bytes": 242,
+      "sha256": "D4E38ED39114229FF31A7F07AC6B71613AB644C897574CAB9DAD2A4AA223FBC1"
+    },
+    {
+      "path": "PNG/Default/element_yellow_square_glossy.png",
+      "bytes": 471,
+      "sha256": "45DC5577BEE9E6BEF58A02D97904222F175B1F4FBF65F48E391BFFB88D8430C0"
+    },
+    {
+      "path": "PNG/Default/hand.png",
+      "bytes": 471,
+      "sha256": "7D067C329603F347BFB3C958AD9F5AF29DC103BEC96277E24BCF222A89DDB7A6"
+    },
+    {
+      "path": "PNG/Default/handShadow.png",
+      "bytes": 686,
+      "sha256": "8E12BC026EC49EECA189A1A94F1004C46F98321C56C3C21A3F45971117319813"
+    },
+    {
+      "path": "PNG/Default/paddleBlu.png",
+      "bytes": 762,
+      "sha256": "C32CF5A09B482D745AA9CAD70EC8FE37E4D3B3408F082F402DA480E4C75C6CDA"
+    },
+    {
+      "path": "PNG/Default/paddleRed.png",
+      "bytes": 578,
+      "sha256": "83D8F4B9D7604E93512DCADB963D5F109E148A2B023AC4799F37FA7850793996"
+    },
+    {
+      "path": "PNG/Default/particleCartoonStar.png",
+      "bytes": 178,
+      "sha256": "4325A9913DA22C99C89EFDB123D5D5C0AD4249150A3AD0CF8E7FA7D1D16963EB"
+    },
+    {
+      "path": "PNG/Default/particleSmallStar.png",
+      "bytes": 173,
+      "sha256": "FDB7B62A455CEE8D9E14990C3789CDBA181F47DA8B0266BE0F0B80919DCF56E5"
+    },
+    {
+      "path": "PNG/Default/particleStar.png",
+      "bytes": 346,
+      "sha256": "EE396BF7D66E6268B40B817258F1C1D52E35854EFA5EBAB564284F2B2CCFFC53"
+    },
+    {
+      "path": "PNG/Default/pointer.png",
+      "bytes": 354,
+      "sha256": "E072873E0AD70B84C9AE61AD259FF8E2A0DBDEDF40D1591A465D0C8F5A520C77"
+    },
+    {
+      "path": "PNG/Default/pointerShadow.png",
+      "bytes": 496,
+      "sha256": "23BA67C3BF05629EC403F6501FEAF734DC5742E7DBED675A23CBDD024A44EF84"
+    },
+    {
+      "path": "PNG/Default/pointerShadow_glossy.png",
+      "bytes": 578,
+      "sha256": "CE4AF9BC523F3F41730672F6EB55AB33E3D48F1468A43350F7949550249989F6"
+    },
+    {
+      "path": "PNG/Default/pointerShadow_yellow.png",
+      "bytes": 581,
+      "sha256": "85ED480DBD50A6C087E7522EBA8F1CE12E3825B1C95041DAECAF0E12A20A83EA"
+    },
+    {
+      "path": "PNG/Default/pointer_glossy.png",
+      "bytes": 427,
+      "sha256": "0F78D21045EA69B8095E839671BAB40AC8DA6C8D0FB5AB7ED06DA653B69081AA"
+    },
+    {
+      "path": "PNG/Default/pointer_yellow.png",
+      "bytes": 430,
+      "sha256": "96DE01B2DE8DC714A10815339D7BC731A7DD45DF8392C4134DBEE7135A315A95"
+    },
+    {
+      "path": "PNG/Default/selectorA.png",
+      "bytes": 200,
+      "sha256": "8056F22B2E2BA369C5CA1F1A20931F82F40DD900A127614EF2B54B176D90468B"
+    },
+    {
+      "path": "PNG/Default/selectorB.png",
+      "bytes": 165,
+      "sha256": "4480A50403FAF6B6E9747B276FFAC8960EA59F96A6DBF7561CC4A00DBEBDF484"
+    },
+    {
+      "path": "PNG/Default/selectorC.png",
+      "bytes": 143,
+      "sha256": "752B1A3B2039A3F396210D065B98ACCD44D360A06D591D700F81A12E42529609"
+    }
+  ]
+}

@@ -146,6 +146,123 @@ const postgresSchema = `
     updated_at TIMESTAMPTZ NOT NULL,
     PRIMARY KEY (player_id, project_id)
   );
+
+  CREATE TABLE IF NOT EXISTS design_knowledge_reviews (
+    id TEXT PRIMARY KEY,
+    schema_version TEXT NOT NULL,
+    window_from TIMESTAMPTZ NOT NULL,
+    window_to TIMESTAMPTZ NOT NULL,
+    minimum_players INTEGER NOT NULL,
+    minimum_starts INTEGER NOT NULL,
+    report_json JSONB NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL
+  );
+  CREATE INDEX IF NOT EXISTS design_knowledge_reviews_created_at
+    ON design_knowledge_reviews(created_at DESC);
+
+  CREATE TABLE IF NOT EXISTS design_knowledge_decisions (
+    id TEXT PRIMARY KEY,
+    review_id TEXT NOT NULL REFERENCES design_knowledge_reviews(id) ON DELETE CASCADE,
+    pattern_id TEXT NOT NULL,
+    outcome TEXT NOT NULL CHECK (outcome IN ('retain', 'promote', 'demote', 'retest')),
+    rationale TEXT NOT NULL,
+    evidence_json JSONB NOT NULL,
+    decided_at TIMESTAMPTZ NOT NULL,
+    UNIQUE(review_id, pattern_id)
+  );
+
+  CREATE TABLE IF NOT EXISTS design_research_tasks (
+    id TEXT PRIMARY KEY,
+    schema_version TEXT NOT NULL,
+    task_json JSONB NOT NULL,
+    status TEXT NOT NULL CHECK (status IN ('queued', 'researching', 'review', 'accepted', 'rejected')),
+    created_at TIMESTAMPTZ NOT NULL,
+    updated_at TIMESTAMPTZ NOT NULL
+  );
+  CREATE INDEX IF NOT EXISTS design_research_tasks_updated_at ON design_research_tasks(updated_at DESC);
+
+  CREATE TABLE IF NOT EXISTS design_gameplay_radar_clusters (
+    id TEXT PRIMARY KEY,
+    schema_version TEXT NOT NULL,
+    normalized_title TEXT NOT NULL UNIQUE,
+    cluster_json JSONB NOT NULL,
+    state TEXT NOT NULL CHECK (state IN ('watching', 'researching', 'linked', 'dismissed')),
+    created_at TIMESTAMPTZ NOT NULL,
+    updated_at TIMESTAMPTZ NOT NULL
+  );
+  CREATE INDEX IF NOT EXISTS design_gameplay_radar_updated_at ON design_gameplay_radar_clusters(updated_at DESC);
+
+  CREATE TABLE IF NOT EXISTS design_knowledge_change_sets (
+    id TEXT PRIMARY KEY,
+    review_id TEXT UNIQUE REFERENCES design_knowledge_reviews(id) ON DELETE CASCADE,
+    research_task_id TEXT UNIQUE REFERENCES design_research_tasks(id) ON DELETE CASCADE,
+    schema_version TEXT NOT NULL,
+    base_schema_version TEXT NOT NULL,
+    base_updated_at TEXT NOT NULL,
+    base_evaluation_version INTEGER NOT NULL,
+    base_release_id TEXT,
+    changes_json JSONB NOT NULL,
+    status TEXT NOT NULL CHECK (status IN ('pending', 'approved', 'rejected', 'published')),
+    review_rationale TEXT,
+    reviewed_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ NOT NULL,
+    resolved_at TIMESTAMPTZ
+  );
+  ALTER TABLE design_knowledge_change_sets ADD COLUMN IF NOT EXISTS review_rationale TEXT;
+  ALTER TABLE design_knowledge_change_sets ADD COLUMN IF NOT EXISTS reviewed_at TIMESTAMPTZ;
+  ALTER TABLE design_knowledge_change_sets ADD COLUMN IF NOT EXISTS base_release_id TEXT;
+  ALTER TABLE design_knowledge_change_sets ALTER COLUMN review_id DROP NOT NULL;
+  ALTER TABLE design_knowledge_change_sets ADD COLUMN IF NOT EXISTS research_task_id TEXT REFERENCES design_research_tasks(id) ON DELETE CASCADE;
+  ALTER TABLE design_knowledge_change_sets DROP CONSTRAINT IF EXISTS design_knowledge_change_sets_origin_check;
+  ALTER TABLE design_knowledge_change_sets ADD CONSTRAINT design_knowledge_change_sets_origin_check
+    CHECK ((review_id IS NOT NULL) <> (research_task_id IS NOT NULL));
+  ALTER TABLE design_knowledge_change_sets DROP CONSTRAINT IF EXISTS design_knowledge_change_sets_status_check;
+  ALTER TABLE design_knowledge_change_sets ADD CONSTRAINT design_knowledge_change_sets_status_check
+    CHECK (status IN ('pending', 'approved', 'rejected', 'published'));
+
+  CREATE TABLE IF NOT EXISTS design_knowledge_releases (
+    id TEXT PRIMARY KEY,
+    sequence INTEGER NOT NULL UNIQUE,
+    release_kind TEXT NOT NULL DEFAULT 'change-set' CHECK (release_kind IN ('change-set', 'rollback')),
+    change_set_id TEXT UNIQUE REFERENCES design_knowledge_change_sets(id),
+    rollback_source_release_id TEXT REFERENCES design_knowledge_releases(id),
+    rationale TEXT,
+    schema_version TEXT NOT NULL,
+    library_json JSONB NOT NULL,
+    checksum TEXT NOT NULL,
+    supersedes_release_id TEXT REFERENCES design_knowledge_releases(id),
+    published_at TIMESTAMPTZ NOT NULL
+  );
+  ALTER TABLE design_knowledge_releases ALTER COLUMN change_set_id DROP NOT NULL;
+  ALTER TABLE design_knowledge_releases ADD COLUMN IF NOT EXISTS release_kind TEXT NOT NULL DEFAULT 'change-set';
+  ALTER TABLE design_knowledge_releases ADD COLUMN IF NOT EXISTS rollback_source_release_id TEXT REFERENCES design_knowledge_releases(id);
+  ALTER TABLE design_knowledge_releases ADD COLUMN IF NOT EXISTS rationale TEXT;
+  ALTER TABLE design_knowledge_releases DROP CONSTRAINT IF EXISTS design_knowledge_releases_release_kind_check;
+  ALTER TABLE design_knowledge_releases ADD CONSTRAINT design_knowledge_releases_release_kind_check
+    CHECK (release_kind IN ('change-set', 'rollback'));
+
+  CREATE TABLE IF NOT EXISTS design_playtests (
+    id TEXT PRIMARY KEY,
+    project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    version_id TEXT NOT NULL REFERENCES versions(id) ON DELETE CASCADE,
+    pattern_id TEXT NOT NULL,
+    tester_segment TEXT NOT NULL CHECK (tester_segment IN ('novice', 'casual', 'experienced', 'expert')),
+    device_class TEXT NOT NULL CHECK (device_class IN ('desktop', 'mobile', 'tablet')),
+    input_mode TEXT NOT NULL CHECK (input_mode IN ('keyboard', 'pointer', 'touch', 'gamepad')),
+    task_outcome TEXT NOT NULL CHECK (task_outcome IN ('completed', 'partial', 'blocked', 'abandoned')),
+    onboarding_clarity INTEGER NOT NULL CHECK (onboarding_clarity BETWEEN 1 AND 5),
+    control_clarity INTEGER NOT NULL CHECK (control_clarity BETWEEN 1 AND 5),
+    perceived_difficulty INTEGER NOT NULL CHECK (perceived_difficulty BETWEEN 1 AND 5),
+    fun_rating INTEGER NOT NULL CHECK (fun_rating BETWEEN 1 AND 5),
+    fairness_rating INTEGER NOT NULL CHECK (fairness_rating BETWEEN 1 AND 5),
+    would_replay BOOLEAN NOT NULL,
+    completion_seconds INTEGER,
+    hint_count INTEGER NOT NULL DEFAULT 0,
+    blocker_code TEXT NOT NULL CHECK (blocker_code IN ('none', 'onboarding', 'controls', 'rules', 'difficulty', 'resource', 'performance', 'accessibility')),
+    created_at TIMESTAMPTZ NOT NULL
+  );
+  CREATE INDEX IF NOT EXISTS design_playtests_pattern_time
+    ON design_playtests(pattern_id, created_at DESC);
 `;
 
 const sqliteSchema = `
@@ -201,6 +318,50 @@ const sqliteSchema = `
     input_mode TEXT NOT NULL, viewport TEXT NOT NULL, average_fps REAL,
     resource_error_count INTEGER NOT NULL DEFAULT 0, last_played_at TEXT NOT NULL,
     completed_at TEXT, updated_at TEXT NOT NULL, PRIMARY KEY (player_id, project_id)
+  );
+  CREATE TABLE design_knowledge_reviews (
+    id TEXT PRIMARY KEY, schema_version TEXT NOT NULL, window_from TEXT NOT NULL,
+    window_to TEXT NOT NULL, minimum_players INTEGER NOT NULL, minimum_starts INTEGER NOT NULL,
+    report_json TEXT NOT NULL, created_at TEXT NOT NULL
+  );
+  CREATE TABLE design_knowledge_decisions (
+    id TEXT PRIMARY KEY, review_id TEXT NOT NULL REFERENCES design_knowledge_reviews(id) ON DELETE CASCADE,
+    pattern_id TEXT NOT NULL, outcome TEXT NOT NULL, rationale TEXT NOT NULL,
+    evidence_json TEXT NOT NULL, decided_at TEXT NOT NULL, UNIQUE(review_id, pattern_id)
+  );
+  CREATE TABLE design_research_tasks (
+    id TEXT PRIMARY KEY, schema_version TEXT NOT NULL, task_json TEXT NOT NULL, status TEXT NOT NULL,
+    created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+  );
+  CREATE TABLE design_gameplay_radar_clusters (
+    id TEXT PRIMARY KEY, schema_version TEXT NOT NULL, normalized_title TEXT NOT NULL UNIQUE,
+    cluster_json TEXT NOT NULL, state TEXT NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+  );
+  CREATE TABLE design_knowledge_change_sets (
+    id TEXT PRIMARY KEY, review_id TEXT UNIQUE REFERENCES design_knowledge_reviews(id) ON DELETE CASCADE,
+    research_task_id TEXT UNIQUE REFERENCES design_research_tasks(id) ON DELETE CASCADE,
+    schema_version TEXT NOT NULL, base_schema_version TEXT NOT NULL, base_updated_at TEXT NOT NULL,
+    base_evaluation_version INTEGER NOT NULL, base_release_id TEXT,
+    changes_json TEXT NOT NULL, status TEXT NOT NULL, review_rationale TEXT, reviewed_at TEXT,
+    created_at TEXT NOT NULL, resolved_at TEXT,
+    CHECK ((review_id IS NOT NULL) != (research_task_id IS NOT NULL))
+  );
+  CREATE TABLE design_knowledge_releases (
+    id TEXT PRIMARY KEY, sequence INTEGER NOT NULL UNIQUE,
+    release_kind TEXT NOT NULL DEFAULT 'change-set',
+    change_set_id TEXT UNIQUE REFERENCES design_knowledge_change_sets(id),
+    rollback_source_release_id TEXT REFERENCES design_knowledge_releases(id), rationale TEXT,
+    schema_version TEXT NOT NULL, library_json TEXT NOT NULL, checksum TEXT NOT NULL,
+    supersedes_release_id TEXT REFERENCES design_knowledge_releases(id), published_at TEXT NOT NULL
+  );
+  CREATE TABLE design_playtests (
+    id TEXT PRIMARY KEY, project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    version_id TEXT NOT NULL REFERENCES versions(id) ON DELETE CASCADE, pattern_id TEXT NOT NULL,
+    tester_segment TEXT NOT NULL, device_class TEXT NOT NULL, input_mode TEXT NOT NULL,
+    task_outcome TEXT NOT NULL, onboarding_clarity INTEGER NOT NULL, control_clarity INTEGER NOT NULL,
+    perceived_difficulty INTEGER NOT NULL, fun_rating INTEGER NOT NULL, fairness_rating INTEGER NOT NULL,
+    would_replay INTEGER NOT NULL, completion_seconds INTEGER, hint_count INTEGER NOT NULL DEFAULT 0,
+    blocker_code TEXT NOT NULL, created_at TEXT NOT NULL
   );
 `;
 

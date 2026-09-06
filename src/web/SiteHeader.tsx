@@ -10,12 +10,12 @@ type HeaderSearch = {
   label: string;
 };
 
-export function SiteHeader({ active, search }: { active: "studio" | "games" | "create"; search?: HeaderSearch }) {
+export function SiteHeader({ active, search }: { active: "studio" | "games" | "create" | "knowledge"; search?: HeaderSearch }) {
   const { t } = usePreferences();
   return (
     <>
       <a className="skip-link" href="#main-content">{t("a11y.skip")}</a>
-      <header className={`app-header ${search ? "has-search" : ""}`}>
+      <header className={`app-header ${search ? "has-search" : ""} ${active === "knowledge" ? "is-knowledge" : ""}`}>
         <a className="brand" href="/" aria-label={t("brand.home")}>
           <span className="brand-mark" aria-hidden="true">界</span>
           <span className="brand-copy"><strong>{t("brand.name")}</strong><small>GAME CREATION STUDIO · V{PLATFORM_RELEASE}</small></span>
@@ -37,6 +37,7 @@ export function SiteHeader({ active, search }: { active: "studio" | "games" | "c
           <a href="/" aria-current={active === "games" ? "page" : undefined}>{t("nav.games")}</a>
           <a href="/create" aria-current={active === "create" ? "page" : undefined}>{t("nav.gameCreate")}</a>
           <a href="/projects" aria-current={active === "studio" ? "page" : undefined}>{t("nav.projects")}</a>
+          {active === "knowledge" ? <a href="/design-knowledge" aria-current="page">策划库</a> : null}
           <span className="environment-badge"><CircleDot size={12} aria-hidden="true" /> {t("nav.local")}</span>
           <ModelSettingsButton />
           <PreferenceControls />

@@ -1,4 +1,6 @@
-export const tetrisScript = String.raw`
+import { tetrisPlanningScript } from './tetris-planning.js';
+
+export const tetrisScript = tetrisPlanningScript + String.raw`
 const columns = 10;
 const rows = 20;
 const board = Array.from({ length: rows }, () => Array(columns).fill(0));
@@ -90,6 +92,32 @@ let combo = -1;
 let backToBack = false;
 let lastClearLabel = "";
 let lastClearPoints = 0;
+let lesson = tetrisLesson(1);
+let lessonComplete = false;
+let lessonClears = 0;
+let heldForLesson = false;
+let cleanPlacements = 0;
+let placedPieces = 0;
+const planningCard = document.createElement('div');
+planningCard.className = 'tetris-planning-card';
+planningCard.setAttribute('aria-live', 'polite');
+planningCard.style.cssText = 'padding:10px 14px;border-left:3px solid #f4adc8;background:rgba(35,25,43,.94);color:#f8e8f1;font:500 13px/1.6 sans-serif;margin:8px 0;border-radius:4px 12px 12px 4px';
+planningCard.style.gridColumn = '1 / -1';
+planningCard.style.position = 'relative';
+planningCard.style.zIndex = '1';
+canvas.parentElement.parentElement.insertBefore(planningCard, canvas.parentElement);
+const tetrisCoachStyle = document.createElement('style');
+tetrisCoachStyle.textContent = "\nbody[data-template=tetris] .onboarding-coach{bottom:180px}\n@media(max-width:720px){\n  body[data-template=tetris][data-game-state=playing]{--tetris-teaching-space:0px;--tetris-canvas-height:calc(100svh - 258px - var(--tetris-teaching-space))}\n  body[data-template=tetris][data-game-state=playing]:has(.onboarding-coach:not([hidden])){--tetris-teaching-space:72px}\n  body[data-template=tetris][data-game-state=playing]:has(.onboarding-coach:not([hidden]):not(.is-compact)){--tetris-teaching-space:160px}\n  body[data-template=tetris][data-game-state=playing] .tetris-planning-card{position:absolute!important;top:58px;left:8px;right:8px;margin:0!important;padding:8px 10px!important;min-height:68px;font-size:12px!important;line-height:1.5!important;z-index:7!important}\n  body[data-template=tetris][data-game-state=playing] .canvas-frame{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:flex-start;height:100%;min-height:0;aspect-ratio:auto;padding:138px 0 0;border:0;border-radius:0;box-sizing:border-box}\n  body[data-template=tetris][data-game-state=playing] .game-canvas{flex:none;width:auto;height:var(--tetris-canvas-height);max-height:var(--tetris-canvas-height);max-width:100%;aspect-ratio:9/16;margin:0;object-fit:contain}\n  body[data-template=tetris][data-game-state=playing] .onboarding-coach{position:fixed;bottom:122px;right:8px;width:calc(100% - 16px);margin:0;padding:10px;box-sizing:border-box}\n  body[data-template=tetris][data-game-state=playing] .onboarding-coach.is-compact{width:auto;bottom:122px}\n  body[data-template=tetris]:not([data-game-state=playing]) .tetris-planning-card{display:none}\n}\n";
+tetrisCoachStyle.textContent += '@media(max-width:720px){body[data-template=tetris][data-game-state=playing]{--tetris-canvas-height:calc(100svh - 178px)}body[data-template=tetris][data-game-state=playing] .canvas-frame{padding-top:110px}body[data-template=tetris][data-game-state=playing] .tetris-planning-card{min-height:44px;font-size:11px!important;line-height:1.35!important;padding:5px 8px!important}}';
+document.head.appendChild(tetrisCoachStyle);
+function updatePlanningCard(forecast) {
+  const title = tetrisMode === 'standard' ? (lessonComplete ? '已掌握 · ' : '本关练习 · ') + lesson.name : '落点规划';
+  const consequence = forecast?.valid ? (forecast.clearRows.length ? '此处可消 ' + forecast.clearRows.length + ' 行' : '此处不消行') + (forecast.addedHoles > 0 ? ' · 空洞净增 ' + forecast.addedHoles + ' 格' : forecast.addedHoles < 0 ? ' · 空洞净减 ' + -forecast.addedHoles + ' 格' : ' · 空洞总数不变') : '移动或旋转，观察落点变化';
+  const message = title + '｜' + consequence + (tetrisMode === 'standard' && !lessonComplete ? '\n' + lesson.instruction : '\n空洞未增加 ' + cleanPlacements + ' / ' + placedPieces + ' 枚');
+  const fullMessage = message + (tetrisMode !== 'standard' ? '\n硬降奖励目标：' + hardDropScore + ' / ' + lineTarget * 20 : '');
+  if (planningCard.textContent !== fullMessage) planningCard.textContent = fullMessage;
+  planningCard.style.whiteSpace = 'pre-line';
+}
 let lastActionWasRotation = false;
 let clearedRows = [];
 let clearFlashUntil = 0;
@@ -216,6 +244,9 @@ function scoreLineClear(cleared, tSpin, perfectClear) {
 
 function mergePiece() {
   clearLockTimer();
+  const forecast = tetrisPlacementForecast(board, piece.shape, piece.x, piece.y);
+  placedPieces += 1;
+  if (forecast.valid && forecast.addedHoles <= 0) cleanPlacements += 1;
   const tSpin = tSpinDetected();
   piece.shape.forEach((row, y) => row.forEach((value, x) => {
     if (value && piece.y + y >= 0) board[piece.y + y][piece.x + x] = piece.color;
@@ -228,6 +259,8 @@ function mergePiece() {
   completedRows.forEach((rowIndex) => board.splice(rowIndex, 1));
   for (let index = 0; index < completedRows.length; index += 1) board.unshift(Array(columns).fill(0));
   const cleared = completedRows.length;
+  lessonClears += cleared;
+  if (tetrisMode === 'standard' && (lesson.chapter === 4 ? lessonClears > 0 && cleanPlacements >= 3 : cleared >= lesson.goal) && (lesson.chapter !== 3 || heldForLesson)) lessonComplete = true;
   const perfectClear = cleared > 0 && board.every((row) => row.every((value) => !value));
   score += scoreLineClear(cleared, tSpin, perfectClear);
   if (cleared) {
@@ -237,7 +270,7 @@ function mergePiece() {
     setMetric(lines + " / " + lineTarget);
     playSound("success");
     if (lines >= lineTarget) {
-      showResult(true, "天际线完成", "你用 " + lines + " 条消行建立了稳定结构。");
+      showResult(true, "天际线完成", "完成 " + lines + " 条消行 · " + cleanPlacements + " 枚落块后空洞未增加" + (tetrisMode === 'standard' && lessonComplete ? " · 掌握「" + lesson.name + "」" : "") + "。");
       return;
     }
   }
@@ -245,7 +278,7 @@ function mergePiece() {
 }
 
 function stepDown() {
-  if (!running) return;
+  if (!running || onboardingIsActive()) return;
   if (tetrisMode === "timed" && performance.now() - modeStartedAt >= modeTimeLimit * 1000) {
     showResult(false, "限时结束", "本局完成 " + lines + " 条消行、得到 " + score + " 分。 ");
     return;
@@ -257,6 +290,18 @@ function stepDown() {
   } else scheduleLock();
   drawTetris();
 }
+
+function finishTetrisRotationLesson(event) {
+  modeStartedAt = performance.now();
+  if (event.detail?.signal !== 'piece-rotated' || event.detail?.status !== 'completed' || tetrisMode !== 'standard' || currentCampaignLevel().number !== 1 || placedPieces !== 0 || piece?.shapeIndex !== 0) return;
+  // The tutorial is a safe rehearsal, not the first committed placement.
+  clearLockTimer();
+  piece.rotation = 0; piece.shape = rotationStates[0][0].map(row => row.slice());
+  piece.x = 3; piece.y = 0; lastActionWasRotation = false; lockResetCount = 0;
+  lesson.instruction = '旋转练习完成，长条已放回横向起点；按快速落下填入缺口。';
+  setStatus(lesson.instruction);
+}
+window.addEventListener("forge:onboarding-signal", finishTetrisRotationLesson);
 
 function softDrop() {
   if (!running) return;
@@ -297,6 +342,7 @@ function rotatePiece() {
     lastActionWasRotation = true;
     refreshLockDelay();
     playSound("move");
+    signalOnboarding("piece-rotated");
   }
   drawTetris();
 }
@@ -314,6 +360,7 @@ function hardDrop() {
 
 function holdPiece() {
   if (!running || holdUsed) return;
+  heldForLesson = true;
   const currentIndex = piece.color - 1;
   const replacement = heldPieceIndex;
   heldPieceIndex = currentIndex;
@@ -484,6 +531,13 @@ function drawTetris() {
   }
   if (piece) {
     const ghostY = landingY();
+    const forecast = tetrisPlacementForecast(board, piece.shape, piece.x, ghostY);
+    updatePlanningCard(forecast);
+    if (forecast.valid) {
+      ctx.save(); ctx.strokeStyle = '#f7d8a3'; ctx.lineWidth = 2;
+      forecast.clearRows.forEach(row => ctx.strokeRect(originX + 1, originY + row * size + 1, columns * size - 2, size - 2));
+      ctx.restore();
+    }
     if (ghostY !== piece.y) drawShape(piece.shape, piece.x, ghostY, piece.color, size, originX, originY, { ghost: true });
     drawShape(piece.shape, piece.x, piece.y, piece.color, size, originX, originY);
   }
@@ -512,6 +566,13 @@ function startGame() {
   } else modeTimeLimit = 0;
   modeStartedAt = performance.now();
   board.forEach((row) => row.fill(0));
+  lesson = tetrisLesson(currentCampaignLevel().number);
+  lessonComplete = false;
+  lessonClears = 0;
+  heldForLesson = false;
+  cleanPlacements = 0;
+  placedPieces = 0;
+  if (tetrisMode === 'standard') lesson.grid.forEach((row, y) => { board[y] = row.slice(); });
   lines = 0;
   score = 0;
   hardDropScore = 0;
@@ -521,6 +582,11 @@ function startGame() {
   lastClearLabel = "";
   lastClearPoints = 0;
   pieceQueue = [];
+  if (tetrisMode === 'standard') {
+    // A course opener is explicit; remove its pieces from the first bag to preserve fairness.
+    const opening = [lesson.firstPiece, ...(lesson.secondPiece === null ? [] : [lesson.secondPiece])];
+    pieceQueue = [...opening, ...createSevenBag().filter(index => !opening.includes(index))];
+  }
   heldPieceIndex = null;
   holdUsed = false;
   running = true;
@@ -573,7 +639,8 @@ function setTetrisMode(mode) {
 document.querySelectorAll("[data-tetris-mode]").forEach((button) => button.addEventListener("click", () => setTetrisMode(button.dataset.tetrisMode)));
 runtimeDebugState = () => {
   const dangerRow = board.findIndex((row) => row.some(Boolean));
-  return { level: currentCampaignLevel().number, tier: currentCampaignLevel().tier, mode: tetrisMode, modes: ["standard", "timed", "zen"], modeTimeLimit, lineTarget, lines, fallInterval, score, hardDropScore, softDropScore, combo, backToBack, lastClearLabel, lastClearPoints, nextPieceIndex, nextQueue: pieceQueue.slice(0, 5), heldPieceIndex, holdUsed, currentPiece: piece ? { shapeIndex: piece.shapeIndex, rotation: piece.rotation, x: piece.x, y: piece.y } : null, dangerHeight: dangerRow >= 0 && dangerRow <= 4, clearFeedbackMs: Math.max(0, clearFlashUntil - performance.now()), gestureSupport: true, sevenBagRandomizer: true, rotationSystem: "SRS-clockwise", lockDelayMs, maxLockResets, cellGeometry: { ...tetrisCellGeometry } };
+  const skillGoalAchieved = tetrisMode === 'standard' ? lessonComplete : hardDropScore >= lineTarget * 20;
+return { skillGoalAchieved, lesson: { name: lesson.name, chapter: lesson.chapter, complete: lessonComplete, heldForLesson }, cleanPlacements, placedPieces, board: board.map(row => row.slice()), landing: piece ? tetrisPlacementForecast(board, piece.shape, piece.x, landingY()) : null, level: currentCampaignLevel().number, tier: currentCampaignLevel().tier, mode: tetrisMode, modes: ["standard", "timed", "zen"], modeTimeLimit, lineTarget, lines, fallInterval, score, hardDropScore, softDropScore, combo, backToBack, lastClearLabel, lastClearPoints, nextPieceIndex, nextQueue: pieceQueue.slice(0, 5), heldPieceIndex, holdUsed, currentPiece: piece ? { shapeIndex: piece.shapeIndex, rotation: piece.rotation, x: piece.x, y: piece.y } : null, dangerHeight: dangerRow >= 0 && dangerRow <= 4, clearFeedbackMs: Math.max(0, clearFlashUntil - performance.now()), gestureSupport: true, sevenBagRandomizer: true, rotationSystem: "SRS-clockwise", lockDelayMs, maxLockResets, cellGeometry: { ...tetrisCellGeometry } };
 };
 runtimeDebugActions = {
   legalAction: hardDrop,

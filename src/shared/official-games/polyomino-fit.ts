@@ -6,10 +6,10 @@ export const polyominoFit = defineOfficialGame({
   title: "软糖拼岛",
   kind: "template",
   serverTemplate: "polyomino-fit",
-  lobbyRank: 7,
+  lobbyRank: 8,
   cover: "assets/templates/packs/polyomino-fit/cover.png",
   referenceDoc: "docs/48-polyomino-fit-best-template-reference.md",
-  mechanicId: "drag-snap",
+  knowledge: { patternId: "drag-assembly-puzzle", mechanicIds: ["drag-snap-assembly", "polyomino-placement"], rationale: "拖拽旋转多格形状并完成覆盖。" },
   seed: {
     artStyle: "botanical",
     visualStyle: "cute",

@@ -1,4 +1,5 @@
 import type { GameSpec, GameTemplate } from "./contracts.js";
+import { KLOTSKI_COURSE } from "./klotski-course.js";
 
 export const minimumCampaignLevelCount = 20;
 export const campaignTierSize = 4;
@@ -42,20 +43,7 @@ const templateModifiers: Record<GameTemplate, readonly string[]> = {
     "双重波纹", "分潮四门", "回旋内湾", "珊瑚王冠",
     "棋盘碎礁", "心潮海湾", "深海盾阵", "王冠重甲",
   ],
-  klotski: [
-    "初开朱门", "双兵让道", "横梁移位", "回廊换肩",
-    "侧门借位", "二空接力", "长将归边", "中心腾挪",
-    "折返三隙", "双列换位", "横刀解扣", "门前清障",
-    "深庭回旋", "四角调兵", "错层借道", "窄门转轴",
-    "长廊逆行", "层层设防", "水泄不通", "横刀立马",
-  ],
-  maze: [
-    "初识苔门", "双岔寻星", "回廊试步", "四隅辨向",
-    "萤灯支路", "月桥回环", "双庭择路", "藏灯深巷",
-    "薄雾初临", "灯影留痕", "雾中双环", "暗庭寻星",
-    "霜径试滑", "回风冰廊", "钥启苔门", "双钥回庭",
-    "雾锁冰桥", "机关折返", "暮钟竞径", "苔庭归星",
-  ],
+  klotski: KLOTSKI_COURSE.map(course=>course.name),
   snake: [
     "初游晴庭", "双石引路", "四隅回身", "月门初转",
     "竹影双廊", "曲桥借位", "回纹花径", "方池绕行",
@@ -64,10 +52,10 @@ const templateModifiers: Record<GameTemplate, readonly string[]> = {
     "九曲藏果", "双环合流", "庭心风阵", "青玉长游",
   ],
   "merge-2048": [
-    "成双启程", "角落锚点", "余白四格", "六十四结点",
-    "双并同拍", "三段回声", "高低分流", "百二十八核",
-    "下一块·二", "下一块·四", "预兆转向", "二百五十六门",
-    "密阵开局", "一步回溯", "限步织造", "五百一十二塔",
+    "成双启程", "角落锚点", "余白四格", "百二十八结点",
+    "双并同拍", "三段回声", "高低分流", "二百五十六核",
+    "下一块·二", "下一块·四", "预兆转向", "五百一十二门",
+    "密阵开局", "一步回溯", "从容织造", "千位高塔",
     "千位角锚", "零撤销局", "连锁三响", "二〇四八核心",
   ],
   "space-shooter": [
@@ -107,7 +95,7 @@ const commercialLevelDesigns: Record<GameTemplate, CommercialLevelDesign> = {
     mission: "完成目标消行，同时为后续构件保留干净落点。",
     masteryRules: [
       { id: "efficiency", label: "得分达到目标线数 × 300", metric: "score", comparison: "ratio-gte", referenceMetric: "lineTarget", target: 300 },
-      { id: "control", label: "至少取得目标线数 × 20 的硬降奖励", metric: "hardDropScore", comparison: "ratio-gte", referenceMetric: "lineTarget", target: 20 },
+      { id: "control", label: "达成本模式技巧目标", metric: "skillGoalAchieved", comparison: "gte", target: 1 },
     ],
   },
   puzzle: {
@@ -125,30 +113,23 @@ const commercialLevelDesigns: Record<GameTemplate, CommercialLevelDesign> = {
     ],
   },
   klotski: {
-    mission: "规划腾挪顺序，以接近最优步数的路线打开朱门。",
+    mission: "连续完成本关主题题组，通过让路、空位接力与横梁调位打开朱门。",
     masteryRules: [
-      { id: "efficiency", label: "步数不超过最优参考的 150%", metric: "moves", comparison: "ratio-lte", referenceMetric: "optimalReference", target: 1.5 },
-      { id: "control", label: "保留完整可回放路径", metric: "replayLength", comparison: "ratio-gte", referenceMetric: "moves", target: 1 },
-    ],
-  },
-  maze: {
-    mission: "在多条路线间判断收益，点亮灯火后找到出口。",
-    masteryRules: [
-      { id: "efficiency", label: "步数不超过最短路径的 135%", metric: "steps", comparison: "ratio-lte", referenceMetric: "optimalSteps", target: 1.35 },
-      { id: "control", label: "点亮全部 3 个阶段灯火", metric: "checkpoints", comparison: "gte", target: 3 },
+      { id: "efficiency", label: "全组步数不超过最短总步数的 150%", metric: "totalMoves", comparison: "ratio-lte", referenceMetric: "totalOptimal", target: 1.5 },
+      { id: "control", label: "至少一庭未用提示独立解开", metric: "independentRooms", comparison: "gte", target: 1 },
     ],
   },
   snake: {
-    mission: "在身体持续增长时规划安全回路，完成本关收集目标。",
+    mission: "分段巡游并采集不同食物，用青叶灵活转向、露珠吸取管理路线。",
     masteryRules: [
-      { id: "efficiency", label: "收集数量达到目标", metric: "score", comparison: "ratio-gte", referenceMetric: "target", target: 1 },
-      { id: "control", label: "完成时身体长度达到目标 + 3", metric: "length", comparison: "gte", target: 8 },
+      { id: "efficiency", label: "采集枚数达到整关目标", metric: "collected", comparison: "ratio-gte", referenceMetric: "target", target: 1 },
+      { id: "control", label: "本关体验全部四类食物", metric: "foodVariety", comparison: "gte", target: 4 },
     ],
   },
   "merge-2048": {
-    mission: "根据本关开局、下一块预告与任务条件规划滑动，在锁死前完成目标。",
+    mission: "滑动合成目标数字；技巧任务是额外挑战，不阻止通关。保留空位，必要时查看方向或回溯。",
     masteryRules: [
-      { id: "efficiency", label: "得分达到目标数字的 2 倍", metric: "score", comparison: "ratio-gte", referenceMetric: "target", target: 2 },
+      { id: "efficiency", label: "完成本关加分技巧", metric: "techniqueComplete", comparison: "gte", target: 1 },
       { id: "control", label: "完成时至少保留 4 个空格", metric: "availableCells", comparison: "gte", target: 4 },
     ],
   },
@@ -176,7 +157,7 @@ const commercialLevelDesigns: Record<GameTemplate, CommercialLevelDesign> = {
   "region-logic": {
     mission: "通过行、列、区域和相邻约束完成唯一解推理。",
     masteryRules: [
-      { id: "efficiency", label: "全程不使用提示", metric: "hints", comparison: "lte", target: 0 },
+      { id: "efficiency", label: "未使用观察或展开理由", metric: "assistanceUsed", comparison: "lte", target: 0 },
       { id: "control", label: "全程零错误", metric: "errors", comparison: "lte", target: 0 },
     ],
   },
@@ -230,7 +211,7 @@ export function createCampaignLevels(template: GameTemplate, difficulty: GameSpe
       speedMultiplier: Number(Math.max(0.72, 0.82 + difficultyOffset + tierPressure * 0.72 + localVariation).toFixed(3)),
       densityMultiplier: Number(Math.max(0.68, 0.78 + difficultyOffset + tierPressure * 0.88 + localVariation).toFixed(3)),
       ruleModifier: modifiers[variant],
-      mission: commercialDesign.mission,
+      mission: template === "klotski" ? KLOTSKI_COURSE[index].intro + " 完成全部 " + KLOTSKI_COURSE[index].boards.length + " 庭后结算。" : commercialDesign.mission,
       masteryRules: commercialDesign.masteryRules.map((rule) => ({ ...rule })),
       reward: tierIndex === 4 ? "大师徽记" : withinTier === campaignTierSize - 1 ? `解锁${tierLabels[Math.min(4, tierIndex + 1)]}` : "关卡星章",
     };

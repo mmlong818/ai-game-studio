@@ -5,6 +5,7 @@ import App from "./App";
 vi.mock("./web/api", () => ({
   getProject: async (id: string) => ({
     id,
+    fixtureKind: ['island-kart','meadow-railway'].includes(id) ? id : null,
     title: id === "game-b" ? "青玉长游" : "数织矩阵",
     idea: id === "game-b" ? "青玉花园贪吃蛇" : "数字合成游戏",
     template: id === "game-b" ? "snake" : "merge-2048",
@@ -23,6 +24,12 @@ vi.mock("./domain/simpleRelease", () => ({
 }));
 
 describe("player-first creation flow", () => {
+  it.each(['island-kart','meadow-railway'])("仅游玩官方游戏 %s 没有改造按钮", async (id) => {
+    window.history.replaceState({}, '', `/player-first?game=${id}`);
+    render(<App />);
+    expect(await screen.findByTitle('数织矩阵游戏画面')).toBeInTheDocument();
+    expect(screen.queryByRole('link',{name:/改造这个游戏/})).not.toBeInTheDocument();
+  });
   beforeEach(() => {
     localStorage.clear();
     window.history.replaceState({}, "", "/player-first?game=game-a");

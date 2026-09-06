@@ -9,14 +9,24 @@ import {
   type ProjectDetail,
   type QualityCheck,
 } from "../shared/contracts.js";
-import { inspectGameInBrowser, inspectGeneratedGameInBrowser } from "./browser-quality.js";
+import { inspectDifficultyProgressionInBrowser, inspectFailureAssistanceInBrowser, inspectGameInBrowser, inspectGeneratedGameInBrowser, inspectMergeOnboardingInBrowser, inspectNonRealtimeOnboardingInBrowser, inspectSignalHuntOnboardingInBrowser, inspectStageF3DInBrowser, inspectTemplateOnboardingInBrowser, inspectThreeOnboardingInBrowser, inspectVariationRehearsalInBrowser, type FailureAssistanceTemplate, type NonRealtimeOnboardingTemplate, type StageF3DMode, type TemplateOnboardingQualityResult, type VariationRehearsalTemplate } from "./browser-quality.js";
+import { writeDesignAcceptanceReport } from "./design-acceptance.js";
 import type { DesignContractGenerator } from "./design-contract.js";
 import { inspectGameArtifact, writeDesignDocuments, writeGameArtifact } from "./game-artifact.js";
 import { inspectGeneratedArtifact, stripPlatformSegments, writeGeneratedArtifact, type GameCodeGenerator, type PreviousGeneration } from "./game-generator.js";
 import { assertRasterAiArt } from "./art-policy.js";
 import { coverPrompt, type CoverArtGenerator } from "./image-generator.js";
+import { applyQualifiedProjectResources, writeQualifiedResourceProvenance } from "./golden-resource-bindings.js";
 import type { StudioRepository } from "./studio-repository.js";
 import { writeV11BuildMetadata } from "./v11-build-metadata.js";
+import { createResourcePlanningForGameSpec } from "../shared/resource-planning/index.js";
+import { createGameDesignContractForLegacyProject } from "../shared/game-design-contract/from-legacy.js";
+
+const variationRehearsalTemplates: readonly VariationRehearsalTemplate[] = ["signal-hunt", "tetris", "breakout", "snake", "space-shooter", "merge-2048", "klotski", "puzzle", "block-place", "polyomino-fit", "region-logic", "mahjong-roguelite"];
+const failureAssistanceTemplates: readonly FailureAssistanceTemplate[] = ["tetris", "breakout", "snake", "space-shooter", ...variationRehearsalTemplates];
+const realtimeOnboardingTemplates: readonly TemplateOnboardingQualityResult["template"][] = ["tetris", "breakout", "snake", "space-shooter"];
+const nonRealtimeOnboardingTemplates: readonly NonRealtimeOnboardingTemplate[] = ["klotski", "puzzle", "block-place", "polyomino-fit", "region-logic", "mahjong-roguelite"];
+import type { ResourceFamily } from "../shared/resource-library/index.js";
 
 const wait = (milliseconds: number) => new Promise((resolve) => setTimeout(resolve, milliseconds));
 
@@ -32,9 +42,10 @@ export class BuildOrchestrator {
     private readonly options: {
       browserAudit?: boolean;
       designContracts?: DesignContractGenerator;
-      coverArt?: Pick<CoverArtGenerator, "generate" | "generateDynamicArt">;
+      coverArt?: Pick<CoverArtGenerator, "generate" | "generateDynamicArt"> & { readonly model?: string };
       codeGenerator?: GameCodeGenerator;
       maxConcurrentBuilds?: number;
+      resourceFamilies?: ResourceFamily[];
     } = {},
   ) {
     this.maxConcurrentBuilds = Math.max(1, options.maxConcurrentBuilds ?? 2);
@@ -112,7 +123,7 @@ export class BuildOrchestrator {
             ? `；规则审计 ${experimental.audit.filter((verdict) => verdict.implemented).length}/${experimental.audit.length} 条经代码核对已实现，逐条判定见 RULE_FIDELITY.json`
             : "；规则审计本次不可用，未逐条核对（如实记录）";
           const runtimeNote = project.spec.runtimeTarget === "web-3d" ? "基于本地 three.js 模块的 3D " : "";
-          return `页面公开：实验通道——已由 gpt-5.6 按设计合同${modeNote}独有${runtimeNote}单文件代码（${experimental.generation.rounds} 轮生成，安全扫描通过，禁网络/禁外链/禁存储偷渡）${auditNote}。实现说明与哈希归档于 GENERATED_CODE.json。`;
+          return `页面公开：实验通道——已由 ${experimental.generation.model ?? '所选文本模型'} 按设计合同${modeNote}独有${runtimeNote}单文件代码（${experimental.generation.rounds} 轮生成，安全扫描通过，禁网络/禁外链/禁存储偷渡）；新手教学逐项接入真实玩法动作，教学期自动压力暂停${auditNote}。实现说明与哈希归档于 GENERATED_CODE.json。`;
         }
         writeGameArtifact(root, project);
         const source = project.spec.templateSource;
@@ -124,12 +135,11 @@ export class BuildOrchestrator {
       sequence += 1;
       await this.step(buildId, sequence, async () => {
         const style = visualStyleOptions.find((option) => option.id === project.spec.visualStyle)!;
-        if (project.spec.threeMode === "popup") {
-          // 官方立体书模式使用策划确认的固定贴图包（封面、纸纹、桌面、章节印花），提示词与哈希已随产物写入 DYNAMIC_ART.json。
-          const visualSource = ["index.html", "styles.css", "app.js"].map((file) => readFileSync(join(root, file), "utf8")).join("\n");
-          assertRasterAiArt(root, visualSource);
-          const v11Project = writeV11BuildMetadata(root, project, { directions, previousRoot: join(this.artifactRoot, project.version.id) });
-          return `页面公开：封面、纸纹、桌面背景与四章印花来自 gpt-image-2 生成的官方纸艺贴图包，提示词与 sha256 已归档于 _studio/PAPER_POPUP_ASSET_PROMPTS.md 与 DYNAMIC_ART.json；AI 图只作为贴图，关卡几何全部程序化；SVG 禁用门禁通过。1.1 工程清单已冻结（${v11Project.objects.length} 个对象、${v11Project.rules.length} 条规则）。`;
+        const resourcePlan = project.spec.resourcePlanning;
+        if (resourcePlan) {
+          const provenanceRoot = join(root, "_studio");
+          mkdirSync(provenanceRoot, { recursive: true });
+          writeFileSync(join(provenanceRoot, "RESOURCE_PLAN.json"), JSON.stringify(resourcePlan, null, 2), "utf8");
         }
         if (!this.options.coverArt) throw new Error("AI 生图服务未配置，构建已中断。请先配置 OpenAI API Key。");
         // 封面与动态美术全部并行生成；任何核心位图缺失都中断构建，禁止退回占位图。
@@ -146,24 +156,33 @@ export class BuildOrchestrator {
           mkdirSync(dirname(target), { recursive: true });
           writeFileSync(target, entry.bytes);
         }
+        // 黄金模板在 AI 位图落盘后覆盖已核验的运行时槽位，确保最终游戏实际使用精选资源。
+        // 被覆盖的槽位必须从 AI 清单剔除，避免错误声明素材来源。
+        const curatedResources = applyQualifiedProjectResources(root, project);
+        const curatedTargets = new Set(curatedResources?.assets.map(({ target }) => target.replaceAll("\\", "/").toLowerCase()) ?? []);
+        const writtenDynamicArt = dynamicArt.filter(({ file }) => !curatedTargets.has(file.replaceAll("\\", "/").toLowerCase()));
         const provenanceRoot = join(root, "_studio");
         mkdirSync(provenanceRoot, { recursive: true });
         const entries = [
           { file: "assets/cover.png", role: "封面", bytes: cover.length, prompt: coverPrompt(project) },
-          ...dynamicArt.map((entry) => ({ file: entry.file, role: entry.role, bytes: entry.bytes.length, prompt: entry.prompt })),
+          ...writtenDynamicArt.map((entry) => ({ file: entry.file, role: entry.role, bytes: entry.bytes.length, prompt: entry.prompt })),
         ];
         writeFileSync(join(provenanceRoot, "DYNAMIC_ART.json"), JSON.stringify({
           schemaVersion: 2,
-          model: "gpt-image-2",
+          model: this.options.coverArt.model ?? "gpt-image-2",
           generatedAt: new Date().toISOString(),
           entries,
         }, null, 2), "utf8");
+        if (curatedResources) writeQualifiedResourceProvenance(root, curatedResources);
         const visualSource = ["index.html", "styles.css", "app.js"]
           .map((file) => readFileSync(join(root, file), "utf8"))
           .join("\n");
         assertRasterAiArt(root, visualSource);
         const v11Project = writeV11BuildMetadata(root, project, { directions, previousRoot: join(this.artifactRoot, project.version.id) });
-        return `页面公开：封面与${dynamicArt.map((entry) => entry.role).join("、")}均由 gpt-image-2 生成，提示词与来源已归档；SVG 禁用门禁通过。${style.label}视觉系统已应用到页面编排、组件造型、字体层级、${style.detailLabel}、画布细节和反馈动效。1.1 工程清单已冻结（${v11Project.objects.length} 个对象、${v11Project.rules.length} 条规则）。`;
+        const planningSummary = resourcePlan ? `生成前已检索 ${resourcePlan.decisions.length} 个资源需求：${resourcePlan.summary.needsReview} 个候选待复核，${resourcePlan.summary.needsGeneration} 个需生成或补状态。` : "旧项目没有资源规划记录。";
+        const curatedFamilies = curatedResources ? [...new Set(curatedResources.bindings.map(({ familyId }) => familyId))].join("、") : "";
+        const curatedSummary = curatedResources ? `；${curatedResources.assets.length} 个运行时槽位使用 ${curatedFamilies} 精选资源，许可、哈希、需求与配方证据已归档` : "";
+        return `页面公开：封面与${writtenDynamicArt.map((entry) => entry.role).join("、")}均由 ${this.options.coverArt.model ?? 'gpt-image-2'} 生成，提示词与来源已归档${curatedSummary}；${planningSummary}SVG 禁用门禁通过。${style.label}视觉系统已应用到页面编排、组件造型、字体层级、${style.detailLabel}、画布细节和反馈动效。1.1 工程清单已冻结（${v11Project.objects.length} 个对象、${v11Project.rules.length} 条规则）。`;
       });
       sequence += 1;
       await this.step(buildId, sequence, () => {
@@ -184,11 +203,102 @@ export class BuildOrchestrator {
         if (project.spec.template === "generated") {
           const generatedResult = await inspectGeneratedGameInBrowser(root);
           qualityChecks.push(...generatedResult.checks);
-          return `页面公开：真实浏览器已按运行时契约验证生成代码——idle→开始→playing→won→重开→lost 完整状态环、3 档画幅布局与错误监听；保存 ${generatedResult.screenshotPaths.length} 张验收截图。实验性作品：通过自动验收，但玩法深度仍以真人试玩为准。`;
+          if (project.spec.designContract) qualityChecks.push(writeDesignAcceptanceReport(root, project.spec.designContract, qualityChecks));
+          return `页面公开：真实浏览器已按运行时契约验证生成代码——教学安全等待、20 关平滑递进、第 9 关真实机制复演、连续失败显式帮助、完成状态恢复、重看和跳过均通过，同时验证 idle→开始→playing→won→重开→lost 完整状态环、3 档画幅布局与错误监听；保存 ${generatedResult.screenshotPaths.length} 张验收截图。实验性作品：通过自动验收，但玩法深度仍以真人试玩为准。`;
         }
         const browserResult = await inspectGameInBrowser(root);
         qualityChecks.push(...browserResult.checks);
-        return `页面公开：真实浏览器已检查 5 档画幅、开局、合法动作、结算分支、资源错误与控制台；保存 ${browserResult.screenshotPaths.length} 张验收截图。成功构建将冻结为不可变版本，发布前不会覆盖稳定玩家网址。`;
+        if (project.spec.runtimeTarget === "web-3d") {
+          const mode = (project.spec.threeMode ?? "collector") as StageF3DMode;
+          const onboarding = await inspectThreeOnboardingInBrowser(root, mode);
+          qualityChecks.push({ id: `ONBOARDING-3D-${mode.toUpperCase()}`, label: "3D 首次操作前冻结压力并由真实操作完成教学", status: "passed", evidence: `真实信号 ${onboarding.acceptedSignals.map(({ signal }) => signal).join(" → ")}；安全等待、刷新恢复、重看和跳过均通过。` });
+          const variation = await inspectVariationRehearsalInBrowser(root, mode);
+          qualityChecks.push({ id: "CONTENT-VARIATION-REHEARSAL", label: "3D 教学机制在变化关卡中仍由真实玩法成立", status: "passed", evidence: `第 ${variation.sourceLevel} 关“${variation.sourceModifier}”→第 ${variation.rehearsalLevel} 关“${variation.rehearsalModifier}”；真实复现 ${variation.expectedSignals.join(" → ")}。` });
+          const difficulty = await inspectDifficultyProgressionInBrowser(root, mode);
+          qualityChecks.push({ id: "PROGRESSION-RUNTIME", label: "3D 二十关倍率平滑且阶段具有真实结构变化", status: "passed", evidence: `已采样 ${difficulty.levelsChecked} 关、核对 ${difficulty.beatTransitionsChecked} 个合同阶段转换；最大相邻倍率步长 ${difficulty.maximumMultiplierStep}。` });
+          const assistance = await inspectFailureAssistanceInBrowser(root, mode);
+          qualityChecks.push({ id: "ASSISTANCE-RUNTIME", label: "3D 连续失败提供显式分层帮助且成功后清零", status: "passed", evidence: `第 1–4 次失败实际呈现 ${assistance.observedActions.join(" → ")}；刷新后保留并在成功后清零，未启用暗中调难度。` });
+          const deep = await inspectStageF3DInBrowser(root, mode);
+          qualityChecks.push({ id: `STAGE-F-3D-${mode.toUpperCase()}`, label: "3D 手机与桌面深层玩法验收", status: "passed", evidence: `${mode} 完成 ${deep.completedRuns} 次真实通关、${deep.failedRuns} 次失败分支，并核对模式专属几何、输入、性能与关卡证据。` });
+          if (project.spec.designContract) qualityChecks.push(writeDesignAcceptanceReport(root, project.spec.designContract, qualityChecks));
+          return `页面公开：3D ${mode} 已通过安全教学、20 关结构、变化关真实动作、连续失败帮助、手机与桌面深层试玩，并逐条闭合设计合同；保存 ${browserResult.screenshotPaths.length} 张通用验收截图及模式专属证据。`;
+        }
+        let onboardingSummary = "";
+        let variationSummary = "";
+        let assistanceSummary = "";
+        let difficultySummary = "";
+        if (project.spec.template === "merge-2048") {
+          const onboarding = await inspectMergeOnboardingInBrowser(root);
+          qualityChecks.push({
+            id: "ONBOARDING-MERGE-2048",
+            label: "新存档真实完成滑动与合并教学",
+            status: "passed",
+            evidence: `错误方向未推进；真实信号 ${onboarding.acceptedSignals.map(({ signal }) => signal).join(" → ")}；刷新恢复、重看和跳过均通过。`,
+          });
+          onboardingSummary = "新存档教学同时通过真实动作、错误动作拒绝、持久化、重看与跳过门禁；";
+        }
+        if (project.spec.template === "signal-hunt") {
+          const onboarding = await inspectSignalHuntOnboardingInBrowser(root);
+          qualityChecks.push({
+            id: "ONBOARDING-SIGNAL-HUNT",
+            label: "首次捕获前安全等待并由真实点击恢复压力",
+            status: "passed",
+            evidence: `真实信号 ${onboarding.acceptedSignals.map(({ signal }) => signal).join(" → ")}；倒计时教学期暂停、完成后恢复，刷新恢复、重看和跳过均通过。`,
+          });
+          onboardingSummary = "通用信号捕获已通过安全等待、真实点击、压力恢复、持久化、重看与跳过门禁；";
+        }
+        if (realtimeOnboardingTemplates.includes(project.spec.template as TemplateOnboardingQualityResult["template"])) {
+          const onboarding = await inspectTemplateOnboardingInBrowser(root, project.spec.template as TemplateOnboardingQualityResult["template"]);
+          qualityChecks.push({
+            id: `ONBOARDING-${project.spec.template.toUpperCase()}`,
+            label: "首次操作前冻结自动压力并由真实操作完成教学",
+            status: "passed",
+            evidence: `真实信号 ${onboarding.acceptedSignals.map(({ signal }) => signal).join(" → ")}；安全等待、刷新恢复、重看和跳过均通过。`,
+          });
+          onboardingSummary = "实时模板已通过安全等待、真实操作、持久化、重看与跳过教学门禁；";
+        }
+        if (nonRealtimeOnboardingTemplates.includes(project.spec.template as NonRealtimeOnboardingTemplate)) {
+          const onboarding = await inspectNonRealtimeOnboardingInBrowser(root, project.spec.template as NonRealtimeOnboardingTemplate);
+          qualityChecks.push({
+            id: `ONBOARDING-${project.spec.template.toUpperCase()}`,
+            label: "无操作压力下由真实合法动作完成教学",
+            status: "passed",
+            evidence: `真实信号 ${onboarding.acceptedSignals.map(({ signal }) => signal).join(" → ")}；安全等待、刷新恢复、重看和跳过均通过。`,
+          });
+          onboardingSummary = "非实时模板已通过安全等待、真实合法操作、持久化、重看与跳过教学门禁；";
+        }
+        if (variationRehearsalTemplates.includes(project.spec.template as VariationRehearsalTemplate)) {
+          const variation = await inspectVariationRehearsalInBrowser(root, project.spec.template as VariationRehearsalTemplate);
+          qualityChecks.push({
+            id: "CONTENT-VARIATION-REHEARSAL",
+            label: "教学机制在变化关卡中仍由真实玩法成立",
+            status: "passed",
+            evidence: `第 ${variation.sourceLevel} 关“${variation.sourceModifier}”→第 ${variation.rehearsalLevel} 关“${variation.rehearsalModifier}”；真实复现 ${variation.expectedSignals.join(" → ")}。`,
+          });
+          variationSummary = `首关教学机制已在规则与压力变化后的第 ${variation.rehearsalLevel} 关通过真实动作复验；`;
+        }
+        if (failureAssistanceTemplates.includes(project.spec.template as FailureAssistanceTemplate)) {
+          const difficulty = await inspectDifficultyProgressionInBrowser(root, project.spec.template as FailureAssistanceTemplate);
+          qualityChecks.push({
+            id: "PROGRESSION-RUNTIME",
+            label: "二十关倍率平滑且五阶段具有真实结构变化",
+            status: "passed",
+            evidence: `已采样 ${difficulty.levelsChecked} 关、核对 ${difficulty.beatTransitionsChecked} 个合同阶段转换；最大相邻倍率步长 ${difficulty.maximumMultiplierStep}，五个阶段运行时签名均不同。`,
+          });
+          difficultySummary = "二十关倍率平滑且五阶段结构变化已通过；";
+          const assistance = await inspectFailureAssistanceInBrowser(root, project.spec.template as FailureAssistanceTemplate);
+          qualityChecks.push({
+            id: "ASSISTANCE-RUNTIME",
+            label: "连续失败提供显式分层帮助且成功后清零",
+            status: "passed",
+            evidence: `第 1–4 次失败实际呈现 ${assistance.observedActions.join(" → ")}；刷新后保留第 ${assistance.persistedFailureCount} 次状态，成功后清零；未启用暗中调难度。`,
+          });
+          assistanceSummary = "连续失败的原因解释、规则突出、方向提示、刷新恢复和成功清零均已通过；";
+        }
+        if (project.spec.designContract && failureAssistanceTemplates.includes(project.spec.template as FailureAssistanceTemplate)) {
+          qualityChecks.push(writeDesignAcceptanceReport(root, project.spec.designContract, qualityChecks));
+        }
+        return `页面公开：真实浏览器已检查 5 档画幅、开局、合法动作、结算分支、资源错误与控制台；${onboardingSummary}${variationSummary}${difficultySummary}${assistanceSummary}保存 ${browserResult.screenshotPaths.length} 张验收截图。成功构建将冻结为不可变版本，发布前不会覆盖稳定玩家网址。`;
       });
       const checkedAt = new Date().toISOString();
       await this.repository.completeBuild(buildId, project.spec, {
@@ -282,9 +392,7 @@ export class BuildOrchestrator {
         )
       : null;
     const preservedDesign = project.spec.designSource === "llm" ? project.spec.designProfile : null;
-    return {
-      ...project,
-      spec: generateGameSpec({
+    const baseSpec = generateGameSpec({
         title: project.title,
         idea: project.idea,
         dimensions: project.dimensions,
@@ -294,12 +402,23 @@ export class BuildOrchestrator {
         difficulty: project.spec.difficulty,
         aspectRatio: project.spec.presentationVersion < 2 ? "9:16" : project.spec.aspectRatio,
         cameraMode: project.spec.presentationVersion < 5 ? "auto" : project.spec.cameraMode,
-        inputModes: project.spec.template === "merge-2048" || project.spec.template === "klotski" || project.spec.presentationVersion < 5
-          ? undefined
-          : project.spec.inputModes,
+        inputModes: project.spec.template === "merge-2048" || project.spec.template === "klotski" || project.spec.presentationVersion < 5 ? undefined : project.spec.inputModes,
         puzzlePieceCount: project.spec.puzzleRules?.pieceCount,
         customImageDataUrl: project.spec.customImageDataUrl ?? undefined,
-      }, project.spec.ideaAnalysis ?? null, revisedDesign ?? preservedDesign),
+      }, project.spec.ideaAnalysis ?? null, revisedDesign ?? preservedDesign, project.spec.designKnowledge ?? null);
+    const resourcePlanning = this.options.resourceFamilies ? createResourcePlanningForGameSpec(baseSpec, this.options.resourceFamilies) : project.spec.resourcePlanning ?? null;
+    const normalizedSpec = { ...baseSpec, resourcePlanning };
+    const designContract = createGameDesignContractForLegacyProject({
+      projectId: project.id,
+      title: project.title,
+      idea: project.idea,
+      createdAt: project.createdAt,
+      spec: normalizedSpec,
+      designKnowledge: normalizedSpec.designKnowledge,
+    });
+    return {
+      ...project,
+      spec: { ...normalizedSpec, designContract },
     };
   }
 }

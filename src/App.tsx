@@ -6,7 +6,8 @@ import { createProject } from "./domain/project";
 import { classifyChange } from "./domain/classifyChange";
 import { createReferenceDossier, recommendMechanics } from "./domain/research";
 import { loadDraft, saveDraft } from "./domain/storage";
-import { GAME_TEMPLATES, getTemplate, TEMPLATE_MECHANIC_MAP } from "./domain/templates";
+import { GAME_TEMPLATES, getTemplate } from "./domain/templates";
+import { knowledgeMappingForTemplate } from "./shared/game-design-knowledge/official-mapping";
 import type { ChangeLevel, CreationMode, GameTemplate, SourceGame, StudioDraft, ValidationResult } from "./domain/types";
 import { DOMAIN_TEMPLATE_ART, resolveTemplateForGame } from "./domain/templateResolution";
 import { validateDraft } from "./domain/validation";
@@ -105,7 +106,8 @@ function usePickableGames() {
             sourceGame: { id: game.id, title: game.title, coverUrl: game.coverUrl },
           };
         });
-        setGames(mapped.length > 0 ? mapped : GAME_TEMPLATES.map(templateAsPickable));
+        const pickable = mapped.filter(game => game.templateId !== null);
+        setGames(pickable.length > 0 ? pickable : GAME_TEMPLATES.map(templateAsPickable));
       })
       .catch(() => {
         if (!cancelled) setGames(GAME_TEMPLATES.map(templateAsPickable));
@@ -281,9 +283,9 @@ export function AdvancedStudioApp() {
       return { ...draft, selectedSuggestionIds: [], selectedMechanicIds, changeLevel: "R3", referenceDossier: dossier };
     }
     const changeLevel: ChangeLevel = draft.freeRequest.trim() ? classification.level : "R0";
-    const mechanicId = template ? TEMPLATE_MECHANIC_MAP[template.id] : undefined;
-    const referenceDossier = changeLevel === "R2" && mechanicId
-      ? createReferenceDossier(`${draft.sourceGame?.title ?? template?.name ?? "模板"}：${draft.freeRequest}`, [mechanicId])
+    const mechanicIds = template ? knowledgeMappingForTemplate(template.id)?.mechanicIds ?? [] : [];
+    const referenceDossier = changeLevel === "R2" && mechanicIds.length
+      ? createReferenceDossier(`${draft.sourceGame?.title ?? template?.name ?? "模板"}：${draft.freeRequest}`, mechanicIds.slice(0, 2))
       : null;
     return { ...draft, selectedSuggestionIds: [], changeLevel, referenceDossier };
   }, [classification.level, draft, template]);

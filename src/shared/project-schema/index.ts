@@ -84,7 +84,7 @@ const projectVariableSchema = z.object({
 const acceptanceSchema = z.object({
   id: identifierSchema,
   label: z.string().trim().min(1),
-  kind: z.enum(["rule", "asset", "viewport", "performance", "accessibility", "game-feel", "manual"]),
+  kind: z.enum(["rule", "asset", "viewport", "performance", "accessibility", "game-feel", "manual", "onboarding", "progression", "solvability", "assistance", "content-variation"]),
   ruleIds: z.array(identifierSchema).default([]),
   behaviorIds: z.array(identifierSchema).default([]),
 }).strict();

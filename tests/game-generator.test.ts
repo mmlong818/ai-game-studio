@@ -13,46 +13,17 @@ import {
 } from "../src/server/game-generator";
 import { inspectRasterAiArt } from "../src/server/art-policy";
 import { OpenAISettings } from "../src/server/openai-settings";
+import { createGameDesignContractForLegacyProject } from "../src/shared/game-design-contract/from-legacy";
+import { generatedDesignHtml } from "./generated-design-fixture";
 
 const validKey = "sk-test_1234567890abcdef";
 
-const contractHtml = `<!DOCTYPE html>
-<html lang="zh-CN">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>灯塔守夜人</title>
-<style>body{background-image:url("./assets/background.png")}#start,#restart{min-width:44px;min-height:44px}</style>
-</head>
-<body>
-<button id="start">开始</button>
-<button id="restart" hidden>重新开始</button>
-<canvas id="game-canvas"></canvas>
-<script>
-let state = "idle";
-function setState(next) {
-  state = next;
-  document.body.dataset.gameState = next;
-  dispatchEvent(new CustomEvent("game:state-change", { detail: { state: next } }));
-}
-setState("idle");
-document.querySelector("#start").addEventListener("click", () => setState("playing"));
-document.querySelector("#restart").addEventListener("click", () => setState("idle"));
-if (new URLSearchParams(location.search).has("probe")) {
-  window.__GAME_DEBUG__ = {
-    getState: () => ({ state, score: 0, level: 1 }),
-    forceWin: () => setState("won"),
-    forceLose: () => setState("lost"),
-  };
-}
-safeStorage.setItem("best", "0");
-</script>
-</body>
-</html>`;
+const contractHtml = generatedDesignHtml("shot-fired");
 
 function fakeProject(): ProjectDetail {
-  const spec = generateGameSpec({ idea: "守夜人在灯塔上转动光束驱散一波波逼近的雾兽。", template: "generated", dimensions: "2d" });
-  return { id: "p-gen", title: "灯塔守夜人", version: { id: "v-gen-1" }, spec } as unknown as ProjectDetail;
+  const baseSpec = generateGameSpec({ idea: "守夜人在灯塔上转动光束驱散一波波逼近的雾兽。", template: "generated", dimensions: "2d" });
+  const designContract = createGameDesignContractForLegacyProject({ projectId: "p-gen", title: "灯塔守夜人", idea: baseSpec.vision, createdAt: "2026-09-05T00:00:00.000Z", spec: baseSpec });
+  return { id: "p-gen", title: "灯塔守夜人", version: { id: "v-gen-1" }, spec: { ...baseSpec, designContract } } as unknown as ProjectDetail;
 }
 
 function llmResponse(answer: Record<string, unknown>) {
@@ -142,6 +113,9 @@ test("迭代模式:带上一版代码与意见,系统提示声明增量修改;�
 
   await generator.generate(fakeProject());
   assert.ok(!captured[2]!.system.includes("迭代模式"), "无上一版时不应进入迭代模式");
+  assert.match(captured[2]!.system, /可执行教学计划/);
+  assert.match(captured[2]!.system, /shot-fired/);
+  assert.match(captured[2]!.system, /performOnboardingStep/);
 });
 
 test("产物写入+静态探针:拆分为外链三件套(生产 CSP 禁内联),注入遥测与存档垫片", () => {
@@ -157,6 +131,11 @@ test("产物写入+静态探针:拆分为外链三件套(生产 CSP 禁内联),�
     assert.ok(labels.includes("运行时状态机"));
     assert.ok(labels.includes("安全扫描"));
     assert.ok(labels.includes("试玩遥测注入"));
+    assert.ok(labels.includes("教学计划归档"));
+    assert.ok(labels.includes("真实教学信号接线"));
+    assert.ok(labels.includes("教学安全压力"));
+    assert.ok(labels.includes("二十关设计协议"));
+    assert.ok(labels.includes("显式失败辅助协议"));
     const written = readFileSync(join(root, "index.html"), "utf8");
     assert.ok(!/<script(?![^>]*\bsrc)[^>]*>[\s\S]*?<\/script>/i.test(written), "index.html 不得残留内联脚本");
     assert.ok(!written.includes("<style"), "index.html 不得残留内联样式块");
@@ -164,15 +143,39 @@ test("产物写入+静态探针:拆分为外链三件套(生产 CSP 禁内联),�
     assert.ok(written.includes('<script src="./app.js"></script>'));
     const appScript = readFileSync(join(root, "app.js"), "utf8");
     assert.ok(appScript.includes("/api/play-events"), "遥测脚本必须注入 app.js");
+    assert.ok(appScript.includes("window.__FORGE_ONBOARDING__"), "教学平台运行时必须注入 app.js");
+    assert.ok(appScript.includes("window.__FORGE_DESIGN__"), "失败辅助平台运行时必须注入 app.js");
     assert.ok(appScript.indexOf("const safeStorage") < appScript.indexOf("setState"), "存档垫片必须先于游戏脚本定义");
     const stripped = stripPlatformSegments(appScript);
     assert.ok(!stripped.includes("/api/play-events"), "剥离后不应残留平台脚本");
-    assert.ok(readFileSync(join(root, "styles.css"), "utf8").includes("min-width:44px"), "样式必须落入 styles.css");
-    const manifest = JSON.parse(readFileSync(join(root, "game-manifest.json"), "utf8")) as { experimental: boolean; template: string };
+    assert.match(readFileSync(join(root, "styles.css"), "utf8"), /min-width:\s*88px/, "样式必须落入 styles.css");
+    const manifest = JSON.parse(readFileSync(join(root, "game-manifest.json"), "utf8")) as { experimental: boolean; template: string; levelProgression: { levelCount: number }; onboardingPlan: { steps: Array<{ successSignal: string }> }; assistancePlan: { hiddenAdaptation: boolean } };
     assert.equal(manifest.experimental, true);
     assert.equal(manifest.template, "generated");
+    assert.equal(manifest.levelProgression.levelCount, 20);
+    assert.equal(manifest.assistancePlan.hiddenAdaptation, false);
+    assert.deepEqual(manifest.onboardingPlan.steps.map(({ successSignal }) => successSignal), ["shot-fired"]);
+    assert.deepEqual(JSON.parse(readFileSync(join(root, "_studio", "ONBOARDING_PLAN.json"), "utf8")), manifest.onboardingPlan);
+    assert.deepEqual(JSON.parse(readFileSync(join(root, "_studio", "ASSISTANCE_PLAN.json"), "utf8")), manifest.assistancePlan);
   } finally {
     rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("自由生成静态门禁拒绝伪造、漏接或未安全暂停的教学", () => {
+  const wrongSignalRoot = mkdtempSync(join(tmpdir(), "forge-gen-wrong-onboarding-"));
+  const unsafeRoot = mkdtempSync(join(tmpdir(), "forge-gen-unsafe-onboarding-"));
+  try {
+    writeGeneratedArtifact(wrongSignalRoot, fakeProject(), { html: contractHtml.replaceAll("shot-fired", "made-up-signal"), designNotes: "错误信号", rounds: 1 });
+    writeAiArtProvenance(wrongSignalRoot);
+    assert.throws(() => inspectGeneratedArtifact(wrongSignalRoot), /真实动作处理器.*shot-fired/);
+
+    writeGeneratedArtifact(unsafeRoot, fakeProject(), { html: contractHtml.replace("!window.__FORGE_ONBOARDING__.isActive()", "true"), designNotes: "未暂停压力", rounds: 1 });
+    writeAiArtProvenance(unsafeRoot);
+    assert.throws(() => inspectGeneratedArtifact(unsafeRoot), /未冻结教学期自动压力/);
+  } finally {
+    rmSync(wrongSignalRoot, { recursive: true, force: true });
+    rmSync(unsafeRoot, { recursive: true, force: true });
   }
 });
 
@@ -193,9 +196,9 @@ test("静态探针接受运行时生成的开始控件，但拒绝只有查询�
   const dynamicStartHtml = contractHtml
     .replace('<button id="start">开始</button>', '<div id="start-slot"></div>')
     .replace(
-      'let state = "idle";',
+      'let state="idle"',
       `document.querySelector("#start-slot").innerHTML = '<button id="start">开始</button>';
-let state = "idle";`,
+let state="idle"`,
     );
   const dynamicRoot = mkdtempSync(join(tmpdir(), "forge-gen-dynamic-control-"));
   const missingRoot = mkdtempSync(join(tmpdir(), "forge-gen-missing-control-"));
@@ -216,11 +219,13 @@ let state = "idle";`,
 
 const contract3dHtml = contractHtml
   .replace("<script>", `<script type="module">\nimport * as THREE from "./vendor/three.module.js";\nvoid THREE;`)
+  .replaceAll("shot-fired", "mechanic-1-completed")
   .replace("safeStorage.setItem", "// three scene omitted\nsafeStorage.setItem");
 
 function fake3dProject(): ProjectDetail {
-  const spec = generateGameSpec({ idea: "第三人称在悬浮岛间驾驶热气球收集星火,撞上风暴云失败。", template: "generated", dimensions: "3d" });
-  return { id: "p-gen3d", title: "热气球星火", version: { id: "v-gen3d-1" }, spec } as unknown as ProjectDetail;
+  const baseSpec = generateGameSpec({ idea: "第三人称在悬浮岛间驾驶热气球收集星火,撞上风暴云失败。", template: "generated", dimensions: "3d" });
+  const designContract = createGameDesignContractForLegacyProject({ projectId: "p-gen3d", title: "热气球星火", idea: baseSpec.vision, createdAt: "2026-09-05T00:00:00.000Z", spec: baseSpec });
+  return { id: "p-gen3d", title: "热气球星火", version: { id: "v-gen3d-1" }, spec: { ...baseSpec, designContract } } as unknown as ProjectDetail;
 }
 
 test("3D 扫描白名单:只放行本地 three 模块 import,其余 import 与 2D 模块脚本仍被拦", () => {

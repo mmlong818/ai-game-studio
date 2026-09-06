@@ -35,7 +35,6 @@
 | 4 | 数织矩阵 | `merge-2048` | 已完成并发布 v34，见 `42-merge-2048-best-template-reference.md` | 20 个独立任务、下一块预告、连续位移动画、直接滑动、回溯与新位图资产均已落实；稳定网址已指向 `aa382c32-fc8c-497a-8e7f-e57c6f26b4a1` |
 | 5 | 朱门华容 | `klotski` | 已完成并发布 v34，见 `43-klotski-best-template-reference.md` | 20 个求解器验证布局、8–120 步真实距离带、直接拖动、逐步提示、撤销/重做和路径回放均已落实；稳定网址已指向 `119aae67-cd04-4c68-8c5f-bbeb41b6a0b0` |
 | 6 | 青玉长游 | `snake` | 已完成并发布 v34，见 `44-snake-best-template-reference.md` | 20 个固定场型与五章、双转向缓冲、真实滑动、100 次可达食物、暂停恢复、金果与结算统计均已落实；稳定网址已指向 `da0a6b12-df3a-4791-a234-ccf04e4e7d7b` |
-| 7 | 苔径迷庭 | `maze` | 已完成并发布 v34，见 `45-maze-best-template-reference.md` | 20 个唯一可解关、五章机制、支路萤灯、雾/冰/星钥门/暮钟、有限提示、滑动与四键均已落实；稳定网址已指向 `860dc65f-4c62-4061-aafb-b0bdba3face5` |
 | 8 | 植光拼图 | `puzzle` | 已完成并发布 v35，见 `46-puzzle-best-template-reference.md` | 20 图、6–50 块、四区外围整理、真实指针拖动、缩放/预览/提示、邻接成组和真实上传图自适应均已验收；稳定网址已指向 `8e550150-c71f-46ef-a864-e6445dba4e5b` |
 | 9 | 果冻填阵 | `block-place` | 已完成研究合同，见 `47-block-place-best-template-reference.md` | 已发布 v22；20 个开局、五章、旅程/无尽/每日、无尽最佳、每日同日复现、100 批可连续放完验证、手指上方拖放、局内恢复与主美真检均通过 |
 | 10 | 软糖拼岛 | `polyomino-fit` | 已完成并发布 v18，见 `48-polyomino-fit-best-template-reference.md` | 20 个原创可解轮廓、五章 4–8 块递进、直接拖放、非法回弹、分层提示、恢复/撤销/重置和主美真检均通过 |
@@ -44,8 +43,6 @@
 | 13 | 3D 收集闯关 | `generated-3d` | 已完成并发布 v9，见 `51-3d-collector-best-template-reference.md` | 20 个唯一空间蓝图、五章分层、真实走跳与高度碰撞、检查点复位、主线终点与可选星砂评价、动态危险、刷新续玩、手机/桌面真检均已通过；稳定网址已指向 `2418cbb4-23ed-445c-abc2-be9ac20c3f0b` |
 | 14 | 3D 小型竞技场 | `signal-hunt` | 已完成并发布 v8，见 `52-3d-arena-best-template-reference.md` | 20 个唯一竞技蓝图、五章、四类独立位图敌人、真实飞行弹体、目标锁定、受击血条、远程预警、两次波次强化三选一、强化常驻 HUD 与手机/桌面真检均已通过；稳定网址已指向 `879a78ee-4c43-4386-8a3f-dde794a785ba` |
 | 15 | 空档接龙 | 固定游戏 `fixtures/freecell` | 已完成，见 `53-freecell-best-template-reference.md` | 标准 FreeCell 规则、超级移动、安全自动收牌、Microsoft 1–100 号牌局全部经求解器验证、点击/拖拽/键盘、本地进度、自定义牌背、gpt-image-2 位图与溯源、Chromium 真实通关测试均已落实；服务启动时自动注册为官方游戏，稳定网址 `/play/freecell/` |
-| 16 | 纸境 · 立体书迷宫 | `threeMode = popup`（创作侧模板 `popup-rotate-3d` 待主工作区登记） | 已完成参照合同与实现，见 `54-paper-popup-3d-best-template-reference.md` | 20 关四章数据描述、每关必须转动且至少一颗隐藏星、求解器 + 浏览器探针逐关通关、纸艺程序化渲染与官方 gpt-image-2 贴图包、手机/桌面真检均已通过；待主美真人复核、发布并标记官方进入大厅 |
-| 17 | 虫虫攀枝 | 固定游戏 `fixtures/bug-climb`（官方原创，由实验通道 v13 固化） | 第一轮已完成，见 `56-bug-climb-best-template-reference.md` | 当前是三个树层组成的一局短程挑战，支持三树纹、有限上下走位、露珠蓄能和冲刺破树脂；树瘤与树脂已去除半透明底框，障碍消失不再震屏。游戏可玩并进入大厅，但三个树层的内容差异有限，不能写成“20 关成熟长线模板” |
 
 “待专门研究”不是占位式授权：该行在完成可追溯研究文档前不得进入视觉模仿或机制重构。
 

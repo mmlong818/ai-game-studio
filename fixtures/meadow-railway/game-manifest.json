@@ -1,0 +1,13 @@
+{
+  "title":"牧野小火车",
+  "template":"generated",
+  "fixtureKind":"meadow-railway",
+  "experimental":false,
+  "runtimeTarget":"web-3d",
+  "engine":"three",
+  "engineVersion":"0.185.1",
+  "inputModes":["pointer","keyboard","touch-buttons"],
+  "modes":["sandbox"],
+  "generatedAt":"2026-09-06",
+  "resourceProvenance":"./_studio/ART_PROVENANCE.md"
+}

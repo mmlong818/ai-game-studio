@@ -89,9 +89,9 @@ describe("two complete creation paths", () => {
       templateId: null,
       selectedSuggestionIds: [],
       newGameBrief: brief,
-      selectedMechanicIds: ["lane-dodge", "collect-escape"],
+      selectedMechanicIds: ["lane-dodge", "collect-charge"],
       changeLevel: "R3",
-      referenceDossier: createReferenceDossier(brief, ["lane-dodge", "collect-escape"]),
+      referenceDossier: createReferenceDossier(brief, ["lane-dodge", "collect-charge"]),
     });
     project = await withGeneratedAssets(project);
     project = await completeWorkflow(project);

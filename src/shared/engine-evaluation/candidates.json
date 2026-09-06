@@ -1,0 +1,147 @@
+{
+  "catalogVersion": 1,
+  "reviewedAt": "2026-09-05",
+  "engines": [
+    {
+      "id": "playcanvas",
+      "name": "PlayCanvas Engine",
+      "disposition": "baseline",
+      "primaryValue": "浏览器优先的 3D/WebGL/WebGPU 运行时与 npm 工具链",
+      "versionPolicy": "锁定 package.json 精确版本并随仓库升级",
+      "capabilities": ["3d", "webgl2", "webgpu", "gltf", "physics-integration", "npm"],
+      "targets": ["web", "pwa", "single-page-web"],
+      "automation": { "cli": true, "headlessBuild": true, "stableTextProject": true },
+      "cloudRequiredForBuild": false,
+      "exportWithoutService": true,
+      "licenses": [
+        { "component": "playcanvas-engine", "scope": "runtime", "license": "MIT", "sourceUrl": "https://github.com/playcanvas/engine", "redistributable": true }
+      ],
+      "evidenceUrls": ["https://github.com/playcanvas/engine"],
+      "notes": ["当前平台基线；编辑器云服务不属于运行时依赖"]
+    },
+    {
+      "id": "layaair",
+      "name": "LayaAir",
+      "disposition": "evaluate",
+      "primaryValue": "国内小游戏、2D/3D Web 与 CLI 发布链",
+      "versionPolicy": "PoC 必须固定引擎、IDE 与 CLI 的完整版本",
+      "capabilities": ["2d", "3d", "webgl", "webgpu", "mini-game", "native"],
+      "targets": ["web", "wechat-mini-game", "douyin-mini-game", "native"],
+      "automation": { "cli": true, "headlessBuild": "partial", "stableTextProject": "partial" },
+      "cloudRequiredForBuild": false,
+      "exportWithoutService": true,
+      "licenses": [
+        { "component": "LayaAir engine", "scope": "runtime", "license": "MIT", "sourceUrl": "https://github.com/layabox/LayaAir", "redistributable": true },
+        { "component": "LayaAir CLI", "scope": "tooling", "license": "MIT", "sourceUrl": "https://github.com/layabox/layaair-cli", "redistributable": true },
+        { "component": "LayaIdea", "scope": "cloud-service", "license": "proprietary-service", "sourceUrl": "https://volcengine.layaidea.com/", "redistributable": false }
+      ],
+      "evidenceUrls": ["https://github.com/layabox/LayaAir", "https://github.com/layabox/layaair-cli", "https://www.layaair.com/3.x/doc/basics/"],
+      "notes": ["LayaIdea 与 MIT 运行时分开评估", "先验证 B3 单页 Web，再验证一个小游戏目标"]
+    },
+    {
+      "id": "gdevelop",
+      "name": "GDevelop",
+      "disposition": "compare",
+      "primaryValue": "成熟的对象、行为、事件与扩展结构",
+      "versionPolicy": "对照实验固定 Git commit 与导出器版本",
+      "capabilities": ["2d", "3d-basic", "event-system", "behavior-system", "web-export"],
+      "targets": ["web", "desktop", "mobile"],
+      "automation": { "cli": "partial", "headlessBuild": "partial", "stableTextProject": true },
+      "cloudRequiredForBuild": false,
+      "exportWithoutService": true,
+      "licenses": [
+        { "component": "GDevelop editor and game engine", "scope": "editor", "license": "MIT", "sourceUrl": "https://github.com/4ian/GDevelop", "redistributable": true },
+        { "component": "asset-store content", "scope": "examples", "license": "per-asset", "sourceUrl": "https://gdevelop.io/game-makers/game-assets", "redistributable": "review-required" }
+      ],
+      "evidenceUrls": ["https://github.com/4ian/GDevelop"],
+      "notes": ["第一阶段只做 GameProjectV3 映射对照，不嵌入完整编辑器"]
+    },
+    {
+      "id": "phaser",
+      "name": "Phaser",
+      "disposition": "observe",
+      "primaryValue": "轻量 HTML5 2D 运行时",
+      "versionPolicy": "需要 PoC 时固定 npm 精确版本",
+      "capabilities": ["2d", "canvas", "webgl", "physics", "npm"],
+      "targets": ["web", "pwa"],
+      "automation": { "cli": true, "headlessBuild": true, "stableTextProject": true },
+      "cloudRequiredForBuild": false,
+      "exportWithoutService": true,
+      "licenses": [
+        { "component": "Phaser", "scope": "runtime", "license": "MIT", "sourceUrl": "https://github.com/phaserjs/phaser", "redistributable": true }
+      ],
+      "evidenceUrls": ["https://github.com/phaserjs/phaser"],
+      "notes": ["仅当现有 Canvas 2D 运行时维护成本成为明确瓶颈时进入 PoC"]
+    },
+    {
+      "id": "babylonjs",
+      "name": "Babylon.js",
+      "disposition": "observe",
+      "primaryValue": "高级 WebGPU 与 Web 3D 工具链",
+      "versionPolicy": "需要专项能力时固定 npm 精确版本",
+      "capabilities": ["3d", "webgl2", "webgpu", "gltf", "physics-integration", "npm"],
+      "targets": ["web", "pwa", "webxr"],
+      "automation": { "cli": true, "headlessBuild": true, "stableTextProject": true },
+      "cloudRequiredForBuild": false,
+      "exportWithoutService": true,
+      "licenses": [
+        { "component": "Babylon.js", "scope": "runtime", "license": "Apache-2.0", "sourceUrl": "https://github.com/BabylonJS/Babylon.js", "redistributable": true }
+      ],
+      "evidenceUrls": ["https://github.com/BabylonJS/Babylon.js"],
+      "notes": ["只有 PlayCanvas 缺少明确高级能力时才验证"]
+    },
+    {
+      "id": "cocos",
+      "name": "Cocos Engine",
+      "disposition": "observe",
+      "primaryValue": "国内多端与小游戏生态",
+      "versionPolicy": "进入 PoC 前逐项冻结引擎、编辑器与构建插件版本",
+      "capabilities": ["2d", "3d", "mini-game", "native", "web"],
+      "targets": ["web", "wechat-mini-game", "douyin-mini-game", "native"],
+      "automation": { "cli": "partial", "headlessBuild": "partial", "stableTextProject": "partial" },
+      "cloudRequiredForBuild": "unknown",
+      "exportWithoutService": "partial",
+      "licenses": [
+        { "component": "Cocos Engine", "scope": "runtime", "license": "MIT", "sourceUrl": "https://github.com/cocos/cocos-engine", "redistributable": true },
+        { "component": "Cocos Creator editor", "scope": "editor", "license": "review-required", "sourceUrl": "https://www.cocos.com/en/creator", "redistributable": "review-required" }
+      ],
+      "evidenceUrls": ["https://github.com/cocos/cocos-engine"],
+      "notes": ["引擎源码许可不能替代编辑器和插件许可审查"]
+    },
+    {
+      "id": "godot",
+      "name": "Godot Engine",
+      "disposition": "observe",
+      "primaryValue": "完整开放的通用 2D/3D 编辑器与桌面/原生发布",
+      "versionPolicy": "专项 PoC 固定稳定版本与导出模板哈希",
+      "capabilities": ["2d", "3d", "editor", "headless", "native", "web"],
+      "targets": ["web", "desktop", "mobile", "native"],
+      "automation": { "cli": true, "headlessBuild": true, "stableTextProject": true },
+      "cloudRequiredForBuild": false,
+      "exportWithoutService": true,
+      "licenses": [
+        { "component": "Godot Engine and editor", "scope": "editor", "license": "MIT", "sourceUrl": "https://github.com/godotengine/godot", "redistributable": true },
+        { "component": "third-party components", "scope": "runtime", "license": "mixed-notice-required", "sourceUrl": "https://github.com/godotengine/godot/blob/master/COPYRIGHT.txt", "redistributable": "review-required" }
+      ],
+      "evidenceUrls": ["https://github.com/godotengine/godot"],
+      "notes": ["当前不进入浏览器优先生成主链；保留桌面和原生专项候选"]
+    },
+    {
+      "id": "microstudio",
+      "name": "microStudio",
+      "disposition": "observe",
+      "primaryValue": "可自托管的网页创作、协作与教学体验",
+      "versionPolicy": "架构研究固定 Git commit",
+      "capabilities": ["2d", "web-editor", "self-hosting", "collaboration"],
+      "targets": ["web"],
+      "automation": { "cli": "unknown", "headlessBuild": "unknown", "stableTextProject": "partial" },
+      "cloudRequiredForBuild": false,
+      "exportWithoutService": true,
+      "licenses": [
+        { "component": "microStudio", "scope": "editor", "license": "MIT", "sourceUrl": "https://github.com/pmgl/microstudio", "redistributable": true }
+      ],
+      "evidenceUrls": ["https://github.com/pmgl/microstudio"],
+      "notes": ["借鉴非专业用户体验，不作为高质量 3D 底座"]
+    }
+  ]
+}

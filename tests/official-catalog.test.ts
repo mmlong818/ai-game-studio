@@ -55,6 +55,8 @@ test("启动同步按登记表标记官方并写入大厅顺序，未登记的�
     assert.equal(first.tetris, tetris.id);
     assert.ok(first["star-dream-duel"]);
     assert.ok(first.freecell);
+    assert.ok(first['island-kart']);
+    assert.ok(first['meadow-railway']);
     assert.equal(first.puzzle, null, "未发布的登记游戏不会被匹配");
 
     const ranks = new Map(officialLobbyOrder().map((game) => [game.id, game.lobbyRank]));
@@ -66,6 +68,10 @@ test("启动同步按登记表标记官方并写入大厅顺序，未登记的�
     assert.equal(rowOf(tetris.id).lobby_rank, ranks.get("tetris"));
     assert.equal(rowOf(first["star-dream-duel"]!).lobby_rank, ranks.get("star-dream-duel"));
     assert.equal(rowOf(first.freecell!).lobby_rank, ranks.get("freecell"));
+    for(const id of ['island-kart','meadow-railway']) {
+      assert.equal(Boolean(rowOf(first[id]!).is_official),true);
+      assert.equal(rowOf(first[id]!).lobby_rank,ranks.get(id));
+    }
     assert.equal(Boolean(rowOf(impostor.id).is_official), false, "同名不同模板的项目不应被标记官方");
     assert.equal(rowOf(impostor.id).lobby_rank, null);
     assert.equal(Boolean(rowOf(ladybug.id).is_official), true);
@@ -85,10 +91,11 @@ test("启动同步按登记表标记官方并写入大厅顺序，未登记的�
         OFFICIAL_GAMES.find((game) => game.id === "star-dream-duel")!.title,
         tetrisGame.title,
         OFFICIAL_GAMES.find((game) => game.id === "freecell")!.title,
-        "虫虫攀枝",
+        "椰风海岛",
+        "牧野小火车",
         "手工转官方的用户游戏",
       ],
-      "大厅按 lobby_rank 升序：星梦对决(1) → 折光堆叠(13) → 空档接龙(14) → 虫虫攀枝(15) → 手工转官方的用户游戏(99)",
+      "大厅按当前登记顺序排列，已删除游戏不再被启动同步恢复",
     );
   } finally {
     await database.close();

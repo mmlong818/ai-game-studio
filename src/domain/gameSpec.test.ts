@@ -22,13 +22,13 @@ describe("game spec v2", () => {
 
   it("为新游戏组合生成实验规格并绑定参考档案", () => {
     const brief = "玩家操纵小昆虫在树干上高速闪避并收集露珠";
-    const dossier = createReferenceDossier(brief, ["lane-dodge", "collect-escape"]);
+    const dossier = createReferenceDossier(brief, ["lane-dodge", "collect-charge"]);
     const spec = buildGameSpec({
       ...INITIAL_DRAFT,
       creationMode: "mechanic-composition",
       templateId: null,
       newGameBrief: brief,
-      selectedMechanicIds: ["lane-dodge", "collect-escape"],
+      selectedMechanicIds: ["lane-dodge", "collect-charge"],
       changeLevel: "R3",
       referenceDossier: dossier,
     });

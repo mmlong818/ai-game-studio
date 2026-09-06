@@ -8,6 +8,7 @@ const mimeTypes: Record<string, string> = {
   ".js": "text/javascript; charset=utf-8",
   ".json": "application/json; charset=utf-8",
   ".png": "image/png",
+  ".webp": "image/webp",
   ".svg": "image/svg+xml",
   ".wav": "audio/wav",
   ".webmanifest": "application/manifest+json; charset=utf-8",

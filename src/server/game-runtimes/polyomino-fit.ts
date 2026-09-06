@@ -1,5 +1,6 @@
 // 规则架构参考 mkgame-poly（MIT）；关卡、拼块、名称和视听资产均为本平台原创。
-export const polyominoFitScript = String.raw`
+import { polyominoSolverScript } from "./polyomino-solver.js";
+export const polyominoFitScript = polyominoSolverScript + String.raw`
 const polyDifficulty = {
   relaxed: { boardBonus: 0, hintBonus: 1, rotationOffset: 0 },
   standard: { boardBonus: 0, hintBonus: 0, rotationOffset: 1 },
@@ -44,6 +45,7 @@ let polyMoves = 0;
 let polyInvalidMoves = 0;
 let polyUndoStack = [];
 let polyPulse = null;
+let polyFeedbackFrame = null;
 let polyDragState = null;
 let polyDragPreview = null;
 let polyRestored = false;
@@ -168,11 +170,11 @@ function restorePolySession(){
     const saved=JSON.parse(safeStorage.getItem(polySessionKey())||"null");
     if(!saved||saved.schemaVersion!==3||saved.level!==currentCampaignLevel().number||!Array.isArray(saved.pieces)||!Array.isArray(saved.placements))return;
     const rotations=new Map(saved.pieces.map((piece)=>[piece.id,Number(piece.rotation)]));
-    if(polyPieces.some((piece)=>!rotations.has(piece.id)))return;
+    if(polyPieces.some((piece)=>!Number.isInteger(rotations.get(piece.id))))return;
     const candidatePlacements=[];
     for(const placement of saved.placements){
       const piece=polyPieces.find((entry)=>entry.id===placement.id);
-      if(!piece||candidatePlacements.some((entry)=>entry.id===piece.id))return;
+      if(!piece||!Number.isInteger(Number(placement.rotation))||candidatePlacements.some((entry)=>entry.id===piece.id))return;
       const originalPlacements=polyPlacements;polyPlacements=candidatePlacements;
       const valid=canPlacePolyPiece(piece,Number(placement.row),Number(placement.column),Number(placement.rotation));
       polyPlacements=originalPlacements;
@@ -231,7 +233,7 @@ function placePolyPiece(piece,row,column,rotation=piece.rotation){
     polyInvalidMoves+=1;polyPulse={kind:"invalid",until:performance.now()+260};playSound("fail");setStatus("这里无法完整容纳该拼块；拼块已回到候选区。");drawPolyomino();return false;
   }
   polyUndoStack.push({placements:structuredClone(polyPlacements),rotations:polyPieces.map((entry)=>entry.rotation),moves:polyMoves});
-  polyPlacements.push({id:piece.id,row,column,rotation});polyMoves+=1;polyHint=null;polyPulse={kind:"snap",id:piece.id,until:performance.now()+300};playSound("move");selectNextPolyPiece();
+  polyPlacements.push({id:piece.id,row,column,rotation});polyMoves+=1;polyHint=null;polyPulse={kind:"snap",id:piece.id,until:performance.now()+300};playSound("move");signalOnboarding("piece-placed");selectNextPolyPiece();
   if(polyPlacements.length === polyPieces.length){
     clearPolySession();
     if(!polyBestMoves||polyMoves<polyBestMoves){polyBestMoves=polyMoves;try{safeStorage.setItem(polyBestKey(),String(polyBestMoves));}catch{}}
@@ -268,6 +270,7 @@ function drawPolyPiece(piece,index,x,y,cell,alpha=1){
 }
 
 function drawPolyomino(){
+  if(polyFeedbackFrame!==null){cancelAnimationFrame(polyFeedbackFrame);polyFeedbackFrame=null;}
   clearCanvas();ctx.save();ctx.fillStyle="rgba(252,247,242,.94)";ctx.fillRect(0,0,canvas.width,canvas.height);ctx.translate(0,gameSceneTop());
   const layout=polyLayout(),target=polyTargetCells(),occupied=polyOccupiedCells();
   if(running){ctx.textAlign="center";ctx.fillStyle="#40343f";ctx.font="800 30px Inter,sans-serif";ctx.fillText(currentPolyBlueprint().name+" · "+polyPlacements.length+"/"+polyPieces.length+" 块",360,76);ctx.fillStyle="#776875";ctx.font="600 18px Inter,sans-serif";ctx.fillText(currentPolyBlueprint().chapter+" · "+polyMoves+" 步 · 提示 "+polyHintsRemaining,360,111);}
@@ -287,7 +290,18 @@ function drawPolyomino(){
     const cells=rotatePolyCells(piece.cells,piece.rotation),maxColumn=Math.max(...cells.map((cell)=>cell[1]))+1,maxRow=Math.max(...cells.map((cell)=>cell[0]))+1,mini=Math.min(48,(tray.slotWidth-24)/maxColumn,(tray.slotHeight-38)/maxRow),pieceX=x+(tray.slotWidth-maxColumn*mini)/2,pieceY=y+20+(tray.slotHeight-28-maxRow*mini)/2;
     if(!used)drawPolyPiece(piece,index,pieceX,pieceY,mini);else{ctx.fillStyle="rgba(82,69,79,.58)";ctx.font="700 14px Inter,sans-serif";ctx.textAlign="center";ctx.fillText("已吸附",x+tray.slotWidth/2,y+tray.slotHeight/2);}
   });
-  if(polyPulse&&performance.now()<polyPulse.until&&polyPulse.kind==="invalid"){ctx.fillStyle="rgba(238,77,55,.12)";ctx.fillRect(layout.x,layout.y,layout.boardSize,layout.boardSize);}
+  if(polyPulse&&performance.now()<polyPulse.until){
+    const strength=Math.max(0,(polyPulse.until-performance.now())/300);
+    if(polyPulse.kind==="invalid"){
+      ctx.strokeStyle="rgba(238,77,55,"+strength+")";ctx.lineWidth=5;ctx.strokeRect(layout.x-6,layout.y-6,layout.boardSize+12,layout.boardSize+12);
+    }else{
+      const placement=polyPlacements.find(item=>item.id===polyPulse.id),piece=polyPieces.find(item=>item.id===polyPulse.id);
+      if(placement&&piece)for(const [r,c] of rotatePolyCells(piece.cells,placement.rotation)){
+        ctx.strokeStyle="rgba(255,248,205,"+strength+")";ctx.lineWidth=4;ctx.beginPath();ctx.roundRect(layout.x+(placement.column+c)*layout.cell+3,layout.y+(placement.row+r)*layout.cell+3,layout.cell-6,layout.cell-6,12);ctx.stroke();
+      }
+    }
+    polyFeedbackFrame=requestAnimationFrame(()=>{polyFeedbackFrame=null;drawPolyomino();});
+  }
   ctx.restore();if(config.visualStyle!=="cute")finishCanvasStyle();
 }
 
@@ -295,8 +309,11 @@ function rotateSelectedPolyPiece(){const piece=polyPieces[selectedPolyPiece];if(
 
 function hintPolyPiece(){
   if(polyHintsRemaining<=0){setStatus("本关提示已用完；优先寻找只容得下一种拼块的紧角。");return false;}
-  const index=polyPieces.findIndex((piece)=>!polyPlacements.some((placement)=>placement.id===piece.id));if(index<0)return false;
-  selectedPolyPiece=index;const piece=polyPieces[index],solutionCells=rotatePolyCells(piece.cells,piece.solution[2]).map(([row,column])=>polyCellKey(piece.solution[0]+row,piece.solution[1]+column));
+  const result=solvePolyRemainder(polyPieces,polyPlacements,polyTargetCells(),polyShapeVariants);
+  if(!result.solution){setStatus(result.exhausted?"这一步分支较多，暂时无法确认提示；没有扣次数，可以先撤销一块。":"当前摆法留下了无法填满的空隙；撤销上一块再试，提示次数不扣除。");return false;}
+  const next=result.solution.find(item=>item.id===polyPieces[selectedPolyPiece]?.id)||result.solution[0];if(!next)return false;
+  const index=polyPieces.findIndex(piece=>piece.id===next.id);
+  selectedPolyPiece=index;const piece=polyPieces[index],solutionCells=rotatePolyCells(piece.cells,next.rotation).map(([row,column])=>polyCellKey(next.row+row,next.column+column));
   const stage=polyHintsRemaining===currentPolyBlueprint().hints?"region":"anchor";polyHint={pieceId:piece.id,stage,cells:new Set(stage==="region"?solutionCells:[solutionCells[0]])};polyHintsRemaining-=1;persistPolySession();setStatus(stage==="region"?"已标出一块软糖对应的区域，但方向仍由你判断。":"已标出该拼块的一个锚点，不会自动旋转或代放。");drawPolyomino();return true;
 }
 

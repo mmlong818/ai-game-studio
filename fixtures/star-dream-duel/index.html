@@ -19,9 +19,9 @@
     <link rel="preload" as="image" href="assets/tiles-v2/flower.png">
     <link rel="preload" as="image" href="assets/tiles-v2/heart.png">
     <link rel="preload" as="image" href="assets/tiles-v2/drop.png">
-    <link rel="stylesheet" href="styles.css?v=7">
+    <link rel="stylesheet" href="styles.css?v=14">
   </head>
-  <body data-game-state="idle" data-running="false">
+  <body data-game-state="idle" data-running="false" data-game-mode="solo">
     <div class="sky" aria-hidden="true">
       <span class="sky__cloud sky__cloud--one"></span>
       <span class="sky__cloud sky__cloud--two"></span>
@@ -124,6 +124,11 @@
         </aside>
 
         <section class="board-stage" aria-label="共用棋盘">
+          <div class="solo-hud" aria-label="本关收集目标" aria-live="polite">
+            <strong>剩余 <b id="solo-moves">12</b> 步</strong>
+            <div id="solo-targets"></div>
+            <small>整张棋盘都能交换 · 凑成三个即可收集</small>
+          </div>
           <div class="opponent-strip">
             <div class="opponent-strip__portrait" aria-hidden="true"><span>✦</span></div>
             <div>
@@ -152,6 +157,7 @@
             <span class="move-guide__gesture" aria-hidden="true"><i></i><b>↔</b><i></i></span>
             <p><strong>选择战术交换</strong><span>星攻 · 心愈 · 水花月充能</span></p>
             <button id="hint-button" type="button">给我提示</button>
+            <button id="play-help" type="button" data-open-game-help>新手帮助</button>
           </div>
           <div class="skill-bar" aria-label="战术技能">
             <button type="button" data-skill="tide" aria-describedby="skill-tide-help"><strong>潮汐换位</strong><span><b id="skill-tide-value">0</b>/8</span><small id="skill-tide-help">跨格交换并形成消除</small></button>
@@ -175,9 +181,15 @@
             <h2 id="setup-title">欢迎来到星梦对决</h2>
           </div>
         </div>
-        <p class="setup-card__description" id="setup-description">你和露娜共用一张棋盘，各自控制一半区域。不同棋子承担攻击、恢复和充能职责。</p>
+        <p class="setup-card__description" id="setup-description">独自探索整张棋盘。交换相邻棋子凑成三个，收集目标即可过关；没有计时，也没有对手。</p>
 
         <div class="campaign-picker">
+          <span id="game-mode-label">选择玩法</span>
+          <div class="mode-buttons" role="group" aria-labelledby="game-mode-label">
+            <button type="button" data-game-mode="solo" aria-pressed="true"><strong>单人闯关</strong></button>
+            <button type="button" data-game-mode="duel" aria-pressed="false"><strong>对战</strong></button>
+            <button type="button" data-game-mode="endless" aria-pressed="false"><strong>无限休闲</strong></button>
+          </div>
           <label for="campaign-level">星梦旅程</label>
           <select id="campaign-level" data-campaign-level aria-describedby="campaign-progress"></select>
           <small id="campaign-progress" data-campaign-progress>第 1 / 20 关 · 认识规则</small>
@@ -200,7 +212,7 @@
           </article>
           <article>
             <span class="guide-steps__number">3</span>
-            <div><strong>高价值构形改变回合</strong><p>四连可续行；新棋子落下的连消仍归触发者。</p></div>
+            <div><strong>规则随关卡逐步开放</strong><p>第 3 关起四连可续行，第 5 关起开放技能；连消归触发者。</p></div>
           </article>
         </div>
 
@@ -220,11 +232,12 @@
           <div class="score-picker__range" aria-hidden="true"><span>100</span><span>每次 100</span><span>1000</span></div>
         </div>
 
+        <button class="setup-help-button" type="button" data-open-game-help>新手帮助 · 试着交换一次</button>
         <button class="setup-sound-button" id="sound-toggle" type="button" aria-label="关闭音效" aria-pressed="true">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9v6h4l5 4V5L8 9H4Zm12.5 1.1a3 3 0 0 1 0 3.8M18.8 7a7 7 0 0 1 0 10"/></svg>
           <span id="sound-toggle-label">声音开启</span>
         </button>
-        <button class="setup-card__start" id="setup-start" type="button">以 <span id="setup-start-score">100</span> 点生命开始对局</button>
+        <button class="setup-card__start" id="setup-start" type="button"><span id="duel-start-label" hidden>以 <span id="setup-start-score">100</span> 点生命开始对局</span><span id="solo-start-label">开始收集星光</span></button>
         <p class="install-note">添加到手机主屏幕，即可全屏并支持离线启动。</p>
       </section>
     </div>
@@ -232,18 +245,21 @@
     <div class="result-modal" id="result-modal" hidden>
       <section class="result-card" role="dialog" aria-modal="true" aria-labelledby="result-title" aria-describedby="result-detail">
         <div class="result-card__burst" aria-hidden="true">✦</div>
-        <p class="eyebrow">BATTLE COMPLETE</p>
+        <p class="eyebrow" id="result-eyebrow">对战成果</p>
         <h2 id="result-title">对局结束</h2>
         <p id="result-detail"></p>
+        <div id="solo-result" class="solo-medals"></div>
+        <p id="solo-result-targets"></p>
         <div class="result-scores">
           <span>你 <strong id="result-player-score">0</strong></span>
           <i>VS</i>
           <span>露娜 <strong id="result-ai-score">0</strong></span>
         </div>
         <button id="play-again" type="button">再战一局</button>
+        <button id="result-setup" type="button">选择玩法与关卡</button>
       </section>
     </div>
 
-    <script type="module" src="app.js?v=7"></script>
+    <script type="module" src="app.js?v=16"></script>
   </body>
 </html>

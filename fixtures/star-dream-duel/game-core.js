@@ -7,6 +7,12 @@ export const STARTING_SCORE = MIN_STARTING_SCORE;
 export const TILE_TYPES = ['moon', 'cloud', 'star', 'flower', 'heart', 'drop'];
 export const TACTICAL_RULE_VERSION = 3;
 export const HEALING_MULTIPLIER = 0.5;
+export const SKILL_COSTS = Object.freeze({ tide: 8, bloom: 10, veil: 10 });
+export function canUseBattleSkill(level, state, actor, skill) {
+  if (!['player', 'ai'].includes(actor) || !Object.hasOwn(SKILL_COSTS, skill)) return false;
+  const energy = actor === 'player' ? state.playerEnergy : state.aiEnergy;
+  return Boolean(level.allowSkills && state.phase === actor && (energy?.[skill] ?? 0) >= SKILL_COSTS[skill]);
+}
 
 export function tileBase(tile) {
   if (typeof tile !== 'string' || tile === 'blocker') return null;
@@ -25,10 +31,13 @@ function sameTile(left, right) {
 
 export function createSeededRng(seed = Date.now()) {
   let value = seed >>> 0;
-  return () => {
+  const random = () => {
     value = (value * 1664525 + 1013904223) >>> 0;
     return value / 4294967296;
   };
+  random.getState = () => value;
+  random.setState = (saved) => { value = saved >>> 0; };
+  return random;
 }
 
 export function reshuffleBattleBoard(battleState, rng = Math.random, options = {}) {
@@ -59,6 +68,7 @@ export function isAdjacent(first, second) {
 }
 
 export function belongsToOwner(position, owner) {
+  if (owner === 'solo') return position.row >= 0 && position.row < ROWS && position.col >= 0 && position.col < COLS;
   return owner === 'ai' ? position.row < ROWS / 2 : position.row >= ROWS / 2;
 }
 
@@ -126,7 +136,7 @@ export function findMatches(board) {
 
 export function findValidMoves(board, owner) {
   const moves = [];
-  const startRow = owner === 'ai' ? 0 : ROWS / 2;
+  const startRow = owner === 'ai' || owner === 'solo' ? 0 : ROWS / 2;
   const endRow = owner === 'ai' ? ROWS / 2 : ROWS;
 
   for (let row = startRow; row < endRow; row += 1) {

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import test from "node:test";
@@ -15,7 +15,6 @@ const examples: Array<[GameTemplate, VisualStyle, string, string]> = [
   ["puzzle", "fashion", "植光拼图", "做一个植物标本图片拼图，玩家可以上传自己的图片再完成还原。"],
   ["breakout", "classic", "漆海碎星", "做一个漆艺海面打砖块游戏，清除全部砖块后显示胜利。"],
   ["klotski", "line-art", "朱门华容", "做一个东方木艺华容道，移动曹操从底部中央离开。"],
-  ["maze", "calm", "苔径迷庭", "做一个每局自动生成路线的苔石迷宫，从左上走到右下出口。"],
   ["snake", "cute", "青玉长游", "做一个青玉花园贪吃蛇，收集十二枚朱果之后完成挑战。"],
   ["merge-2048", "fashion", "数织矩阵", "做一个时尚数字合成游戏，合并出目标数字后获胜。"],
   ["space-shooter", "color-block", "星环突围", "做一个太空射击游戏，规避敌机并完成目标击破数。"],
@@ -24,6 +23,20 @@ const examples: Array<[GameTemplate, VisualStyle, string, string]> = [
   ["region-logic", "cute", "星灵巡格", "做一个区域独占逻辑游戏，每行每列和每个区域各放一颗星。"],
   ["mahjong-roguelite", "cute", "月港雀旅", "做一个肉鸽麻将接龙，配对自由牌清空层叠牌阵并选择遗物。"],
 ];
+
+const expectedOnboardingSignals: Partial<Record<GameTemplate, string[]>> = {
+  tetris: ["piece-rotated"],
+  puzzle: ["piece-dragged"],
+  breakout: ["paddle-moved"],
+  klotski: ["block-moved"],
+  snake: ["direction-changed"],
+  "merge-2048": ["board-slid", "equal-merged-once"],
+  "space-shooter": ["shot-fired"],
+  "polyomino-fit": ["piece-placed"],
+  "block-place": ["piece-placed"],
+  "region-logic": ["candidate-eliminated"],
+  "mahjong-roguelite": ["match-resolved"],
+};
 
 function markTestAiArt(root: string) {
   mkdirSync(join(root, "_studio"), { recursive: true });
@@ -55,13 +68,20 @@ test("十二类艺术化游戏都会产出可解析脚本、角色拆分位图�
         visualStyle: string;
         cameraMode: string;
         inputModes: string[];
+        onboardingPlan: { schemaVersion: string; steps: Array<{ id: string; successSignal: string }> } | null;
       };
 
       assert.equal(manifest.template, template);
       assert.equal(manifest.visualStyle, visualStyle);
       assert.notEqual(manifest.cameraMode, "auto");
       assert.ok(manifest.inputModes.length > 0);
-      assert.equal(probes.length, 17);
+      assert.ok(probes.length >= 18);
+      assert.ok(probes.includes("可执行新手教学"));
+      assert.ok(probes.includes("可执行失败辅助"));
+      assert.equal(existsSync(join(output, "_studio", "ONBOARDING_PLAN.json")), true);
+      assert.equal(manifest.onboardingPlan?.schemaVersion, "onboarding-runtime-plan-v1");
+      assert.deepEqual(manifest.onboardingPlan?.steps.map(({ successSignal }) => successSignal), expectedOnboardingSignals[template]);
+      assert.deepEqual(JSON.parse(readFileSync(join(output, "_studio", "ONBOARDING_PLAN.json"), "utf8")), manifest.onboardingPlan);
       assert.equal(existsSync(join(output, "assets", "cover.png")), true);
       assert.equal(existsSync(join(output, "assets", "gameplay-atlas.png")), true);
       assert.equal(existsSync(join(output, "assets", "background.png")), true);
@@ -126,7 +146,8 @@ test("十二类艺术化游戏都会产出可解析脚本、角色拆分位图�
         assert.match(script, /addEventListener\("pointerdown"/);
         assert.match(script, /image\.naturalWidth \/ image\.naturalHeight/);
         assert.match(script, /config\.puzzleRules\?config\.puzzleRules\.snapTolerance:\.26/);
-        assert.match(script, /这里还没有可连接的拼缝/);
+        assert.match(script, /画板上还没有对齐/);
+        assert.match(script, /自由整理不算错位/);
         assert.match(script, /function perimeterSlots\(\)/);
         assert.match(script, /function tryConnectSelected\(\)/);
         assert.match(script, /function setPuzzleZoom\(next\)/);
@@ -207,7 +228,8 @@ test("十二类艺术化游戏都会产出可解析脚本、角色拆分位图�
         assert.match(script, /canvas\.addEventListener\("pointerdown"/);
         assert.match(script, /dragProbe/);
         assert.match(script, /function redoKlotskiMove\(/);
-        assert.match(script, /pieceOutlineWidth: 6/);
+        assert.match(script, /pieceOutlineWidth: 2/);
+        assert.match(script, /selectedOutlineWidth: 5/);
         assert.match(script, /incompleteArtIsCropped: true/);
         assert.match(script, /Number\(piece\.id\.slice\(-1\)\) % 2/);
         assert.equal(existsSync(join(output, "assets", "klotski-courtyard.png")), true);
@@ -246,30 +268,6 @@ test("十二类艺术化游戏都会产出可解析脚本、角色拆分位图�
         assert.doesNotMatch(script, /const width = shape\[0\]\.length \* size/);
         assert.doesNotMatch(script, /if \(edges\.right\) ctx\.fillRect/);
       }
-      if (template === "maze") {
-        const script = readFileSync(join(output, "app.js"), "utf8");
-        const html = readFileSync(join(output, "index.html"), "utf8");
-        const styles = readFileSync(join(output, "styles.css"), "utf8");
-        assert.match(script, /const mazeBlueprints = \[/);
-        assert.match(script, /"苔庭归星","暮钟综合","grand-maze"/);
-        assert.match(script, /function braidMaze\(\)/);
-        assert.match(script, /function mazeAlternativeSegments\(/);
-        assert.match(script, /function prepareObjectives\(\)/);
-        assert.match(script, /hasMultipleRoutes:mazeAlternativeSegments\(mazeShortestPath\)>0/);
-        assert.match(script, /function showHint\(\)/);
-        assert.match(script, /hintPath=path\.slice\(1,5\)/);
-        assert.match(script, /fogRadius:blueprint\(\)\.fogRadius/);
-        assert.match(script, /iceCount:iceKeys\.size/);
-        assert.match(script, /keyCount:starKeys\.size/);
-        assert.match(script, /function gestureDirection\(/);
-        assert.match(script, /pointerup/);
-        assert.match(script, />=18/);
-        assert.match(script, /holdRepeat/);
-        assert.match(html, /touch-controls maze-pad/);
-        assert.match(html, /data-maze-control-mode="swipe"/);
-        assert.match(html, /竞径星章/);
-        assert.match(styles, /data-maze-control-mode=swipe/);
-      }
       if (template === "snake") {
         const script = readFileSync(join(output, "app.js"), "utf8");
         const html = readFileSync(join(output, "index.html"), "utf8");
@@ -284,26 +282,25 @@ test("十二类艺术化游戏都会产出可解析脚本、角色拆分位图�
         assert.match(script, /function createSnakeObstacles\(/);
         assert.match(script, /function reachableSnakeCells\(/);
         assert.match(script, /function queueSnakeTurn\(/);
-        assert.match(script, /snakeDirectionQueue\.length >= 2/);
-        assert.match(script, /Math\.max\(Math\.abs\(dx\), Math\.abs\(dy\)\) < 18/);
+        assert.match(script, /steering: 'continuous-angle'/);
+        assert.match(script, /Math\.atan2\(dy, dx\)/);
         assert.match(script, /snakeReadyUntil = performance\.now\(\) \+ 900/);
         assert.match(script, /document\.addEventListener\("visibilitychange"/);
-        assert.match(script, /function renderedSnakeParts\(timestamp\)/);
+        assert.match(script, /function renderedSnakeParts\(\)/);
         assert.match(script, /function rebuildSnakeStaticLayer\(\)/);
-        assert.match(script, /staticLayerCached: true/);
+        assert.match(script, /staticLayerCached: false/);
         assert.match(script, /function snakeAnimationLoop\(timestamp\)/);
-        assert.match(script, /requestAnimationFrame-interpolation/);
+        assert.match(script, /requestAnimationFrame-continuous/);
         assert.doesNotMatch(script, /setInterval\(snakeStep/);
         assert.match(script, /pendingDifficultyUntil/);
-        assert.match(script, /撞到庭院障碍/);
+        assert.match(script, /snakeStats\.collisionReason = reason/);
         assert.match(html, /data-snake-difficulty="relaxed"/);
         assert.match(html, /data-snake-difficulty="standard"/);
         assert.match(html, /data-snake-difficulty="challenging"/);
-        assert.match(html, /data-snake-control-mode="swipe"/);
-        assert.match(html, /data-snake-control-mode="buttons"/);
+        assert.match(script, /canvas\.addEventListener\("pointermove"/);
         assert.match(html, /data-control="pause"/);
         assert.doesNotMatch(html, /data-control="undo"/);
-        assert.match(styles, /data-snake-control-mode=swipe/);
+        assert.match(script, /snakeMode === 'endless'/);
       }
       if (template === "merge-2048") {
         const script = readFileSync(join(output, "app.js"), "utf8");
@@ -462,5 +459,27 @@ test("十二类艺术化游戏都会产出可解析脚本、角色拆分位图�
     await database.close();
     const safeRoot = resolve(artifactRoot);
     if (safeRoot.startsWith(resolve(tmpdir()))) rmSync(safeRoot, { recursive: true, force: true });
+  }
+});
+
+test("通用信号捕获生成物归档合同教学并通过静态发布门禁", async () => {
+  const database = await openTestDatabase();
+  const repository = new StudioRepository(database, "http://127.0.0.1:4312");
+  const output = mkdtempSync(join(tmpdir(), "studio-signal-template-"));
+  try {
+    const project = await repository.create({ title: "雾港信号", idea: "捕获不断换位的目标并在倒计时内完成数量要求。", template: "signal-hunt", dimensions: "2d" });
+    writeDesignDocuments(output, project);
+    writeGameArtifact(output, project);
+    copyFileSync(join(output, "assets", "cover.png"), join(output, "assets", "background.png"));
+    markTestAiArt(output);
+    const probes = inspectGameArtifact(output);
+    const manifest = JSON.parse(readFileSync(join(output, "game-manifest.json"), "utf8")) as { onboardingPlan?: { steps?: Array<{ successSignal?: string }> } };
+    assert.ok(probes.includes("可执行新手教学"));
+    assert.deepEqual(manifest.onboardingPlan?.steps?.map(({ successSignal }) => successSignal), ["target-collected"]);
+    assert.deepEqual(JSON.parse(readFileSync(join(output, "_studio", "ONBOARDING_PLAN.json"), "utf8")), manifest.onboardingPlan);
+  } finally {
+    await database.close();
+    const safeOutput = resolve(output);
+    if (safeOutput.startsWith(resolve(tmpdir()))) rmSync(safeOutput, { recursive: true, force: true });
   }
 });

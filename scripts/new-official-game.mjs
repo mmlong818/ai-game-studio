@@ -111,8 +111,8 @@ ${kindFields}
   lobbyRank: ${lobbyRank},
   cover: "${cover}",
   referenceDoc: "${referenceDoc}",
-  // TODO：模板改造触发 R2 研究时使用的内部机制 id（见 src/domain/templates.ts 的 MECHANIC_LIBRARY）。
-  mechanicId: "grid-merge",
+  // TODO：玩法模式与机制都引用统一知识库中的稳定 ID。
+  knowledge: { patternId: "sliding-merge-puzzle", mechanicIds: ["grid-slide-merge"], rationale: "TODO：说明该玩法与机制组合为什么成立。" },
   domainTemplate: {
     id: "${templateId}",
     name: "TODO：玩法模板名（创作页“改一个现有游戏”里显示）",

@@ -1,0 +1,74 @@
+[
+  {
+    "name": "kart-oopi",
+    "pack": "car-kit",
+    "license": "CC0-1.0",
+    "source": "https://kenney.nl/assets/car-kit",
+    "sha256": "74448631bd83d7b739bdbb52981fa6a3d9759bb09329d4c6473d9cb6e83e5a66",
+    "triangles": 3306
+  },
+  {
+    "name": "kart-oodi",
+    "pack": "car-kit",
+    "license": "CC0-1.0",
+    "source": "https://kenney.nl/assets/car-kit",
+    "sha256": "ed26b46b42dcbe0dc125a267a7625abc7697c119633d6f201024da77d384e3a9",
+    "triangles": 3306
+  },
+  {
+    "name": "kart-oobi",
+    "pack": "car-kit",
+    "license": "CC0-1.0",
+    "source": "https://kenney.nl/assets/car-kit",
+    "sha256": "754ffb442a58f2da61081786800f060413a15d7d4bd5037b5bdfaf19a575d673",
+    "triangles": 3464
+  },
+  {
+    "name": "tree_palmDetailedTall",
+    "pack": "nature-kit",
+    "license": "CC0-1.0",
+    "source": "https://kenney.nl/assets/nature-kit",
+    "sha256": "ad249552e6802278c61a1101b9331a8a10ef7ad26d083e9f7681d81ed312f7e5",
+    "triangles": 336
+  },
+  {
+    "name": "tree_palmBend",
+    "pack": "nature-kit",
+    "license": "CC0-1.0",
+    "source": "https://kenney.nl/assets/nature-kit",
+    "sha256": "135ae233bd50c40f5b357f2d070d9375c47f77acbcdd271130bb27bb943be272",
+    "triangles": 200
+  },
+  {
+    "name": "plant_bushDetailed",
+    "pack": "nature-kit",
+    "license": "CC0-1.0",
+    "source": "https://kenney.nl/assets/nature-kit",
+    "sha256": "f657029e99a52f6933389c8d445699d352102990af574cfe190f4ec746de0b7d",
+    "triangles": 104
+  },
+  {
+    "name": "rock_smallC",
+    "pack": "nature-kit",
+    "license": "CC0-1.0",
+    "source": "https://kenney.nl/assets/nature-kit",
+    "sha256": "a15f2f85565775e7ae8a1c396b8efd1adf7ef8e372c9ab8ca0bb6df8e2b86b9f",
+    "triangles": 16
+  },
+  {
+    "name": "rock_largeA",
+    "pack": "nature-kit",
+    "license": "CC0-1.0",
+    "source": "https://kenney.nl/assets/nature-kit",
+    "sha256": "60e4896f0bb0077ce820aa842e48a4f50d089a0d39e38d56cbf1bd7286882136",
+    "triangles": 80
+  },
+  {
+    "name": "flower_redA",
+    "pack": "nature-kit",
+    "license": "CC0-1.0",
+    "source": "https://kenney.nl/assets/nature-kit",
+    "sha256": "50bcfeb7b6f8c361bc7e61ce55dfd0cc61ad95073351026476207b0db93c3121",
+    "triangles": 76
+  }
+]

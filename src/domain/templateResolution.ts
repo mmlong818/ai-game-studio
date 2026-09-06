@@ -1,22 +1,22 @@
-import { LIVE_OFFICIAL_GAMES } from "../shared/official-games";
+import { REMIXABLE_OFFICIAL_GAMES } from "../shared/official-games";
 import { recommendMechanics } from "./research";
-import { GAME_TEMPLATES, GAMEPLAY_TEMPLATE_BUNDLES, getTemplate } from "./templates";
+import { GAMEPLAY_TEMPLATE_BUNDLES, getTemplate } from "./templates";
 import type { GameTemplate } from "./types";
 
 /**
  * 服务端游戏模板 id → 创作流程使用的玩法模板 id。
  * 由官方游戏登记表派生：每条带 serverTemplate 的登记（模板游戏，以及固定游戏所落的模板）都贡献一项。
- * 规则：每一款官方游戏都必须能落到一个玩法模板上，否则不能进入“改一个现有游戏”。
+ * 规则：仅可改造的官方游戏贡献映射；官方仅游玩作品不回退到其他模板。
  */
 export const SERVER_TEMPLATE_TO_DOMAIN: Record<string, string> = Object.fromEntries(
-  LIVE_OFFICIAL_GAMES
+  REMIXABLE_OFFICIAL_GAMES
     .filter((game) => game.serverTemplate)
     .map((game) => [game.serverTemplate as string, game.domainTemplate.id]),
 );
 
 /** 固定游戏（fixture）不走服务端模板，按自身种类映射。由登记表的 fixture 型条目派生。 */
 export const FIXTURE_TEMPLATE_TO_DOMAIN: Record<string, string> = Object.fromEntries(
-  LIVE_OFFICIAL_GAMES
+  REMIXABLE_OFFICIAL_GAMES
     .filter((game) => game.kind === "fixture" && game.fixtureKind)
     .map((game) => [game.fixtureKind as string, game.domainTemplate.id]),
 );
@@ -24,13 +24,13 @@ export const FIXTURE_TEMPLATE_TO_DOMAIN: Record<string, string> = Object.fromEnt
 /** 3D 项目不看服务端模板，按 threeMode 映射。由玩法模板捆绑里声明了 threeMode 的条目派生。 */
 export const THREE_MODE_TO_DOMAIN: Record<string, string> = Object.fromEntries(
   GAMEPLAY_TEMPLATE_BUNDLES
-    .filter((bundle) => bundle.threeMode && !bundle.development)
+    .filter((bundle) => bundle.threeMode && !bundle.development && bundle.remixable !== false)
     .map((bundle) => [bundle.threeMode as string, bundle.domainTemplate.id]),
 );
 
 /** 玩法模板 id → 服务端已有封面所属的模板目录，供创作页当图标用。由登记表派生。 */
 export const DOMAIN_TEMPLATE_ART: Record<string, string> = Object.fromEntries(
-  LIVE_OFFICIAL_GAMES
+  REMIXABLE_OFFICIAL_GAMES
     .filter((game) => game.serverTemplate)
     .map((game) => [game.domainTemplate.id, game.serverTemplate as string]),
 );
@@ -42,7 +42,9 @@ export const DOMAIN_TEMPLATE_ART: Record<string, string> = Object.fromEntries(
 export function resolveGeneratedTemplate(idea: string): GameTemplate | undefined {
   const mechanics = recommendMechanics(idea).slice(0, 2).map((item) => item.id);
   if (mechanics.length === 0) return undefined;
-  return GAME_TEMPLATES.find((template) => mechanics.every((mechanic) => template.capabilities.includes(mechanic)));
+  return GAMEPLAY_TEMPLATE_BUNDLES.find((bundle) =>
+    !bundle.development && bundle.remixable !== false && mechanics.every((mechanic) => bundle.knowledge.mechanicIds.includes(mechanic)),
+  )?.domainTemplate;
 }
 
 export function resolveTemplateForGame(game: { template: string; idea: string; fixtureKind?: string | null; threeMode?: string | null }): GameTemplate | undefined {

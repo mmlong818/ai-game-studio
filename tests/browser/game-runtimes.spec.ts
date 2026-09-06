@@ -36,7 +36,7 @@ test("全新虫虫游戏在手机尺寸使用分层角色与四向操作", async
     creationMode: "mechanic-composition",
     templateId: null,
     newGameBrief: "控制昆虫高速爬树，收集露珠并躲开树脂后撤离",
-    selectedMechanicIds: ["lane-dodge", "collect-escape"],
+    selectedMechanicIds: ["lane-dodge", "collect-charge"],
   });
   await openRuntime(page, generateRuntimeFiles(spec, {
     "NODE-BACKGROUND": pixel, "NODE-PLAYER": pixel, "NODE-HEAD": pixel,
@@ -58,7 +58,7 @@ test("有限 3D 模板能够创建真实 WebGL 上下文", async ({ page }) => {
 });
 
 test("经营玩法需要安排订单并完成三次真实交付", async ({ page }) => {
-  await openRuntime(page, generateRuntimeFiles(p2Spec("queue-management"), { background: pixel, collectible: pixel }));
+  await openRuntime(page, generateRuntimeFiles(p2Spec("sort-and-serve"), { background: pixel, collectible: pixel }));
   await page.getByRole("button", { name: "开始游戏" }).click();
   for (let index = 0; index < 3; index += 1) {
     await page.getByRole("button", { name: "制作", exact: true }).click();
@@ -69,7 +69,7 @@ test("经营玩法需要安排订单并完成三次真实交付", async ({ page 
 });
 
 test("叙事玩法的选择会改变状态并抵达分支结局", async ({ page }) => {
-  await openRuntime(page, generateRuntimeFiles(p2Spec("chapter-branch"), { background: pixel }));
+  await openRuntime(page, generateRuntimeFiles(p2Spec("choice-consequence"), { background: pixel }));
   await page.getByRole("button", { name: "开始游戏" }).click();
   await page.keyboard.press("1");
   await page.keyboard.press("1");
@@ -78,7 +78,7 @@ test("叙事玩法的选择会改变状态并抵达分支结局", async ({ page 
 });
 
 test("卡牌玩法具有能量、连携、敌人回合和胜利结算", async ({ page }) => {
-  await openRuntime(page, generateRuntimeFiles(p2Spec("deck-combo"), { background: pixel, obstacle: pixel }));
+  await openRuntime(page, generateRuntimeFiles(p2Spec("deck-synergy"), { background: pixel, obstacle: pixel }));
   await page.getByRole("button", { name: "开始游戏" }).click();
   await page.keyboard.press("1");
   await page.keyboard.press("2");
@@ -91,7 +91,7 @@ test("卡牌玩法具有能量、连携、敌人回合和胜利结算", async ({
 });
 
 test("手柄等价输入玩法在没有手柄时仍可键盘和触控完成", async ({ page }) => {
-  await openRuntime(page, generateRuntimeFiles(p2Spec("gamepad-control"), { background: pixel, player: pixel, collectible: pixel, obstacle: pixel }));
+  await openRuntime(page, generateRuntimeFiles(p2Spec("gamepad-equivalent-control"), { background: pixel, player: pixel, collectible: pixel, obstacle: pixel }));
   await page.getByRole("button", { name: "开始游戏" }).click();
   await page.keyboard.press("ArrowLeft");
   await page.keyboard.press("ArrowRight");
@@ -105,7 +105,7 @@ test("手柄等价输入玩法在没有手柄时仍可键盘和触控完成", as
 });
 
 test("空间解谜使用 WebGL 场景、旋转观察和有顺序的机关", async ({ page }) => {
-  await openRuntime(page, generateRuntimeFiles(p2Spec("spatial-puzzle-3d"), { background: pixel }));
+  await openRuntime(page, generateRuntimeFiles(p2Spec("spatial-rotation-path"), { background: pixel }));
   await expect(page.locator("canvas")).toHaveCount(1);
   expect(await page.locator("canvas").evaluate((canvas) => Boolean((canvas as HTMLCanvasElement).getContext("webgl")))).toBe(true);
   await page.getByRole("button", { name: "开始游戏" }).click();
@@ -118,7 +118,7 @@ test("空间解谜使用 WebGL 场景、旋转观察和有顺序的机关", asyn
 
 test("五类扩展玩法在手机竖屏都无横向溢出且主操作可触控", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
-  for (const mechanicId of ["queue-management", "chapter-branch", "deck-combo", "gamepad-control", "spatial-puzzle-3d"]) {
+  for (const mechanicId of ["sort-and-serve", "choice-consequence", "deck-synergy", "gamepad-equivalent-control", "spatial-rotation-path"]) {
     await page.goto("about:blank");
     await openRuntime(page, generateRuntimeFiles(p2Spec(mechanicId), { background: pixel, player: pixel, collectible: pixel, obstacle: pixel }));
     await page.getByRole("button", { name: "开始游戏" }).click();

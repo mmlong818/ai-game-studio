@@ -48,11 +48,11 @@ const layeredLadybugScript = (paths: Record<string, string>) => `const game=docu
 
 /** 没有玩法模板、只按机制 id 生成运行时的定义；玩法模板自身的定义来自登记表（TEMPLATE_RUNTIME_DEFINITIONS）。 */
 const mechanicRuntimeDefinitions: Record<string, { actions: string[]; feedback: string[]; className: string }> = {
-  "queue-management": { actions: ["查看订单", "安排队列", "完成交付"], feedback: ["截止时间和容量已显示", "加工顺序已经生效", "本轮订单完成结算"], className: "management" },
-  "chapter-branch": { actions: ["阅读情境", "做出选择", "查看结果"], feedback: ["当前章节状态已记录", "选择产生了后果", "章节结果已保存"], className: "narrative" },
-  "deck-combo": { actions: ["抽取卡牌", "支付并打出", "结算回合"], feedback: ["从固定牌库完成抽牌", "费用扣除并触发连携", "回合资源完成结算"], className: "deck" },
-  "gamepad-control": { actions: ["检测手柄", "执行动作", "验证回退"], feedback: ["手柄连接状态可见", "按键映射产生反馈", "键盘回退仍然可用"], className: "gamepad" },
-  "spatial-puzzle-3d": { actions: ["观察空间", "操作机关", "抵达目标"], feedback: ["相机与空间线索可读", "机关改变了可达路径", "空间目标已经完成"], className: "spatial3d" },
+  "sort-and-serve": { actions: ["查看订单", "安排队列", "完成交付"], feedback: ["截止时间和容量已显示", "加工顺序已经生效", "本轮订单完成结算"], className: "management" },
+  "choice-consequence": { actions: ["阅读情境", "做出选择", "查看结果"], feedback: ["当前章节状态已记录", "选择产生了后果", "章节结果已保存"], className: "narrative" },
+  "deck-synergy": { actions: ["抽取卡牌", "支付并打出", "结算回合"], feedback: ["从固定牌库完成抽牌", "费用扣除并触发连携", "回合资源完成结算"], className: "deck" },
+  "gamepad-equivalent-control": { actions: ["检测手柄", "执行动作", "验证回退"], feedback: ["手柄连接状态可见", "按键映射产生反馈", "键盘回退仍然可用"], className: "gamepad" },
+  "spatial-rotation-path": { actions: ["观察空间", "操作机关", "抵达目标"], feedback: ["相机与空间线索可读", "机关改变了可达路径", "空间目标已经完成"], className: "spatial3d" },
 };
 
 const templateRuntimeDefinitions: Record<string, { actions: string[]; feedback: string[]; className: string }> = {
@@ -94,7 +94,7 @@ export function generateRuntimeFiles(
       : spec.capabilities.dimensions === "limited-3d"
         ? webglTemplateScript(runtimeKey, assetPaths)
         : templateScript(runtimeKey, assetPaths));
-  const withGamepad = spec.capabilities.requiredCapabilities.includes("gamepad-input") && runtimeKey !== "gamepad-control"
+  const withGamepad = spec.capabilities.requiredCapabilities.includes("gamepad-input") && runtimeKey !== "gamepad-equivalent-control"
     ? `${appScript};(()=>{let held=false;const poll=()=>{const pad=navigator.getGamepads?.()[0];const pressed=Boolean(pad&&(pad.buttons[0]?.pressed||Math.abs(pad.axes[0]||0)>.5));if(pressed&&!held){dispatchEvent(new KeyboardEvent('keydown',{key:'ArrowRight'}));status.textContent='手柄操作已响应'}held=pressed;requestAnimationFrame(poll)};requestAnimationFrame(poll);addEventListener('gamepaddisconnected',()=>{status.textContent='手柄已断开，可继续使用键盘'})})()`
     : appScript;
   const styles = `${runtimeCss(spec)}${p2?.css ?? ""}${spec.capabilities.dimensions === "limited-3d" && !p2 ? ".webgl-layer{position:absolute;inset:0;width:100%;height:100%;pointer-events:none;filter:drop-shadow(8px 12px 5px #0005)}" : ""}`;

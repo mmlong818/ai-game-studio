@@ -8,13 +8,10 @@
  */
 import { blockPlace } from "./block-place.js";
 import { breakout } from "./breakout.js";
-import { bugClimb } from "./bug-climb.js";
 import { freecell } from "./freecell.js";
 import { klotski } from "./klotski.js";
 import { mahjongRoguelite } from "./mahjong-roguelite.js";
-import { maze } from "./maze.js";
 import { merge2048 } from "./merge-2048.js";
-import { paperPopup } from "./paper-popup.js";
 import { polyominoFit } from "./polyomino-fit.js";
 import { puzzle } from "./puzzle.js";
 import { regionLogic } from "./region-logic.js";
@@ -22,6 +19,8 @@ import { snake } from "./snake.js";
 import { spaceShooter } from "./space-shooter.js";
 import { starDreamDuel } from "./star-dream-duel.js";
 import { tetris } from "./tetris.js";
+import { islandKart } from "./island-kart.js";
+import { meadowRailway } from "./meadow-railway.js";
 import type { OfficialGameDefinition, ServerTemplatesOf } from "./types.js";
 
 export * from "./types.js";
@@ -37,7 +36,6 @@ export const OFFICIAL_GAMES = [
   puzzle,
   breakout,
   klotski,
-  maze,
   snake,
   merge2048,
   spaceShooter,
@@ -46,8 +44,8 @@ export const OFFICIAL_GAMES = [
   regionLogic,
   mahjongRoguelite,
   freecell,
-  paperPopup,
-  bugClimb,
+  islandKart,
+  meadowRailway,
   // @scaffold:insert — 脚手架会把新登记追加在这一行之上
 ] as const satisfies readonly OfficialGameDefinition[];
 
@@ -79,9 +77,11 @@ export const officialFixtureGames = (): OfficialGameDefinition[] =>
   OFFICIAL_GAMES.filter((game) => game.kind === "fixture");
 
 /** 按 lobbyRank 升序排列的登记表（大厅顺序）。 */
-/** 登记状态为 live（缺省）的游戏才进入大厅、创作页与播种。 */
+/** 登记状态为 live（缺省）的游戏进入大厅；改造能力独立控制。 */
 export const isLiveOfficialGame = (game: OfficialGameDefinition): boolean => (game.stage ?? "live") === "live";
 export const LIVE_OFFICIAL_GAMES: readonly OfficialGameDefinition[] = OFFICIAL_GAMES.filter(isLiveOfficialGame);
+/** 可用于用户创作的官方游戏；仅游玩作品仍保留在 LIVE_OFFICIAL_GAMES。 */
+export const REMIXABLE_OFFICIAL_GAMES: readonly OfficialGameDefinition[] = LIVE_OFFICIAL_GAMES.filter(game => game.remixable !== false);
 
 /** 大厅顺序：只含 live 游戏，按 lobbyRank 升序。 */
 export const officialLobbyOrder = (): OfficialGameDefinition[] =>

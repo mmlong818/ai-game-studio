@@ -9,7 +9,7 @@ export const breakout = defineOfficialGame({
   lobbyRank: 12,
   cover: "assets/templates/packs/breakout/cover.png",
   referenceDoc: "docs/39-breakout-best-template-reference.md",
-  mechanicId: "paddle-ball",
+  knowledge: { patternId: "ricochet-breakout", mechanicIds: ["paddle-trajectory"], rationale: "挡板位置改变反弹轨迹；落点与同源回球预告让控角可读，少量剩余砖时自动提供收尾导航。五章按控角、潮盾、宽板、穿透和组合顺序学习，不增加操作按钮。" },
   seed: {
     artStyle: "lacquer",
     visualStyle: "classic",
@@ -19,9 +19,9 @@ export const breakout = defineOfficialGame({
     id: "breakout",
     name: "弹球破阵",
     genre: "街机反应",
-    pitch: "移动挡板改变弹球轨迹，清除精心排列的目标。",
+    pitch: "沿着回球预告轻松控角，借潮盾、宽板和穿透逐章击破砖阵。",
     coreLoop: "接球 → 改变角度 → 命中 → 清场",
-    coreRules: ["挡板反弹弹球", "弹球命中目标", "清除目标后结算"],
+    coreRules: ["挡板左右击球位置决定反弹方向，预告与碰撞共用规则", "五章逐步学习控角、潮盾、宽板、穿透与能力组合", "只剩三块时提供收尾导航，不自动代打", "清除目标后结算，记录成功回球与控角命中"],
     capabilities: ["arcade-collision", "trajectory", "level-layout"],
     suggestions: commonSuggestions(
       "breakout",

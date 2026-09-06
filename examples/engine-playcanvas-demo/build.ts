@@ -19,8 +19,8 @@ export const demoRoot = dirname(fileURLToPath(import.meta.url));
 const repositoryRoot = join(demoRoot, "..", "..");
 /** 示例资源来自官方纸境贴图包（已有 gpt-image-2 溯源），按 project.json 里的 path 复制到产物。 */
 const resourceSources: Record<string, string> = {
-  "assets/paper-grain.png": join(repositoryRoot, "assets", "starter", "paper-popup", "paper-grain.png"),
-  "assets/decal-meadow.png": join(repositoryRoot, "assets", "starter", "paper-popup", "decal-meadow.png"),
+  "assets/paper-grain.png": join(repositoryRoot, "examples", "engine-playcanvas-demo", "assets", "paper-grain.png"),
+  "assets/decal-meadow.png": join(repositoryRoot, "examples", "engine-playcanvas-demo", "assets", "decal-meadow.png"),
 };
 
 export function loadDemoProject(): GameProjectV3 {

@@ -6,10 +6,10 @@ export const blockPlace = defineOfficialGame({
   title: "果冻填阵",
   kind: "template",
   serverTemplate: "block-place",
-  lobbyRank: 4,
+  lobbyRank: 5,
   cover: "assets/templates/packs/block-place/cover.png",
   referenceDoc: "docs/47-block-place-best-template-reference.md",
-  mechanicId: "block-placement",
+  knowledge: { patternId: "polyomino-space-planning", mechanicIds: ["polyomino-placement"], rationale: "有限候选、合法放置和空间规划组合。" },
   seed: {
     artStyle: "geometric",
     visualStyle: "color-block",
@@ -21,7 +21,7 @@ export const blockPlace = defineOfficialGame({
     genre: "放置消除",
     pitch: "从三个拼块中选择并放置，用横竖消除维持空间。",
     coreLoop: "三选一 → 放置 → 横竖消除 → 补充",
-    coreRules: ["每轮提供三块", "拼块必须合法放置", "横列或竖列填满后消除"],
+    coreRules: ["每轮提供三块，用完才刷新", "拖动预览横竖消除与本步收益，非法落点说明原因", "提示检验当前整组的连续放法，不自动代放；无解或搜索预算耗尽不扣次数", "关卡、无尽与每日分别保存；每日和无尽不推进关卡星章"],
     capabilities: ["shape-fit", "line-clear", "move-availability"],
     suggestions: commonSuggestions(
       "block-placement",

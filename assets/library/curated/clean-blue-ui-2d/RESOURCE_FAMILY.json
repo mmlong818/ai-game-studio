@@ -1,0 +1,449 @@
+{
+  "schemaVersion": "curated-resource-family-v1",
+  "familyId": "clean-blue-ui-2d",
+  "packId": "kenney-ui-pack-blue-default",
+  "importedAt": "2026-09-05T00:00:00.000Z",
+  "source": {
+    "schemaVersion": "resource-source-v1",
+    "id": "SOURCE-KENNEY-UI-PACK",
+    "sourceUrl": "https://kenney.nl/assets/ui-pack",
+    "author": "Kenney",
+    "acquiredAt": "2026-09-05T00:00:00.000Z",
+    "assetClass": "image",
+    "licenseId": "CC0-1.0",
+    "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+    "licenseTextHash": "69F7EAA5E05913B4D09CF5848F75390B5C3C9A409EF8555777803D9CA0C171FB",
+    "attributionText": null,
+    "rights": {
+      "commercialUse": true,
+      "modification": true,
+      "redistribution": true,
+      "sourceRedistribution": true
+    },
+    "provenanceNote": "官方资源页标明 2D/UI、430 个文件、CC0；首批只选蓝色默认 PNG 子族。",
+    "reviewedBy": "platform-curation",
+    "reviewedAt": "2026-09-05T00:00:00.000Z"
+  },
+  "archive": {
+    "fileName": "kenney_ui-pack.zip",
+    "sha256": "A8A14A234911EB648C062622915C93E79E94E97CB7F9F375A70F6617F1174318",
+    "downloadUrl": "https://kenney.nl/media/pages/assets/ui-pack/f651646eab-1718203990/kenney_ui-pack.zip"
+  },
+  "license": {
+    "entry": "License.txt",
+    "sha256": "69F7EAA5E05913B4D09CF5848F75390B5C3C9A409EF8555777803D9CA0C171FB"
+  },
+  "selectionRationale": "用单一颜色和状态子族覆盖按钮、箭头、面板等通用 UI，避免跨风格混搭。",
+  "assets": [
+    {
+      "path": "PNG/Blue/Default/arrow_basic_e.png",
+      "bytes": 422,
+      "sha256": "5517436E154EF58B64AE46EBAC37AB1B8A8DF8EF3E9220B4154E78ACDE0221DA"
+    },
+    {
+      "path": "PNG/Blue/Default/arrow_basic_e_small.png",
+      "bytes": 378,
+      "sha256": "668A69E174CAC500E2C141DC2E36932222E24D8B02486FC977C1D3E96BC3AB7A"
+    },
+    {
+      "path": "PNG/Blue/Default/arrow_basic_n.png",
+      "bytes": 391,
+      "sha256": "8AFAA9889DE96DBC5CE2DD6623A3B95AAD814B6419247D9F6B4AF282C71F9C72"
+    },
+    {
+      "path": "PNG/Blue/Default/arrow_basic_n_small.png",
+      "bytes": 302,
+      "sha256": "59DE002ABF16351233170549C4C6DED4750E1A6E9FF4FDB13A27F7BA62F61BB5"
+    },
+    {
+      "path": "PNG/Blue/Default/arrow_basic_s.png",
+      "bytes": 414,
+      "sha256": "94CEE47DC0CC708320ECADC59795413A5AC59E0802D6F42A92163411F6ED43E2"
+    },
+    {
+      "path": "PNG/Blue/Default/arrow_basic_s_small.png",
+      "bytes": 332,
+      "sha256": "1FF851030EF588E15CBC68656FA58892ED346705ABD385021CCD5603BC25F89A"
+    },
+    {
+      "path": "PNG/Blue/Default/arrow_basic_w.png",
+      "bytes": 402,
+      "sha256": "576DB7B4E55F6937306D0FA56EA4DA000AEAF4F53891FA967D2BD7DC0A83950F"
+    },
+    {
+      "path": "PNG/Blue/Default/arrow_basic_w_small.png",
+      "bytes": 399,
+      "sha256": "5B5F639D57CADEAB2C12ABD26B6318087AFDFB44324F19288C0C3E9C8A8504E8"
+    },
+    {
+      "path": "PNG/Blue/Default/arrow_decorative_e.png",
+      "bytes": 566,
+      "sha256": "648B021C3F3D8B783EE08AFE083233037F681343E0348C55150F903D587D4B36"
+    },
+    {
+      "path": "PNG/Blue/Default/arrow_decorative_e_small.png",
+      "bytes": 459,
+      "sha256": "C3AC317D4BE989A5DE1C4E9DF2C17DB7DDD6A83193BCBA1DC2FCA3CE3707A4CF"
+    },
+    {
+      "path": "PNG/Blue/Default/arrow_decorative_n.png",
+      "bytes": 511,
+      "sha256": "9A11C91D9BD84B1755F14C4A410B6ACE2FC330A22961C85F95EC14CC07080F1C"
+    },
+    {
+      "path": "PNG/Blue/Default/arrow_decorative_n_small.png",
+      "bytes": 405,
+      "sha256": "F4048A35348D142F01E6122808D4DB4ECA6B27CB771C6B932BD6BC1FA579AA09"
+    },
+    {
+      "path": "PNG/Blue/Default/arrow_decorative_s.png",
+      "bytes": 530,
+      "sha256": "3F4DE0F842E086BC998C4EB36832AFE7E38E2F09119F079F5A01B3A63A47D9B0"
+    },
+    {
+      "path": "PNG/Blue/Default/arrow_decorative_s_small.png",
+      "bytes": 424,
+      "sha256": "F1EA99296E5DA65C985634C8B0D5F2B9AD7E2D06F9905CE47E14583110D77FEE"
+    },
+    {
+      "path": "PNG/Blue/Default/arrow_decorative_w.png",
+      "bytes": 562,
+      "sha256": "7E7BB30C9ACDBA3962DA5B85C1E537D703C7413F55E7A97F371C4FFE1D00E9D9"
+    },
+    {
+      "path": "PNG/Blue/Default/arrow_decorative_w_small.png",
+      "bytes": 484,
+      "sha256": "14B75E79AC41B3DCC38862E7D1DF6D6DB8A1604343218D0EE49F8DE2285EA09D"
+    },
+    {
+      "path": "PNG/Blue/Default/button_rectangle_border.png",
+      "bytes": 338,
+      "sha256": "EB7405E75B9AEDDAD0B6F0A81F61B142A38B21896F508DECF6623C7AB47DBCD3"
+    },
+    {
+      "path": "PNG/Blue/Default/button_rectangle_depth_border.png",
+      "bytes": 411,
+      "sha256": "19DD881D5C38D58E93DB451152356A8ECB1375B247615D4E340B678233398B01"
+    },
+    {
+      "path": "PNG/Blue/Default/button_rectangle_depth_flat.png",
+      "bytes": 383,
+      "sha256": "6C709A45AAE0330FFFF5B060D9F14CC2297839F664E0A4C9E516D90AD085EC0B"
+    },
+    {
+      "path": "PNG/Blue/Default/button_rectangle_depth_gloss.png",
+      "bytes": 373,
+      "sha256": "A17548EFECEBE7CB8BB7BC6E71510B4A9A7DBBC31ACCFE0A2E3E565BF58B5839"
+    },
+    {
+      "path": "PNG/Blue/Default/button_rectangle_depth_gradient.png",
+      "bytes": 582,
+      "sha256": "3FC1D9BEDF07DA0F1A49BED143311E6EDF3BEBD9A937E95A6AB4B812C8448EC0"
+    },
+    {
+      "path": "PNG/Blue/Default/button_rectangle_depth_line.png",
+      "bytes": 411,
+      "sha256": "3C873A31AD0E1D582141706FA3EE036F1E302741956EECB0AA631A7E73981B34"
+    },
+    {
+      "path": "PNG/Blue/Default/button_rectangle_flat.png",
+      "bytes": 315,
+      "sha256": "83084C953E57D7506F90600DF77F36A8C6156ABEA0B8EA0E4B3885A596CEE2C8"
+    },
+    {
+      "path": "PNG/Blue/Default/button_rectangle_gloss.png",
+      "bytes": 306,
+      "sha256": "7F3D3AE693D79471A03691D679A9FC18E151AE9A922CA73E69FB75C902190CD3"
+    },
+    {
+      "path": "PNG/Blue/Default/button_rectangle_gradient.png",
+      "bytes": 528,
+      "sha256": "424F7743B51666915429A32B76732AEEA7079C053CABBE7874D826FED210DACC"
+    },
+    {
+      "path": "PNG/Blue/Default/button_rectangle_line.png",
+      "bytes": 338,
+      "sha256": "1097D629CE6B0DBBDD5E8976B7A916C6C6E306AACA2DEC1BF939BCEE9ADEA3D9"
+    },
+    {
+      "path": "PNG/Blue/Default/button_round_border.png",
+      "bytes": 1483,
+      "sha256": "4982B6829C94D16558572B0BE7D423B663F011A3F88EB8D88437C2D0159DA493"
+    },
+    {
+      "path": "PNG/Blue/Default/button_round_depth_border.png",
+      "bytes": 1788,
+      "sha256": "D5AF7C25489F05E2B17F9261C9460E96DEB9B23A860EF81FF1E56567734FC4B1"
+    },
+    {
+      "path": "PNG/Blue/Default/button_round_depth_flat.png",
+      "bytes": 1301,
+      "sha256": "49BDAA6172E3670FA6C1CFB347FD7FDC7FB8BDD2C5E75B0429C41E4309C85541"
+    },
+    {
+      "path": "PNG/Blue/Default/button_round_depth_gloss.png",
+      "bytes": 1210,
+      "sha256": "39B4E54273228A32FA0EA3A413FC80DE43918CD7AD1EBF158A946C121CE41E8A"
+    },
+    {
+      "path": "PNG/Blue/Default/button_round_depth_gradient.png",
+      "bytes": 1571,
+      "sha256": "7B92B2AAA29F01E961A981B7F6DAE371B26B105FB3603EAE69F8A6B9CCD10AA9"
+    },
+    {
+      "path": "PNG/Blue/Default/button_round_depth_line.png",
+      "bytes": 1690,
+      "sha256": "1A851079662AE8E37BE12F2E44D3983DDC10F1508F814943C0D030A6994617E2"
+    },
+    {
+      "path": "PNG/Blue/Default/button_round_flat.png",
+      "bytes": 1023,
+      "sha256": "4A6152EA102D48A0A7FC6809196C174DD2EDA7B0E705D1451D61695D049BB956"
+    },
+    {
+      "path": "PNG/Blue/Default/button_round_gloss.png",
+      "bytes": 958,
+      "sha256": "84DD8C26CD39F4A6AA9D3DAED9DCB74E9525689AC870D5DD38C94EEED633D7BF"
+    },
+    {
+      "path": "PNG/Blue/Default/button_round_gradient.png",
+      "bytes": 1294,
+      "sha256": "5E3E71AFD8305ACB504E2C87E513D0C7A8C349428F50D8A5F4BDC6C96CE4761E"
+    },
+    {
+      "path": "PNG/Blue/Default/button_round_line.png",
+      "bytes": 1413,
+      "sha256": "A3CAC278A74E06873B7C1B1D661AB5E8383AEEB89A67F750A7A409DCCBF6733D"
+    },
+    {
+      "path": "PNG/Blue/Default/button_square_border.png",
+      "bytes": 306,
+      "sha256": "9493F244C0FDE38FE52A3FD8180DE0DC00BA61E913375B82907C1B13B70B5A33"
+    },
+    {
+      "path": "PNG/Blue/Default/button_square_depth_border.png",
+      "bytes": 375,
+      "sha256": "760545C09A222579967C10D098D7843FCE5D18F071F546C3034DE8326D2106A6"
+    },
+    {
+      "path": "PNG/Blue/Default/button_square_depth_flat.png",
+      "bytes": 355,
+      "sha256": "7F113AA488DEE62009FE7B7043B51672C9845D5D0DD0C856D8AA179C91A9C688"
+    },
+    {
+      "path": "PNG/Blue/Default/button_square_depth_gloss.png",
+      "bytes": 337,
+      "sha256": "46099C8224BC0E5DF14C662CAF4023CF72672112F911FFFC5CC41CC935329FB0"
+    },
+    {
+      "path": "PNG/Blue/Default/button_square_depth_gradient.png",
+      "bytes": 575,
+      "sha256": "825F12D5C8559544DEA56D2E4E873E8C7E52F6E814F690E40A28A37E4BCF2560"
+    },
+    {
+      "path": "PNG/Blue/Default/button_square_depth_line.png",
+      "bytes": 374,
+      "sha256": "B396129D8760DF4BF06BEAA51B1DC2087BE61D03F10AD79346FF74333FAD78B0"
+    },
+    {
+      "path": "PNG/Blue/Default/button_square_flat.png",
+      "bytes": 286,
+      "sha256": "BB8026B29B951B698A2A4C7957549E20688A6FFF1635975AEA6079B208C10675"
+    },
+    {
+      "path": "PNG/Blue/Default/button_square_gloss.png",
+      "bytes": 268,
+      "sha256": "3DFDA181ECC41A4DFC365DD729278E794C2817187557796458D917EAC83488D4"
+    },
+    {
+      "path": "PNG/Blue/Default/button_square_gradient.png",
+      "bytes": 516,
+      "sha256": "4C685A1BF9E5406B96A1E5503D5F6BA233016156BEF7C75B658FD9C9196BDD58"
+    },
+    {
+      "path": "PNG/Blue/Default/button_square_line.png",
+      "bytes": 304,
+      "sha256": "EA9B5026D75C5573549B4AA9F73F6D0DB94BE9B257DC7238E116103B799AB2B7"
+    },
+    {
+      "path": "PNG/Blue/Default/check_round_color.png",
+      "bytes": 579,
+      "sha256": "8A6CB9AFB994225BC9CFE75223802FEC0D2CD3D71F8BF1EAF3EB497A3C84FBA8"
+    },
+    {
+      "path": "PNG/Blue/Default/check_round_grey.png",
+      "bytes": 579,
+      "sha256": "DAAC46633C475F983C34A37C8E2230DD20A32A8BBEF7AEA5D5462BE2C30B16D3"
+    },
+    {
+      "path": "PNG/Blue/Default/check_round_grey_circle.png",
+      "bytes": 774,
+      "sha256": "995FB2D318E976D96C5A87E2030EAD47D46F6BD8CEFEEB3D7ABD9D1ED6027A15"
+    },
+    {
+      "path": "PNG/Blue/Default/check_round_round_circle.png",
+      "bytes": 767,
+      "sha256": "F25A0A71F96DDA65CF3E530EC67882E02C96A3565BFC7F9757F9F1B4E36D10C7"
+    },
+    {
+      "path": "PNG/Blue/Default/check_square_color.png",
+      "bytes": 280,
+      "sha256": "8637F9C5CC30EBC02E5C850E8C40BBCC28B3414B0E3A76317DB91F0D1F471AAF"
+    },
+    {
+      "path": "PNG/Blue/Default/check_square_color_checkmark.png",
+      "bytes": 555,
+      "sha256": "4CFDC27D788A8F932E8F5C8BF5FA3D15E0CED631185D786161AFE4B8D860D006"
+    },
+    {
+      "path": "PNG/Blue/Default/check_square_color_cross.png",
+      "bytes": 533,
+      "sha256": "A262BB5DC445C02C31D479AF5A9EECA99511E475481568F015F4A9DCD7A3EE82"
+    },
+    {
+      "path": "PNG/Blue/Default/check_square_color_square.png",
+      "bytes": 319,
+      "sha256": "6B0F0E63E569ABA715118A8401D67F0A39E7BC8CB4581F68D12DC2D2BD1A32FC"
+    },
+    {
+      "path": "PNG/Blue/Default/check_square_grey.png",
+      "bytes": 280,
+      "sha256": "E11648F1188535916DA8645CDE5532F90C806FF0D678A03B668957F0AEA431DF"
+    },
+    {
+      "path": "PNG/Blue/Default/check_square_grey_checkmark.png",
+      "bytes": 559,
+      "sha256": "DC8624EE930B125A1D2086B31DF6C4DB3C8A395B7BE2C4F6E355694475BDCD96"
+    },
+    {
+      "path": "PNG/Blue/Default/check_square_grey_cross.png",
+      "bytes": 539,
+      "sha256": "3C93E47F9FBF1D1EE20751E0F840151862774319CEF2495D9F6F63DB5A093ABF"
+    },
+    {
+      "path": "PNG/Blue/Default/check_square_grey_square.png",
+      "bytes": 321,
+      "sha256": "05DC868D776B1B4E772F54CA47E5906CEA6E9728F0BF316F7886063C2ECBC711"
+    },
+    {
+      "path": "PNG/Blue/Default/icon_checkmark.png",
+      "bytes": 377,
+      "sha256": "82A5C1C3DFE9A704E9F5F220C9510B622C77C2207C226B41728978C2335B1F3B"
+    },
+    {
+      "path": "PNG/Blue/Default/icon_circle.png",
+      "bytes": 312,
+      "sha256": "14AC9F54D1D165FA4B8DA9DDA962B60AB4786987AF0EB7052460EDE6C6ECD885"
+    },
+    {
+      "path": "PNG/Blue/Default/icon_cross.png",
+      "bytes": 350,
+      "sha256": "32EEA5EA58F44F15C82691CAD35406B32DFAD7C3C1152D633DCD74A25E430D48"
+    },
+    {
+      "path": "PNG/Blue/Default/icon_outline_checkmark.png",
+      "bytes": 377,
+      "sha256": "795080F446961376B78C665A23D96811215BC9231FDF7E72188447775BAB06E2"
+    },
+    {
+      "path": "PNG/Blue/Default/icon_outline_circle.png",
+      "bytes": 312,
+      "sha256": "49EB25F50F982DA7B9BBA50EA119A699FAF5E4CF41F121B7EBD0A07935D8CD08"
+    },
+    {
+      "path": "PNG/Blue/Default/icon_outline_cross.png",
+      "bytes": 352,
+      "sha256": "CA1C18837F953EBAA00F473E2C326387E1CF409C8385C660D578E91176F03646"
+    },
+    {
+      "path": "PNG/Blue/Default/icon_outline_square.png",
+      "bytes": 135,
+      "sha256": "8D6BEFE4D64BD18331E1AAD406E0C51E7CC9CAB7A4F36E9114965B687E3F01BF"
+    },
+    {
+      "path": "PNG/Blue/Default/icon_square.png",
+      "bytes": 142,
+      "sha256": "43D8616B7A23E56753929BF723106053994B3CF5720D47ABD04DBDC67B9D595B"
+    },
+    {
+      "path": "PNG/Blue/Default/slide_hangle.png",
+      "bytes": 295,
+      "sha256": "17C026426E4981AE0CB10F597DA20E1D732273A515B4976C79057A5673D06F48"
+    },
+    {
+      "path": "PNG/Blue/Default/slide_horizontal_color.png",
+      "bytes": 383,
+      "sha256": "5E4336D1D816AEFD6A17441EA190BACDAB54705B560B59F0E54F5449F46C8798"
+    },
+    {
+      "path": "PNG/Blue/Default/slide_horizontal_color_section.png",
+      "bytes": 320,
+      "sha256": "A36B633507DBA798C35E0B642E457A4315A2887B9B3E8165C05BED3D560B6658"
+    },
+    {
+      "path": "PNG/Blue/Default/slide_horizontal_color_section_wide.png",
+      "bytes": 336,
+      "sha256": "FE8D37EDDDDC6E6BCABB161605918C367F11D2AFAAAE33EBB49E4A8AC7574F2B"
+    },
+    {
+      "path": "PNG/Blue/Default/slide_horizontal_grey.png",
+      "bytes": 383,
+      "sha256": "A80F54D81912DCAC6827B8B71BB81F6B8B8A0C190573006AEE9612D6BBD91618"
+    },
+    {
+      "path": "PNG/Blue/Default/slide_horizontal_grey_section.png",
+      "bytes": 321,
+      "sha256": "3C81558440A149A467057E4932BEDB3C541CB6CA67E222A2742CCA04A7F1823A"
+    },
+    {
+      "path": "PNG/Blue/Default/slide_horizontal_grey_section_wide.png",
+      "bytes": 336,
+      "sha256": "D6ED93A8C182A64C7E62732FC7E02029FC7D5452380E900678D8D0FFF0BA4DBF"
+    },
+    {
+      "path": "PNG/Blue/Default/slide_vertical_color.png",
+      "bytes": 379,
+      "sha256": "72A1E04E9BEF76222AE0ADDA4C1C5DCC714C50699584C8D5878F3BD09374D984"
+    },
+    {
+      "path": "PNG/Blue/Default/slide_vertical_color_section.png",
+      "bytes": 308,
+      "sha256": "875E2418B0B0A110D745AB566914806C5820E8500DD731B868A08F9078252D8B"
+    },
+    {
+      "path": "PNG/Blue/Default/slide_vertical_color_section_wide.png",
+      "bytes": 316,
+      "sha256": "DFAFCD9ED0085EF38A916E8DC1D049DD238C54A720A4B29B996F1670F4BDD1CD"
+    },
+    {
+      "path": "PNG/Blue/Default/slide_vertical_grey.png",
+      "bytes": 379,
+      "sha256": "43395D2DE831DE9F8D25F2351A3D06CB6CA340781BC9051EDAA2406C1DEDE70D"
+    },
+    {
+      "path": "PNG/Blue/Default/slide_vertical_grey_section.png",
+      "bytes": 308,
+      "sha256": "BA33B5FC08AA7DA4D9CC31B6330AB15C1B1D97380DB0552899690C83D3505DF0"
+    },
+    {
+      "path": "PNG/Blue/Default/slide_vertical_grey_section_wide.png",
+      "bytes": 316,
+      "sha256": "03F74C48D11966AD6A71CFF30A8F940F1E38D189F6A9E87A58917366563AA471"
+    },
+    {
+      "path": "PNG/Blue/Default/star.png",
+      "bytes": 1507,
+      "sha256": "BA91A196117F8C324BEAC04AE426379D054E9497BE901469EEA5D333B369265C"
+    },
+    {
+      "path": "PNG/Blue/Default/star_outline.png",
+      "bytes": 955,
+      "sha256": "9267EDA99FD68A28D036BECA7A606E334EDB2957F74C6531DA28BC79E92BC4A1"
+    },
+    {
+      "path": "PNG/Blue/Default/star_outline_depth.png",
+      "bytes": 1168,
+      "sha256": "C11615700FC1B7224972744555CBB1B724C0633AFBB6A7FD2A4D1A3C00951F6B"
+    }
+  ]
+}

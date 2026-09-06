@@ -25,6 +25,9 @@ async function openGame(page: Page) {
   await page.goto(FREECELL_URL);
   await expect(page.locator("body")).toHaveAttribute("data-dealing", "false", { timeout: 10_000 });
   await expect(page.locator(".card")).toHaveCount(52);
+  // First-visit onboarding is checked by freecell-learning.test.ts; these cases cover the full deal.
+  const coach=page.locator('[data-learn="close"]');
+  await expect(coach).toBeVisible({timeout:8000});await coach.click();
 }
 
 /** 用真实点击执行一步:先点起点牌,再点目标(非空列点其底牌,空位点槽位)。 */

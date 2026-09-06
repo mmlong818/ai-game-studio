@@ -1,4 +1,5 @@
 import { commonSuggestions, OFFICIAL_GAMES, type GameplayTemplateBundle } from "../shared/official-games";
+import { GAME_DESIGN_KNOWLEDGE_LIBRARY } from "../shared/game-design-knowledge/catalog";
 import type { GameTemplate, MechanicDefinition } from "./types";
 
 /**
@@ -42,7 +43,7 @@ const SUPPLEMENTARY_GAMEPLAY_TEMPLATES: GameplayTemplateBundle[] = [
       feedback: ["相机与角色已移动", "出口已经解锁", "成功撤离"],
       className: "collect3d",
     },
-    mechanicId: "collect-escape",
+    knowledge: { patternId: "third-person-collection", mechanicIds: ["spatial-navigation"], rationale: "三维移动、收集、检查点与出口构成已验证探索循环。" },
   },
   {
     domainTemplate: {
@@ -75,7 +76,7 @@ const SUPPLEMENTARY_GAMEPLAY_TEMPLATES: GameplayTemplateBundle[] = [
       feedback: ["移动响应正常", "命中反馈确认", "竞技场波次结算"],
       className: "arena",
     },
-    mechanicId: "projectile-combat",
+    knowledge: { patternId: "wave-shooter", mechanicIds: ["projectile-wave"], rationale: "走位、主动射击、敌人波次与强化构成竞技场循环。" },
   },
 ];
 
@@ -86,9 +87,10 @@ export const GAMEPLAY_TEMPLATE_BUNDLES: GameplayTemplateBundle[] = [
     probeKind: game.probeKind,
     probeScenario: game.probeScenario,
     runtimeDefinition: game.runtimeDefinition,
-    mechanicId: game.mechanicId,
+    knowledge: game.knowledge,
     threeMode: game.threeMode,
     development: (game.stage ?? "live") !== "live",
+    remixable: game.remixable,
   })),
   ...SUPPLEMENTARY_GAMEPLAY_TEMPLATES,
 ];
@@ -97,160 +99,53 @@ export const getGameplayBundle = (templateId: string | null | undefined): Gamepl
   GAMEPLAY_TEMPLATE_BUNDLES.find((bundle) => bundle.domainTemplate.id === templateId);
 
 /** 创作页可选的玩法模板：开发中的登记不在其中；其探针与运行时定义仍由捆绑表提供以便持续测试。 */
-export const GAME_TEMPLATES: GameTemplate[] = GAMEPLAY_TEMPLATE_BUNDLES.filter((bundle) => !bundle.development).map((bundle) => bundle.domainTemplate);
-
-/** 模板改造需要研究同类机制时，用这张表找到对应的内部机制（MECHANIC_LIBRARY 中的 id）。 */
-export const TEMPLATE_MECHANIC_MAP: Record<string, string> = Object.fromEntries(
-  GAMEPLAY_TEMPLATE_BUNDLES.map((bundle) => [bundle.domainTemplate.id, bundle.mechanicId]),
-);
+export const GAME_TEMPLATES: GameTemplate[] = GAMEPLAY_TEMPLATE_BUNDLES.filter((bundle) => !bundle.development && bundle.remixable !== false).map((bundle) => bundle.domainTemplate);
 
 /** 玩法模板 id → 创作侧运行时定义（动作、反馈、样式类名）。 */
 export const TEMPLATE_RUNTIME_DEFINITIONS: Record<string, GameplayTemplateBundle["runtimeDefinition"]> = Object.fromEntries(
   GAMEPLAY_TEMPLATE_BUNDLES.map((bundle) => [bundle.domainTemplate.id, bundle.runtimeDefinition]),
 );
 
-export const MECHANIC_LIBRARY: MechanicDefinition[] = [
-  {
-    id: "lane-dodge",
-    name: "路线闪避",
-    description: "在少量清晰路线之间快速移动，预判并避开障碍。",
-    capabilityIds: ["continuous-movement", "seeded-spawning", "safe-lane"],
-    keywords: ["闪避", "躲", "竞速", "跑酷", "路线", "障碍", "速度"],
-  },
-  {
-    id: "trail-survival",
-    name: "轨迹生存",
-    description: "角色持续移动并留下会反过来限制空间的身体轨迹，通过转向、收集和空间规划延长生存。",
-    capabilityIds: ["continuous-movement", "body-trail", "pickup"],
-    keywords: ["贪吃蛇", "持续移动", "转向", "增长", "自撞", "生存"],
-  },
-  {
-    id: "falling-blocks",
-    name: "落块消行",
-    description: "拼块持续下落，玩家通过移动、旋转、暂存与落点规划完成横行消除。",
-    capabilityIds: ["grid-simulation", "piece-rotation", "line-clear"],
-    keywords: ["俄罗斯方块", "落块", "旋转", "暂存", "消行", "堆叠"],
-  },
-  {
-    id: "grid-merge",
-    name: "全盘滑动合成",
-    description: "一次输入改变整个棋盘，通过合并管理有限空间。",
-    capabilityIds: ["grid-slide", "merge-equal", "move-availability"],
-    keywords: ["合成", "数字", "滑动", "棋盘", "方块", "升级"],
-  },
-  {
-    id: "block-placement",
-    name: "拼块放置消行",
-    description: "从有限候选中选择拼块放入棋盘，以填满横列或竖列消除并维持后续可放空间。",
-    capabilityIds: ["shape-fit", "line-clear", "move-availability"],
-    keywords: ["方块填阵", "拖放", "候选拼块", "消行", "空间管理"],
-  },
-  {
-    id: "turn-match3",
-    name: "轮换对抗三消",
-    description: "双方共享棋盘并轮流交换三消，让连消、技能与区域限制共同影响对抗资源。",
-    capabilityIds: ["match3-board", "swap-match", "turn-order", "ai-opponent", "combo-scoring"],
-    keywords: ["三消", "交换", "连消", "回合", "对抗", "AI"],
-  },
-  {
-    id: "projectile-combat",
-    name: "弹体命中",
-    description: "移动、发射和命中构成即时反馈明确的动作循环。",
-    capabilityIds: ["projectile-hit", "enemy-wave", "invulnerability-window"],
-    keywords: ["射击", "子弹", "弹幕", "敌人", "战斗", "Boss"],
-  },
-  {
-    id: "paddle-ball",
-    name: "挡板弹球破阵",
-    description: "通过挡板位置与接球角度控制弹球轨迹，连续击破目标并避免漏球。",
-    capabilityIds: ["arcade-collision", "trajectory", "level-layout"],
-    keywords: ["打砖块", "弹球", "挡板", "反弹", "轨迹", "清场"],
-  },
-  {
-    id: "grid-path",
-    name: "路径与可达性",
-    description: "用墙体、地形和门构成可以验证的空间路线。",
-    capabilityIds: ["grid-path", "reachability", "checkpoint-save"],
-    keywords: ["迷宫", "探索", "路径", "出口", "钥匙", "地形"],
-  },
-  {
-    id: "sliding-block",
-    name: "移块脱困",
-    description: "在固定占格与不可重叠约束下腾挪方块，为目标块建立通往出口的路径。",
-    capabilityIds: ["grid-occupancy", "legal-move", "solver"],
-    keywords: ["华容道", "滑块", "移块", "占格", "出口", "求解"],
-  },
-  {
-    id: "route-choice",
-    name: "路线三选一",
-    description: "让玩家在一次旅程中反复选择风险、奖励和构筑方向。",
-    capabilityIds: ["route-choice", "seeded-run", "checkpoint-save"],
-    keywords: ["肉鸽", "路线", "选择", "构筑", "遗物", "旅程"],
-  },
-  {
-    id: "collect-escape",
-    name: "收集后撤离",
-    description: "收集目标会增加收益与风险，完成条件是安全抵达出口。",
-    capabilityIds: ["pickup", "risk-reward", "exit-unlock"],
-    keywords: ["收集", "撤离", "出口", "宝物", "逃离", "探索"],
-  },
-  {
-    id: "drag-snap",
-    name: "拖放吸附",
-    description: "直接拖动物体，在合法位置提供清楚的吸附和纠错反馈。",
-    capabilityIds: ["drag-snap", "spatial-validation", "touch-input"],
-    keywords: ["拖动", "拼图", "摆放", "整理", "拼合", "吸附"],
-  },
-  {
-    id: "constraint-deduction",
-    name: "约束推理",
-    description: "通过完整线索逐步排除，并能解释提示和错误原因。",
-    capabilityIds: ["constraint-solver", "unique-solution", "hint-explanation"],
-    keywords: ["推理", "逻辑", "数独", "谜题", "唯一解", "排除"],
-  },
-  {
-    id: "freecell-solitaire",
-    name: "空档纸牌接龙",
-    description: "利用空档和空列周转牌组，在交替递减与同花升序约束下完成整副牌整理。",
-    capabilityIds: ["card-tableau", "free-cells", "supermove", "foundation-build", "seeded-deal"],
-    keywords: ["空当接龙", "空档接龙", "纸牌", "超级移动", "收牌堆", "牌局"],
-  },
-  {
-    id: "queue-management",
-    name: "队列经营",
-    description: "在有限时间与容量内安排订单队列，让等待、加工和交付形成可预测的经营循环。",
-    capabilityIds: ["queue-scheduling", "order-deadline", "capacity-upgrade", "round-progression"],
-    keywords: ["经营", "店铺", "订单", "排队", "制作", "顾客", "时间管理"],
-  },
-  {
-    id: "chapter-branch",
-    name: "章节选择",
-    description: "通过短篇章节、有限选择和状态标记产生可回看、可恢复的分支结果。",
-    capabilityIds: ["chapter-state", "branch-choice", "consequence-flag", "checkpoint-save"],
-    keywords: ["剧情", "故事", "对话", "章节", "分支", "结局", "选择"],
-  },
-  {
-    id: "deck-combo",
-    name: "卡组协同",
-    description: "抽取、消耗和组合卡牌形成资源取舍，并以可复现牌库验证协同效果。",
-    capabilityIds: ["seeded-deck", "card-cost", "combo-resolution", "turn-progression"],
-    keywords: ["卡牌", "卡组", "抽牌", "费用", "连携", "协同", "回合"],
-  },
-  {
-    id: "gamepad-control",
-    name: "手柄操作",
-    description: "为单人核心动作增加手柄等价输入、焦点反馈和断开后的键盘回退。",
-    capabilityIds: ["gamepad-input", "input-remap", "keyboard-fallback"],
-    keywords: ["手柄", "摇杆", "控制器", "按键映射"],
-  },
-  {
-    id: "spatial-puzzle-3d",
-    name: "立体空间谜题",
-    description: "在有限 3D 场景中观察空间关系、操作机关并验证可达路径与相机可读性。",
-    capabilityIds: ["character-controller", "camera", "3d-spatial-reasoning", "reachability", "checkpoint-save"],
-    keywords: ["3d", "立体", "空间", "机关", "透视", "相机", "空间谜题"],
-  },
-];
+const MECHANIC_RUNTIME_METADATA: Record<string, Pick<MechanicDefinition, "capabilityIds" | "keywords">> = {
+  'endpoint-track-assembly': { capabilityIds: ['spatial-validation', 'unified-input', 'checkpoint-save'], keywords: ['铁路', '轨道', '接续', '搭建', '沙盒'] },
+  'path-bound-vehicle': { capabilityIds: ['continuous-movement', 'checkpoint-save'], keywords: ['火车', '路径运行', '折返', '闭环'] },
+  'continuous-kart-steering': { capabilityIds: ['continuous-movement', 'unified-input'], keywords: ['赛车', '卡丁车', '连续转向', '驾驶', '弯道'] },
+  'circuit-lap-progress': { capabilityIds: ['continuous-movement', 'checkpoint-save'], keywords: ['赛道', '圈数', '圈速', '冲线', '计时赛'] },
+  'energy-speed-burst': { capabilityIds: ['pickup', 'risk-reward'], keywords: ['冲刺', '蓄能', '加速', '超车'] },
+  "lane-dodge": { capabilityIds: ["continuous-movement", "seeded-spawning", "safe-lane"], keywords: ["闪避", "躲", "竞速", "跑酷", "路线", "障碍", "速度"] },
+  "trail-growth": { capabilityIds: ["continuous-movement", "body-trail", "pickup"], keywords: ["贪吃蛇", "持续移动", "转向", "增长", "自撞", "生存"] },
+  "falling-blocks": { capabilityIds: ["grid-simulation", "piece-rotation", "line-clear"], keywords: ["俄罗斯方块", "落块", "旋转", "暂存", "消行", "堆叠"] },
+  "grid-slide-merge": { capabilityIds: ["grid-slide", "merge-equal", "move-availability"], keywords: ["合成", "数字", "滑动", "棋盘", "方块", "升级"] },
+  "polyomino-placement": { capabilityIds: ["shape-fit", "line-clear", "move-availability"], keywords: ["方块填阵", "拖放", "候选拼块", "消行", "空间管理"] },
+  "match-combo": { capabilityIds: ["match3-board", "swap-match", "turn-order", "ai-opponent", "combo-scoring"], keywords: ["三消", "交换", "连消", "回合", "对抗", "AI"] },
+  "projectile-wave": { capabilityIds: ["projectile-hit", "enemy-wave", "invulnerability-window"], keywords: ["射击", "子弹", "弹幕", "敌人", "战斗", "Boss"] },
+  "paddle-trajectory": { capabilityIds: ["arcade-collision", "trajectory", "level-layout"], keywords: ["打砖块", "弹球", "挡板", "反弹", "轨迹", "清场"] },
+  "grid-navigation": { capabilityIds: ["grid-path", "reachability", "checkpoint-save"], keywords: ["迷宫", "探索", "路径", "出口", "钥匙", "地形"] },
+  "sliding-block": { capabilityIds: ["grid-occupancy", "legal-move", "solver"], keywords: ["华容道", "滑块", "移块", "占格", "出口", "求解"] },
+  "route-relic-synergy": { capabilityIds: ["route-choice", "seeded-run", "checkpoint-save"], keywords: ["肉鸽", "路线", "选择", "构筑", "遗物", "旅程"] },
+  "collect-charge": { capabilityIds: ["pickup", "risk-reward", "exit-unlock"], keywords: ["收集", "撤离", "出口", "宝物", "逃离", "探索"] },
+  "drag-snap-assembly": { capabilityIds: ["drag-snap", "spatial-validation", "touch-input"], keywords: ["拖动", "拼图", "摆放", "整理", "拼合", "吸附"] },
+  "constraint-deduction": { capabilityIds: ["constraint-solver", "unique-solution", "hint-explanation"], keywords: ["推理", "逻辑", "数独", "谜题", "唯一解", "排除"] },
+  "tableau-solitaire": { capabilityIds: ["card-tableau", "free-cells", "supermove", "foundation-build", "seeded-deal"], keywords: ["空当接龙", "空档接龙", "纸牌", "超级移动", "收牌堆", "牌局"] },
+  "sort-and-serve": { capabilityIds: ["queue-scheduling", "order-deadline", "capacity-upgrade", "round-progression"], keywords: ["经营", "店铺", "订单", "排队", "制作", "顾客", "时间管理"] },
+  "choice-consequence": { capabilityIds: ["chapter-state", "branch-choice", "consequence-flag", "checkpoint-save"], keywords: ["剧情", "故事", "对话", "章节", "分支", "结局", "选择"] },
+  "deck-synergy": { capabilityIds: ["seeded-deck", "card-cost", "combo-resolution", "turn-progression"], keywords: ["卡牌", "卡组", "抽牌", "费用", "连携", "协同", "回合"] },
+  "gamepad-equivalent-control": { capabilityIds: ["gamepad-input", "input-remap", "keyboard-fallback"], keywords: ["手柄", "摇杆", "控制器", "按键映射"] },
+  "spatial-rotation-path": { capabilityIds: ["character-controller", "camera", "3d-spatial-reasoning", "reachability", "checkpoint-save"], keywords: ["3d", "立体", "空间", "机关", "透视", "相机", "空间谜题"] },
+};
+
+/**
+ * 高级创作器的机制列表由统一知识库派生；这里只保留旧创作运行时所需的能力标签与检索词，
+ * 不再复制机制 id、名称或规则说明。
+ */
+export const MECHANIC_LIBRARY: MechanicDefinition[] = GAME_DESIGN_KNOWLEDGE_LIBRARY.mechanics
+  .filter(({ id }) => Boolean(MECHANIC_RUNTIME_METADATA[id]))
+  .map((mechanic) => ({
+    id: mechanic.id,
+    name: mechanic.label,
+    description: mechanic.playerVerb,
+    ...MECHANIC_RUNTIME_METADATA[mechanic.id],
+  }));
 
 /** 按 id 查玩法模板：覆盖开发中的登记（它们不在创作页列表里，但探针、规格与测试仍要能找到）。 */
 export const getTemplate = (id: string | null): GameTemplate | undefined =>

@@ -6,14 +6,14 @@ export const merge2048 = defineOfficialGame({
   title: "数织矩阵",
   kind: "template",
   serverTemplate: "merge-2048",
-  lobbyRank: 5,
+  lobbyRank: 6,
   cover: "assets/templates/packs/merge-2048/cover.png",
   referenceDoc: "docs/42-merge-2048-best-template-reference.md",
-  mechanicId: "grid-merge",
+  knowledge: { patternId: "sliding-merge-puzzle", mechanicIds: ["grid-slide-merge"], rationale: "全盘滑动、同值合并与空间管理组合。" },
   seed: {
     artStyle: "geometric",
     visualStyle: "fashion",
-    idea: "做一个时尚编辑风格的 2048 数字合成游戏，标准难度目标为 1024，支持滑动、键盘和触控方向键。",
+    idea: "做一个数字织造主题的 2048 游戏，提供关卡闯关与自由无尽；连续里程碑反馈不打断滑动，方向预览解释真实合并收益，整关结算展示成长。",
   },
   domainTemplate: {
     id: "merge-2048",

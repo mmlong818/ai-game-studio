@@ -15,7 +15,7 @@ interface FixtureSpecBuilder {
 const goldenInput: ProjectInput = {
   title: "星梦对决",
   dimensions: "2d",
-  idea: "玩家与 AI 共用一个棋盘轮流三消。玩家只能操作下半区，AI 只能操作上半区，所有连消归当前行动者，任一方积分归零时结束。",
+  idea: "星梦对决包含单人限步收集和人机对战，各自 20 关；另有无限休闲，无目标、无步数限制、无对手，三种玩法独立存档。单人可操作整张棋盘，目标收满即胜，无效交换不扣步。对战时玩家操作下半区、AI 操作上半区，所有连消归当前行动者，任一方生命归零时结束。",
 };
 
 function acceptedGoldenSpec() {
@@ -24,7 +24,9 @@ function acceptedGoldenSpec() {
     ...spec,
     acceptanceCriteria: [
       ...spec.acceptanceCriteria,
-      { id: "AC-ZONE", priority: "P0", statement: "玩家与 AI 的分区操作权限始终有效", probeType: "state", status: "passed" },
+      { id: "AC-ZONE", priority: "P0", statement: "对战模式中玩家与 AI 的分区操作权限始终有效", probeType: "state", status: "passed" },
+      { id: "AC-MODES", priority: "P0", statement: "单人与对战拥有独立关卡进度，切换不覆盖彼此存档", probeType: "state", status: "passed" },
+      { id: "AC-SOLO", priority: "P0", statement: "单人整盘操作按实际消除收集目标，无效交换不扣步，最后一步完成目标优先判胜", probeType: "state", status: "passed" },
       { id: "AC-CASCADE", priority: "P0", statement: "整段连消伤害归当前行动触发者", probeType: "state", status: "passed" },
     ].map((criterion) => ({ ...criterion, status: "passed" })),
   });
@@ -50,31 +52,33 @@ function acceptedFreecellSpec() {
   });
 }
 
-const bugClimbInput: ProjectInput = {
-  title: "虫虫攀枝",
-  dimensions: "2d",
-  idea: "Q版小瓢虫在巨大树干的三条树纹之间高速攀爬，躲避树瘤、蘑菇和树脂，收集露珠与金色种子并冲向树冠。",
-};
-
-function acceptedBugClimbSpec() {
-  const spec = generateGameSpec(bugClimbInput);
-  return gameSpecSchema.parse({
-    ...spec,
-    template: "generated",
-    inputModes: ["pointer", "keyboard", "touch-buttons"],
-    acceptanceCriteria: [
-      ...spec.acceptanceCriteria,
-      { id: "AC-LANES", priority: "P0", statement: "三条树纹路线始终等宽可判断，每个生成批次至少保留一条安全通路", probeType: "state", status: "passed" },
-      { id: "AC-DASH", priority: "P0", statement: "露珠冲刺可撞碎琥珀树脂，普通碰撞扣体力并清空倍率", probeType: "state", status: "passed" },
-      { id: "AC-TOUCH", priority: "P1", statement: "键盘、触控按钮与四向滑动都能完成一局", probeType: "state", status: "passed" },
-    ].map((criterion) => ({ ...criterion, status: "passed" })),
-  });
-}
-
 export const fixtureSpecBuilders: Record<string, FixtureSpecBuilder> = {
+  'meadow-railway': {
+    input: { title: '牧野小火车', dimensions: '3d', template: 'generated', idea: '自由搭建木制铁路玩具，无目标无时限，点击自动接续，火车沿线路运行，支持撤销和本地保存。' },
+    spec: () => {
+      const spec = generateGameSpec({ title: '牧野小火车', dimensions: '3d', template: 'generated', idea: '自由搭建木制铁路玩具，无目标无时限，点击自动接续，火车沿线路运行，支持撤销和本地保存。' });
+      return gameSpecSchema.parse({ ...spec, template: 'generated', inputModes: ['pointer', 'keyboard', 'touch-buttons'], acceptanceCriteria: [
+        { id: 'AC-RAIL-CONNECTION', priority: 'P0', statement: '部件端点与切线连续，闭环可验证，非法相交不改变路线', probeType: 'state', status: 'pending' },
+        { id: 'AC-RAIL-TRAIN', priority: 'P0', statement: '列车沿同一条路径行驶，开放路线折返，暂停停止模拟', probeType: 'state', status: 'pending' },
+        { id: 'AC-RAIL-RECOVERY', priority: 'P0', statement: '撤销重做与刷新保存不损坏路线，状态与其他游戏隔离', probeType: 'state', status: 'pending' },
+        { id: 'AC-RAIL-QUALITY', priority: 'P0', statement: '真人检查搭轨乐趣、美术、相机和目标设备流畅度', probeType: 'state', status: 'pending' },
+      ] });
+    },
+  },
+  'island-kart': {
+    input: { title: '椰风海岛', dimensions: '3d', template: 'generated', idea: '轻操作海岛卡丁车，三车同场连续转向，三圈竞速或无限自由驾驶。' },
+    spec: () => {
+      const spec = generateGameSpec({ title: '椰风海岛', dimensions: '3d', template: 'generated', idea: '轻操作海岛卡丁车，三车同场连续转向，三圈竞速或无限自由驾驶。' });
+      return gameSpecSchema.parse({ ...spec, template: 'generated', inputModes: ['keyboard', 'touch-buttons'], acceptanceCriteria: [
+        { id: 'AC-KART-CONTROL', priority: 'P0', statement: '连续转向、自动前进与双端操作可完成赛道', probeType: 'state', status: 'pending' },
+        { id: 'AC-KART-FAIR', priority: 'P0', statement: '玩家和两位 AI 使用相同车辆规则，三圈结算与自由驾驶相互独立', probeType: 'state', status: 'pending' },
+        { id: 'AC-KART-PAUSE', priority: 'P0', statement: '暂停与失焦不推进计时、车辆或道具，输入释放后不粘滞', probeType: 'state', status: 'pending' },
+        { id: 'AC-KART-QUALITY', priority: 'P0', statement: '真实玩家确认驾驶手感与视频复刻品质达到要求', probeType: 'state', status: 'pending' },
+      ] });
+    },
+  },
   "star-dream-duel": { input: goldenInput, spec: acceptedGoldenSpec },
   freecell: { input: freecellInput, spec: acceptedFreecellSpec },
-  "bug-climb": { input: bugClimbInput, spec: acceptedBugClimbSpec },
 };
 
 /**

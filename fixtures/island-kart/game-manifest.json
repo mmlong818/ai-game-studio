@@ -1,0 +1,14 @@
+{
+  "title": "椰风海岛",
+  "template": "generated",
+  "fixtureKind": "island-kart",
+  "experimental": false,
+  "runtimeTarget": "web-3d",
+  "engine": "three",
+  "engineVersion": "0.185.1",
+  "aspectRatio": "16:9",
+  "inputModes": ["keyboard", "touch-buttons"],
+  "modes": ["race", "free"],
+  "generatedAt": "2026-09-06",
+  "resourceProvenance": "./_studio/ART_PROVENANCE.md"
+}

@@ -5,6 +5,7 @@ import { PreferencesProvider } from "./preferences";
 import "./styles.css";
 import "./workflow.css";
 import "./library.css";
+import "./design-knowledge.css";
 import "../styles/foundation.css";
 import "../styles/creator.css";
 import "../styles/review.css";

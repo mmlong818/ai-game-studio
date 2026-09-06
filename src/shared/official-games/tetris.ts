@@ -9,7 +9,7 @@ export const tetris = defineOfficialGame({
   lobbyRank: 13,
   cover: "assets/templates/packs/tetris/cover.png",
   referenceDoc: "docs/38-tetris-best-template-reference.md",
-  mechanicId: "falling-blocks",
+  knowledge: { patternId: "falling-block-puzzle", mechanicIds: ["falling-blocks", "polyomino-placement"], rationale: "用固定开局课程训练平铺、双消、竖井与暂存取舍；落点预告消行收益与封洞代价，不自动代放。" },
   seed: {
     artStyle: "geometric",
     visualStyle: "color-block",

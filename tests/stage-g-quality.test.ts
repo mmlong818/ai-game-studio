@@ -36,7 +36,7 @@ test("阶段 G 生成物只在正式播放网址发送匿名质量事件", async
   const repository = new StudioRepository(database, "http://127.0.0.1:4312");
   const root = mkdtempSync(join(tmpdir(), "studio-stage-g-artifact-"));
   try {
-    const project = await repository.create({ title: "匿名事件验证", idea: "完成 20 关的触控迷宫。", template: "maze", dimensions: "2d" });
+    const project = await repository.create({ title: "匿名事件验证", idea: "完成 20 关的触控迷宫。", template: dimensions: "2d" });
     writeDesignDocuments(root, project);
     writeGameArtifact(root, project);
     const script = readFileSync(join(root, "app.js"), "utf8");

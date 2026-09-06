@@ -4,7 +4,13 @@
 > 登记表：`src/shared/official-games/`　守卫测试：`src/shared/official-games/registry.test.ts`、`tests/official-catalog.test.ts`
 
 官方游戏（进游戏大厅的平台游戏）只有一个真相来源：**登记表** `src/shared/official-games/<id>.ts`。
-GAME_TEMPLATES、GOLDEN_SCENARIOS、创作侧运行时定义、TEMPLATE_MECHANIC_MAP、服务端模板枚举 `gameTemplateSchema`、
+
+### 官方仅游玩作品
+
+`stage: "live"` 决定进入官方大厅；`remixable: false` 独立声明不作为用户模板，不进入改造映射/选择列表，也不显示游戏边缘的改造按钮。缺省仍允许改造，现有模板行为不变。内部玩法知识、探针与运行时验收元数据保留，不代表向用户提供模板。旧草稿中选中仅游玩作品时校验拒绝。
+
+椰风海岛（第 16 位）、牧野小火车（第 17 位）现按该方式上架；平台注册/上架状态不能覆盖原有质量报告中的待验证项。启动服务后执行既有 `ensureOfficialFixtures` 和 `syncOfficialCatalog`，幂等创建/同步；不重置存档、不修改其他游戏的大厅次序。
+GAME_TEMPLATES、GOLDEN_SCENARIOS、创作侧运行时定义、知识库玩法/机制映射、服务端模板枚举 `gameTemplateSchema`、
 `SERVER_TEMPLATE_TO_DOMAIN` / `FIXTURE_TEMPLATE_TO_DOMAIN` / `THREE_MODE_TO_DOMAIN` / `DOMAIN_TEMPLATE_ART`、`officialFixtures`、
 seed 清单和大厅顺序全部由它派生。**不允许再在这些地方手写条目**；守卫测试会在两处不一致时失败。
 
@@ -36,11 +42,12 @@ npm run game:new -- <id> --kind fixture|template|three --title "中文名"
 | `lobbyRank` | 大厅顺序，1 起连续唯一（只在 live 游戏之间计算） | 全部 |
 | `stage` | 缺省 `live`；`development` 表示单独开发中：不进大厅、不做改造模板、不播种，启动同步会把它已发布的项目摘下官方目录 | 可选 |
 | `cover` | 封面路径：`fixtures/<kind>/assets/cover.png`、`assets/templates/packs/<t>/cover.png`、`assets/starter/<id>/cover.png` | 全部 |
+| `lobbyCover` | 可选独立大厅插画 `assets/library/covers/<id>-vN.webp`，不改变游戏内部素材；3D 游戏同样用插画而非运行截图，测试不得覆盖 | 可选 |
 | `referenceDoc` | 参照文档路径 | 全部 |
 | `domainTemplate` | 创作页玩法模板（id、name、genre、pitch、coreLoop、coreRules、capabilities、suggestions=commonSuggestions(...)、redirectExamples） | 全部 |
 | `probeKind` / `probeScenario` | 探针种类（缺省 golden，用 probeScenario 驱动通用探针；专属探针写 merge-grid / tile-roguelite / collect-escape-3d / paper-popup）与动作→事件合同 | 全部 |
 | `runtimeDefinition` | 创作侧运行时三步动作、三条反馈与样式类名 | 全部 |
-| `mechanicId` | R2 研究用的内部机制 id（MECHANIC_LIBRARY） | 全部 |
+| `knowledge` | 游戏设计知识库中的玩法模式、稳定机制 ID 与采用理由 | 全部 |
 | `seed{idea,artStyle,visualStyle}` | `npm run seed:showcases` 建示范项目用；标题取 `title` | template / three |
 
 美术：所有位图必须是可追溯的 AI 位图。固定型填 `fixtures/<id>/_studio/ART_PROVENANCE.md`；模板型用 `scripts/generate-template-assets.mjs` 产出美术包与 `asset-manifest.json`。封面文件必须真实存在，守卫测试会检查。

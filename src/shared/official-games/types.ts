@@ -16,10 +16,10 @@ export type OfficialGameKind =
   /** 3D 游戏：走 three 运行时，由 threeMode 决定场景类型。 */
   | "three";
 
-export type OfficialThreeMode = "collector" | "arena" | "popup";
+export type OfficialThreeMode = "collector" | "arena";
 
 /**
- * 登记状态。"live"（缺省）进入大厅、创作页模板与示范播种；
+ * 登记状态。"live"（缺省）进入大厅；创作模板还须 remixable !== false。
  * "development" 表示仍在单独开发：保留登记与探针以便持续测试，但不进入大厅、不作为改造模板、不播种，
  * 启动同步会把它已发布的项目从官方目录摘下（is_official=false，lobby_rank 清空）。
  */
@@ -64,7 +64,7 @@ export interface OfficialProbeScenario {
  * 探针种类。"golden" 用登记的 probeScenario 驱动通用 GoldenTemplateProbe；
  * 其余值指向 src/domain/probe.ts 里的专属探针类。
  */
-export type OfficialProbeKind = "golden" | "merge-grid" | "tile-roguelite" | "collect-escape-3d" | "paper-popup";
+export type OfficialProbeKind = "golden" | "merge-grid" | "tile-roguelite" | "collect-escape-3d";
 
 /** 与 src/domain/runtimeGenerator.ts 的模板运行时定义一致。 */
 export interface OfficialRuntimeDefinition {
@@ -73,15 +73,24 @@ export interface OfficialRuntimeDefinition {
   className: string;
 }
 
+/** 官方游戏对游戏设计知识库的稳定引用；登记表是唯一数据源。 */
+export interface OfficialDesignKnowledgeReference {
+  patternId: string;
+  mechanicIds: string[];
+  rationale: string;
+}
+
 /** 一套玩法模板的完整捆绑：模板定义 + 验收探针 + 运行时定义 + R2 研究机制。 */
 export interface GameplayTemplateBundle {
+  /** false：仅供官方游玩/内部验收，不进入用户模板和改造流程。与上线状态独立。 */
+  remixable?: boolean;
   domainTemplate: OfficialDomainTemplate;
   /** 缺省为 "golden"。 */
   probeKind?: OfficialProbeKind;
   probeScenario: OfficialProbeScenario;
   runtimeDefinition: OfficialRuntimeDefinition;
-  /** 模板改造触发 R2 时用来做同类机制研究的内部机制 id（见 MECHANIC_LIBRARY）。 */
-  mechanicId: string;
+  /** 玩法模式与机制直接引用 game-design-knowledge 的稳定 id。 */
+  knowledge: OfficialDesignKnowledgeReference;
   /** 若这套玩法模板就是某种 3D 模式的落点，写上 threeMode；3D 项目按它映射到玩法模板。 */
   threeMode?: OfficialThreeMode;
   /** 派生时标记：来源登记处于 development 阶段，创作页与映射表跳过它，探针与运行时定义仍保留。 */
@@ -127,6 +136,8 @@ export interface OfficialGameDefinition<
   lobbyRank: number;
   /** 封面文件的仓库相对路径。固定型：fixtures/<kind>/assets/cover.png；模板型：assets/templates/packs/<template>/cover.png。 */
   cover: string;
+  /** 独立大厅插画：不得由浏览器截图测试覆盖，也不替换游戏内部素材。 */
+  lobbyCover?: string;
   /** 参照文档（docs/NN-<id>-best-template-reference.md 等）。 */
   referenceDoc: string;
   /** 模板型必填。 */

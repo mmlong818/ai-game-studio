@@ -20,7 +20,12 @@ describe("官方游戏默认必须有玩法模板", () => {
       template: "generated",
       idea: "Q版小瓢虫在巨大树干的三条树纹之间高速攀爬，躲避树瘤、蘑菇和树脂，收集露珠与金色种子并冲向树冠。",
     });
-    expect(template?.id).toBe("lane-climb");
+    expect(template).toBeUndefined();
+  });
+
+  it("AI 原创模板匹配使用稳定知识机制，而不是实现能力标签或旧机制别名", () => {
+    const template = resolveTemplateForGame({ template: "generated", idea: "滑动整个数字棋盘，把相同数字合并并保留空格。" });
+    expect(template?.id).toBe("merge-2048");
   });
 
   it("固定游戏按自身种类映射：星梦对决→轮换对决三消，空档接龙→四空档接龙", () => {
@@ -44,8 +49,8 @@ describe("官方游戏默认必须有玩法模板", () => {
 
   it("3D 项目按 threeMode 映射：popup→立体书旋转迷宫，且三种模式都指向已登记模板", () => {
     // 纸境处于 development 阶段：不映射、不进入“改一个现有游戏”。
-    expect(resolveTemplateForGame({ template: "maze", idea: "", threeMode: "popup" })).toBeUndefined();
-    expect(resolveTemplateForGame({ template: "maze", idea: "", threeMode: "arena" })?.id).toBe("arena-3d");
+    expect(resolveTemplateForGame({ template: "generated", idea: "", threeMode: "popup" })).toBeUndefined();
+    expect(resolveTemplateForGame({ template: "generated", idea: "", threeMode: "arena" })?.id).toBe("arena-3d");
     for (const templateId of Object.values(THREE_MODE_TO_DOMAIN)) {
       expect(GAME_TEMPLATES.some((template) => template.id === templateId), `${templateId} 不是已登记的玩法模板`).toBe(true);
     }

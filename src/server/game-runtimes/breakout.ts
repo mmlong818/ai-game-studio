@@ -1,4 +1,10 @@
+import { breakoutGuidanceScript } from "./breakout-guidance.js";
+
 export const breakoutScript = String.raw`
+${breakoutGuidanceScript}
+const breakoutCoachStyle=document.createElement('style');
+breakoutCoachStyle.textContent='body[data-template=breakout] .onboarding-coach{bottom:100px}';
+document.head.appendChild(breakoutCoachStyle);
 let paddle;
 let ball;
 let bricks = [];
@@ -33,6 +39,10 @@ let lastPowerLabel = "";
 let lastPowerAt = 0;
 let physicsStepCount = 0;
 let collisionProbe = null;
+let activeElapsed = 0;
+let paddleReturns = 0;
+let guidanceHits = 0;
+let lastGuidedTarget = null;
 const bombClearThreshold = 3;
 const timeAttackSeconds = 120;
 const focusTimeScale = .55;
@@ -63,7 +73,7 @@ function breakoutModeLabel() {
 
 function timeAttackRemaining() {
   if (breakoutMode !== "time-attack" || !modeStartedAt) return 0;
-  return Math.max(0, timeAttackSeconds - Math.floor((performance.now() - modeStartedAt) / 1000));
+  return Math.max(0, timeAttackSeconds - Math.floor(activeElapsed / 1000));
 }
 
 function comboIntensity() {
@@ -72,12 +82,12 @@ function comboIntensity() {
 
 function activePaddleWidth() {
   const base = paddle?.baseWidth || 118;
-  return performance.now() < widePaddleUntil ? Math.min(184, base + 38) : base;
+  return activeElapsed < widePaddleUntil ? Math.min(184, base + 38) : base;
 }
 
 function activePowerLabel() {
   if (shieldCharges) return "潮盾 ×" + shieldCharges;
-  if (performance.now() < widePaddleUntil) return "宽挡板";
+  if (activeElapsed < widePaddleUntil) return "宽板 " + Math.ceil((widePaddleUntil - activeElapsed) / 1000) + "秒";
   if (pierceHits) return "穿透 ×" + pierceHits;
   return "能力待命";
 }
@@ -165,11 +175,6 @@ function levelHasBrick(level, row, column) {
 }
 
 function breakoutBrickKind(level, row, column, armorValue) {
-  const tier = breakoutChapterIndex() + 1;
-  const specialValue = ((row * 43 + column * 67 + currentLevelIndex * 29) % 101) / 101;
-  if (tier >= 2 && specialValue < .045) return "shield";
-  if (tier >= 3 && specialValue >= .22 && specialValue < .27) return "wide";
-  if (tier >= 4 && specialValue >= .48 && specialValue < .535) return "pierce";
   return armorValue < level.armorRate ? "armor" : "normal";
 }
 
@@ -205,6 +210,7 @@ function createBricks() {
       });
     }
   }
+  breakoutArrangePowers(bricks, currentLevelIndex);
 }
 
 function drawStageHud(layout) {
@@ -382,9 +388,10 @@ function drawSimpleBrick(brick) {
 }
 
 function drawBombStatus(layout) {
+  const statusY = layout.paddleY + 16;
   ctx.save();
   ctx.beginPath();
-  ctx.roundRect(68, layout.paddleY - 82, 584, 48, 18);
+  ctx.roundRect(68, statusY, 584, 32, 12);
   ctx.fillStyle = "rgba(3,30,37,.88)";
   ctx.fill();
   ctx.strokeStyle = bombArmed ? "rgba(236,228,180,.92)" : "rgba(185,224,239,.28)";
@@ -394,22 +401,101 @@ function drawBombStatus(layout) {
   ctx.textBaseline = "middle";
   ctx.fillStyle = "rgba(223,246,255,.68)";
   ctx.font = "700 12px Inter, sans-serif";
-  ctx.fillText("聚光", 88, layout.paddleY - 58);
+  ctx.fillText("聚光", 88, statusY + 16);
   ctx.fillStyle = "rgba(223,246,255,.18)";
-  ctx.fillRect(128, layout.paddleY - 64, 126, 12);
+  ctx.fillRect(128, statusY + 10, 126, 12);
   ctx.fillStyle = focusActive ? "#8adce8" : "rgba(138,220,232,.72)";
-  ctx.fillRect(128, layout.paddleY - 64, 126 * focusEnergy / 100, 12);
+  ctx.fillRect(128, statusY + 10, 126 * focusEnergy / 100, 12);
   ctx.fillStyle = "rgba(223,246,255,.8)";
   ctx.font = "750 12px ui-monospace, Consolas, monospace";
-  ctx.fillText(Math.round(focusEnergy) + "%", 262, layout.paddleY - 58);
-  if (bombArmed) drawBitmapSprite(6, 316, layout.paddleY - 72, 28, 28, { fallback: "#ece4b4", padding: 2, scale: 1.08 });
+  ctx.fillText(Math.round(focusEnergy) + "%", 262, statusY + 16);
+  if (bombArmed) drawBitmapSprite(6, 316, statusY + 2, 28, 28, { fallback: "#ece4b4", padding: 2, scale: 1.08 });
   ctx.fillStyle = bombArmed ? "#ece4b4" : "rgba(223,246,255,.68)";
   ctx.font = "800 13px Inter, sans-serif";
-  ctx.fillText(bombArmed ? "爆炸就绪" : "连消 " + clearStreak + "/" + bombClearThreshold, 348, layout.paddleY - 58);
+  ctx.fillText(bombArmed ? "爆炸就绪" : "连消 " + clearStreak + "/" + bombClearThreshold, 348, statusY + 16);
   const powerText = activePowerLabel();
   ctx.textAlign = "right";
-  ctx.fillStyle = shieldCharges || pierceHits || performance.now() < widePaddleUntil ? "#f5d38a" : "rgba(223,246,255,.62)";
-  ctx.fillText(powerText + (breakoutCombo >= 2 ? " · 连击 ×" + breakoutCombo : ""), 632, layout.paddleY - 58);
+  ctx.fillStyle = shieldCharges || pierceHits || activeElapsed < widePaddleUntil ? "#f5d38a" : "rgba(223,246,255,.62)";
+  ctx.fillText(powerText + (breakoutCombo >= 2 ? " · 连击 ×" + breakoutCombo : ""), 632, statusY + 16);
+  ctx.restore();
+}
+
+function returnGuidance() {
+  const remaining = bricks.filter((brick) => brick.alive);
+  if (serveDelay > 0) return { x: ball.x, caught: true, trace: breakoutTraceReturn(ball, ball, remaining, breakoutLayout().top + 10, ball.radius) };
+  // Until the ball is below every brick another collision could change its landing.
+  if (remaining.some((brick) => brick.y + brick.height + ball.radius >= ball.y)) return null;
+  const x = breakoutLandingX(ball, paddle.y);
+  if (x === null) return null;
+  const offset = (x - paddle.x - paddle.width / 2) / (paddle.width / 2);
+  const caught = Math.abs(offset) <= 1 + ball.radius / (paddle.width / 2);
+  const velocity = breakoutReturnVelocity(offset, Math.hypot(ball.vx, ball.vy));
+  const trace = breakoutTraceReturn({ x, y: paddle.y - ball.radius - 1 }, velocity, remaining, breakoutLayout().top + 10, ball.radius);
+  return { x, caught, trace };
+}
+
+function cleanupPaddleHint(x) {
+  const remaining = bricks.filter((brick) => brick.alive);
+  if (!remaining.length || remaining.length > 3) return null;
+  let best = null;
+  for (let i = -18; i <= 18; i += 1) {
+    const offset = i / 20;
+    const left = x - paddle.width * (1 + offset) / 2;
+    if (left < 48 || left + paddle.width > 672) continue;
+    const path = breakoutTraceReturn({ x, y: paddle.y - ball.radius - 1 }, breakoutReturnVelocity(offset, 10), remaining, breakoutLayout().top + 10, ball.radius);
+    if (!path.targetId) continue;
+    const movement = Math.abs(left - paddle.x);
+    if (!best || movement < best.movement) best = { x: left, movement, targetId: path.targetId };
+  }
+  return best;
+}
+
+function drawReturnGuidance(layout) {
+  if (!running || onboardingIsActive()) return;
+  const guide = returnGuidance();
+  const remaining = bricks.filter((brick) => brick.alive);
+  ctx.save();
+  if (guide) {
+    const cleanup = serveDelay <= 0 ? cleanupPaddleHint(guide.x) : null;
+    if (cleanup && !guide.trace.targetId) {
+      ctx.strokeStyle = "rgba(236,228,180,.65)";
+      ctx.lineWidth = 2;
+      ctx.setLineDash([6, 6]);
+      ctx.strokeRect(cleanup.x, paddle.y + 9, paddle.width, 8);
+      ctx.setLineDash([]);
+    }
+    ctx.strokeStyle = guide.caught ? "rgba(197,243,247,.72)" : "#f39ba8";
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.moveTo(guide.x - 12, paddle.y - 3); ctx.lineTo(guide.x + 12, paddle.y - 3);
+    ctx.stroke();
+    if (guide.caught) {
+      const points = guide.trace.points;
+      let distanceLeft = remaining.length <= 3 || serveDelay > 0 ? 1800 : 190;
+      ctx.setLineDash([7, 9]);
+      ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.moveTo(points[0].x, points[0].y);
+      for (let i = 1; i < points.length && distanceLeft > 0; i += 1) {
+        const from = points[i - 1], to = points[i], distance = Math.hypot(to.x - from.x, to.y - from.y);
+        const ratio = Math.min(1, distanceLeft / Math.max(.001, distance));
+        ctx.lineTo(from.x + (to.x - from.x) * ratio, from.y + (to.y - from.y) * ratio);
+        distanceLeft -= distance;
+      }
+      ctx.stroke(); ctx.setLineDash([]);
+      if (remaining.length <= 3) {
+        const target = remaining.find((brick) => brick.id === guide.trace.targetId);
+        if (target) {
+          ctx.strokeStyle = "#ece4b4"; ctx.lineWidth = 3;
+          ctx.strokeRect(target.x - 3, target.y - 3, target.width + 6, target.height + 6);
+        }
+      }
+    }
+  }
+  ctx.fillStyle = "rgba(223,246,255,.86)";
+  ctx.textAlign = "center"; ctx.textBaseline = "middle";
+  ctx.font = "650 19px Inter, sans-serif";
+  const text = serveDelay > 0 ? "移动挡板选择发球位置" : remaining.length <= 3 ? "收尾导航 · 虚线标出回球方向" : paddleReturns < 3 ? "左侧接球向左 · 右侧接球向右" : breakoutLesson(currentLevelIndex).title + " · 已回球 " + paddleReturns + " 次";
+  ctx.fillText(text, 360, layout.paddleY + 62, 580);
   ctx.restore();
 }
 
@@ -427,6 +513,7 @@ function drawBreakout() {
   });
   drawImpactBursts(performance.now());
   drawBrickFragments();
+  drawReturnGuidance(layout);
   drawBitmapSprite(4, paddle.x, paddle.y - 10, paddle.width, paddle.height + 20, { fallback: palette.highlight, radius: 14, padding: 8, scale: 1.12 });
   drawBitmapSprite(5, ball.x - ball.radius - 4, ball.y - ball.radius - 4, (ball.radius + 4) * 2, (ball.radius + 4) * 2, { fallback: palette.primary, circle: true, padding: 5, scale: 1.15 });
   ctx.strokeStyle = "rgba(235,253,255,.9)";
@@ -452,7 +539,7 @@ function destroyBrick(brick, fragmentCount = 4) {
 function grantBrickPower(brick) {
   if (!brick || !["shield", "wide", "pierce"].includes(brick.kind)) return "";
   if (brick.kind === "shield") shieldCharges = Math.min(2, shieldCharges + 1);
-  if (brick.kind === "wide") widePaddleUntil = Math.max(widePaddleUntil, performance.now()) + 10_000;
+  if (brick.kind === "wide") widePaddleUntil = Math.max(widePaddleUntil, activeElapsed) + 10_000;
   if (brick.kind === "pierce") pierceHits = Math.min(8, pierceHits + 4);
   lastPowerLabel = brick.kind === "shield" ? "潮盾已充能" : brick.kind === "wide" ? "挡板扩展 10 秒" : "穿透强化 4 次";
   lastPowerAt = performance.now();
@@ -518,6 +605,7 @@ function resolveDestroyedBrick(brick) {
 }
 
 function resetBall() {
+  lastGuidedTarget = null;
   const level = currentLevel();
   const layout = breakoutLayout();
   const difficultyMultiplier = config.difficulty === "challenging" ? 1.08 : config.difficulty === "relaxed" ? .84 : 1;
@@ -540,7 +628,7 @@ function showLevelComplete() {
   sounds.ambient.pause();
   pendingNextLevel = true;
   overlayTitle.textContent = currentLevel().label.replace(/^\d+\s*/, "") + " 已澄明";
-  overlayDetail.textContent = "本关得分 " + score + "，最高连击 ×" + bestCombo + "。已解锁下一关；每四关进入新章节并加入新的特殊砖。";
+  overlayDetail.textContent = "击碎 " + cleared + " 块 · 成功回球 " + paddleReturns + " 次 · 控角命中 " + guidanceHits + " 次。得分 " + score + "，最高连击 ×" + bestCombo + "。下一关：" + breakoutLesson(currentLevelIndex + 1).title + "。";
   startButton.textContent = "进入下一关";
   overlay.hidden = false;
   playSound("success");
@@ -610,18 +698,23 @@ function updateBrickFragments(scale) {
   brickFragments = brickFragments.filter((fragment) => fragment.life > 0);
 }
 
-function resolvePaddleBounce(previousY) {
+function resolvePaddleBounce(previousX, previousY) {
   const crossedPaddle = previousY + ball.radius <= paddle.y + 3 && ball.y + ball.radius >= paddle.y;
-  if (ball.vy <= 0 || !crossedPaddle || ball.x < paddle.x - ball.radius || ball.x > paddle.x + paddle.width + ball.radius) return false;
-  const offset = Math.max(-1, Math.min(1, (ball.x - (paddle.x + paddle.width / 2)) / (paddle.width / 2)));
+  if (ball.vy <= 0 || !crossedPaddle) return false;
+  // Resolve at the contact plane, not the end of a substep. Fold side walls using
+  // the same landing function as the preview, including a wall in this substep.
+  const contactX = breakoutLandingX({ x: previousX, y: Math.min(previousY, paddle.y - ball.radius), vx: ball.vx, vy: ball.vy, radius: ball.radius }, paddle.y);
+  if (contactX === null || contactX < paddle.x - ball.radius || contactX > paddle.x + paddle.width + ball.radius) return false;
+  const offset = Math.max(-1, Math.min(1, (contactX - (paddle.x + paddle.width / 2)) / (paddle.width / 2)));
   const endlessLimit = breakoutMode === "endless" ? 1 + Math.min(.28, boardsCleared * .02) : 1;
   const speed = Math.min(currentLevel().speed * 1.78 * endlessLimit, Math.hypot(ball.vx, ball.vy) * 1.022);
-  ball.vx = Math.sin(offset * 1.02) * speed;
-  ball.vy = -Math.max(speed * .62, Math.abs(Math.cos(offset * 1.02) * speed));
-  const normalized = Math.hypot(ball.vx, ball.vy) || 1;
-  ball.vx = ball.vx / normalized * speed;
-  ball.vy = ball.vy / normalized * speed;
+  const velocity = breakoutReturnVelocity(offset, speed);
+  ball.vx = velocity.vx;
+  ball.vy = velocity.vy;
+  ball.x = contactX;
   ball.y = paddle.y - ball.radius - 1;
+  paddleReturns += 1;
+  lastGuidedTarget = breakoutTraceReturn(ball, ball, bricks, breakoutLayout().top + 10, ball.radius).targetId;
   playSound("move");
   return true;
 }
@@ -653,6 +746,8 @@ function accelerateBallAfterBrick() {
 
 function resolveBrickContact(brick, previousX, previousY) {
   const now = performance.now();
+  if (lastGuidedTarget === brick.id) guidanceHits += 1;
+  lastGuidedTarget = null;
   const piercing = pierceHits > 0;
   impactBursts.push({ x: ball.x, y: ball.y, startedAt: now });
   brick.hitAt = now;
@@ -685,10 +780,10 @@ function advanceBallPhysics(scale, layout) {
     const previousY = ball.y;
     ball.x += ball.vx * scale / steps;
     ball.y += ball.vy * scale / steps;
-    if (ball.x - ball.radius < 48) { ball.x = 48 + ball.radius; ball.vx = Math.abs(ball.vx); }
-    if (ball.x + ball.radius > 672) { ball.x = 672 - ball.radius; ball.vx = -Math.abs(ball.vx); }
+    if (resolvePaddleBounce(previousX, previousY)) continue;
+    if (ball.x - ball.radius < 48) { ball.x = 2 * (48 + ball.radius) - ball.x; ball.vx = Math.abs(ball.vx); }
+    if (ball.x + ball.radius > 672) { ball.x = 2 * (672 - ball.radius) - ball.x; ball.vx = -Math.abs(ball.vx); }
     if (ball.y - ball.radius < layout.top + 10) { ball.y = layout.top + 10 + ball.radius; ball.vy = Math.abs(ball.vy); }
-    if (resolvePaddleBounce(previousY)) continue;
     const brick = bricks.find((candidate) => !hitIds.has(candidate.id) && hitBrick(candidate));
     if (brick) {
       hitIds.add(brick.id);
@@ -709,24 +804,34 @@ function advanceBallPhysics(scale, layout) {
 
 function updateBreakout(delta) {
   const layout = breakoutLayout();
+  if (onboardingIsActive()) {
+    syncActivePaddleWidth();
+    ball.x = paddle.x + paddle.width / 2;
+    ball.y = paddle.y - 28;
+    return;
+  }
+  const activeDelta = Math.max(0, Math.min(100, delta));
+  activeElapsed += activeDelta;
   if (breakoutMode === "time-attack" && modeStartedAt && timeAttackRemaining() <= 0) {
     focusActive = false;
     showTerminalResult(true, "限时航次结算", "120 秒内清场 " + boardsCleared + " 次，获得 " + score + " 分，最高连击 ×" + bestCombo + "。 ");
     return;
   }
-  updateFocus(delta);
+  updateFocus(activeDelta);
   syncActivePaddleWidth();
   const timeScale = focusActive ? focusTimeScale : 1;
-  const scale = Math.min(2, delta / 16.67) * timeScale;
+  const scale = activeDelta / 16.67 * timeScale;
   updateBrickFragments(scale);
   if (serveDelay > 0) {
-    serveDelay = Math.max(0, serveDelay - delta);
+    serveDelay = Math.max(0, serveDelay - activeDelta);
     ball.x = paddle.x + paddle.width / 2;
     ball.y = paddle.y - 28;
     return;
   }
   advanceBallPhysics(scale, layout);
 }
+
+window.addEventListener("forge:onboarding-signal", () => { modeStartedAt = performance.now(); lastFrame = performance.now(); });
 
 function loop(timestamp) {
   if (!running) return;
@@ -739,7 +844,9 @@ function loop(timestamp) {
 
 function movePaddle(direction) {
   if (!running) return;
+  const previousX = paddle.x;
   paddle.x = Math.max(48, Math.min(672 - paddle.width, paddle.x + direction * 38));
+  if (paddle.x !== previousX) signalOnboarding("paddle-moved");
   drawBreakout();
 }
 
@@ -757,7 +864,9 @@ function toggleFocus() {
 canvas.addEventListener("pointermove", (event) => {
   if (!running) return;
   const { x } = eventScenePoint(event);
+  const previousX = paddle.x;
   paddle.x = Math.max(48, Math.min(672 - paddle.width, x - paddle.width / 2));
+  if (Math.abs(paddle.x - previousX) >= 2) signalOnboarding("paddle-moved");
 });
 
 function prepareLevel(options = {}) {
@@ -769,6 +878,7 @@ function prepareLevel(options = {}) {
   paddle = { x: 360 - baseWidth / 2, y: layout.paddleY, width: baseWidth, baseWidth, height: 18 };
   cleared = 0;
   if (!preserveRun) {
+    activeElapsed = 0;
     lives = 3;
     score = 0;
     bestCombo = 0;
@@ -790,6 +900,9 @@ function prepareLevel(options = {}) {
   bombArmed = false;
   lastExplosionRemoved = 0;
   lastExplosionCells = [];
+  paddleReturns = 0;
+  guidanceHits = 0;
+  lastGuidedTarget = null;
   createBricks();
   resetBall();
   syncLevelControls();
@@ -812,7 +925,7 @@ function startGame() {
   lastFrame = 0;
   hideOverlay();
   setMetric("0 / " + bricks.length);
-  setStatus(breakoutModeLabel() + "模式 · 清除 " + bricks.length + " 块砖；连消三块可获得十字爆炸，F 键或聚光按钮可减速。 ");
+  setStatus(breakoutLesson(currentLevelIndex).detail + " 清除 " + bricks.length + " 块砖即可过关。 ");
   startAmbient();
   frameId = requestAnimationFrame(loop);
 }
@@ -827,7 +940,7 @@ function selectLevel(index) {
   }
   prepareLevel();
   overlayTitle.textContent = currentLevel().label.replace(/^\d+\s*/, "");
-  overlayDetail.textContent = "每关使用不同砖阵；章节会逐步加入潮盾、宽挡板与穿透特殊砖，连消三块可获得十字爆炸。";
+  overlayDetail.textContent = breakoutLesson(currentLevelIndex).detail + " 连消三块可获得十字爆炸。";
   startButton.textContent = "开始" + breakoutModeLabel();
   setMetric("0 / " + bricks.length);
   setStatus("已选择 " + currentLevel().label + "，准备开始。");
@@ -846,13 +959,26 @@ onCampaignLevelChanged = () => {
 };
 
 runtimeDebugActions = {
+  prepareCleanupGuidanceReview: () => {
+    const keep = bricks.filter((brick) => brick.alive).slice(0, 3);
+    bricks.forEach((brick) => { brick.alive = keep.includes(brick); });
+    cleared = bricks.length - keep.length;
+    serveDelay = 0;
+    ball.x = 360;
+    ball.y = Math.max(...keep.map((brick) => brick.y + brick.height)) + ball.radius + 35;
+    ball.vx = 0;
+    ball.vy = 6;
+    paddle.x = 360 - paddle.width / 2;
+    setMetric(cleared + " / " + bricks.length);
+    drawBreakout();
+  },
   setCampaignMode: () => setBreakoutMode("campaign"),
   setTimeAttackMode: () => setBreakoutMode("time-attack"),
   setEndlessMode: () => setBreakoutMode("endless"),
   toggleFocus: () => toggleFocus(),
   grantSpecialPowers: () => {
     shieldCharges = 1;
-    widePaddleUntil = performance.now() + 10_000;
+    widePaddleUntil = activeElapsed + 10_000;
     pierceHits = 4;
     lastPowerLabel = "验收能力组";
     lastPowerAt = performance.now();
@@ -915,7 +1041,15 @@ runtimeDebugState = () => ({
   focusTimeScale,
   focusScoreMultiplier,
   shieldCharges,
-  wideActive: performance.now() < widePaddleUntil,
+  wideActive: activeElapsed < widePaddleUntil,
+  wideRemaining: Math.max(0, widePaddleUntil - activeElapsed),
+  activeElapsed,
+  paddleReturns,
+  guidanceHits,
+  lesson: breakoutLesson(currentLevelIndex),
+  guidance: returnGuidance(),
+  ball: { ...ball },
+  paddle: { ...paddle },
   pierceHits,
   activePowerLabel: activePowerLabel(),
   lastPowerLabel,

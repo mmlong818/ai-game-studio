@@ -9,19 +9,19 @@ export const klotski = defineOfficialGame({
   lobbyRank: 11,
   cover: "assets/templates/packs/klotski/cover.png",
   referenceDoc: "docs/43-klotski-best-template-reference.md",
-  mechanicId: "sliding-block",
+  knowledge: { patternId: "sliding-block-escape", mechanicIds: ["sliding-block"], rationale: "合法移块与可解出口是核心约束。" },
   seed: {
     artStyle: "ink",
     visualStyle: "line-art",
-    idea: "做一个东方木艺华容道，移动木块让曹操从底部中央离开，动作要有真实木块声音。",
+    idea: "做一个东方庭院中的机器人华容道，拖动包裹给队长让路，每关连续完成主题题组；先观察再提示一步，通庭点亮印记，整关结算真实进步。",
   },
   domainTemplate: {
     id: "sliding-block",
     name: "移块脱困",
     genre: "空间推理",
     pitch: "在有限格位中合法腾挪，让目标块抵达出口。",
-    coreLoop: "判断空间 → 移块 → 腾挪 → 脱困",
-    coreRules: ["方块占格固定", "移动不能重叠", "目标块必须到达出口"],
+    coreLoop: "认识本关技巧 → 入门练习 → 变式腾挪 → 综合脱困 → 整组结算与个人改善",
+    coreRules: ["方块占格固定，移动不能重叠", "目标块必须到达出口", "提示解释本步让路效果，搜索预算不足不等于无解", "按关卡保存合法操作路径与撤销重做，明确重开清当前局；旧回放不影响新局"],
     capabilities: ["grid-occupancy", "legal-move", "solver"],
     suggestions: commonSuggestions(
       "sliding-block",

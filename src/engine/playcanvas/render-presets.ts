@@ -1,6 +1,6 @@
 /**
  * 引擎层 · 渲染预设。bootstrap 运行时的全部数值（相机、主光 / 补光、环境、后处理、性能三档）都由预设提供；
- * 纸艺（纸境）只是其中一套预设，见 src/server/playcanvas-popup-runtime/render-preset.ts。
+ * 游戏可按需定义独立预设，不依赖任何官方游戏的专用运行时。
  * 预设以 JS 字面量（非 JSON）内嵌进产物脚本，保证 `tiltShift: true` 这类键名在脚本里可被静态探针读到。
  */
 

@@ -319,40 +319,38 @@
       "sampleRate": 44100
     },
     {
-      "filename": "stage-c/snake-head-v2.png",
+      "filename": "stage-c/snake-head-v3.png",
       "role": "stage-c-sprite-player-head",
-      "source": "openai-image-api+local-chroma-key+role-extraction",
+      "source": "openai-image-api+local-chroma-key+trim",
       "model": "gpt-image-2",
-      "bytes": 123612,
-      "sha256": "69cf5f8e425e6734e94d02554be6df4ade2c197d51dc70d2431bf98c895a60af",
+      "bytes": 165430,
+      "sha256": "3b5a4603bfc81117f600e84c7a97fd7a0c84c56656c0f33bcba0206743fdb90e",
       "width": 384,
-      "height": 384,
-      "targetSize": "384x384",
+      "height": 243,
+      "targetSize": "384x243",
       "transparentBackground": true,
-      "safeCrop": "8% transparent padding",
-      "subjectRatio": "60-84%",
-      "promptFile": "stage-c/prompt.json",
-      "sourceVersion": 2,
-      "sourceImageSha256": "eea7ba224ce8dadcf098738758dcbf183bba805b6c7ad4298e2737a7de5f4e6e",
-      "stageCBatch": "realtime-v2"
+      "safeCrop": "8px transparent padding",
+      "subjectRatio": "trimmed silhouette",
+      "promptFile": "stage-c/head-prompt-v3.txt",
+      "sourceVersion": 3,
+      "stageCBatch": "topdown-v3"
     },
     {
-      "filename": "stage-c/snake-body-straight-v2.png",
+      "filename": "stage-c/snake-body-straight-v3.png",
       "role": "stage-c-sprite-player-body-straight",
-      "source": "openai-image-api+local-chroma-key+role-extraction",
+      "source": "openai-image-api+local-chroma-key+trim",
       "model": "gpt-image-2",
-      "bytes": 71328,
-      "sha256": "59e85e31f519d36453a9dcb4f46ce36aa0159e27221ebb5a34e49cfeade07e15",
+      "bytes": 146081,
+      "sha256": "9653e12cb2f42854fa67c66278577e8cc0b01f43cffda787bbc80c30b464271b",
       "width": 384,
-      "height": 384,
-      "targetSize": "384x384",
+      "height": 188,
+      "targetSize": "384x188",
       "transparentBackground": true,
-      "safeCrop": "8% transparent padding",
-      "subjectRatio": "60-84%",
-      "promptFile": "stage-c/prompt.json",
-      "sourceVersion": 2,
-      "sourceImageSha256": "eea7ba224ce8dadcf098738758dcbf183bba805b6c7ad4298e2737a7de5f4e6e",
-      "stageCBatch": "realtime-v2"
+      "safeCrop": "8px transparent padding",
+      "subjectRatio": "trimmed silhouette",
+      "promptFile": "stage-c/body-prompt-v3.txt",
+      "sourceVersion": 3,
+      "stageCBatch": "topdown-v3"
     },
     {
       "filename": "stage-c/snake-body-corner-v2.png",
@@ -373,22 +371,21 @@
       "stageCBatch": "realtime-v2"
     },
     {
-      "filename": "stage-c/snake-tail-v2.png",
+      "filename": "stage-c/snake-tail-v3.png",
       "role": "stage-c-sprite-player-tail",
-      "source": "openai-image-api+local-chroma-key+role-extraction",
+      "source": "openai-image-api+local-chroma-key+trim",
       "model": "gpt-image-2",
-      "bytes": 58278,
-      "sha256": "204b3e660d9b2ee7482d05e958af7c32346a7255598b374e497a1d41083b0c97",
+      "bytes": 86072,
+      "sha256": "9cfdbbc64d705d34222367eb4e196fe8f36e9e4457f357a4540156a636d0e4e9",
       "width": 384,
-      "height": 384,
-      "targetSize": "384x384",
+      "height": 164,
+      "targetSize": "384x164",
       "transparentBackground": true,
-      "safeCrop": "8% transparent padding",
-      "subjectRatio": "60-84%",
-      "promptFile": "stage-c/prompt.json",
-      "sourceVersion": 2,
-      "sourceImageSha256": "eea7ba224ce8dadcf098738758dcbf183bba805b6c7ad4298e2737a7de5f4e6e",
-      "stageCBatch": "realtime-v2"
+      "safeCrop": "8px transparent padding",
+      "subjectRatio": "trimmed silhouette",
+      "promptFile": "stage-c/tail-prompt-v3.txt",
+      "sourceVersion": 3,
+      "stageCBatch": "topdown-v3"
     },
     {
       "filename": "stage-c/snake-food-v2.png",
@@ -487,6 +484,65 @@
       "bytes": 1610,
       "sha256": "9cf99364c4c87927d0ef7d234683c970496f4fd91633a8fc53891da129c44af9",
       "stageCBatch": "realtime-v2"
+    },
+    {
+      "filename": "stage-c/body-prompt-v3.txt",
+      "role": "source-prompt",
+      "source": "project-authored"
+    },
+    {
+      "filename": "stage-c/head-prompt-v3.txt",
+      "role": "source-prompt",
+      "source": "project-authored"
+    },
+    {
+      "filename": "stage-c/tail-prompt-v3.txt",
+      "role": "source-prompt",
+      "source": "project-authored"
+    },
+    {
+      "filename": "stage-c/snake-food-golden-v4.png",
+      "bytes": 59982,
+      "sha256": "ec48ab7c3ba6ef5560e22994bdd351d16579932299941b5b82431be19c336462",
+      "width": 185,
+      "height": 256,
+      "role": "stage-c-food-golden",
+      "source": "openai-image-api+local-chroma-key+trim",
+      "model": "gpt-image-2",
+      "sourceVersion": 4,
+      "transparentBackground": true,
+      "promptFile": "stage-c/food-prompts-v4.jsonl"
+    },
+    {
+      "filename": "stage-c/snake-food-mint-v4.png",
+      "bytes": 79603,
+      "sha256": "2ae65fdc8c86d662d8b1aa63e1e7663e210351b7d0415239368388a3870204ec",
+      "width": 210,
+      "height": 256,
+      "role": "stage-c-food-mint",
+      "source": "openai-image-api+local-chroma-key+trim",
+      "model": "gpt-image-2",
+      "sourceVersion": 4,
+      "transparentBackground": true,
+      "promptFile": "stage-c/food-prompts-v4.jsonl"
+    },
+    {
+      "filename": "stage-c/snake-food-dew-v4.png",
+      "bytes": 53758,
+      "sha256": "e03a56fb120603e452f9e68a092bf8713dbd7b170d5438b6a9f36a14fe1b8837",
+      "width": 166,
+      "height": 256,
+      "role": "stage-c-food-dew",
+      "source": "openai-image-api+local-chroma-key+trim",
+      "model": "gpt-image-2",
+      "sourceVersion": 4,
+      "transparentBackground": true,
+      "promptFile": "stage-c/food-prompts-v4.jsonl"
+    },
+    {
+      "filename": "stage-c/food-prompts-v4.jsonl",
+      "role": "source-prompt",
+      "source": "project-authored"
     }
   ],
   "stageCGeneration": {
@@ -495,5 +551,20 @@
     "sourceImageSha256": "eea7ba224ce8dadcf098738758dcbf183bba805b6c7ad4298e2737a7de5f4e6e",
     "promptFile": "stage-c/prompt.json",
     "assetCount": 10
+  },
+  "topdownGeneration": {
+    "model": "gpt-image-2",
+    "quality": "medium",
+    "sourceSize": "1024x1024",
+    "sourceDirectory": "output/imagegen/jade-topdown",
+    "alphaMethod": "chroma-key, soft matte, despill, trim",
+    "assetCount": 3,
+    "view": "90-degree-overhead"
+  },
+  "foodGeneration": {
+    "model": "gpt-image-2",
+    "quality": "medium",
+    "assetCount": 3,
+    "sourceDirectory": "output/imagegen/jade-foods"
   }
 }

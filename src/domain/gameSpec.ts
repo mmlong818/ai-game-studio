@@ -125,7 +125,7 @@ export function buildGameSpec(draft: StudioDraft): GameSpecV2 {
   const isLadybugGoldenPath =
     !template &&
     draft.selectedMechanicIds.includes("lane-dodge") &&
-    draft.selectedMechanicIds.includes("collect-escape");
+    draft.selectedMechanicIds.includes("collect-charge");
   const isLimited3d = Boolean(template?.id.endsWith("-3d")) || capabilities.some((item) => item.includes("3d") || item.includes("camera"));
   const ruleLabels = template?.coreRules ??
     (isLadybugGoldenPath ? goldenLadybugRules : mechanics.map((item) => item.description));

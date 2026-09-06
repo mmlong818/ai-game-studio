@@ -31,6 +31,13 @@ const tables: TableCopy[] = [
   { name: "project_messages", columns: ["id", "project_id", "role", "content", "created_at"] },
   { name: "play_events", columns: ["id", "project_id", "version_id", "player_id", "event_type", "input_mode", "viewport", "level_number", "best_score", "average_fps", "created_at"] },
   { name: "player_progress", columns: ["player_id", "project_id", "version_id", "status", "current_level", "best_score", "input_mode", "viewport", "average_fps", "resource_error_count", "last_played_at", "completed_at", "updated_at"] },
+  { name: "design_knowledge_reviews", columns: ["id", "schema_version", "window_from", "window_to", "minimum_players", "minimum_starts", "report_json", "created_at"] },
+  { name: "design_knowledge_decisions", columns: ["id", "review_id", "pattern_id", "outcome", "rationale", "evidence_json", "decided_at"] },
+  { name: "design_research_tasks", columns: ["id", "schema_version", "task_json", "status", "created_at", "updated_at"] },
+  { name: "design_gameplay_radar_clusters", columns: ["id", "schema_version", "normalized_title", "cluster_json", "state", "created_at", "updated_at"] },
+  { name: "design_knowledge_change_sets", columns: ["id", "review_id", "research_task_id", "schema_version", "base_schema_version", "base_updated_at", "base_evaluation_version", "base_release_id", "changes_json", "status", "review_rationale", "reviewed_at", "created_at", "resolved_at"] },
+  { name: "design_knowledge_releases", columns: ["id", "sequence", "release_kind", "change_set_id", "rollback_source_release_id", "rationale", "schema_version", "library_json", "checksum", "supersedes_release_id", "published_at"] },
+  { name: "design_playtests", columns: ["id", "project_id", "version_id", "pattern_id", "tester_segment", "device_class", "input_mode", "task_outcome", "onboarding_clarity", "control_clarity", "perceived_difficulty", "fun_rating", "fairness_rating", "would_replay", "completion_seconds", "hint_count", "blocker_code", "created_at"] },
 ];
 
 type TableSummary =

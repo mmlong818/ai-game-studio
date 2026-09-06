@@ -2,7 +2,6 @@ import type { GameTemplate } from "../../shared/contracts.js";
 import { breakoutScript } from "./breakout.js";
 import { blockPlaceScript } from "./block-place.js";
 import { klotskiScript } from "./klotski.js";
-import { mazeScript } from "./maze.js";
 import { mahjongRogueliteScript } from "./mahjong-roguelite.js";
 import { merge2048Script } from "./merge-2048.js";
 import { polyominoFitScript } from "./polyomino-fit.js";
@@ -82,29 +81,17 @@ const runtimes: Record<Exclude<GameTemplate, "signal-hunt" | "generated">, Runti
     redrawFunction: "drawKlotski",
     probeTokens: ["const klotskiBlueprints = [", "function canMove(piece", "function moveSelected", "pointerdown", "function redoKlotskiMove", "klotski-courtyard.png"],
   },
-  maze: {
-    id: "maze",
-    label: "苔径迷庭",
-    eyebrow: "CLOUD MAZE / 云上寻星",
-    intro: "穿过会生长、起雾与结霜的苔径迷庭，点亮萤灯并找到归星门。",
-    objective: "在 20 个固定可解迷庭中探索支路；手机默认滑动，也可在启动页切换四键。",
-    primaryMetric: "步数",
-    controls: [...directions, { value: "hint", label: "提示 3", ariaLabel: "显示下一段路线" }, { value: "pause", label: "暂停", ariaLabel: "暂停游戏" }],
-    script: mazeScript,
-    redrawFunction: "drawMaze",
-    probeTokens: ["const mazeBlueprints = [", "function createMaze()", "function braidMaze()", "function showHint()", "data-maze-control-mode", "fogRadius", "iceKeys", "starKeys"],
-  },
   snake: {
     id: "snake",
     label: "青玉长游",
     eyebrow: "JADE GARDEN / 青玉巡游",
     intro: "带着青玉小龙穿过当代庭园，追逐发光朱果。",
-    objective: "选择难度与手机控制方式，在 20 个固定庭园场型中收集普通朱果和限时金果。",
-    primaryMetric: "朱果",
-    controls: [...directions, { value: "pause", label: "暂停", ariaLabel: "暂停游戏" }],
+    objective: "鼠标指向或单指拖动自由转向。开局铺满固定食物，每段巡游 30 秒并计入 8–10 枚采集，整关至少两类，超额保留；首关至少 2 分钟，后续至少 3–5 分钟，未达采集目标可继续。朱果增长、金果加分、青叶灵活转向、露珠吸取；无限版无目标。",
+    primaryMetric: "巡游",
+    controls: [{ value: "pause", label: "暂停", ariaLabel: "暂停游戏" }],
     script: snakeScript,
     redrawFunction: "drawSnake",
-    probeTokens: ["const snakeLevelBlueprints = [", "function queueSnakeTurn", "function reachableSnakeCells", "pointerup", "data-snake-control-mode", "score >= foodTarget"],
+    probeTokens: ["const snakeLevelBlueprints = [", "function queueSnakeTurn", "function reachableSnakeCells", "pointerup", "data-snake-control-mode", "advanceSnakeForage"],
   },
   "merge-2048": {
     id: "merge-2048",

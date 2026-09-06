@@ -6,11 +6,11 @@ describe("research planning", () => {
     const mechanics = recommendMechanics("在三条路线中高速闪避障碍并收集露珠");
 
     expect(mechanics[0].id).toBe("lane-dodge");
-    expect(mechanics.some((item) => item.id === "collect-escape")).toBe(true);
+    expect(mechanics.some((item) => item.id === "collect-charge")).toBe(true);
   });
 
   it("为新游戏形成至少两个去重后的真实来源", () => {
-    const dossier = createReferenceDossier("滑动合成小游戏", ["grid-merge"]);
+    const dossier = createReferenceDossier("滑动合成小游戏", ["grid-slide-merge"]);
 
     expect(dossier.references.length).toBeGreaterThanOrEqual(2);
     expect(new Set(dossier.references.map((item) => item.url)).size).toBe(

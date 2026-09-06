@@ -1,0 +1,7 @@
+Use case: stylized-concept
+Asset type: production sprite for a top-down Chinese jade dragon snake game.
+Primary request: redesign a friendly Chinese dragon head as a STRICT 90-degree overhead orthographic sprite, looking at the crown and snout from directly above. Head faces RIGHT (east), neck connection on LEFT. The animal lies flat parallel to the ground, not rearing up. Both horns and both sides of the face are equally visible and mirror-symmetric about the horizontal centerline. Only the head and short neck; NO body, feet or wings.
+Style: polished hand-painted miniature game illustration, jade-green scales, darker emerald outlines, restrained pale gold horns and ivory whiskers, readable at 64 pixels. Broad coherent silhouette, short thick whiskers, no detached particles.
+Composition: centered within a square, complete silhouette with 12 percent empty margin. Head and neck have a horizontal center axis. Neutral overhead lighting with soft painted volume, no cast shadow.
+Background: absolutely uniform pure magenta #FF00FF for chroma-key removal. No magenta in the subject. No gradient or ground, no checkerboard, no text or watermark.
+Avoid: side view, isometric view, three-quarter view, front-facing portrait, a visible raised side face, full dragon, decorative frame.

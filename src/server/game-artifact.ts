@@ -1,15 +1,19 @@
-import { copyFileSync, existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { appendFileSync, copyFileSync, existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { Script } from "node:vm";
+import { victoryPresentationScript, victoryPresentationStyles } from "./victory-presentation.js";
 import { visualStyleOptions, type ProjectDetail } from "../shared/contracts.js";
 import { inspectRasterAiArt } from "./art-policy.js";
+import { applyQualifiedProjectResources, writeQualifiedResourceProvenance } from "./golden-resource-bindings.js";
 import { createCampaignLevels } from "../shared/level-progression.js";
+import { createOnboardingRuntimePlan } from "../shared/onboarding-runtime/index.js";
+import { serializeGameDesignContractV1 } from "../shared/game-design-contract/index.js";
 import type { DirectionVerdict } from "./design-contract.js";
 import { getRuntimeDefinition } from "./game-runtimes/index.js";
 import { arenaBestTemplateBlueprints } from "./three-arena-blueprints.js";
 import { collectorBestTemplateBlueprints } from "./three-collector-blueprints.js";
-import { inspectPaperPopupArtifact, writePaperPopupArtifact } from "./three-popup-runtime.js";
 
 const moduleRoot = dirname(fileURLToPath(import.meta.url));
 const signalAssetRoot = resolve(moduleRoot, "..", "..", "assets", "starter", "signal-studio");
@@ -17,6 +21,9 @@ const threeArenaAssetRoot = resolve(moduleRoot, "..", "..", "assets", "starter",
 const templateAssetRoot = resolve(moduleRoot, "..", "..", "assets", "templates", "packs");
 const threeModuleSource = resolve(moduleRoot, "..", "..", "node_modules", "three", "build", "three.module.js");
 const threeCoreSource = resolve(moduleRoot, "..", "..", "node_modules", "three", "build", "three.core.js");
+const threeGltfLoaderSource = resolve(moduleRoot, "..", "..", "node_modules", "three", "examples", "jsm", "loaders", "GLTFLoader.js");
+const threeBufferGeometryUtilsSource = resolve(moduleRoot, "..", "..", "node_modules", "three", "examples", "jsm", "utils", "BufferGeometryUtils.js");
+const threeSkeletonUtilsSource = resolve(moduleRoot, "..", "..", "node_modules", "three", "examples", "jsm", "utils", "SkeletonUtils.js");
 const puzzleBuiltInLevels = [
   "口袋花园", "雨后温室", "月光池塘", "果香野餐", "糖果云丘",
   "镜面花房", "晨雾睡莲", "莓果露营", "珊瑚小径", "星砂庭院",
@@ -218,6 +225,14 @@ export function writeDesignDocuments(
     ? `\n## 创作对话修订依据\n\n本版本设计合同参考了创作者在制作对话中的 ${directions.length} 条意见（按时间顺序${directionAudit ? "，并经模型逐条审计落实情况" : ""}）：\n\n${directionLines.join("\n")}\n`
     : "";
   const design = project.spec.designProfile;
+  if (project.spec.designContract) {
+    writeFileSync(join(studioRoot, "GAME_DESIGN_CONTRACT.json"), serializeGameDesignContractV1(project.spec.designContract), "utf8");
+    writeFileSync(join(studioRoot, "ASSISTANCE_PLAN.json"), `${JSON.stringify(project.spec.designContract.assistance, null, 2)}\n`, "utf8");
+  }
+  const executableOnboarding = project.spec.designContract ? createOnboardingRuntimePlan(project.spec.designContract) : null;
+  if (executableOnboarding) {
+    writeFileSync(join(studioRoot, "ONBOARDING_PLAN.json"), `${JSON.stringify(executableOnboarding, null, 2)}\n`, "utf8");
+  }
   const commercialLevels = createCampaignLevels(project.spec.template, project.spec.difficulty);
   const masteryTable = commercialLevels.map((level) => `| ${level.number} | ${level.tierLabel} | ${level.ruleModifier} | ${level.masteryRules.map((rule) => rule.label).join("；")} | ${level.reward} |`).join("\n");
   const source = project.spec.templateSource;
@@ -278,6 +293,8 @@ export function writeDesignDocuments(
 }
 
 function gameScript(project: ProjectDetail) {
+  const onboardingPlan = project.spec.designContract ? createOnboardingRuntimePlan(project.spec.designContract) : null;
+  const assistancePlan = project.spec.designContract?.assistance ?? null;
   const config = safeJson({
     title: project.title,
     vision: project.spec.vision,
@@ -289,6 +306,10 @@ function gameScript(project: ProjectDetail) {
     campaign: project.spec.levelProgression,
     campaignLevels: createCampaignLevels(project.spec.template, project.spec.difficulty),
     campaignStorageKey: `forge-campaign:${project.id}:${project.version.id}`,
+    onboardingStorageKey: `forge-onboarding:${project.id}:${project.version.id}`,
+    onboardingPlan,
+    assistanceStorageKey: `forge-assistance:${project.id}:${project.version.id}`,
+    assistancePlan,
   });
   return `${safeStorageShim}
 const config = ${config};
@@ -330,8 +351,163 @@ let campaignMaxUnlocked = 0;
 let currentGoal = config.goal;
 let currentDuration = config.duration;
 let campaignMastery = {};
+const onboardingPlan = config.onboardingPlan;
+let onboardingState = { schemaVersion: "onboarding-runtime-state-v1", status: "not-started", activeStepId: null, completedStepIds: [], skippedStepIds: [], acceptedSignals: [] };
+const onboardingCoach = onboardingPlan ? document.createElement("aside") : null;
+const onboardingTitle = onboardingPlan ? document.createElement("strong") : null;
+const onboardingInstruction = onboardingPlan ? document.createElement("p") : null;
+const onboardingInputHelp = onboardingPlan ? document.createElement("small") : null;
+const onboardingActions = onboardingPlan ? document.createElement("div") : null;
+const onboardingSkipButton = onboardingPlan ? document.createElement("button") : null;
+const onboardingReplayButton = onboardingPlan ? document.createElement("button") : null;
+const assistancePlan = config.assistancePlan;
+const assistanceCard = document.createElement("section");
+const assistanceKicker = document.createElement("span");
+const assistanceTitle = document.createElement("strong");
+const assistanceMessage = document.createElement("p");
+const assistanceMeta = document.createElement("small");
+assistanceCard.id = "failure-assistance"; assistanceCard.className = "failure-assistance"; assistanceCard.hidden = true; assistanceCard.setAttribute("aria-live", "polite");
+assistanceKicker.textContent = "失败后帮助"; assistanceTitle.id = "failure-assistance-title"; assistanceMessage.id = "failure-assistance-message"; assistanceMeta.id = "failure-assistance-meta";
+assistanceCard.append(assistanceKicker, assistanceTitle, assistanceMessage, assistanceMeta);
+startCard.querySelector("h2")?.after(assistanceCard);
+let assistanceState = { schemaVersion: "failure-assistance-state-v1", consecutiveFailuresByLevel: {}, active: null };
+const assistanceActionLabels = { "explain-cause": "先说明原因", "highlight-rule": "突出相关规则", "directional-hint": "给一个方向提示", "show-step": "演示下一步", checkpoint: "从检查点继续", "lower-one-dimension": "明确降低一项难度" };
+
+function activeOnboardingStep() {
+  return onboardingPlan?.steps.find((step) => step.id === onboardingState.activeStepId) || null;
+}
+
+function onboardingIsActive() {
+  return onboardingState.status === "active";
+}
+function saveOnboardingState() {
+  if (!onboardingPlan) return;
+  try { safeStorage.setItem(config.onboardingStorageKey, JSON.stringify({ contractId: onboardingPlan.contractId, state: onboardingState })); } catch {}
+}
+function loadOnboardingState() {
+  if (!onboardingPlan) return;
+  try {
+    const saved = JSON.parse(safeStorage.getItem(config.onboardingStorageKey) || "null");
+    if (saved?.contractId !== onboardingPlan.contractId || !saved.state) return;
+    const known = new Set(onboardingPlan.steps.map((step) => step.id));
+    const completed = Array.isArray(saved.state.completedStepIds) ? saved.state.completedStepIds.filter((id) => known.has(id)) : [];
+    const skipped = Array.isArray(saved.state.skippedStepIds) ? saved.state.skippedStepIds.filter((id) => known.has(id)) : [];
+    onboardingState = { ...onboardingState, status: completed.length === onboardingPlan.steps.length ? "completed" : skipped.length ? "skipped" : "not-started", completedStepIds: completed, skippedStepIds: skipped };
+  } catch {}
+}
+function renderOnboarding() {
+  if (!onboardingCoach || !onboardingPlan) return;
+  const step = activeOnboardingStep();
+  const terminal = onboardingState.status === "completed" || onboardingState.status === "skipped";
+  onboardingCoach.hidden = onboardingState.status === "not-started";
+  onboardingCoach.dataset.status = onboardingState.status;
+  onboardingCoach.classList.toggle("is-compact", terminal);
+  if (step) {
+    const index = onboardingPlan.steps.findIndex(({ id }) => id === step.id);
+    onboardingTitle.textContent = "新手教学 " + (index + 1) + " / " + onboardingPlan.steps.length;
+    onboardingInstruction.textContent = step.instruction;
+    const coarse = window.matchMedia?.("(pointer: coarse)").matches;
+    onboardingInputHelp.textContent = (coarse ? step.inputHelp.touch : step.inputHelp.keyboard) || step.inputHelp.pointer || "完成画面提示的操作";
+    onboardingSkipButton.hidden = !step.skippable;
+  } else {
+    onboardingTitle.textContent = onboardingState.status === "completed" ? "教学已完成" : "已跳过教学";
+    onboardingInstruction.textContent = "需要时可以随时重新练习。";
+    onboardingInputHelp.textContent = "";
+    onboardingSkipButton.hidden = true;
+  }
+  onboardingReplayButton.textContent = terminal ? "重看" : "重新开始";
+  document.body.dataset.onboardingStatus = onboardingState.status;
+}
+function startOnboarding() {
+  if (!onboardingPlan || onboardingState.status === "completed" || onboardingState.status === "skipped") { renderOnboarding(); return false; }
+  const next = onboardingPlan.steps.find(({ id }) => !onboardingState.completedStepIds.includes(id) && !onboardingState.skippedStepIds.includes(id));
+  onboardingState = { ...onboardingState, status: next ? "active" : "completed", activeStepId: next?.id || null };
+  saveOnboardingState(); renderOnboarding();
+  return onboardingState.status === "active";
+}
+function signalOnboarding(signal) {
+  const step = activeOnboardingStep();
+  if (!onboardingPlan || onboardingState.status !== "active" || !step || step.successSignal !== signal) {
+    window.dispatchEvent(new CustomEvent("forge:mechanic-signal", { detail: { signal, acceptedByOnboarding: false } }));
+    return false;
+  }
+  onboardingState.completedStepIds = [...new Set([...onboardingState.completedStepIds, step.id])];
+  onboardingState.acceptedSignals = [...onboardingState.acceptedSignals, { stepId: step.id, signal }];
+  const next = onboardingPlan.steps.find(({ id }) => !onboardingState.completedStepIds.includes(id) && !onboardingState.skippedStepIds.includes(id));
+  onboardingState = { ...onboardingState, status: next ? "active" : "completed", activeStepId: next?.id || null };
+  saveOnboardingState(); renderOnboarding();
+  window.dispatchEvent(new CustomEvent("forge:onboarding-signal", { detail: { stepId: step.id, signal, status: onboardingState.status } }));
+  window.dispatchEvent(new CustomEvent("forge:mechanic-signal", { detail: { signal, acceptedByOnboarding: true } }));
+  return true;
+}
+function skipOnboarding() {
+  const step = activeOnboardingStep();
+  if (!onboardingPlan || onboardingState.status !== "active" || !step?.skippable) return false;
+  const remainingSteps = onboardingPlan.steps.filter(({ id }) => !onboardingState.completedStepIds.includes(id)).map(({ id }) => id);
+  onboardingState = { ...onboardingState, status: "skipped", activeStepId: null, skippedStepIds: [...new Set([...onboardingState.skippedStepIds, ...remainingSteps])] };
+  saveOnboardingState(); renderOnboarding();
+  window.dispatchEvent(new CustomEvent("forge:onboarding-skip"));
+  return true;
+}
+function replayOnboarding() {
+  if (!onboardingPlan || !onboardingPlan.steps.some(({ replayable }) => replayable)) return false;
+  onboardingState = { schemaVersion: "onboarding-runtime-state-v1", status: "active", activeStepId: onboardingPlan.steps[0].id, completedStepIds: [], skippedStepIds: [], acceptedSignals: [] };
+  saveOnboardingState(); renderOnboarding();
+  window.dispatchEvent(new CustomEvent("forge:onboarding-replay"));
+  return true;
+}
+if (onboardingCoach) {
+  onboardingCoach.className = "onboarding-coach";
+  const setupCoachStyle = document.createElement("style");
+  setupCoachStyle.textContent = "body[data-game-state=idle] .onboarding-coach.is-compact{position:fixed;top:8px;bottom:auto;right:8px;width:auto;max-width:calc(100% - 16px)}";
+  document.head.appendChild(setupCoachStyle);
+  onboardingCoach.setAttribute("aria-live", "polite");
+  onboardingSkipButton.type = "button"; onboardingSkipButton.textContent = "跳过教学"; onboardingSkipButton.addEventListener("click", skipOnboarding);
+  onboardingReplayButton.type = "button"; onboardingReplayButton.addEventListener("click", replayOnboarding);
+  onboardingActions.className = "onboarding-actions";
+  onboardingActions.append(onboardingSkipButton, onboardingReplayButton);
+  onboardingCoach.append(onboardingTitle, onboardingInstruction, onboardingInputHelp, onboardingActions);
+  arena.append(onboardingCoach);
+  loadOnboardingState(); renderOnboarding();
+}
 
 function currentCampaignLevel() { return config.campaignLevels[campaignLevelIndex]; }
+function assistanceLevelKey() { return String(currentCampaignLevel()?.id || currentCampaignLevel()?.number || 1); }
+function saveAssistanceState() { try { safeStorage.setItem(config.assistanceStorageKey, JSON.stringify(assistanceState)); } catch {} }
+function renderAssistance() {
+  const active = assistanceState.active;
+  assistanceCard.hidden = !active;
+  if (!active) { delete assistanceCard.dataset.action; return; }
+  assistanceCard.dataset.action = active.action;
+  assistanceTitle.textContent = assistanceActionLabels[active.action] || "失败后帮助";
+  assistanceMessage.textContent = "本次原因：" + active.cause + "。" + active.message;
+  assistanceMeta.textContent = "连续失败 " + active.failureCount + " 次 · 帮助已明确显示，不会暗中改变难度";
+}
+function loadAssistanceState() {
+  if (!assistancePlan) return;
+  try {
+    const saved = JSON.parse(safeStorage.getItem(config.assistanceStorageKey) || "null");
+    if (saved?.schemaVersion === "failure-assistance-state-v1" && saved.consecutiveFailuresByLevel && typeof saved.consecutiveFailuresByLevel === "object") assistanceState = saved;
+  } catch {}
+  renderAssistance();
+}
+function recordFailureAssistance(cause) {
+  if (!assistancePlan) return null;
+  const levelKey = assistanceLevelKey();
+  const failureCount = Math.max(0, Number(assistanceState.consecutiveFailuresByLevel[levelKey]) || 0) + 1;
+  assistanceState.consecutiveFailuresByLevel[levelKey] = failureCount;
+  const step = [...assistancePlan.steps].filter(({ afterFailures }) => afterFailures <= failureCount).at(-1) || null;
+  assistanceState.active = step ? { ...step, failureCount, cause: String(cause || "信号窗口关闭") } : null;
+  saveAssistanceState(); renderAssistance();
+  if (assistanceState.active) window.dispatchEvent(new CustomEvent("forge:assistance-shown", { detail: structuredClone(assistanceState.active) }));
+  return assistanceState.active;
+}
+function resetFailureAssistance() {
+  delete assistanceState.consecutiveFailuresByLevel[assistanceLevelKey()];
+  assistanceState.active = null;
+  saveAssistanceState(); renderAssistance();
+}
+function getAssistanceState() { return structuredClone(assistanceState); }
 function syncCampaignUi() {
   const level = currentCampaignLevel();
   campaignSelect.value = String(campaignLevelIndex);
@@ -436,10 +612,11 @@ function moveTarget() {
 function finish(won) {
   const finalWin = won && campaignLevelIndex === config.campaignLevels.length - 1;
   if (won) {
+    resetFailureAssistance();
     const completedLevel = currentCampaignLevel();
     const stars = 1 + completedLevel.masteryRules.filter((rule) => remaining >= rule.target).length;
     campaignMastery[completedLevel.id] = Math.max(Number(campaignMastery[completedLevel.id]) || 0, stars);
-  }
+  } else recordFailureAssistance("信号窗口关闭，未在时间内完成捕获目标");
   setGameSessionState(won ? (finalWin ? "won" : "stage-complete") : "lost");
   if (timerId) window.clearInterval(timerId);
   timerId = null;
@@ -467,6 +644,7 @@ function finish(won) {
 function collect() {
   if (!running) return;
   score += 1;
+  signalOnboarding("target-collected");
   scoreValue.textContent = String(score).padStart(2, "0");
   playClip("collect", 320 + score * 34);
   if (score >= currentGoal) {
@@ -490,9 +668,12 @@ function start() {
   target.disabled = false;
   target.hidden = false;
   startCard.hidden = true;
+  assistanceCard.hidden = true;
   setAmbient(true);
   moveTarget();
+  startOnboarding();
   timerId = window.setInterval(() => {
+    if (onboardingState.status === "active") return;
     remaining -= 1;
     timerValue.textContent = String(remaining);
     if (remaining === 10) playClip("warning", 174);
@@ -524,11 +705,17 @@ campaignSelect.addEventListener("change", () => {
 });
 document.addEventListener("visibilitychange", () => setAmbient(running && !document.hidden));
 loadCampaign();
+loadAssistanceState();
 applyCampaignLevel();
 const gameDebugApi = {
-  getState: () => ({ score, remaining, running, soundEnabled, state: arena.dataset.state, campaign: { level: currentCampaignLevel(), maxUnlocked: campaignMaxUnlocked + 1, total: config.campaignLevels.length, mastery: { ...campaignMastery }, stars: Object.values(campaignMastery).reduce((sum, value) => sum + Number(value || 0), 0) }, goal: currentGoal }),
+  getState: () => ({ score, remaining, running, soundEnabled, state: arena.dataset.state, onboarding: structuredClone(onboardingState), assistance: getAssistanceState(), campaign: { level: currentCampaignLevel(), maxUnlocked: campaignMaxUnlocked + 1, total: config.campaignLevels.length, mastery: { ...campaignMastery }, stars: Object.values(campaignMastery).reduce((sum, value) => sum + Number(value || 0), 0) }, goal: currentGoal, runtime: { level: currentCampaignLevel().number, tier: currentCampaignLevel().tier, goal: currentGoal, duration: currentDuration, targetStepX: 37 + currentCampaignLevel().tier, targetStepY: 53 + currentCampaignLevel().variant } }),
+  getOnboarding: () => structuredClone(onboardingState),
+  getAssistance: getAssistanceState,
+  skipOnboarding,
+  replayOnboarding,
   collect,
   forceWin: () => finish(true),
+  forceLose: (cause = "信号窗口关闭，未完成目标") => { recordFailureAssistance(String(cause)); setGameSessionState("lost"); if (timerId) window.clearInterval(timerId); timerId = null; target.disabled = true; target.hidden = true; arena.dataset.state = "lost"; startButton.textContent = "重试本关"; startCard.hidden = false; setAmbient(false); },
   restart: start,
   setLevel: (level) => { campaignLevelIndex = Math.max(0, Math.min(19, Number(level) - 1)); campaignMaxUnlocked = Math.max(campaignMaxUnlocked, campaignLevelIndex); syncCampaignUi(); applyCampaignLevel(); saveCampaign(); },
 };
@@ -553,7 +740,7 @@ function gameHtml(project: ProjectDetail) {
   return `<!doctype html><html lang="zh-CN"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#0e1313"><title>${escapeHtml(project.title)}</title><link rel="preload" as="image" href="./assets/arena-background.png"><link rel="preload" as="image" href="./assets/gameplay-atlas.png"><link rel="stylesheet" href="./styles.css"><script src="./app.js" defer></script></head><body data-visual-style="${project.spec.visualStyle}" data-detail-level="${style.detailLevel}"><main class="game-shell"><header class="game-header"><div class="title-lockup"><span class="chapter">SIGNAL<br>SEARCH</span><div><span class="kicker">造界 · 雾港行动</span><h1>${escapeHtml(project.title)}</h1><span class="style-mode">${style.label} · ${style.detailLabel} · ${style.layout}</span></div></div><p class="vision">${escapeHtml(project.spec.vision)}</p></header><section class="arena" id="arena" data-state="idle" aria-label="雾港信号搜寻区"><div class="start-card" id="start-card"><span class="card-index">MISSION / 01 OF 20</span><h2>重建信号链路</h2><p>在 30 秒内捕获移动信号，难度按每四关一档逐步提升。</p><label class="signal-level-field"><span>渐进关卡</span><select data-campaign-level aria-label="选择渐进关卡">${campaignOptions}</select></label><small data-campaign-progress>第 1 / 20 关 · 认识规则</small><div class="signal-setup-actions"><button class="secondary" id="sound-toggle" type="button" aria-pressed="true">声音开启</button></div><button class="primary" id="start" type="button">进入雾港</button></div><button class="target" id="target" type="button" aria-label="捕获发光信号" hidden></button></section><footer class="controls"><div class="hud"><div class="metric"><span>已捕获</span><strong><span id="score-value">00</span> / <span id="goal-value">08</span></strong></div><div class="metric"><span>剩余时间</span><strong><span id="timer-value">30</span>s</strong></div></div><p class="status" id="status" aria-live="polite">等待进入搜寻区。</p><div class="control-actions"><button class="secondary" id="back-to-setup" type="button" aria-label="返回启动设置">返回</button><button class="secondary" id="restart" type="button">重开</button></div></footer></main></body></html>`;
 }
 
-const templateStyles = `:root{font-family:Inter,"Microsoft YaHei",sans-serif;color:#f2eee4;background:#101615;color-scheme:dark;--accent:#df6842;--accent-soft:#e3bd68;--surface:#111a18;--line:#53605b}*{box-sizing:border-box;touch-action:manipulation}body{margin:0;min-height:100vh;background:#0c1211 url("./assets/cover.png") center/cover fixed no-repeat}body::before{position:fixed;inset:0;background:rgba(6,12,11,.86);content:"";pointer-events:none}body[data-template=puzzle]{--accent:#a75d48;--accent-soft:#d1bd76}body[data-template=breakout]{--accent:#d96039;--accent-soft:#d8b35b}body[data-template=klotski]{--accent:#a84632;--accent-soft:#d7c197}body[data-template=maze]{--accent:#c69545;--accent-soft:#a9bd82}body[data-template=snake]{--accent:#d95c37;--accent-soft:#8eb69a}.template-shell{position:relative;z-index:1;width:min(1240px,100%);min-height:100vh;margin:auto;padding:clamp(18px,3vw,42px);display:grid;grid-template-rows:auto 1fr;gap:20px}.template-header{display:flex;align-items:end;justify-content:space-between;gap:28px}.template-header h1{margin:7px 0 0;font-size:clamp(36px,6vw,74px);font-weight:620;line-height:.9;letter-spacing:-.055em}.eyebrow{color:var(--accent);font:650 10px/1 ui-monospace,Consolas,monospace;letter-spacing:.13em}.template-header p{max-width:440px;margin:0;color:#abb6b0;font-size:13px;line-height:1.6}.template-workspace{display:grid;grid-template-columns:minmax(0,1fr) 310px;gap:14px;min-height:0}.canvas-frame{position:relative;display:grid;min-height:640px;place-items:center;overflow:hidden;border:1px solid #56635e;background:url("./assets/cover.png") center/cover no-repeat;box-shadow:0 28px 80px #020807aa}.canvas-frame::before{position:absolute;inset:0;background:rgba(6,14,13,.6);content:""}.game-canvas{position:relative;z-index:1;display:block;width:min(100%,720px);height:auto;max-height:78vh;aspect-ratio:1;border:1px solid rgba(224,232,222,.22);background:rgba(7,15,14,.48)}.game-overlay{position:absolute;z-index:3;left:50%;top:50%;width:min(390px,calc(100% - 34px));padding:27px;transform:translate(-50%,-50%);border:1px solid #87918b;background:rgba(12,20,18,.94);box-shadow:0 26px 70px #020606aa;backdrop-filter:blur(10px)}.game-overlay[hidden]{display:none}.game-overlay span{color:var(--accent);font:650 9px/1 ui-monospace,Consolas,monospace;letter-spacing:.13em}.game-overlay h2{margin:34px 0 9px;font-size:31px;letter-spacing:-.035em}.game-overlay p{margin:0 0 22px;color:#b9c2bd;font-size:13px;line-height:1.6}.primary,.secondary,.control-button,.upload-button{min-height:44px;border:1px solid var(--line);background:#131c1a;color:#f2eee4;font:650 12px/1 Inter,"Microsoft YaHei",sans-serif;letter-spacing:.02em;cursor:pointer}.primary{width:100%;border-color:var(--accent);background:var(--accent);color:#101615}.primary:hover{filter:brightness(1.08)}.primary:focus-visible,.secondary:focus-visible,.control-button:focus-visible,.upload-button:focus-within{outline:2px solid #f2eee4;outline-offset:3px}.game-panel{display:flex;min-width:0;flex-direction:column;gap:10px}.panel-block{padding:16px;border:1px solid #3e4945;background:rgba(15,23,21,.9)}.metric-label{display:block;color:#7f8e87;font:650 9px/1 ui-monospace,Consolas,monospace;letter-spacing:.11em;text-transform:uppercase}.metric-value{display:block;margin-top:8px;color:var(--accent-soft);font:500 34px/1 ui-monospace,Consolas,monospace}.status{margin:0;color:#c0c8c4;font-size:12px;line-height:1.55}.objective{margin:7px 0 0;color:#9eaaa4;font-size:11px;line-height:1.55}.touch-controls{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:7px}.control-button{min-height:50px}.control-button:hover,.secondary:hover{border-color:#84918b;background:#1a2522}.upload-button{display:flex;align-items:center;justify-content:center;padding:0 12px;border-color:var(--accent);color:var(--accent-soft);text-align:center}.upload-button input{position:absolute;width:1px;height:1px;overflow:hidden;opacity:0}.upload-name{display:block;margin-top:8px;overflow:hidden;color:#8f9b95;font-size:10px;text-overflow:ellipsis;white-space:nowrap}.panel-actions{display:grid;grid-template-columns:1fr 1fr;gap:7px;margin-top:auto}.secondary{padding:0 10px}.proof-note{color:#77847e;font:600 9px/1.5 ui-monospace,Consolas,monospace;letter-spacing:.06em}@media(max-width:860px){.template-header{align-items:start;flex-direction:column}.template-header p{display:none}.template-workspace{grid-template-columns:1fr}.canvas-frame{min-height:auto}.game-canvas{max-height:none}.game-panel{display:grid;grid-template-columns:1fr 1fr}.panel-block:first-child{grid-column:1/-1}.panel-actions{margin-top:0}.proof-note{grid-column:1/-1}}@media(max-width:520px){.template-shell{padding:14px;gap:14px}.template-header h1{font-size:42px}.canvas-frame{aspect-ratio:1}.game-overlay{padding:23px}.game-overlay h2{margin-top:26px;font-size:27px}.game-panel{grid-template-columns:1fr}.panel-block:first-child,.proof-note{grid-column:auto}.touch-controls{grid-template-columns:repeat(4,1fr)}.control-button{min-width:0;padding:0 6px}.panel-actions{position:sticky;bottom:8px}}@media(prefers-reduced-motion:reduce){*{transition:none!important}}`;
+const templateStyles = `:root{font-family:Inter,"Microsoft YaHei",sans-serif;color:#f2eee4;background:#101615;color-scheme:dark;--accent:#df6842;--accent-soft:#e3bd68;--surface:#111a18;--line:#53605b}*{box-sizing:border-box;touch-action:manipulation}body{margin:0;min-height:100vh;background:#0c1211 url("./assets/cover.png") center/cover fixed no-repeat}body::before{position:fixed;inset:0;background:rgba(6,12,11,.86);content:"";pointer-events:none}body[data-template=puzzle]{--accent:#a75d48;--accent-soft:#d1bd76}body[data-template=breakout]{--accent:#d96039;--accent-soft:#d8b35b}body[data-template=klotski]{--accent:#a84632;--accent-soft:#d7c197}body[data-template=snake]{--accent:#d95c37;--accent-soft:#8eb69a}.template-shell{position:relative;z-index:1;width:min(1240px,100%);min-height:100vh;margin:auto;padding:clamp(18px,3vw,42px);display:grid;grid-template-rows:auto 1fr;gap:20px}.template-header{display:flex;align-items:end;justify-content:space-between;gap:28px}.template-header h1{margin:7px 0 0;font-size:clamp(36px,6vw,74px);font-weight:620;line-height:.9;letter-spacing:-.055em}.eyebrow{color:var(--accent);font:650 10px/1 ui-monospace,Consolas,monospace;letter-spacing:.13em}.template-header p{max-width:440px;margin:0;color:#abb6b0;font-size:13px;line-height:1.6}.template-workspace{display:grid;grid-template-columns:minmax(0,1fr) 310px;gap:14px;min-height:0}.canvas-frame{position:relative;display:grid;min-height:640px;place-items:center;overflow:hidden;border:1px solid #56635e;background:url("./assets/cover.png") center/cover no-repeat;box-shadow:0 28px 80px #020807aa}.canvas-frame::before{position:absolute;inset:0;background:rgba(6,14,13,.6);content:""}.game-canvas{position:relative;z-index:1;display:block;width:min(100%,720px);height:auto;max-height:78vh;aspect-ratio:1;border:1px solid rgba(224,232,222,.22);background:rgba(7,15,14,.48)}.game-overlay{position:absolute;z-index:3;left:50%;top:50%;width:min(390px,calc(100% - 34px));padding:27px;transform:translate(-50%,-50%);border:1px solid #87918b;background:rgba(12,20,18,.94);box-shadow:0 26px 70px #020606aa;backdrop-filter:blur(10px)}.game-overlay[hidden]{display:none}.game-overlay span{color:var(--accent);font:650 9px/1 ui-monospace,Consolas,monospace;letter-spacing:.13em}.game-overlay h2{margin:34px 0 9px;font-size:31px;letter-spacing:-.035em}.game-overlay p{margin:0 0 22px;color:#b9c2bd;font-size:13px;line-height:1.6}.primary,.secondary,.control-button,.upload-button{min-height:44px;border:1px solid var(--line);background:#131c1a;color:#f2eee4;font:650 12px/1 Inter,"Microsoft YaHei",sans-serif;letter-spacing:.02em;cursor:pointer}.primary{width:100%;border-color:var(--accent);background:var(--accent);color:#101615}.primary:hover{filter:brightness(1.08)}.primary:focus-visible,.secondary:focus-visible,.control-button:focus-visible,.upload-button:focus-within{outline:2px solid #f2eee4;outline-offset:3px}.game-panel{display:flex;min-width:0;flex-direction:column;gap:10px}.panel-block{padding:16px;border:1px solid #3e4945;background:rgba(15,23,21,.9)}.metric-label{display:block;color:#7f8e87;font:650 9px/1 ui-monospace,Consolas,monospace;letter-spacing:.11em;text-transform:uppercase}.metric-value{display:block;margin-top:8px;color:var(--accent-soft);font:500 34px/1 ui-monospace,Consolas,monospace}.status{margin:0;color:#c0c8c4;font-size:12px;line-height:1.55}.objective{margin:7px 0 0;color:#9eaaa4;font-size:11px;line-height:1.55}.touch-controls{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:7px}.control-button{min-height:50px}.control-button:hover,.secondary:hover{border-color:#84918b;background:#1a2522}.upload-button{display:flex;align-items:center;justify-content:center;padding:0 12px;border-color:var(--accent);color:var(--accent-soft);text-align:center}.upload-button input{position:absolute;width:1px;height:1px;overflow:hidden;opacity:0}.upload-name{display:block;margin-top:8px;overflow:hidden;color:#8f9b95;font-size:10px;text-overflow:ellipsis;white-space:nowrap}.panel-actions{display:grid;grid-template-columns:1fr 1fr;gap:7px;margin-top:auto}.secondary{padding:0 10px}.proof-note{color:#77847e;font:600 9px/1.5 ui-monospace,Consolas,monospace;letter-spacing:.06em}@media(max-width:860px){.template-header{align-items:start;flex-direction:column}.template-header p{display:none}.template-workspace{grid-template-columns:1fr}.canvas-frame{min-height:auto}.game-canvas{max-height:none}.game-panel{display:grid;grid-template-columns:1fr 1fr}.panel-block:first-child{grid-column:1/-1}.panel-actions{margin-top:0}.proof-note{grid-column:1/-1}}@media(max-width:520px){.template-shell{padding:14px;gap:14px}.template-header h1{font-size:42px}.canvas-frame{aspect-ratio:1}.game-overlay{padding:23px}.game-overlay h2{margin-top:26px;font-size:27px}.game-panel{grid-template-columns:1fr}.panel-block:first-child,.proof-note{grid-column:auto}.touch-controls{grid-template-columns:repeat(4,1fr)}.control-button{min-width:0;padding:0 6px}.panel-actions{position:sticky;bottom:8px}}@media(prefers-reduced-motion:reduce){*{transition:none!important}}`;
 
 const visualStyleVariables = `body[data-visual-style="classic"]{--theme-bg:#101720;--theme-text:#f0e6cf;--theme-muted:#ada78f;--theme-panel:rgba(16,23,32,.95);--theme-line:#8b8069;--theme-accent:#b14943;--theme-on-accent:#fff5d9;--theme-soft:#d4b66e;--theme-backdrop:rgba(7,12,17,.86);--theme-font:Georgia,"Songti SC",serif;--theme-radius:4px;--theme-shadow:0 22px 60px rgba(2,7,12,.58);--theme-gap:14px;--theme-panel-padding:18px}body[data-visual-style="calm"]{--theme-bg:#1c2729;--theme-text:#dce2dd;--theme-muted:#98a8a4;--theme-panel:rgba(25,36,38,.94);--theme-line:#526665;--theme-accent:#769d97;--theme-on-accent:#101719;--theme-soft:#a7aea1;--theme-backdrop:rgba(22,32,34,.88);--theme-font:Inter,"Microsoft YaHei",sans-serif;--theme-radius:12px;--theme-shadow:0 18px 48px rgba(8,16,18,.36);--theme-gap:22px;--theme-panel-padding:20px}body[data-visual-style="fashion"]{--theme-bg:#120f24;--theme-text:#f8f2e9;--theme-muted:#b5abc9;--theme-panel:rgba(24,18,45,.95);--theme-line:#6d5a91;--theme-accent:#ff5f6d;--theme-on-accent:#170e24;--theme-soft:#67e8d2;--theme-backdrop:rgba(14,10,30,.82);--theme-font:Arial,"Microsoft YaHei",sans-serif;--theme-radius:2px;--theme-shadow:10px 12px 0 rgba(103,232,210,.2);--theme-gap:12px;--theme-panel-padding:18px}body[data-visual-style="cute"]{--theme-bg:#fff4f6;--theme-text:#66546b;--theme-muted:#8f7c93;--theme-panel:rgba(255,250,250,.96);--theme-line:#e8bdc9;--theme-accent:#ee8da7;--theme-on-accent:#4c3c52;--theme-soft:#69bfb2;--theme-backdrop:rgba(255,239,242,.8);--theme-font:"Microsoft YaHei",sans-serif;--theme-radius:24px;--theme-shadow:0 18px 48px rgba(127,83,103,.17);--theme-gap:16px;--theme-panel-padding:20px}body[data-visual-style="line-art"]{--theme-bg:#faf8f1;--theme-text:#202020;--theme-muted:#66635d;--theme-panel:rgba(255,253,247,.98);--theme-line:#202020;--theme-accent:#202020;--theme-on-accent:#faf8f1;--theme-soft:#77736c;--theme-backdrop:rgba(250,248,241,.91);--theme-font:Georgia,"Songti SC",serif;--theme-radius:2px;--theme-shadow:3px 3px 0 #202020;--theme-gap:18px;--theme-panel-padding:16px}body[data-visual-style="color-block"]{--theme-bg:#f6e946;--theme-text:#171717;--theme-muted:#3e3b22;--theme-panel:#fffdf2;--theme-line:#171717;--theme-accent:#ee4d37;--theme-on-accent:#fffdf2;--theme-soft:#2f65d9;--theme-backdrop:rgba(246,233,70,.58);--theme-font:Arial Black,"Microsoft YaHei",sans-serif;--theme-radius:4px;--theme-shadow:5px 5px 0 #171717;--theme-gap:16px;--theme-panel-padding:16px}body[data-visual-style="cute"],body[data-visual-style="line-art"],body[data-visual-style="color-block"]{color-scheme:light}`;
 
@@ -649,6 +836,170 @@ function signalAspectStyles(project: ProjectDetail) {
   return `@media(max-width:720px){body{display:grid;min-height:100svh;place-items:start center}.game-shell{width:min(100vw,56.25svh,540px);height:auto;min-height:0;aspect-ratio:9/16;padding:max(10px,env(safe-area-inset-top)) 10px max(10px,env(safe-area-inset-bottom));gap:8px;grid-template-rows:auto minmax(0,1fr) auto}.game-header{align-items:flex-start}.title-lockup{align-items:flex-start}.chapter,.vision{display:none}h1{font-size:clamp(28px,8vw,42px)}.kicker{margin-bottom:5px}.style-mode{margin-top:4px!important}.arena{min-height:0;background-position:52% center}.arena::before{background:linear-gradient(180deg,rgba(6,12,14,.12),rgba(6,10,12,.42)),radial-gradient(circle at 50% 42%,transparent 0 24%,rgba(5,9,10,.54) 76%)}.target{width:clamp(82px,20vw,108px);box-shadow:0 0 0 12px color-mix(in srgb,var(--theme-accent) 28%,transparent),0 0 68px var(--theme-accent)}.start-card{top:43%;width:calc(100% - 38px);padding:22px}.start-card .card-index{margin-bottom:25px}.controls{grid-template-columns:1fr auto;gap:7px}.hud{grid-column:1}.status{grid-column:1/-1;grid-row:2}.control-actions{grid-column:2;grid-row:1;display:flex}.metric{min-width:0;flex:1;padding:8px 10px}.metric strong{font-size:19px}.secondary{min-width:44px;min-height:44px;padding:0 10px}}@media(max-width:420px){.game-shell{padding:max(7px,env(safe-area-inset-top)) 7px max(7px,env(safe-area-inset-bottom));gap:6px}.controls{gap:5px}.status{font-size:11px}.secondary{font-size:0}.secondary::first-letter{font-size:13px}.start-card{width:calc(100% - 24px);padding:19px}.start-card h2{font-size:27px}}`;
 }
 
+const onboardingRuntimeStyles = `.onboarding-coach{position:absolute;z-index:5;right:18px;bottom:18px;display:grid;width:min(360px,calc(100% - 36px));gap:7px;padding:15px 16px;border:1px solid color-mix(in srgb,var(--theme-accent) 62%,var(--theme-line));border-radius:var(--theme-radius);background:color-mix(in srgb,var(--theme-panel) 94%,transparent);color:var(--theme-text);box-shadow:var(--theme-shadow);backdrop-filter:blur(12px);line-height:1.45}.onboarding-coach[hidden]{display:none!important}.onboarding-coach strong{font-size:12px}.onboarding-coach p{margin:0;font-size:13px;font-weight:700}.onboarding-coach small{color:var(--theme-muted);font-size:11px}.onboarding-actions{display:flex;justify-content:flex-end;gap:6px;margin-top:3px}.onboarding-actions button{min-height:38px;border:1px solid var(--theme-line);border-radius:calc(var(--theme-radius)*.55);padding:0 12px;background:var(--theme-panel);color:var(--theme-text);font:700 11px/1 Inter,"Microsoft YaHei",sans-serif;cursor:pointer}.onboarding-actions button:last-child{border-color:var(--theme-accent);color:var(--theme-accent)}.onboarding-coach.is-compact{right:10px;bottom:10px;width:auto;grid-template-columns:auto auto;align-items:center;padding:8px 10px}.onboarding-coach.is-compact p,.onboarding-coach.is-compact small,.onboarding-coach.is-compact .onboarding-actions button:first-child{display:none}.onboarding-coach.is-compact .onboarding-actions{margin:0}@media(max-width:520px){.onboarding-coach{right:10px;bottom:10px;width:calc(100% - 20px);padding:12px}.onboarding-coach p{font-size:12px}.onboarding-coach small{font-size:10px}}`;
+
+function onboardingRuntimeSource(containerSelector: string) {
+  return `
+const onboardingPlan = config.onboardingPlan;
+let onboardingState = { schemaVersion: "onboarding-runtime-state-v1", status: "not-started", activeStepId: null, completedStepIds: [], skippedStepIds: [], acceptedSignals: [] };
+const onboardingCoach = onboardingPlan ? document.createElement("aside") : null;
+const onboardingTitle = onboardingPlan ? document.createElement("strong") : null;
+const onboardingInstruction = onboardingPlan ? document.createElement("p") : null;
+const onboardingInputHelp = onboardingPlan ? document.createElement("small") : null;
+const onboardingActions = onboardingPlan ? document.createElement("div") : null;
+const onboardingSkipButton = onboardingPlan ? document.createElement("button") : null;
+const onboardingReplayButton = onboardingPlan ? document.createElement("button") : null;
+function activeOnboardingStep() { return onboardingPlan?.steps.find((step) => step.id === onboardingState.activeStepId) || null; }
+function onboardingIsActive() { return onboardingState.status === "active"; }
+function saveOnboardingState() {
+  if (!onboardingPlan) return;
+  try { safeStorage.setItem(config.onboardingStorageKey, JSON.stringify({ contractId: onboardingPlan.contractId, state: onboardingState })); } catch {}
+}
+
+function loadOnboardingState() {
+  if (!onboardingPlan) return;
+  try {
+    const saved = JSON.parse(safeStorage.getItem(config.onboardingStorageKey) || "null");
+    if (saved?.contractId !== onboardingPlan.contractId || !saved.state) return;
+    const known = new Set(onboardingPlan.steps.map((step) => step.id));
+    const completed = Array.isArray(saved.state.completedStepIds) ? saved.state.completedStepIds.filter((id) => known.has(id)) : [];
+    const skipped = Array.isArray(saved.state.skippedStepIds) ? saved.state.skippedStepIds.filter((id) => known.has(id)) : [];
+    onboardingState = { ...onboardingState, status: completed.length === onboardingPlan.steps.length ? "completed" : skipped.length ? "skipped" : "not-started", completedStepIds: completed, skippedStepIds: skipped };
+  } catch {}
+}
+function renderOnboarding() {
+  if (!onboardingCoach || !onboardingPlan) return;
+  const step = activeOnboardingStep();
+  const terminal = onboardingState.status === "completed" || onboardingState.status === "skipped";
+  onboardingCoach.hidden = onboardingState.status === "not-started";
+  onboardingCoach.dataset.status = onboardingState.status;
+  onboardingCoach.classList.toggle("is-compact", terminal);
+  if (step) {
+    const index = onboardingPlan.steps.findIndex(({ id }) => id === step.id);
+    onboardingTitle.textContent = "新手教学 " + (index + 1) + " / " + onboardingPlan.steps.length;
+    onboardingInstruction.textContent = step.instruction;
+    const coarse = window.matchMedia?.("(pointer: coarse)").matches;
+    onboardingInputHelp.textContent = (coarse ? step.inputHelp.touch : step.inputHelp.keyboard) || step.inputHelp.pointer || "完成画面提示的操作";
+    onboardingSkipButton.hidden = !step.skippable;
+  } else {
+    onboardingTitle.textContent = onboardingState.status === "completed" ? "教学已完成" : "已跳过教学";
+    onboardingInstruction.textContent = "需要时可以随时重新练习。";
+    onboardingInputHelp.textContent = "";
+    onboardingSkipButton.hidden = true;
+  }
+  onboardingReplayButton.textContent = terminal ? "重看" : "重新开始";
+  document.body.dataset.onboardingStatus = onboardingState.status;
+}
+function startOnboarding() {
+  if (!onboardingPlan || onboardingState.status === "completed" || onboardingState.status === "skipped") { renderOnboarding(); return false; }
+  const next = onboardingPlan.steps.find(({ id }) => !onboardingState.completedStepIds.includes(id) && !onboardingState.skippedStepIds.includes(id));
+  onboardingState = { ...onboardingState, status: next ? "active" : "completed", activeStepId: next?.id || null };
+  saveOnboardingState(); renderOnboarding();
+  return onboardingState.status === "active";
+}
+function signalOnboarding(signal) {
+  const step = activeOnboardingStep();
+  if (!onboardingPlan || onboardingState.status !== "active" || !step || step.successSignal !== signal) {
+    window.dispatchEvent(new CustomEvent("forge:mechanic-signal", { detail: { signal, acceptedByOnboarding: false } }));
+    return false;
+  }
+  onboardingState.completedStepIds = [...new Set([...onboardingState.completedStepIds, step.id])];
+  onboardingState.acceptedSignals = [...onboardingState.acceptedSignals, { stepId: step.id, signal }];
+  const next = onboardingPlan.steps.find(({ id }) => !onboardingState.completedStepIds.includes(id) && !onboardingState.skippedStepIds.includes(id));
+  onboardingState = { ...onboardingState, status: next ? "active" : "completed", activeStepId: next?.id || null };
+  saveOnboardingState(); renderOnboarding();
+  window.dispatchEvent(new CustomEvent("forge:onboarding-signal", { detail: { stepId: step.id, signal, status: onboardingState.status } }));
+  window.dispatchEvent(new CustomEvent("forge:mechanic-signal", { detail: { signal, acceptedByOnboarding: true } }));
+  return true;
+}
+function skipOnboarding() {
+  const step = activeOnboardingStep();
+  if (!onboardingPlan || onboardingState.status !== "active" || !step?.skippable) return false;
+  const remaining = onboardingPlan.steps.filter(({ id }) => !onboardingState.completedStepIds.includes(id)).map(({ id }) => id);
+  onboardingState = { ...onboardingState, status: "skipped", activeStepId: null, skippedStepIds: [...new Set([...onboardingState.skippedStepIds, ...remaining])] };
+  saveOnboardingState(); renderOnboarding();
+  window.dispatchEvent(new CustomEvent("forge:onboarding-skip"));
+  return true;
+}
+function replayOnboarding() {
+  if (!onboardingPlan || !onboardingPlan.steps.some(({ replayable }) => replayable)) return false;
+  onboardingState = { schemaVersion: "onboarding-runtime-state-v1", status: "active", activeStepId: onboardingPlan.steps[0].id, completedStepIds: [], skippedStepIds: [], acceptedSignals: [] };
+  saveOnboardingState(); renderOnboarding();
+  window.dispatchEvent(new CustomEvent("forge:onboarding-replay"));
+  return true;
+}
+if (onboardingCoach) {
+  onboardingCoach.className = "onboarding-coach";
+  const setupCoachStyle = document.createElement("style");
+  setupCoachStyle.textContent = "body[data-game-state=idle] .onboarding-coach.is-compact{position:fixed;top:8px;bottom:auto;right:8px;width:auto;max-width:calc(100% - 16px)}";
+  document.head.appendChild(setupCoachStyle);
+  onboardingCoach.setAttribute("aria-live", "polite");
+  onboardingSkipButton.type = "button"; onboardingSkipButton.textContent = "跳过教学"; onboardingSkipButton.addEventListener("click", skipOnboarding);
+  onboardingReplayButton.type = "button"; onboardingReplayButton.addEventListener("click", replayOnboarding);
+  onboardingActions.className = "onboarding-actions";
+  onboardingActions.append(onboardingSkipButton, onboardingReplayButton);
+  onboardingCoach.append(onboardingTitle, onboardingInstruction, onboardingInputHelp, onboardingActions);
+  document.querySelector(${JSON.stringify(containerSelector)})?.append(onboardingCoach);
+  loadOnboardingState(); renderOnboarding();
+}
+`;
+}
+
+function failureAssistanceRuntimeSource() {
+  return `
+const assistancePlan = config.assistancePlan;
+let assistanceState = { schemaVersion: "failure-assistance-state-v1", consecutiveFailuresByLevel: {}, active: null };
+const assistanceActionLabels = { "explain-cause": "先说明原因", "highlight-rule": "突出相关规则", "directional-hint": "给一个方向提示", "show-step": "演示下一步", checkpoint: "从检查点继续", "lower-one-dimension": "明确降低一项难度" };
+const assistanceCard = document.createElement("section");
+assistanceCard.id = "failure-assistance"; assistanceCard.className = "failure-assistance"; assistanceCard.hidden = true;
+assistanceCard.innerHTML = '<span>失败后帮助</span><strong id="failure-assistance-title"></strong><p id="failure-assistance-message"></p><small id="failure-assistance-meta"></small>';
+function assistanceLevelKey() { return String(currentCampaignLevel()?.id || currentCampaignLevel()?.number || 1); }
+function mountAssistanceCard() {
+  const lost = document.body.dataset.gameState === "lost";
+  const host = document.querySelector(lost ? "#result-card" : "#start-card");
+  const anchor = host?.querySelector(lost ? ".three-result-actions" : "#start");
+  if (anchor) anchor.before(assistanceCard); else host?.appendChild(assistanceCard);
+}
+function saveAssistanceState() { try { safeStorage.setItem(config.assistanceStorageKey, JSON.stringify(assistanceState)); } catch {} }
+function renderAssistance() {
+  mountAssistanceCard();
+  const active = assistanceState.active;
+  assistanceCard.hidden = !active;
+  if (!active) return;
+  assistanceCard.dataset.action = active.action;
+  assistanceCard.querySelector("#failure-assistance-title").textContent = assistanceActionLabels[active.action] || "失败后帮助";
+  assistanceCard.querySelector("#failure-assistance-message").textContent = "本次原因：" + active.cause + "。" + active.message;
+  assistanceCard.querySelector("#failure-assistance-meta").textContent = "连续失败 " + active.failureCount + " 次 · 帮助已明确显示，不会暗中改变难度";
+}
+function loadAssistanceState() {
+  if (!assistancePlan) return;
+  try {
+    const saved = JSON.parse(safeStorage.getItem(config.assistanceStorageKey) || "null");
+    if (saved?.schemaVersion === "failure-assistance-state-v1" && saved.consecutiveFailuresByLevel && typeof saved.consecutiveFailuresByLevel === "object") assistanceState = saved;
+  } catch {}
+  renderAssistance();
+}
+function recordFailureAssistance(cause) {
+  if (!assistancePlan) return null;
+  const levelKey = assistanceLevelKey();
+  const failureCount = Math.max(0, Number(assistanceState.consecutiveFailuresByLevel[levelKey]) || 0) + 1;
+  assistanceState.consecutiveFailuresByLevel[levelKey] = failureCount;
+  const step = [...assistancePlan.steps].filter(({ afterFailures }) => afterFailures <= failureCount).at(-1) || null;
+  assistanceState.active = step ? { ...step, failureCount, cause: String(cause || "本局目标未完成") } : null;
+  saveAssistanceState(); renderAssistance();
+  if (assistanceState.active) window.dispatchEvent(new CustomEvent("forge:assistance-shown", { detail: structuredClone(assistanceState.active) }));
+  return assistanceState.active;
+}
+function resetFailureAssistance() {
+  if (!assistancePlan) return;
+  delete assistanceState.consecutiveFailuresByLevel[assistanceLevelKey()];
+  assistanceState.active = null; saveAssistanceState(); renderAssistance();
+}
+function getAssistanceState() { return structuredClone(assistanceState); }
+loadAssistanceState();
+`;
+}
+
 function templateScript(project: ProjectDetail) {
   const runtime = getRuntimeDefinition(project.spec.template);
   if (!runtime) throw new Error("模板运行时不存在。");
@@ -658,6 +1009,8 @@ function templateScript(project: ProjectDetail) {
   const puzzleLevels = project.spec.customImageDataUrl
     ? [{ id: "custom", label: "我的图片", path: "./assets/custom-puzzle.jpg" }, ...builtInPuzzleLevels]
     : builtInPuzzleLevels;
+  const onboardingPlan = project.spec.designContract ? createOnboardingRuntimePlan(project.spec.designContract) : null;
+  const assistancePlan = project.spec.designContract?.assistance ?? null;
   const breakoutBaseLevels = [
     { id: "pearl-shoal", label: "01 珍珠浅湾", path: "./assets/cover.png", rows: 5, columns: 9, speed: 5.1, armorRate: 0 },
     { id: "coral-gate", label: "02 珊瑚回廊", path: "./assets/level-coral-gate.png", rows: 6, columns: 9, speed: 5.35, armorRate: .14 },
@@ -695,7 +1048,7 @@ function templateScript(project: ProjectDetail) {
     canvasHeight: canvasSize.height,
     spriteFiles: Array.from({ length: 9 }, (_, index) => `./assets/sprites/sprite-${String(index + 1).padStart(2, "0")}.png`),
     stageCSpriteFiles: project.spec.template === "snake"
-      ? ["snake-head", "snake-body-straight", "snake-body-corner", "snake-tail", "snake-food", "snake-obstacle", "snake-eat", "snake-danger", "snake-complete"].map((name) => `./assets/stage-c/${name}-v2.png`)
+      ? ["snake-head", "snake-body-straight", "snake-body-corner", "snake-tail", "snake-food", "snake-obstacle", "snake-eat", "snake-danger", "snake-complete", "snake-food-golden", "snake-food-mint", "snake-food-dew"].map((name) => `./assets/stage-c/${name}-${name.startsWith("snake-food-") ? "v4" : ["snake-head", "snake-body-straight", "snake-tail"].includes(name) ? "v3" : "v2"}.png`)
       : project.spec.template === "breakout"
         ? ["pearl", "coral", "jellyfish", "star", "abyss"].flatMap((level) => ["intact", "cracked", "critical"].map((state) => `./assets/stage-c/brick-${level}-${state}-v2.png`))
         : [],
@@ -703,6 +1056,10 @@ function templateScript(project: ProjectDetail) {
     campaignLevels,
     campaignStorageKey: `forge-campaign:${project.id}:${project.version.id}`,
     masteryStorageKey: `forge-mastery:${project.id}:${project.version.id}`,
+    onboardingStorageKey: `forge-onboarding:${project.id}:${project.version.id}`,
+    onboardingPlan,
+    assistanceStorageKey: `forge-assistance:${project.id}:${project.version.id}`,
+    assistancePlan,
   });
   return `${safeStorageShim}
 const config = ${config};
@@ -774,6 +1131,15 @@ const campaignProgressNodes = Array.from(document.querySelectorAll("[data-campai
 const masteryMissionNodes = Array.from(document.querySelectorAll("[data-mastery-mission]"));
 const masteryObjectiveNodes = Array.from(document.querySelectorAll("[data-mastery-objectives]"));
 const masterySummaryNodes = Array.from(document.querySelectorAll("[data-mastery-summary]"));
+const assistanceCard = document.createElement("section");
+const assistanceKicker = document.createElement("span");
+const assistanceTitle = document.createElement("strong");
+const assistanceMessage = document.createElement("p");
+const assistanceMeta = document.createElement("small");
+assistanceCard.id = "failure-assistance"; assistanceCard.className = "failure-assistance"; assistanceCard.hidden = true; assistanceCard.setAttribute("aria-live", "polite");
+assistanceKicker.textContent = "失败后帮助"; assistanceTitle.id = "failure-assistance-title"; assistanceMessage.id = "failure-assistance-message"; assistanceMeta.id = "failure-assistance-meta";
+assistanceCard.append(assistanceKicker, assistanceTitle, assistanceMessage, assistanceMeta);
+overlayDetail.after(assistanceCard);
 const sounds = {
   music: new Audio("./assets/music.wav"), ambient: new Audio("./assets/ambient.wav"),
   legal: new Audio("./assets/legal.wav"), illegal: new Audio("./assets/illegal.wav"), reward: new Audio("./assets/reward.wav"),
@@ -782,6 +1148,7 @@ const sounds = {
 const soundAliases = { move: "legal", success: "victory", fail: "defeat", collect: "reward", warning: "illegal" };
 const backgroundArt = new Image();
 const spriteImages = config.spriteFiles.map((path) => { const image = new Image(); image.decoding = "async"; image.src = path; return image; });
+const spriteDrawCounts = config.spriteFiles.map(() => 0);
 const stageCImages = (config.stageCSpriteFiles || []).map((path) => { const image = new Image(); image.decoding = "async"; image.src = path; return image; });
 const bitmapSourceRects = new WeakMap();
 let backgroundArtReady = false;
@@ -814,6 +1181,164 @@ let campaignMaxUnlocked = 0;
 let campaignRandomState = 1;
 let campaignMastery = {};
 const campaignIsFreelySelectable = config.template === "region-logic";
+
+const assistancePlan = config.assistancePlan;
+let assistanceState = { schemaVersion: "failure-assistance-state-v1", consecutiveFailuresByLevel: {}, active: null };
+const assistanceActionLabels = { "explain-cause": "先说明原因", "highlight-rule": "突出相关规则", "directional-hint": "给一个方向提示", "show-step": "演示下一步", checkpoint: "从检查点继续", "lower-one-dimension": "明确降低一项难度" };
+function assistanceLevelKey() { return String(currentCampaignLevel()?.id || currentCampaignLevel()?.number || 1); }
+function saveAssistanceState() { try { safeStorage.setItem(config.assistanceStorageKey, JSON.stringify(assistanceState)); } catch {} }
+function renderAssistance() {
+  if (!assistanceCard) return;
+  const active = assistanceState.active;
+  assistanceCard.hidden = !active;
+  if (!active) { delete assistanceCard.dataset.action; return; }
+  assistanceCard.dataset.action = active.action;
+  assistanceTitle.textContent = assistanceActionLabels[active.action] || "失败后帮助";
+  assistanceMessage.textContent = "本次原因：" + active.cause + "。" + active.message;
+  assistanceMeta.textContent = "连续失败 " + active.failureCount + " 次 · 帮助已明确显示，不会暗中改变难度";
+}
+function loadAssistanceState() {
+  if (!assistancePlan) return;
+  try {
+    const saved = JSON.parse(safeStorage.getItem(config.assistanceStorageKey) || "null");
+    if (saved?.schemaVersion === "failure-assistance-state-v1" && saved.consecutiveFailuresByLevel && typeof saved.consecutiveFailuresByLevel === "object") assistanceState = saved;
+  } catch {}
+  renderAssistance();
+}
+function recordFailureAssistance(cause) {
+  if (!assistancePlan) return null;
+  const levelKey = assistanceLevelKey();
+  const failureCount = Math.max(0, Number(assistanceState.consecutiveFailuresByLevel[levelKey]) || 0) + 1;
+  assistanceState.consecutiveFailuresByLevel[levelKey] = failureCount;
+  const step = [...assistancePlan.steps].filter(({ afterFailures }) => afterFailures <= failureCount).at(-1) || null;
+  assistanceState.active = step ? { ...step, failureCount, cause: String(cause || "本局目标未完成") } : null;
+  saveAssistanceState(); renderAssistance();
+  if (assistanceState.active) window.dispatchEvent(new CustomEvent("forge:assistance-shown", { detail: structuredClone(assistanceState.active) }));
+  return assistanceState.active;
+}
+function resetFailureAssistance() {
+  const levelKey = assistanceLevelKey();
+  delete assistanceState.consecutiveFailuresByLevel[levelKey];
+  assistanceState.active = null;
+  saveAssistanceState(); renderAssistance();
+}
+function getAssistanceState() { return structuredClone(assistanceState); }
+
+const onboardingPlan = config.onboardingPlan;
+let onboardingState = { schemaVersion: "onboarding-runtime-state-v1", status: "not-started", activeStepId: null, completedStepIds: [], skippedStepIds: [], acceptedSignals: [] };
+const onboardingCoach = onboardingPlan ? document.createElement("aside") : null;
+const onboardingTitle = onboardingPlan ? document.createElement("strong") : null;
+const onboardingInstruction = onboardingPlan ? document.createElement("p") : null;
+const onboardingInputHelp = onboardingPlan ? document.createElement("small") : null;
+const onboardingActions = onboardingPlan ? document.createElement("div") : null;
+const onboardingSkipButton = onboardingPlan ? document.createElement("button") : null;
+const onboardingReplayButton = onboardingPlan ? document.createElement("button") : null;
+
+function activeOnboardingStep() {
+  return onboardingPlan?.steps.find((step) => step.id === onboardingState.activeStepId) || null;
+}
+
+function onboardingIsActive() {
+  return onboardingState.status === "active";
+}
+
+function saveOnboardingState() {
+  if (!onboardingPlan) return;
+  try { safeStorage.setItem(config.onboardingStorageKey, JSON.stringify({ contractId: onboardingPlan.contractId, state: onboardingState })); } catch {}
+}
+
+function loadOnboardingState() {
+  if (!onboardingPlan) return;
+  try {
+    const saved = JSON.parse(safeStorage.getItem(config.onboardingStorageKey) || "null");
+    if (saved?.contractId !== onboardingPlan.contractId || !saved.state) return;
+    const known = new Set(onboardingPlan.steps.map((step) => step.id));
+    const completed = Array.isArray(saved.state.completedStepIds) ? saved.state.completedStepIds.filter((id) => known.has(id)) : [];
+    const skipped = Array.isArray(saved.state.skippedStepIds) ? saved.state.skippedStepIds.filter((id) => known.has(id)) : [];
+    onboardingState = { ...onboardingState, status: completed.length === onboardingPlan.steps.length ? "completed" : skipped.length ? "skipped" : "not-started", completedStepIds: completed, skippedStepIds: skipped };
+  } catch {}
+}
+
+function renderOnboarding() {
+  if (!onboardingCoach || !onboardingPlan) return;
+  const step = activeOnboardingStep();
+  const terminal = onboardingState.status === "completed" || onboardingState.status === "skipped";
+  onboardingCoach.hidden = onboardingState.status === "not-started";
+  onboardingCoach.dataset.status = onboardingState.status;
+  onboardingCoach.classList.toggle("is-compact", terminal);
+  if (step) {
+    const index = onboardingPlan.steps.findIndex(({ id }) => id === step.id);
+    onboardingTitle.textContent = "新手教学 " + (index + 1) + " / " + onboardingPlan.steps.length;
+    onboardingInstruction.textContent = step.instruction;
+    const coarse = window.matchMedia?.("(pointer: coarse)").matches;
+    onboardingInputHelp.textContent = (coarse ? step.inputHelp.touch : step.inputHelp.keyboard) || step.inputHelp.pointer || "完成画面提示的操作";
+    onboardingSkipButton.hidden = !step.skippable;
+  } else {
+    onboardingTitle.textContent = onboardingState.status === "completed" ? "教学已完成" : "已跳过教学";
+    onboardingInstruction.textContent = "需要时可以随时重新练习。";
+    onboardingInputHelp.textContent = "";
+    onboardingSkipButton.hidden = true;
+  }
+  onboardingReplayButton.textContent = terminal ? "重看" : "重新开始";
+  document.body.dataset.onboardingStatus = onboardingState.status;
+}
+
+function startOnboarding() {
+  if (!onboardingPlan || onboardingState.status === "completed" || onboardingState.status === "skipped") { renderOnboarding(); return false; }
+  const next = onboardingPlan.steps.find(({ id }) => !onboardingState.completedStepIds.includes(id) && !onboardingState.skippedStepIds.includes(id));
+  onboardingState = { ...onboardingState, status: next ? "active" : "completed", activeStepId: next?.id || null };
+  saveOnboardingState(); renderOnboarding();
+  return onboardingState.status === "active";
+}
+
+function signalOnboarding(signal) {
+  const step = activeOnboardingStep();
+  if (!onboardingPlan || onboardingState.status !== "active" || !step || step.successSignal !== signal) {
+    window.dispatchEvent(new CustomEvent("forge:mechanic-signal", { detail: { signal, acceptedByOnboarding: false } }));
+    return false;
+  }
+  onboardingState.completedStepIds = [...new Set([...onboardingState.completedStepIds, step.id])];
+  onboardingState.acceptedSignals = [...onboardingState.acceptedSignals, { stepId: step.id, signal }];
+  const next = onboardingPlan.steps.find(({ id }) => !onboardingState.completedStepIds.includes(id) && !onboardingState.skippedStepIds.includes(id));
+  onboardingState = { ...onboardingState, status: next ? "active" : "completed", activeStepId: next?.id || null };
+  saveOnboardingState(); renderOnboarding();
+  window.dispatchEvent(new CustomEvent("forge:onboarding-signal", { detail: { stepId: step.id, signal, status: onboardingState.status } }));
+  window.dispatchEvent(new CustomEvent("forge:mechanic-signal", { detail: { signal, acceptedByOnboarding: true } }));
+  return true;
+}
+
+function skipOnboarding() {
+  const step = activeOnboardingStep();
+  if (!onboardingPlan || onboardingState.status !== "active" || !step?.skippable) return false;
+  const remaining = onboardingPlan.steps.filter(({ id }) => !onboardingState.completedStepIds.includes(id)).map(({ id }) => id);
+  onboardingState = { ...onboardingState, status: "skipped", activeStepId: null, skippedStepIds: [...new Set([...onboardingState.skippedStepIds, ...remaining])] };
+  saveOnboardingState(); renderOnboarding();
+  window.dispatchEvent(new CustomEvent("forge:onboarding-skip"));
+  return true;
+}
+
+function replayOnboarding() {
+  if (!onboardingPlan || !onboardingPlan.steps.some(({ replayable }) => replayable)) return false;
+  onboardingState = { schemaVersion: "onboarding-runtime-state-v1", status: "active", activeStepId: onboardingPlan.steps[0].id, completedStepIds: [], skippedStepIds: [], acceptedSignals: [] };
+  saveOnboardingState(); renderOnboarding();
+  window.dispatchEvent(new CustomEvent("forge:onboarding-replay"));
+  return true;
+}
+
+if (onboardingCoach) {
+  onboardingCoach.className = "onboarding-coach";
+  const setupCoachStyle = document.createElement("style");
+  setupCoachStyle.textContent = "body[data-game-state=idle] .onboarding-coach.is-compact{position:fixed;top:8px;bottom:auto;right:8px;width:auto;max-width:calc(100% - 16px)}";
+  document.head.appendChild(setupCoachStyle);
+  onboardingCoach.setAttribute("aria-live", "polite");
+  onboardingSkipButton.type = "button"; onboardingSkipButton.textContent = "跳过教学"; onboardingSkipButton.addEventListener("click", skipOnboarding);
+  onboardingReplayButton.type = "button"; onboardingReplayButton.addEventListener("click", replayOnboarding);
+  onboardingActions.className = "onboarding-actions";
+  onboardingActions.append(onboardingSkipButton, onboardingReplayButton);
+  onboardingCoach.append(onboardingTitle, onboardingInstruction, onboardingInputHelp, onboardingActions);
+  document.querySelector(".canvas-frame")?.append(onboardingCoach);
+  loadOnboardingState(); renderOnboarding();
+}
 
 function readCampaignProgress() {
   if (!config.campaign?.persistProgress) return;
@@ -865,14 +1390,15 @@ function campaignStarTotal() {
 
 function evaluateCampaignMastery(won) {
   const level = currentCampaignLevel();
+  const previous = Math.max(0, Math.min(3, Number(campaignMastery[level.id]) || 0));
   const state = runtimeDebugState?.() || {};
   const checks = (level.masteryRules || []).map((rule) => ({ ...rule, passed: won && masteryRulePassed(rule, state) }));
-  const stars = won ? 1 + checks.filter((check) => check.passed).length : 0;
+  const stars = won ? Math.min(3, 1 + checks.filter((check) => check.passed).length) : 0;
   if (won) {
     campaignMastery[level.id] = Math.max(Number(campaignMastery[level.id]) || 0, stars);
     writeCampaignProgress();
   }
-  return { stars, checks, total: campaignStarTotal() };
+  return { stars, previous, checks, total: campaignStarTotal() };
 }
 
 function syncMasteryUi() {
@@ -942,6 +1468,7 @@ function setGameSessionState(nextState) {
   document.body.dataset.gameState = nextState;
   setGameplayControlsEnabled(running);
   if (campaignSelect) campaignSelect.disabled = running;
+  if (onboardingCoach) onboardingCoach.style.display = nextState === "playing" ? "" : "none";
   window.dispatchEvent(new CustomEvent("game:state-change", { detail: { previousState, state: nextState } }));
 }
 
@@ -1110,6 +1637,7 @@ function drawBitmapImage(sprite, x, y, width, height, options = {}) {
 }
 
 function drawBitmapSprite(index, x, y, width, height, options = {}) {
+  if (Number.isInteger(index) && index >= 0 && index < spriteDrawCounts.length) spriteDrawCounts[index] += 1;
   drawBitmapImage(spriteImages[index], x, y, width, height, options);
 }
 
@@ -1210,6 +1738,7 @@ function stopEnvironmentAudio() {
 }
 function hideOverlay() {
   overlay.hidden = true;
+  if (assistanceCard) assistanceCard.hidden = true;
   startButton.textContent = "开始游戏";
   restartButton.textContent = "重新开始";
   setGameSessionState("playing");
@@ -1225,6 +1754,8 @@ function returnToSetup() {
   restartButton.textContent = "重开";
   overlay.hidden = false;
 }
+${victoryPresentationScript}
+
 function showTerminalResult(won, title, detail) {
   running = false;
   setGameSessionState(won ? "won" : "lost");
@@ -1242,14 +1773,17 @@ function showResult(won, title, detail) {
     ? " 本关评价 " + "★".repeat(mastery.stars) + "☆".repeat(3 - mastery.stars) + "；" + mastery.checks.map((check) => (check.passed ? "已达成：" : "待挑战：") + check.label).join("；") + "。"
     : " 本关尚未获得星章；重新开始不会降低既有最佳评价。";
   if (!won) {
+    recordFailureAssistance(title);
     showTerminalResult(false, title, detail + masteryDetail + " 当前为第 " + currentCampaignLevel().number + " 关，可从本关重新开始。");
     return;
   }
   const completed = currentCampaignLevel();
+  resetFailureAssistance();
   if (completed.number >= config.campaignLevels.length) {
     campaignMaxUnlocked = config.campaignLevels.length - 1;
     writeCampaignProgress();
-    showTerminalResult(true, "20 关全部完成 · " + title, detail + masteryDetail + " 你已经完成整套渐进关卡，共获得 " + mastery.total + " / " + (config.campaignLevels.length * 3) + " 枚星章。");
+    showTerminalResult(true, config.campaignLevels.length + " 关全部完成 · " + title, detail);
+    renderVictorySummary(overlay, startButton, { ...mastery, level: completed, next: null, maximum: config.campaignLevels.length * 3 });
     return;
   }
   const nextIndex = unlockNextCampaignLevel();
@@ -1258,8 +1792,9 @@ function showResult(won, title, detail) {
   setGameSessionState("stage-complete");
   stopEnvironmentAudio();
   overlayTitle.textContent = "第 " + completed.number + " 关完成 · " + title;
-  overlayDetail.textContent = detail + masteryDetail + " 下一关：" + nextLevel.tierLabel + " · " + nextLevel.ruleModifier + "。";
+  overlayDetail.textContent = detail;
   startButton.textContent = "进入第 " + nextLevel.number + " 关";
+  renderVictorySummary(overlay, startButton, { ...mastery, level: completed, next: nextLevel, maximum: config.campaignLevels.length * 3 });
   overlay.hidden = false;
   playSound("success");
 }
@@ -1275,7 +1810,7 @@ redrawGameArt();
 
 let restartArmedAt = 0;
 let restartResetTimer = 0;
-startButton.addEventListener("click", startGame);
+startButton.addEventListener("click", () => { startGame(); startOnboarding(); });
 backToSetupButton?.addEventListener("click", returnToSetup);
 campaignSelect?.addEventListener("change", () => setCampaignLevel(Number(campaignSelect.value)));
 restartButton.addEventListener("click", () => {
@@ -1314,12 +1849,13 @@ document.querySelectorAll("[data-control]").forEach((button) => button.addEventL
 }));
 window.addEventListener("keydown", (event) => {
   if (["INPUT", "SELECT", "TEXTAREA", "BUTTON", "SUMMARY", "A"].includes(event.target?.tagName)) return;
-  const runtimePauseKey = ["snake", "maze", "puzzle"].includes(config.template) && gameSessionState === "paused" && (event.key.toLowerCase() === "p" || event.key === " ");
+  const runtimePauseKey = ["snake", "puzzle"].includes(config.template) && gameSessionState === "paused" && (event.key.toLowerCase() === "p" || event.key === " ");
   if (gameSessionState !== "playing" && !runtimePauseKey) return;
   if (["ArrowUp", "ArrowRight", "ArrowDown", "ArrowLeft", " "].includes(event.key)) event.preventDefault();
   handleKey(event.key);
 });
 readCampaignProgress();
+loadAssistanceState();
 syncCampaignUi();
 resetCampaignRandom();
 onCampaignLevelChanged(currentCampaignLevel());
@@ -1328,6 +1864,7 @@ const gameDebugApi = {
   restart: restartCurrentGame,
   control: handleControl,
   forceWin: () => showResult(true, "验收胜利", "浏览器质量探针已触发胜利分支。"),
+  forceLose: (cause = "目标条件未完成") => showResult(false, String(cause), "浏览器质量探针已触发失败分支。"),
   setLevel: (level) => setCampaignLevel(Number(level) - 1, { allowLocked: true, unlock: true }),
   unlockAllLevels: () => { campaignMaxUnlocked = config.campaignLevels.length - 1; syncCampaignUi(); writeCampaignProgress(); },
   getState: () => ({
@@ -1335,17 +1872,35 @@ const gameDebugApi = {
     metric: metricValue.textContent,
     status: status.textContent,
     campaign: { level: currentCampaignLevel(), index: campaignLevelIndex, maxUnlocked: campaignMaxUnlocked + 1, total: config.campaignLevels.length, mastery: { ...campaignMastery }, stars: campaignStarTotal() },
+    assets: {
+      sprites: spriteImages.map((image, index) => ({
+        slot: index + 1,
+        path: config.spriteFiles[index],
+        loaded: image.complete && image.naturalWidth > 0,
+        width: image.naturalWidth,
+        height: image.naturalHeight,
+        drawCount: spriteDrawCounts[index],
+      })),
+    },
     runtime: runtimeDebugState(),
+    onboarding: structuredClone(onboardingState),
+    assistance: getAssistanceState(),
   }),
+  getOnboarding: () => structuredClone(onboardingState),
+  skipOnboarding,
+  replayOnboarding,
+  getAssistance: getAssistanceState,
   ...runtimeDebugActions,
 };
 if (new URLSearchParams(location.search).has("probe")) window.__GAME_DEBUG__ = gameDebugApi;
 `;
 }
 
-const touchSafeTemplateStyles = `${templateStyles}${templateVisualStyles}.game-canvas{touch-action:none}.control-button:disabled{cursor:not-allowed;opacity:.42;transform:none}.game-help{border:1px solid var(--theme-line);border-radius:var(--theme-radius);background:var(--theme-panel);overflow:hidden}.game-help summary{position:relative;display:flex;min-height:44px;align-items:center;padding:0 38px 0 13px;color:var(--theme-text);font-size:12px;font-weight:700;letter-spacing:.02em;cursor:pointer;list-style:none}.game-help summary::-webkit-details-marker{display:none}.game-help summary::after{position:absolute;right:14px;content:"＋";color:var(--theme-accent);font-size:17px}.game-help[open] summary::after{content:"−"}.game-help-content{display:grid;gap:8px;padding:0 8px 8px}.game-help .panel-block,.game-help .source-proof{background:color-mix(in srgb,var(--theme-panel) 82%,transparent)}.puzzle-setup{display:grid;grid-template-columns:minmax(0,1.25fr) minmax(0,.75fr);gap:8px;margin:14px 0 16px}.puzzle-field{display:grid;gap:6px;min-width:0}.puzzle-field>span{color:var(--theme-muted);font-size:11px;line-height:1.2;letter-spacing:.015em}.puzzle-field select{width:100%;min-height:44px;border:1px solid var(--theme-line);border-radius:calc(var(--theme-radius)*.55);padding:0 32px 0 11px;background:var(--theme-panel);color:var(--theme-text);font:600 12px/1 Inter,"Microsoft YaHei",sans-serif;letter-spacing:.015em}.puzzle-panel .puzzle-setup{margin:11px 0 0}.breakout-setup{display:grid;gap:6px;margin:14px 0 16px}.breakout-panel .breakout-setup{margin:10px 0 0}.breakout-field{display:grid;gap:6px}.breakout-field>span{color:var(--theme-muted);font-size:11px}.breakout-field select{width:100%;min-height:44px;border:1px solid var(--theme-line);border-radius:calc(var(--theme-radius)*.55);padding:0 34px 0 11px;background:var(--theme-panel);color:var(--theme-text);font:600 12px/1 Inter,"Microsoft YaHei",sans-serif}.breakout-progress{color:var(--theme-muted);font-size:10px;line-height:1.5}.maze-pad{grid-template-columns:repeat(3,minmax(52px,1fr));grid-template-rows:repeat(2,52px);gap:6px}.maze-pad [data-control=up]{grid-column:2;grid-row:1}.maze-pad [data-control=left]{grid-column:1;grid-row:2}.maze-pad [data-control=down]{grid-column:2;grid-row:2}.maze-pad [data-control=right]{grid-column:3;grid-row:2}.maze-pad .control-button{min-height:52px;font-size:17px}.rule-note{display:block;margin-top:9px;color:#7f8e87;font-size:10px;line-height:1.5}.source-proof{display:grid;gap:5px;padding:12px;border:1px solid var(--theme-line);border-radius:var(--theme-radius);background:var(--theme-panel);color:var(--theme-muted);font-size:10px;line-height:1.45}.source-proof strong{color:var(--theme-text);font-size:11px}.source-proof a{color:var(--theme-accent);text-underline-offset:3px}body[data-template=puzzle]{background-color:#f5f0e7;background-image:none}body[data-template=puzzle]::before{background:linear-gradient(180deg,rgba(255,253,249,.82),rgba(242,234,223,.9))}body[data-template=puzzle] .style-ornament{display:none}body[data-template=puzzle] .canvas-frame{background:#ebe4da;box-shadow:0 18px 46px rgba(87,69,62,.13)}body[data-template=puzzle] .canvas-frame::before{background:rgba(255,252,247,.42)}body[data-template=puzzle] .game-overlay h2{margin-top:20px;font-size:28px}body[data-template=puzzle] .game-overlay p{margin-bottom:0}body[data-template=puzzle] .game-overlay .primary{margin-top:2px}body[data-template=breakout] .game-overlay h2{margin-top:20px}body[data-template=breakout] .game-overlay p{margin-bottom:0}@media(max-width:520px){.puzzle-setup{gap:6px}.puzzle-field>span,.breakout-field>span{font-size:10px}.puzzle-field select,.breakout-field select{min-height:42px;padding-left:9px;font-size:11px}.maze-pad{grid-template-columns:repeat(3,minmax(48px,1fr));grid-template-rows:repeat(2,48px)}.maze-pad .control-button{min-height:48px}}`;
+const touchSafeTemplateStyles = `${templateStyles}${templateVisualStyles}.game-canvas{touch-action:none}.control-button:disabled{cursor:not-allowed;opacity:.42;transform:none}.game-help{border:1px solid var(--theme-line);border-radius:var(--theme-radius);background:var(--theme-panel);overflow:hidden}.game-help summary{position:relative;display:flex;min-height:44px;align-items:center;padding:0 38px 0 13px;color:var(--theme-text);font-size:12px;font-weight:700;letter-spacing:.02em;cursor:pointer;list-style:none}.game-help summary::-webkit-details-marker{display:none}.game-help summary::after{position:absolute;right:14px;content:"＋";color:var(--theme-accent);font-size:17px}.game-help[open] summary::after{content:"−"}.game-help-content{display:grid;gap:8px;padding:0 8px 8px}.game-help .panel-block,.game-help .source-proof{background:color-mix(in srgb,var(--theme-panel) 82%,transparent)}.puzzle-setup{display:grid;grid-template-columns:minmax(0,1.25fr) minmax(0,.75fr);gap:8px;margin:14px 0 16px}.puzzle-field{display:grid;gap:6px;min-width:0}.puzzle-field>span{color:var(--theme-muted);font-size:11px;line-height:1.2;letter-spacing:.015em}.puzzle-field select{width:100%;min-height:44px;border:1px solid var(--theme-line);border-radius:calc(var(--theme-radius)*.55);padding:0 32px 0 11px;background:var(--theme-panel);color:var(--theme-text);font:600 12px/1 Inter,"Microsoft YaHei",sans-serif;letter-spacing:.015em}.puzzle-panel .puzzle-setup{margin:11px 0 0}.breakout-setup{display:grid;gap:6px;margin:14px 0 16px}.breakout-panel .breakout-setup{margin:10px 0 0}.breakout-field{display:grid;gap:6px}.breakout-field>span{color:var(--theme-muted);font-size:11px}.breakout-field select{width:100%;min-height:44px;border:1px solid var(--theme-line);border-radius:calc(var(--theme-radius)*.55);padding:0 34px 0 11px;background:var(--theme-panel);color:var(--theme-text);font:600 12px/1 Inter,"Microsoft YaHei",sans-serif}.breakout-progress{color:var(--theme-muted);font-size:10px;line-height:1.5}.rule-note{display:block;margin-top:9px;color:#7f8e87;font-size:10px;line-height:1.5}.source-proof{display:grid;gap:5px;padding:12px;border:1px solid var(--theme-line);border-radius:var(--theme-radius);background:var(--theme-panel);color:var(--theme-muted);font-size:10px;line-height:1.45}.source-proof strong{color:var(--theme-text);font-size:11px}.source-proof a{color:var(--theme-accent);text-underline-offset:3px}body[data-template=puzzle]{background-color:#f5f0e7;background-image:none}body[data-template=puzzle]::before{background:linear-gradient(180deg,rgba(255,253,249,.82),rgba(242,234,223,.9))}body[data-template=puzzle] .style-ornament{display:none}body[data-template=puzzle] .canvas-frame{background:#ebe4da;box-shadow:0 18px 46px rgba(87,69,62,.13)}body[data-template=puzzle] .canvas-frame::before{background:rgba(255,252,247,.42)}body[data-template=puzzle] .game-overlay h2{margin-top:20px;font-size:28px}body[data-template=puzzle] .game-overlay p{margin-bottom:0}body[data-template=puzzle] .game-overlay .primary{margin-top:2px}body[data-template=breakout] .game-overlay h2{margin-top:20px}body[data-template=breakout] .game-overlay p{margin-bottom:0}@media(max-width:520px){.puzzle-setup{gap:6px}.puzzle-field>span,.breakout-field>span{font-size:10px}.puzzle-field select,.breakout-field select{min-height:42px;padding-left:9px;font-size:11px}}`;
 
 const campaignTemplateStyles = `.campaign-setup{display:grid;gap:6px;margin:14px 0 12px}.campaign-field{display:grid;gap:6px}.campaign-field>span{color:var(--theme-muted);font-size:11px}.campaign-field select,.campaign-field input[type=text]{width:100%;min-height:44px;border:1px solid var(--theme-line);border-radius:calc(var(--theme-radius)*.55);padding:0 34px 0 11px;background:var(--theme-panel);color:var(--theme-text);font:650 12px/1 Inter,"Microsoft YaHei",sans-serif}.campaign-field select:disabled{cursor:not-allowed;opacity:.72}.campaign-progress{display:block;margin-top:7px;color:var(--theme-muted);font-size:10px;line-height:1.45}.mastery-card{display:grid;gap:7px;margin:10px 0 14px;padding:13px 14px;border:1px solid color-mix(in srgb,var(--theme-accent) 44%,var(--theme-line));border-radius:calc(var(--theme-radius)*.7);background:color-mix(in srgb,var(--theme-accent) 7%,var(--theme-panel));text-align:left}.mastery-kicker{color:var(--theme-accent)!important;font:750 9px/1.2 ui-monospace,Consolas,monospace!important;letter-spacing:.09em;text-transform:uppercase}.mastery-card strong,.mastery-panel strong{color:var(--theme-text);font-size:12px;line-height:1.45}.mastery-card ul,.mastery-panel ul{display:grid;gap:4px;margin:0;padding-left:17px;color:var(--theme-muted);font-size:11px;line-height:1.35}.mastery-card li::marker,.mastery-panel li::marker{color:var(--theme-accent)}.mastery-card small,.mastery-panel small{color:var(--theme-accent);font-size:10px;font-weight:700;line-height:1.35;letter-spacing:.015em}.mastery-panel{display:grid;gap:7px}.setup-option{display:flex;min-height:44px;align-items:center;gap:9px;color:var(--theme-text);font-size:12px}.setup-option input{width:20px;height:20px;accent-color:var(--theme-accent)}.secondary-setup{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:-2px 0 10px}@media(max-width:520px){.campaign-setup{margin:10px 0 9px}.campaign-field>span{font-size:10px}.campaign-field select,.campaign-field input[type=text]{min-height:42px;padding-left:9px;font-size:11px}.mastery-card{gap:5px;margin:7px 0 9px;padding:10px 11px}.mastery-card strong{font-size:11px}.mastery-card ul{font-size:10px}.secondary-setup{gap:6px;margin-bottom:8px}}`;
+
+const failureAssistanceStyles = `.failure-assistance{display:grid;gap:6px;margin:10px 0 14px;padding:12px 13px;border:1px solid color-mix(in srgb,var(--theme-accent) 55%,var(--theme-line));border-radius:calc(var(--theme-radius)*.65);background:color-mix(in srgb,var(--theme-accent) 9%,var(--theme-panel));text-align:left}.failure-assistance[hidden]{display:none}.failure-assistance>span{color:var(--theme-accent);font:800 9px/1.2 ui-monospace,Consolas,monospace;letter-spacing:.11em;text-transform:uppercase}.failure-assistance>strong{color:var(--theme-text);font-size:13px;line-height:1.35}.failure-assistance>p{margin:0!important;color:var(--theme-text)!important;font-size:11px!important;line-height:1.5!important}.failure-assistance>small{color:var(--theme-muted);font-size:9px;line-height:1.35}.failure-assistance[data-action=highlight-rule]{box-shadow:inset 4px 0 0 var(--theme-accent)}.failure-assistance[data-action=directional-hint]{background:color-mix(in srgb,var(--theme-soft) 12%,var(--theme-panel))}@media(max-width:520px){.failure-assistance{gap:4px;margin:7px 0 9px;padding:9px 10px}.failure-assistance>p{font-size:10px!important}}`;
 
 const puzzleEnhancementStyles = `body[data-template=puzzle]{--theme-bg:#eee9e2;--theme-panel:rgba(255,252,248,.94);--theme-line:rgba(99,82,72,.24);--theme-text:#473d38;--theme-muted:#766961;--theme-accent:#db6f72;--theme-soft:#4f9f91}body[data-template=puzzle] .game-canvas{box-shadow:0 18px 52px rgba(81,61,51,.18)}body[data-template=puzzle] .game-overlay{border-color:rgba(99,82,72,.22);background:rgba(255,252,248,.97);box-shadow:0 26px 72px rgba(81,61,51,.2)}.puzzle-mode-setup{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px;margin:0 0 4px}.puzzle-mode-setup button{display:grid;min-width:0;min-height:52px;align-content:center;gap:4px;border:1px solid var(--theme-line);border-radius:calc(var(--theme-radius)*.65);padding:7px 8px;background:rgba(255,255,255,.55);color:var(--theme-text);font:700 11px/1.1 Inter,"Microsoft YaHei",sans-serif;cursor:pointer}.puzzle-mode-setup button span{color:var(--theme-muted);font-size:9px;font-weight:600}.puzzle-mode-setup button.is-selected,.puzzle-mode-setup button[aria-pressed=true]{border-color:var(--theme-accent);background:color-mix(in srgb,var(--theme-accent) 11%,white);box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--theme-accent) 22%,transparent)}.puzzle-mode-setup button:focus-visible{outline:2px solid var(--theme-accent);outline-offset:2px}.puzzle-rotation{min-height:36px;font-size:10px}.puzzle-rotation input{width:18px;height:18px}.puzzle-tools{grid-template-columns:repeat(2,minmax(0,1fr))}.puzzle-tools .control-button{min-height:44px;border-radius:999px;background:rgba(255,252,248,.82);color:#544741}.puzzle-tools [data-control=preview],.puzzle-tools [data-control=hint]{border-color:color-mix(in srgb,var(--theme-accent) 48%,var(--theme-line))}.puzzle-tools [data-control=pause]{border-color:rgba(79,159,145,.42)}@media(min-width:721px) and (max-height:800px){body[data-template=puzzle] .game-overlay{width:min(420px,calc(100% - 24px));max-height:calc(100vh - 20px);padding:13px 16px;overflow:auto}body[data-template=puzzle] .game-overlay h2{margin:8px 0 5px;font-size:22px;line-height:1.16}body[data-template=puzzle] .game-overlay>p{margin:0;font-size:10px;line-height:1.35}body[data-template=puzzle] .campaign-setup{margin:7px 0 5px}body[data-template=puzzle] .campaign-field select{min-height:38px}body[data-template=puzzle] .campaign-progress{margin-top:4px}body[data-template=puzzle] .mastery-card{gap:3px;margin:4px 0 5px;padding:7px 9px}body[data-template=puzzle] .mastery-card ul,body[data-template=puzzle] .mastery-card small{display:none}body[data-template=puzzle] .puzzle-setup{margin:5px 0 6px}body[data-template=puzzle] .puzzle-field select{min-height:38px}body[data-template=puzzle] .puzzle-mode-setup button{min-height:42px;padding:4px 6px}body[data-template=puzzle] .puzzle-rotation{min-height:30px}body[data-template=puzzle] .rule-note{display:none}body[data-template=puzzle] .game-overlay .setup-upload{margin-top:3px}body[data-template=puzzle] .upload-button,body[data-template=puzzle] .setup-actions .secondary,body[data-template=puzzle] .game-overlay>.primary{min-height:40px;height:40px}body[data-template=puzzle] .setup-actions{margin-top:4px}}@media(max-width:720px){body[data-template=puzzle][data-game-state=playing] .game-controls{right:max(8px,env(safe-area-inset-right));bottom:max(8px,env(safe-area-inset-bottom));left:max(8px,env(safe-area-inset-left));padding:5px;background:rgba(255,252,248,.86)}body[data-template=puzzle][data-game-state=playing] .puzzle-tools{grid-template-columns:repeat(4,minmax(44px,1fr));gap:4px}body[data-template=puzzle][data-game-state=playing] .puzzle-tools .control-button{min-height:40px;height:40px;padding:0 4px;font-size:10px}body[data-template=puzzle][data-game-state=paused] .game-panel{position:absolute;z-index:6;inset:0;display:block;pointer-events:none}body[data-template=puzzle][data-game-state=paused] .game-controls{position:absolute;right:max(10px,env(safe-area-inset-right));bottom:max(10px,env(safe-area-inset-bottom));left:auto;width:68px;padding:0;border:0;background:transparent;pointer-events:auto}body[data-template=puzzle][data-game-state=paused] .game-controls>*:not(.touch-controls),body[data-template=puzzle][data-game-state=paused] .touch-controls>*:not([data-control=pause]){display:none}body[data-template=puzzle][data-game-state=paused] [data-control=pause]{display:block;width:68px;height:48px;min-height:48px;border-radius:999px;background:rgba(255,252,248,.96);color:#473d38;font-weight:800}}@media(max-width:420px){.puzzle-mode-setup button{min-height:46px;padding:5px}.puzzle-mode-setup button span{font-size:8px}.puzzle-rotation{font-size:9px}}`;
 
@@ -1373,7 +1928,7 @@ const stageCRealtimeStyles = `body[data-template=space-shooter]{--theme-bg:#0715
 const stageDTemplateStyles = `.tetris-setup,.breakout-mode-setup{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px;margin:10px 0 14px}.tetris-setup button,.breakout-mode-setup button{min-height:44px;border:1px solid var(--theme-line);border-radius:calc(var(--theme-radius)*.6);background:var(--theme-panel);color:var(--theme-text);font:700 11px/1 Inter,"Microsoft YaHei",sans-serif;cursor:pointer}.tetris-setup button.is-selected,.tetris-setup button[aria-pressed=true],.breakout-mode-setup button.is-selected,.breakout-mode-setup button[aria-pressed=true]{border-color:var(--theme-accent);background:color-mix(in srgb,var(--theme-accent) 16%,var(--theme-panel));color:var(--theme-accent)}.tetris-setup button:focus-visible,.breakout-mode-setup button:focus-visible{outline:2px solid var(--theme-accent);outline-offset:2px}`;
 
 const mobilePlayFlowStyles = `.setup-actions{display:grid;grid-template-columns:1fr;gap:7px;margin-top:8px}.setup-actions .secondary{width:100%;min-height:44px}.game-overlay .setup-upload{margin:9px 0 0;padding:0;border:0;background:transparent}.game-overlay .setup-upload .upload-name{text-align:center}.return-to-setup{min-height:44px}
-@media(max-width:720px){body{display:grid;width:100%;height:100svh;min-height:100svh;overflow:hidden;place-items:center;background-attachment:scroll}body[data-visual-style] .template-shell{width:100vw;height:100svh;min-height:0;padding:0;gap:0;grid-template-rows:1fr}body[data-visual-style] .template-workspace{position:relative;display:block;width:100%;height:100%;min-height:0}body[data-visual-style] .canvas-frame{display:grid;width:100%;height:100%;min-height:0;padding:0;border:0;border-radius:0;place-items:center;line-height:0}body[data-visual-style] .game-canvas{display:block;width:min(100vw,56.25svh);height:auto;max-height:100svh;margin:0;border-radius:0;aspect-ratio:9/16}body[data-visual-style] .game-overlay{top:50%;width:min(390px,calc(100% - 24px));max-height:calc(100svh - 24px);padding:18px;overflow:auto;line-height:normal;overscroll-behavior:contain}body[data-visual-style] .game-overlay h2{margin-top:18px;font-size:clamp(25px,7vw,31px)}body[data-visual-style] .game-overlay p{font-size:12px}body[data-visual-style] .game-panel{display:none}body[data-game-state=playing][data-visual-style] .game-panel{position:absolute;z-index:6;inset:0;display:block;width:100%;height:100%;padding:0;background:transparent;pointer-events:none}body[data-game-state=playing] .game-panel>*{pointer-events:auto}body[data-game-state=playing] .game-status{position:absolute;top:max(8px,env(safe-area-inset-top));right:max(8px,env(safe-area-inset-right));left:auto;width:140px;min-height:44px;padding:7px 10px;border:0;background:color-mix(in srgb,var(--theme-panel) 88%,transparent);box-shadow:none;backdrop-filter:blur(12px)}body[data-game-state=playing] .game-status .metric-label,body[data-game-state=playing] .game-status .objective,body[data-game-state=playing] .game-status .campaign-progress,body[data-game-state=playing] .game-status .status{display:none}body[data-game-state=playing] .metric-value{display:block;margin:0;font-size:18px;line-height:30px;text-align:center}body[data-game-state=playing] .game-controls{position:absolute;right:max(8px,env(safe-area-inset-right));bottom:max(8px,env(safe-area-inset-bottom));left:max(8px,env(safe-area-inset-left));padding:6px;border:0;background:color-mix(in srgb,var(--theme-panel) 86%,transparent);box-shadow:none;backdrop-filter:blur(12px)}body[data-game-state=playing] .game-controls>.metric-label{display:none}body[data-game-state=playing] .touch-controls{grid-template-columns:repeat(4,minmax(44px,1fr));gap:5px}body[data-game-state=playing] .touch-controls.maze-pad{width:min(100%,220px);margin-left:auto;grid-template-columns:repeat(3,minmax(44px,1fr));grid-template-rows:repeat(2,44px)}body[data-game-state=playing] .control-button{min-height:44px}body[data-game-state=playing] .game-help,body[data-game-state=playing] .proof-note{display:none}body[data-game-state=playing] .panel-actions{position:absolute;z-index:2;top:max(8px,env(safe-area-inset-top));right:auto;bottom:auto;left:max(8px,env(safe-area-inset-left));display:flex;height:44px;align-items:flex-start;gap:5px;margin:0;pointer-events:auto}body[data-game-state=playing] .panel-actions .secondary{width:auto;min-width:44px;height:44px;min-height:44px;max-height:44px;padding:0 9px;background:color-mix(in srgb,var(--theme-panel) 88%,transparent);backdrop-filter:blur(12px)}body[data-game-state=playing] #sound-toggle{display:none}.proof-note{display:none}}
+@media(max-width:720px){body{display:grid;width:100%;height:100svh;min-height:100svh;overflow:hidden;place-items:center;background-attachment:scroll}body[data-visual-style] .template-shell{width:100vw;height:100svh;min-height:0;padding:0;gap:0;grid-template-rows:1fr}body[data-visual-style] .template-workspace{position:relative;display:block;width:100%;height:100%;min-height:0}body[data-visual-style] .canvas-frame{display:grid;width:100%;height:100%;min-height:0;padding:0;border:0;border-radius:0;place-items:center;line-height:0}body[data-visual-style] .game-canvas{display:block;width:min(100vw,56.25svh);height:auto;max-height:100svh;margin:0;border-radius:0;aspect-ratio:9/16}body[data-visual-style] .game-overlay{top:50%;width:min(390px,calc(100% - 24px));max-height:calc(100svh - 24px);padding:18px;overflow:auto;line-height:normal;overscroll-behavior:contain}body[data-visual-style] .game-overlay h2{margin-top:18px;font-size:clamp(25px,7vw,31px)}body[data-visual-style] .game-overlay p{font-size:12px}body[data-visual-style] .game-panel{display:none}body[data-game-state=playing][data-visual-style] .game-panel{position:absolute;z-index:6;inset:0;display:block;width:100%;height:100%;padding:0;background:transparent;pointer-events:none}body[data-game-state=playing] .game-panel>*{pointer-events:auto}body[data-game-state=playing] .game-status{position:absolute;top:max(8px,env(safe-area-inset-top));right:max(8px,env(safe-area-inset-right));left:auto;width:140px;min-height:44px;padding:7px 10px;border:0;background:color-mix(in srgb,var(--theme-panel) 88%,transparent);box-shadow:none;backdrop-filter:blur(12px)}body[data-game-state=playing] .game-status .metric-label,body[data-game-state=playing] .game-status .objective,body[data-game-state=playing] .game-status .campaign-progress,body[data-game-state=playing] .game-status .status{display:none}body[data-game-state=playing] .metric-value{display:block;margin:0;font-size:18px;line-height:30px;text-align:center}body[data-game-state=playing] .game-controls{position:absolute;right:max(8px,env(safe-area-inset-right));bottom:max(8px,env(safe-area-inset-bottom));left:max(8px,env(safe-area-inset-left));padding:6px;border:0;background:color-mix(in srgb,var(--theme-panel) 86%,transparent);box-shadow:none;backdrop-filter:blur(12px)}body[data-game-state=playing] .game-controls>.metric-label{display:none}body[data-game-state=playing] .touch-controls{grid-template-columns:repeat(4,minmax(44px,1fr));gap:5px}body[data-game-state=playing] .control-button{min-height:44px}body[data-game-state=playing] .game-help,body[data-game-state=playing] .proof-note{display:none}body[data-game-state=playing] .panel-actions{position:absolute;z-index:2;top:max(8px,env(safe-area-inset-top));right:auto;bottom:auto;left:max(8px,env(safe-area-inset-left));display:flex;height:44px;align-items:flex-start;gap:5px;margin:0;pointer-events:auto}body[data-game-state=playing] .panel-actions .secondary{width:auto;min-width:44px;height:44px;min-height:44px;max-height:44px;padding:0 9px;background:color-mix(in srgb,var(--theme-panel) 88%,transparent);backdrop-filter:blur(12px)}body[data-game-state=playing] #sound-toggle{display:none}.proof-note{display:none}}
 @media(max-width:360px){body[data-game-state=playing] .game-status{width:116px;padding-inline:7px}body[data-game-state=playing] .panel-actions .secondary{padding-inline:7px;font-size:11px}.game-overlay{width:calc(100% - 16px)!important;padding:14px!important}.campaign-setup,.puzzle-setup,.snake-setup{margin-block:8px}.game-overlay p{margin-bottom:10px!important}.game-overlay>.primary{position:sticky;z-index:3;bottom:0;width:100%;min-height:46px;box-shadow:0 -10px 24px color-mix(in srgb,var(--theme-panel) 82%,transparent)}}
 @media(prefers-reduced-motion:reduce){.game-panel,.game-overlay{scroll-behavior:auto}}`;
 
@@ -1385,11 +1940,11 @@ function gameAspectStyles(project: ProjectDetail) {
     ? `body[data-visual-style] .template-header{display:none}.template-shell{grid-template-rows:1fr}`
     : "";
   const portrait = project.spec.aspectRatio === "9:16"
-    ? `@media(max-width:720px){body{min-height:100svh;overflow-x:hidden;--mobile-ui-reserve:202px}body[data-template=puzzle],body[data-template=mahjong-roguelite]{--mobile-ui-reserve:190px}body[data-template=tetris],body[data-template=maze]{--mobile-ui-reserve:248px}body[data-template=snake]{--mobile-ui-reserve:286px}body[data-visual-style] .template-shell{width:100%;min-height:100svh;height:auto;padding:0;gap:0;grid-template-rows:auto}
+    ? `@media(max-width:720px){body{min-height:100svh;overflow-x:hidden;--mobile-ui-reserve:202px}body[data-template=puzzle],body[data-template=mahjong-roguelite]{--mobile-ui-reserve:190px}body[data-template=tetris],body[data-template=snake]{--mobile-ui-reserve:286px}body[data-visual-style] .template-shell{width:100%;min-height:100svh;height:auto;padding:0;gap:0;grid-template-rows:auto}
 body[data-visual-style] .template-header{display:none}
 body[data-visual-style] .template-workspace{position:relative;display:grid;grid-template-columns:minmax(0,1fr);grid-template-rows:auto auto;min-height:0;gap:0}body[data-visual-style] .canvas-frame{display:block;width:100%;height:auto;min-height:0;padding:0;border-radius:0;aspect-ratio:auto;line-height:0}body[data-visual-style] .game-canvas{display:block;width:min(100%,calc((100svh - var(--mobile-ui-reserve))*9/16));height:auto;max-height:none;margin-inline:auto;border-radius:0;aspect-ratio:9/16}
 .game-overlay{top:43%;width:calc(100% - 32px);padding:20px;line-height:normal}.game-overlay h2{margin-top:20px;font-size:27px}.game-overlay p{font-size:12px}
-body[data-visual-style] .game-panel{position:static;z-index:auto;display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:stretch;gap:7px;padding:8px max(8px,env(safe-area-inset-right)) max(8px,env(safe-area-inset-bottom)) max(8px,env(safe-area-inset-left));background:var(--theme-bg);pointer-events:auto}.game-panel>*{pointer-events:auto}.game-status{grid-column:1;padding:9px 11px}.game-status .objective{display:none}.metric-label{font-size:10px}.metric-value{display:inline-block;margin:5px 10px 0 0;font-size:24px}.status{display:inline;font-size:12px;line-height:1.4}.game-help{grid-column:1/-1;grid-row:3}.game-help-content .panel-block{padding:11px 12px}.game-controls{grid-column:1/-1;grid-row:2;padding:8px}.touch-controls{grid-template-columns:repeat(4,minmax(44px,1fr))}.touch-controls.maze-pad{grid-template-columns:repeat(3,minmax(44px,1fr));grid-template-rows:repeat(2,44px)}.touch-controls.maze-pad .control-button{min-height:44px}.control-button{min-height:44px}.panel-actions{position:static;grid-column:2;grid-row:1;display:flex;gap:6px;margin:0}.panel-actions .secondary{min-width:44px;min-height:44px;padding:0 9px}.proof-note{display:none}
+body[data-visual-style] .game-panel{position:static;z-index:auto;display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:stretch;gap:7px;padding:8px max(8px,env(safe-area-inset-right)) max(8px,env(safe-area-inset-bottom)) max(8px,env(safe-area-inset-left));background:var(--theme-bg);pointer-events:auto}.game-panel>*{pointer-events:auto}.game-status{grid-column:1;padding:9px 11px}.game-status .objective{display:none}.metric-label{font-size:10px}.metric-value{display:inline-block;margin:5px 10px 0 0;font-size:24px}.status{display:inline;font-size:12px;line-height:1.4}.game-help{grid-column:1/-1;grid-row:3}.game-help-content .panel-block{padding:11px 12px}.game-controls{grid-column:1/-1;grid-row:2;padding:8px}.touch-controls{grid-template-columns:repeat(4,minmax(44px,1fr))}.control-button{min-height:44px}.panel-actions{position:static;grid-column:2;grid-row:1;display:flex;gap:6px;margin:0}.panel-actions .secondary{min-width:44px;min-height:44px;padding:0 9px}.proof-note{display:none}
 }@media(max-width:420px){body[data-visual-style] .template-shell{padding:0;gap:0}body[data-visual-style] .template-workspace{gap:0}body[data-visual-style] .game-panel{gap:6px}.game-status{padding:8px 9px}.status{font-size:11px}.game-overlay{width:calc(100% - 22px);padding:17px}.game-overlay p{font-size:11px}.upload-button{font-size:10px}}@media(min-width:721px) and (max-width:860px){body[data-visual-style] .template-shell{width:100%;min-height:100svh;padding:18px}body[data-visual-style] .template-workspace{grid-template-columns:minmax(0,1fr) 286px;grid-template-rows:auto;align-items:start;gap:12px}.canvas-frame{min-height:0;padding:0}.game-canvas{width:min(100%,var(--game-viewport-width))}.game-panel{display:flex;flex-direction:column;gap:10px}.game-panel>.panel-block:first-child,.game-help,.proof-note{grid-column:auto}}`
     : "";
   const viewportWidth = `${Number((78 * width / height).toFixed(4))}vh`;
@@ -1403,7 +1958,7 @@ function templateHtml(project: ProjectDetail) {
   const canvasSize = canvasDimensions(project);
   const controlsInitiallyDisabled = " disabled";
   const controls = runtime.controls.map((control) => `<button class="control-button" type="button" data-control="${control.value}" aria-label="${control.ariaLabel}"${controlsInitiallyDisabled}>${control.label}</button>`).join("");
-  const controlsClass = project.spec.template === "maze" ? "touch-controls maze-pad" : project.spec.template === "puzzle" ? "touch-controls puzzle-tools" : "touch-controls";
+  const controlsClass = project.spec.template === "puzzle" ? "touch-controls puzzle-tools" : "touch-controls";
   const campaignLevels = createCampaignLevels(project.spec.template, project.spec.difficulty);
   const campaignAttribute = project.spec.template === "breakout" ? " data-breakout-level" : "";
   const campaignSetup = `<div class="campaign-setup"><label class="campaign-field"><span>渐进关卡</span><select data-campaign-level${campaignAttribute} aria-label="选择渐进关卡">${campaignLevels.map((level, index) => `<option value="${index}"${index > 0 ? " disabled" : ""}>${escapeHtml(level.label)}</option>`).join("")}</select></label><span class="campaign-progress" data-campaign-progress>第 1 / ${campaignLevels.length} 关 · ${escapeHtml(campaignLevels[0].tierLabel)} · ${escapeHtml(campaignLevels[0].ruleModifier)}</span></div>`;
@@ -1419,13 +1974,13 @@ function templateHtml(project: ProjectDetail) {
     ? `<span class="rule-note">${project.spec.difficulty === "relaxed" ? "轻松：吸附范围较大，参考底图更清晰。" : project.spec.difficulty === "challenging" ? "挑战：吸附范围更小，参考底图更淡。" : "标准：适中吸附范围和参考底图。"}开始后所有拼块会整理在画板四周；数量上限 50 块，设置只在启动页调整。</span>`
     : "";
   const snakeDifficultyOptions = [
-    { id: "relaxed", label: "轻松", short: "慢速 · 基础 8 分", detail: "慢速巡游 · 基础目标 8 分 · 越界会从另一侧回来" },
+    { id: "relaxed", label: "轻松", short: "慢速 · 可越界", detail: "慢速巡游 · 持续采集 · 越界会从另一侧回来" },
     { id: "standard", label: "标准", short: "适中 · 基础 12 分", detail: "适中速度 · 基础目标 12 分 · 每关按场型调整" },
     { id: "challenging", label: "挑战", short: "加速 · 基础 18 分", detail: "高速开局 · 基础目标 18 分 · 场型更密并随收集加速" },
   ];
   const activeSnakeDifficulty = snakeDifficultyOptions.find((option) => option.id === project.spec.difficulty) ?? snakeDifficultyOptions[1];
   const snakeSetup = project.spec.template === "snake"
-    ? `<div class="snake-setup"><div class="snake-difficulty" role="group" aria-label="选择青玉长游难度">${snakeDifficultyOptions.map((option) => `<button type="button" data-snake-difficulty="${option.id}" aria-pressed="${option.id === activeSnakeDifficulty.id}" class="${option.id === activeSnakeDifficulty.id ? "is-selected" : ""}"><strong>${option.label}</strong><span>${option.short}</span></button>`).join("")}</div><p class="snake-difficulty-note" data-snake-difficulty-note>${activeSnakeDifficulty.detail}</p><div class="snake-control-choice" role="group" aria-label="选择手机控制方式"><button type="button" data-snake-control-mode="swipe" class="is-selected" aria-pressed="true">滑动庭园</button><button type="button" data-snake-control-mode="buttons" aria-pressed="false">屏幕四键</button></div></div>`
+    ? `<div class="snake-setup"><div class="snake-difficulty" role="group" aria-label="选择青玉长游难度">${snakeDifficultyOptions.map((option) => `<button type="button" data-snake-difficulty="${option.id}" aria-pressed="${option.id === activeSnakeDifficulty.id}" class="${option.id === activeSnakeDifficulty.id ? "is-selected" : ""}"><strong>${option.label}</strong><span>${option.short}</span></button>`).join("")}</div><p class="snake-difficulty-note" data-snake-difficulty-note>${activeSnakeDifficulty.detail}</p><p class="snake-difficulty-note">鼠标指向或单指拖动，自由转向；方向键也可使用。</p></div>`
     : "";
   const tetrisSetup = project.spec.template === "tetris"
     ? `<div class="tetris-setup" role="group" aria-label="选择下落消行模式"><button type="button" data-tetris-mode="standard" class="is-selected" aria-pressed="true">旅程关卡</button><button type="button" data-tetris-mode="timed" aria-pressed="false">限时挑战</button><button type="button" data-tetris-mode="zen" aria-pressed="false">禅意练习</button></div>`
@@ -1438,9 +1993,6 @@ function templateHtml(project: ProjectDetail) {
     : "";
   const shooterLoadoutSetup = project.spec.template === "space-shooter"
     ? `<div class="shooter-loadout-setup" aria-label="选择星环战机"><button type="button" data-shooter-loadout="interceptor" class="is-selected" aria-pressed="true"><strong>逐光</strong><span>高速追随 · 快速射击</span></button><button type="button" data-shooter-loadout="bulwark" aria-pressed="false"><strong>岚盾</strong><span>额外能量 · 大范围脉冲</span></button><button type="button" data-shooter-loadout="lancer" aria-pressed="false"><strong>星矛</strong><span>双列聚焦 · 精英增伤</span></button></div>`
-    : "";
-  const mazeSetup = project.spec.template === "maze"
-    ? `<label class="setup-option"><input type="checkbox" data-maze-shortest>竞径星章（按最短路径评估）</label><div class="maze-control-choice" role="group" aria-label="选择手机控制方式"><button type="button" data-maze-control-mode="swipe" class="is-selected" aria-pressed="true">滑动迷庭</button><button type="button" data-maze-control-mode="buttons" aria-pressed="false">屏幕四键</button></div>`
     : "";
   const mahjongSetup = project.spec.template === "mahjong-roguelite"
     ? `<div class="secondary-setup"><label class="campaign-field"><span>旅程类型</span><select data-mahjong-mode aria-label="选择月港旅程类型"><option value="campaign">普通旅程</option><option value="daily">每日局</option><option value="seeded">种子局</option></select></label><label class="campaign-field"><span>种子</span><input type="text" data-mahjong-seed maxlength="24" value="MOON-PORT" aria-label="输入种子局种子" disabled></label></div>`
@@ -1458,12 +2010,10 @@ function templateHtml(project: ProjectDetail) {
   const editionLabel = project.spec.template === "snake"
     ? `PLAYABLE EDITION / <b data-snake-difficulty-label>${activeSnakeDifficulty.label}</b>`
     : `PLAYABLE EDITION / ${project.spec.difficulty.toUpperCase()}`;
-  return `<!doctype html><html lang="zh-CN"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#101615"><title>${escapeHtml(project.title)}</title><link rel="preload" as="image" href="./assets/cover.png"><link rel="preload" as="image" href="./assets/gameplay-atlas.png"><link rel="stylesheet" href="./styles.css"><script src="./app.js" defer></script></head><body data-template="${project.spec.template}" data-visual-style="${project.spec.visualStyle}" data-detail-level="${style.detailLevel}"><div class="style-ornament" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i></div><main class="template-shell"><header class="template-header"><div><span class="eyebrow">${runtime.eyebrow}</span><h1>${escapeHtml(project.title)}</h1><span class="style-mode">${style.label} · ${style.detailLabel} · ${style.layout}</span></div><p>${escapeHtml(project.spec.vision)}</p></header><div class="template-workspace"><section class="canvas-frame" aria-label="${runtime.label}可玩区域"><canvas class="game-canvas" id="game-canvas" width="${canvasSize.width}" height="${canvasSize.height}" tabindex="0" aria-describedby="status"></canvas><div class="game-overlay" id="game-overlay"><span>${editionLabel}</span><h2 id="overlay-title">${runtime.intro}</h2><p id="overlay-detail">${runtime.objective}</p>${campaignSetup}${masterySetup}${tetrisSetup}${breakoutModeSetup}${blockModeSetup}${shooterLoadoutSetup}${puzzleSetup}${puzzleRuleNote}${snakeSetup}${mazeSetup}${mahjongSetup}${upload}<div class="setup-actions"><button class="secondary" id="sound-toggle" type="button" aria-pressed="true">声音开启</button></div><button class="primary" id="start" type="button">开始游戏</button></div></section><aside class="game-panel"><div class="panel-block game-status"><span class="metric-label">${runtime.primaryMetric}</span><strong class="metric-value" id="metric-value">—</strong><p class="status" id="status" aria-live="polite">准备开始。</p><p class="objective">${runtime.objective}</p><span class="campaign-progress" data-campaign-progress>第 1 / ${campaignLevels.length} 关</span></div>${breakoutSettings}${controls ? `<div class="panel-block game-controls"><span class="metric-label">${project.spec.template === "maze" ? "滑动迷宫或使用方向键" : "触控与键盘"}</span><div class="${controlsClass}">${controls}</div></div>` : ""}${gameHelp}<div class="panel-actions"><button class="secondary return-to-setup" id="back-to-setup" type="button" aria-label="返回启动设置">返回</button><button class="secondary" id="restart" type="button">重开</button></div><p class="proof-note">COMMERCIAL GAMEPLAY CONTRACT · 20 LEVELS · 3-STAR MASTERY · KEYBOARD + TOUCH</p></aside></div></main></body></html>`;
+  return `<!doctype html><html lang="zh-CN"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#101615"><title>${escapeHtml(project.title)}</title><link rel="preload" as="image" href="./assets/cover.png"><link rel="preload" as="image" href="./assets/gameplay-atlas.png"><link rel="stylesheet" href="./styles.css"><script src="./app.js" defer></script></head><body data-template="${project.spec.template}" data-visual-style="${project.spec.visualStyle}" data-detail-level="${style.detailLevel}"><div class="style-ornament" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i></div><main class="template-shell"><header class="template-header"><div><span class="eyebrow">${runtime.eyebrow}</span><h1>${escapeHtml(project.title)}</h1><span class="style-mode">${style.label} · ${style.detailLabel} · ${style.layout}</span></div><p>${escapeHtml(project.spec.vision)}</p></header><div class="template-workspace"><section class="canvas-frame" aria-label="${runtime.label}可玩区域"><canvas class="game-canvas" id="game-canvas" width="${canvasSize.width}" height="${canvasSize.height}" tabindex="0" aria-describedby="status"></canvas><div class="game-overlay" id="game-overlay"><span>${editionLabel}</span><h2 id="overlay-title">${runtime.intro}</h2><p id="overlay-detail">${runtime.objective}</p>${campaignSetup}${masterySetup}${tetrisSetup}${breakoutModeSetup}${blockModeSetup}${shooterLoadoutSetup}${puzzleSetup}${puzzleRuleNote}${snakeSetup}${mahjongSetup}${upload}<div class="setup-actions"><button class="secondary" id="sound-toggle" type="button" aria-pressed="true">声音开启</button></div><button class="primary" id="start" type="button">开始游戏</button></div></section><aside class="game-panel"><div class="panel-block game-status"><span class="metric-label">${runtime.primaryMetric}</span><strong class="metric-value" id="metric-value">—</strong><p class="status" id="status" aria-live="polite">准备开始。</p><p class="objective">${runtime.objective}</p><span class="campaign-progress" data-campaign-progress>第 1 / ${campaignLevels.length} 关</span></div>${breakoutSettings}${controls ? `<div class="panel-block game-controls"><span class="metric-label">${"触控与键盘"}</span><div class="${controlsClass}">${controls}</div></div>` : ""}${gameHelp}<div class="panel-actions"><button class="secondary return-to-setup" id="back-to-setup" type="button" aria-label="返回启动设置">返回</button><button class="secondary" id="restart" type="button">重开</button></div><p class="proof-note">COMMERCIAL GAMEPLAY CONTRACT · 20 LEVELS · 3-STAR MASTERY · KEYBOARD + TOUCH</p></aside></div></main></body></html>`;
 }
 
-const mazeControlModeStyles = `.maze-control-choice{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px;margin-top:9px}.maze-control-choice button{min-height:44px;border:1px solid var(--theme-line);border-radius:12px;background:rgba(255,255,255,.56);color:var(--theme-text);font:700 11px/1 Inter,"Microsoft YaHei",sans-serif;cursor:pointer}.maze-control-choice button.is-selected,.maze-control-choice button[aria-pressed=true]{border-color:var(--theme-accent);background:color-mix(in srgb,var(--theme-accent) 13%,white);color:#5f6b36;box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--theme-accent) 28%,transparent)}.maze-control-choice button:focus-visible{outline:2px solid var(--theme-accent);outline-offset:2px}.maze-pad{grid-template-rows:repeat(3,52px)}.maze-pad [data-control=hint]{grid-column:1/3;grid-row:3}.maze-pad [data-control=pause]{grid-column:3;grid-row:3}@media(max-width:720px){body[data-template=maze][data-game-state=playing] .game-status{width:118px}body[data-template=maze][data-maze-control-mode=swipe][data-game-state=playing] .game-controls{right:max(12px,env(safe-area-inset-right));bottom:max(12px,env(safe-area-inset-bottom));left:auto;width:126px;padding:0;background:transparent;backdrop-filter:none}body[data-template=maze][data-maze-control-mode=swipe][data-game-state=playing] .touch-controls{display:grid;width:126px;grid-template-columns:repeat(2,58px);grid-template-rows:58px;gap:8px}body[data-template=maze][data-maze-control-mode=swipe][data-game-state=playing] [data-control=up],body[data-template=maze][data-maze-control-mode=swipe][data-game-state=playing] [data-control=right],body[data-template=maze][data-maze-control-mode=swipe][data-game-state=playing] [data-control=down],body[data-template=maze][data-maze-control-mode=swipe][data-game-state=playing] [data-control=left]{display:none}body[data-template=maze][data-maze-control-mode=swipe][data-game-state=playing] [data-control=hint],body[data-template=maze][data-maze-control-mode=swipe][data-game-state=playing] [data-control=pause]{display:block;grid-column:auto;grid-row:auto;width:58px;height:58px;min-height:58px;border:1px solid rgba(88,119,73,.34);border-radius:50%;background:rgba(250,255,247,.92);color:#39523c;box-shadow:0 8px 24px rgba(42,76,53,.18);font-size:10px;font-weight:800}body[data-template=maze][data-maze-control-mode=buttons][data-game-state=playing] .touch-controls.maze-pad{grid-template-rows:repeat(3,44px)}body[data-template=maze][data-game-state=paused] .game-panel{position:absolute;z-index:6;inset:0;display:block;pointer-events:none}body[data-template=maze][data-game-state=paused] .game-controls{position:absolute;right:max(12px,env(safe-area-inset-right));bottom:max(12px,env(safe-area-inset-bottom));left:auto;width:68px;padding:0;border:0;background:transparent;pointer-events:auto}body[data-template=maze][data-game-state=paused] .game-controls>*:not(.touch-controls),body[data-template=maze][data-game-state=paused] .touch-controls>*:not([data-control=pause]){display:none}body[data-template=maze][data-game-state=paused] [data-control=pause]{display:block;grid-column:auto;grid-row:auto;width:68px;height:48px;min-height:48px;border-radius:999px;background:rgba(250,255,247,.96);color:#39523c;font-weight:800}}`;
 
-const mazeFullScreenStyles = `@media(max-width:720px){body[data-template=maze]{display:grid;width:100%;height:100svh;min-height:100svh;overflow:hidden;place-items:center}body[data-template=maze][data-visual-style] .template-shell{width:100vw;height:100svh;min-height:0;padding:0;gap:0;grid-template-rows:1fr}body[data-template=maze][data-visual-style] .template-workspace{position:relative;display:block;width:100%;height:100%;min-height:0}body[data-template=maze][data-visual-style] .canvas-frame{display:grid;width:100%;height:100%;min-height:0;padding:0;border:0;border-radius:0;place-items:center;line-height:0}body[data-template=maze][data-visual-style] .game-canvas{display:block;width:min(100vw,56.25svh);height:auto;max-height:100svh;margin:0;border-radius:0;aspect-ratio:9/16}body[data-template=maze][data-visual-style] .game-panel{display:none}body[data-template=maze][data-game-state=playing][data-visual-style] .game-panel,body[data-template=maze][data-game-state=paused][data-visual-style] .game-panel{position:absolute;z-index:6;inset:0;display:block;width:100%;height:100%;padding:0;background:transparent;pointer-events:none}body[data-template=maze] .panel-actions{position:absolute;z-index:2;top:max(8px,env(safe-area-inset-top));left:max(8px,env(safe-area-inset-left));display:flex;height:44px;gap:5px;margin:0;pointer-events:auto}body[data-template=maze] .panel-actions .secondary{width:auto;min-width:44px;height:44px;min-height:44px;padding:0 9px;background:color-mix(in srgb,var(--theme-panel) 88%,transparent);backdrop-filter:blur(12px)}body[data-template=maze][data-game-state=playing] .game-status{position:absolute;top:max(8px,env(safe-area-inset-top));right:max(8px,env(safe-area-inset-right));left:auto;display:flex;align-items:center;justify-content:center;gap:6px;min-height:44px;padding:7px 12px;border:0;background:color-mix(in srgb,var(--theme-panel) 88%,transparent);backdrop-filter:blur(12px)}body[data-template=maze][data-game-state=playing] .game-status .objective,body[data-template=maze][data-game-state=playing] .game-status .campaign-progress,body[data-template=maze][data-game-state=playing] .game-status .status{display:none}body[data-template=maze][data-game-state=playing] .game-status .metric-label{display:block;font-size:9px;letter-spacing:.12em}body[data-template=maze][data-game-state=playing] .metric-value{display:block;margin:0;font-size:18px;line-height:30px;text-align:center}body[data-template=maze] .game-help,body[data-template=maze] .proof-note{display:none}}`;
 
 function writeTemplateArtifact(root: string, project: ProjectDetail) {
   const runtime = getRuntimeDefinition(project.spec.template);
@@ -1474,7 +2024,8 @@ function writeTemplateArtifact(root: string, project: ProjectDetail) {
     '<link rel="preload" as="image" href="./assets/background.png"><link rel="preload" as="image" href="./assets/sprites/sprite-01.png"><link rel="preload" as="image" href="./assets/sprites/sprite-02.png">',
   );
   writeFileSync(join(root, "index.html"), html, "utf8");
-  writeFileSync(join(root, "styles.css"), `${touchSafeTemplateStyles}${campaignTemplateStyles}${stageBTemplateStyles}${stageCRealtimeStyles}${stageDTemplateStyles}${gameAspectStyles(project)}${snakeEnhancementStyles}${mahjongEnhancementStyles}${mobilePlayFlowStyles}${klotskiEnhancementStyles}${merge2048EnhancementStyles}${blockPlaceEnhancementStyles}${blockPlaceFinalPolishStyles}${snakeControlModeStyles}${mazeControlModeStyles}${mazeFullScreenStyles}${puzzleEnhancementStyles}${puzzleDesktopTouchTargetStyles}${regionLogicEnhancementStyles}${tetrisHelpStyles}`, "utf8");
+  writeFileSync(join(root, "styles.css"), `${touchSafeTemplateStyles}${campaignTemplateStyles}${failureAssistanceStyles}${stageBTemplateStyles}${stageCRealtimeStyles}${stageDTemplateStyles}${gameAspectStyles(project)}${snakeEnhancementStyles}${mahjongEnhancementStyles}${mobilePlayFlowStyles}${klotskiEnhancementStyles}${merge2048EnhancementStyles}${blockPlaceEnhancementStyles}${blockPlaceFinalPolishStyles}${snakeControlModeStyles}${puzzleEnhancementStyles}${puzzleDesktopTouchTargetStyles}${regionLogicEnhancementStyles}${tetrisHelpStyles}${onboardingRuntimeStyles}.onboarding-actions button{min-height:44px}`, "utf8");
+  appendFileSync(join(root, "styles.css"), victoryPresentationStyles, "utf8");
   writeFileSync(join(root, "app.js"), `${templateScript(project)}${gameTelemetryScript(project)}`, "utf8");
   writeFileSync(join(root, "game-manifest.json"), JSON.stringify({
     title: project.title,
@@ -1486,6 +2037,8 @@ function writeTemplateArtifact(root: string, project: ProjectDetail) {
     cameraMode: project.spec.cameraMode,
     inputModes: project.spec.inputModes,
     designProfile: project.spec.designProfile,
+    onboardingPlan: project.spec.designContract ? createOnboardingRuntimePlan(project.spec.designContract) : null,
+    assistancePlan: project.spec.designContract?.assistance ?? null,
     levelProgression: project.spec.levelProgression,
     templateSource: project.spec.templateSource,
     generatedAt: new Date().toISOString(),
@@ -1574,6 +2127,7 @@ function threeGameHtml(project: ProjectDetail) {
 
 function threeGameScript(project: ProjectDetail) {
   const duration = project.spec.difficulty === "relaxed" ? 150 : project.spec.difficulty === "challenging" ? 75 : 105;
+  const onboardingPlan = project.spec.designContract ? createOnboardingRuntimePlan(project.spec.designContract) : null;
   const config = safeJson({
     title: project.title,
     visualStyle: project.spec.visualStyle,
@@ -1585,16 +2139,27 @@ function threeGameScript(project: ProjectDetail) {
     campaignLevels: createThreeCampaignLevels(project),
     campaignStorageKey: `forge-campaign:${project.id}:${project.version.id}`,
     collectorSessionStorageKey: `forge-collector-session:${project.id}:${project.version.id}`,
+    onboardingStorageKey: `forge-onboarding:${project.id}:${project.version.id}`,
+    onboardingPlan,
+    assistanceStorageKey: `forge-assistance:${project.id}:${project.version.id}`,
+    assistancePlan: project.spec.designContract?.assistance ?? null,
     mode: project.spec.threeMode ?? "collector",
     contract: project.spec.threeContract,
     collectorBlueprints: project.spec.threeMode === "collector" ? collectorBestTemplateBlueprints : [],
+    curatedModels: project.spec.threeMode === "collector" ? [
+      { id: "bridge-stone", path: "./assets/models/curated/bridge_stone.glb", x: -11, z: 10, height: 2.8 },
+      { id: "cactus-short", path: "./assets/models/curated/cactus_short.glb", x: 12, z: 5, height: 2.5 },
+      { id: "campfire-stones", path: "./assets/models/curated/campfire_stones.glb", x: 8, z: -10, height: 1.2 },
+    ] : [],
     arenaBlueprints: project.spec.threeMode === "arena" ? arenaBestTemplateBlueprints : [],
   });
   return `import * as THREE from "./vendor/three.module.js";
+import { GLTFLoader } from "./vendor/loaders/GLTFLoader.js";
 ${safeStorageShim}
 const config = ${config};
 document.body.dataset.gameState = "idle";
 document.body.dataset.cameraMode = config.cameraMode;
+${onboardingRuntimeSource(".three-shell")}
 const canvas = document.querySelector("#game-canvas");
 const startCard = document.querySelector("#start-card");
 const resultCard = document.querySelector("#result-card");
@@ -1602,6 +2167,7 @@ const arenaUpgradeCard = document.querySelector("#arena-upgrade");
 const arenaUpgradeOptions = document.querySelector("#arena-upgrade-options");
 const backToSetupButton = document.querySelector("#back-to-setup");
 const resultSetupButton = document.querySelector("#result-setup");
+${failureAssistanceRuntimeSource()}
 const pauseButton = document.createElement("button");
 pauseButton.type = "button";
 pauseButton.className = "three-back three-pause";
@@ -1629,6 +2195,7 @@ const styleProfiles = {
 };
 const style = styleProfiles[config.visualStyle] || styleProfiles.fashion;
 const textureLoader = new THREE.TextureLoader();
+const gltfLoader = new GLTFLoader();
 function loadTiledTexture(path, repeatX = 1, repeatY = 1) {
   const texture = textureLoader.load(path);
   texture.colorSpace = THREE.SRGBColorSpace;
@@ -1916,8 +2483,43 @@ checkpointMarkers.push(secondCheckpoint);
 const collectorCourse = new THREE.Group();
 collectorCourse.visible = config.mode === "collector";
 scene.add(collectorCourse);
+const collectorCuratedLayer = new THREE.Group();
+collectorCuratedLayer.name = "curated-low-poly-nature";
+collectorCuratedLayer.visible = config.mode === "collector";
+scene.add(collectorCuratedLayer);
+const curatedModelState = { requested: config.curatedModels.length, loaded: 0, failed: [], meshCount: 0 };
 const collectorHazards = [];
 let collectorRespawn = new THREE.Vector3(0, 0, 18);
+
+async function loadCollectorCuratedModels() {
+  if (config.mode !== "collector") return;
+  await Promise.all(config.curatedModels.map(async (model) => {
+    try {
+      const gltf = await gltfLoader.loadAsync(model.path);
+      const object = gltf.scene;
+      object.name = "curated-" + model.id;
+      const initialBox = new THREE.Box3().setFromObject(object);
+      const initialSize = initialBox.getSize(new THREE.Vector3());
+      const scale = model.height / Math.max(initialSize.y, initialSize.x, initialSize.z, .001);
+      object.scale.setScalar(scale);
+      object.updateMatrixWorld(true);
+      const scaledBox = new THREE.Box3().setFromObject(object);
+      object.position.set(model.x, -scaledBox.min.y, model.z);
+      object.traverse((node) => {
+        if (!node.isMesh) return;
+        node.castShadow = true;
+        node.receiveShadow = true;
+        node.userData.curatedResource = model.id;
+        curatedModelState.meshCount += 1;
+      });
+      collectorCuratedLayer.add(object);
+      curatedModelState.loaded += 1;
+    } catch (error) {
+      curatedModelState.failed.push({ id: model.id, message: error instanceof Error ? error.message : String(error) });
+    }
+  }));
+}
+void loadCollectorCuratedModels();
 
 function clearCollectorCourse() {
   obstacles.splice(0);
@@ -2154,6 +2756,11 @@ function resetGame(options = {}) {
   checkpointBeacon.intensity = 5;
   fragments.forEach((fragment, index) => { fragment.visible = config.mode === "collector" && index < requiredFragments; });
   if (config.mode === "arena") spawnWave(1); else clearEnemies();
+  startOnboarding();
+  if (config.mode === "arena" && onboardingIsActive()) {
+    const tutorialTarget = enemies.find((enemy) => enemy.visible);
+    if (tutorialTarget) { tutorialTarget.position.set(player.position.x, 0, player.position.z - 5); tutorialTarget.userData.speed = 0; tutorialTarget.userData.shotCooldown = 99; }
+  }
   gateMaterial.emissive.setHex(0x000000);
   gateEmblem.material.color.setHex(0xc3aaa0);
   gateLight.intensity = 0;
@@ -2217,6 +2824,8 @@ function recoverCollector(reason) {
 
 function updatePlayer(delta) {
   if (!state.running) return;
+  const previousX = player.position.x;
+  const previousZ = player.position.z;
   recoveryCooldown = Math.max(0, recoveryCooldown - delta);
   if (config.mode === "collector") {
     jumpBuffer = Math.max(0, jumpBuffer - delta);
@@ -2250,6 +2859,7 @@ function updatePlayer(delta) {
   else moveVelocity.x = 0;
   if (!blocked(player.position.x, nextZ)) player.position.z = nextZ;
   else moveVelocity.y = 0;
+  if (config.mode === "collector" && Math.hypot(player.position.x - previousX, player.position.z - previousZ) > .001) signalOnboarding("player-moved");
   if (x || z) playerSprite.material.rotation = Math.atan2(x, -z) * 0.08;
   if (config.mode === "collector" && recoveryCooldown <= 0 && player.position.y < .35) {
     const hazard = collectorHazards.find((item) => Math.hypot(player.position.x - item.x, player.position.z - item.z) < item.radius + .35);
@@ -2276,6 +2886,7 @@ function triggerAction() {
   scene.add(mesh);
   playerProjectiles.push({ mesh, direction, speed: 16, damage: arenaStats.damage, life: arenaStats.range / 16 + .2 });
   state.shotsFired += 1;
+  signalOnboarding("shot-fired");
   playSound("ui");
 }
 
@@ -2442,6 +3053,8 @@ function showResult(won) {
     masteryText = " 本关评价 " + "★".repeat(stars) + "☆".repeat(3 - stars) + "。";
   }
   setGameSessionState(won ? (finalWin ? "won" : "stage-complete") : "lost"); state.finished = true;
+  if (won) resetFailureAssistance();
+  else recordFailureAssistance(config.mode === "arena" ? (state.health <= 0 ? "生命归零，被敌人包围或弹幕命中" : "竞技场目标未完成") : (state.remaining <= 0 ? "探索时间耗尽，尚未抵达出口" : "探索目标未完成"));
   player.visible = false;
   clearCollectorSession();
   arenaUpgradeCard.hidden = true;
@@ -2499,11 +3112,13 @@ function animate(time) {
   if (renderSuspended) return;
   const delta = Math.min(Math.max(0, time - previousFrame) / 1000, 0.05);
   previousFrame = time;
-  updateCollectorCourse(time);
+  if (!onboardingIsActive()) updateCollectorCourse(time);
   updatePlayer(delta);
-  collectFragments(time);
-  updateArena(delta, time);
-  updateTimer(delta);
+  if (!onboardingIsActive()) {
+    collectFragments(time);
+    updateArena(delta, time);
+    updateTimer(delta);
+  }
   updateCamera(delta);
   renderer.render(scene, camera);
   state.renderCount += 1;
@@ -2560,8 +3175,12 @@ const gameDebugApi = {
     const arenaBlueprint = currentArenaBlueprint();
     const livingEnemies = enemies.filter((enemy) => enemy.visible);
     const arenaState = config.mode === "arena" ? { blueprintCount: config.arenaBlueprints.length, uniqueSignatures: new Set(config.arenaBlueprints.map((item) => JSON.stringify({ spawnRotation: item.spawnRotation, obstacles: item.obstacles, waves: item.waves }))).size, chapterCount: new Set(config.arenaBlueprints.map((item) => item.chapter)).size, blueprintId: arenaBlueprint?.id, blueprintName: arenaBlueprint?.name, obstacleCount: arenaBlueprint?.obstacles.length || 0, enemyTypes: [...new Set(livingEnemies.map((enemy) => enemy.userData.type))], wavePlan: arenaBlueprint?.waves[state.wave - 1], hasEliteWave: arenaBlueprint?.waves.some((wave) => wave.elite) || false, projectileModel: "visible-travel-hit", playerProjectileCount: playerProjectiles.length, enemyProjectileCount: enemyProjectiles.length, pendingUpgrade: !arenaUpgradeCard.hidden, selectedUpgrades: [...selectedUpgradeLabels], stats: { ...arenaStats } } : null;
-    return { ...state, player: { x: player.position.x, y: player.position.y, z: player.position.z }, campaign: { level: currentCampaignLevel(), maxUnlocked: campaignMaxUnlocked + 1, total: config.campaignLevels.length, mastery: { ...campaignMastery }, stars: Object.values(campaignMastery).reduce((sum, value) => sum + Number(value || 0), 0) }, requiredFragments, enemyCount: livingEnemies.length, contract: config.contract, arena: arenaState, runtime: config.mode === "collector" ? { tier: currentCampaignLevel().tier, checkpointTarget: blueprint?.checkpoints.length || 0, obstacleCount: blueprint?.obstacles.length || 0, hazardCount: blueprint?.hazards.length || 0, movingHazardCount: blueprint?.hazards.filter((item) => item.motion).length || 0, duration: activeDuration } : { tier: currentCampaignLevel().tier, enemyTypes: arenaState?.enemyTypes.length || 0, obstacleCount: arenaBlueprint?.obstacles.length || 0, waveEnemyCount: livingEnemies.length, duration: activeDuration }, collector: config.mode === "collector" ? { blueprintCount: config.collectorBlueprints.length, uniqueSignatures: new Set(config.collectorBlueprints.map((item) => JSON.stringify(item))).size, chapterCount: new Set(config.collectorBlueprints.map((item) => item.chapter)).size, blueprintId: blueprint?.id, blueprintName: blueprint?.name, checkpointTarget: blueprint?.checkpoints.length || 0, obstacleCount: blueprint?.obstacles.length || 0, hazardCount: blueprint?.hazards.length || 0, movingHazardCount: blueprint?.hazards.filter((item) => item.motion).length || 0, optionalCollectibles: true, sessionRestore: true, movementModel: "accelerated-camera-plane", collisionModel: "height-aware-capsule-proxy", jumpBufferSeconds: .14, coyoteSeconds: .12, respawn: { x: collectorRespawn.x, y: collectorRespawn.y, z: collectorRespawn.z } } : null };
+    return { ...state, player: { x: player.position.x, y: player.position.y, z: player.position.z }, onboarding: structuredClone(onboardingState), campaign: { level: currentCampaignLevel(), maxUnlocked: campaignMaxUnlocked + 1, total: config.campaignLevels.length, mastery: { ...campaignMastery }, stars: Object.values(campaignMastery).reduce((sum, value) => sum + Number(value || 0), 0) }, requiredFragments, enemyCount: livingEnemies.length, contract: config.contract, arena: arenaState, runtime: config.mode === "collector" ? { tier: currentCampaignLevel().tier, checkpointTarget: blueprint?.checkpoints.length || 0, obstacleCount: blueprint?.obstacles.length || 0, hazardCount: blueprint?.hazards.length || 0, movingHazardCount: blueprint?.hazards.filter((item) => item.motion).length || 0, duration: activeDuration } : { tier: currentCampaignLevel().tier, enemyTypes: arenaState?.enemyTypes.length || 0, obstacleCount: arenaBlueprint?.obstacles.length || 0, waveEnemyCount: livingEnemies.length, duration: activeDuration }, collector: config.mode === "collector" ? { blueprintCount: config.collectorBlueprints.length, uniqueSignatures: new Set(config.collectorBlueprints.map((item) => JSON.stringify(item))).size, chapterCount: new Set(config.collectorBlueprints.map((item) => item.chapter)).size, blueprintId: blueprint?.id, blueprintName: blueprint?.name, checkpointTarget: blueprint?.checkpoints.length || 0, obstacleCount: blueprint?.obstacles.length || 0, hazardCount: blueprint?.hazards.length || 0, movingHazardCount: blueprint?.hazards.filter((item) => item.motion).length || 0, optionalCollectibles: true, sessionRestore: true, movementModel: "accelerated-camera-plane", collisionModel: "height-aware-capsule-proxy", jumpBufferSeconds: .14, coyoteSeconds: .12, curatedModels: { ...curatedModelState, visibleObjects: collectorCuratedLayer.children.filter((child) => child.visible).length }, respawn: { x: collectorRespawn.x, y: collectorRespawn.y, z: collectorRespawn.z } } : null };
   },
+  getOnboarding: () => structuredClone(onboardingState),
+  getAssistance: getAssistanceState,
+  skipOnboarding,
+  replayOnboarding,
   collectAll() { fragments.forEach((fragment) => { fragment.visible = false; }); state.collected = requiredFragments; fragmentCount.firstChild.textContent = requiredFragments + " / "; gateMaterial.emissive.setHex(style.accent); gateEmblem.material.color.setHex(0xffffff); gateLight.intensity = 12; },
   moveToExit() { player.position.copy(exit.position); },
   reachCheckpoint() {
@@ -2601,7 +3220,8 @@ const gameDebugApi = {
   chooseUpgrade: chooseArenaUpgrade,
   attack: triggerAction,
   forceDamage(amount = 20) { damageCooldown = 0; damagePlayer(Number(amount), "伤害探针"); },
-  forceFail() { showResult(false); },
+  forceFail(cause = "验收触发的 3D 失败") { setGameSessionState("lost"); state.finished = true; player.visible = false; recordFailureAssistance(String(cause)); resultCard.hidden = false; document.querySelector("#result-title").textContent = "本次挑战未完成"; },
+  forceLose(cause = "验收触发的 3D 失败") { setGameSessionState("lost"); state.finished = true; player.visible = false; recordFailureAssistance(String(cause)); resultCard.hidden = false; document.querySelector("#result-title").textContent = "本次挑战未完成"; },
   suspend(value = true) { renderSuspended = Boolean(value); state.suspended = renderSuspended; if (!renderSuspended) previousFrame = performance.now(); },
   forceWin() { showResult(true); },
   restart: resetGame,
@@ -2611,24 +3231,38 @@ if (new URLSearchParams(location.search).has("probe")) window.__GAME_DEBUG__ = g
 `;
 }
 
+function writeThreeGltfRuntime(root: string) {
+  const sources = [threeGltfLoaderSource, threeBufferGeometryUtilsSource, threeSkeletonUtilsSource];
+  if (sources.some((source) => !existsSync(source))) throw new Error("Three.js GLTFLoader 本地运行时缺失，请先安装项目依赖。");
+  const modules = [
+    { source: threeGltfLoaderSource, target: join(root, "vendor", "loaders", "GLTFLoader.js") },
+    { source: threeBufferGeometryUtilsSource, target: join(root, "vendor", "utils", "BufferGeometryUtils.js") },
+    { source: threeSkeletonUtilsSource, target: join(root, "vendor", "utils", "SkeletonUtils.js") },
+  ];
+  for (const module of modules) {
+    mkdirSync(dirname(module.target), { recursive: true });
+    // examples/jsm 使用裸导入 `three`；交付物改为相对路径，保持完全离线且受 CSP 约束。
+    const source = readFileSync(module.source, "utf8").replaceAll("from 'three'", "from '../three.module.js'");
+    writeFileSync(module.target, source, "utf8");
+  }
+}
+
 function writeThreeArtifact(root: string, project: ProjectDetail) {
   if (!existsSync(threeModuleSource) || !existsSync(threeCoreSource)) throw new Error("Three.js 浏览器运行时缺失，请先安装项目依赖。");
-  if (project.spec.threeMode === "popup") {
-    // 第三种 3D 模式：纸境 · 立体书迷宫。复用同一套资源包、Three.js 本地运行时、遥测与提供源记录，渲染层与规则层独立。
-    writePaperPopupArtifact(root, project, { copySignalAssetPack, threeModuleSource, threeCoreSource, safeStorageShim, telemetryScript: gameTelemetryScript(project) });
-    return;
-  }
   copySignalAssetPack(root);
   if (project.spec.threeMode === "arena") copyThreeArenaAssetPack(root);
+  const curatedResources = project.spec.threeMode === "collector" ? applyQualifiedProjectResources(root, project) : null;
+  if (curatedResources) writeQualifiedResourceProvenance(root, curatedResources);
   mkdirSync(join(root, "vendor"), { recursive: true });
   copyFileSync(threeModuleSource, join(root, "vendor", "three.module.js"));
   copyFileSync(threeCoreSource, join(root, "vendor", "three.core.js"));
+  writeThreeGltfRuntime(root);
   const html = threeGameHtml(project).replace(
     '<link rel="preload" as="image" href="./assets/gameplay-atlas.png">',
     '<link rel="preload" as="image" href="./assets/sprites/sprite-02.png"><link rel="preload" as="image" href="./assets/sprites/sprite-03.png"><link rel="preload" as="image" href="./assets/sprites/sprite-04.png">',
   );
   writeFileSync(join(root, "index.html"), html, "utf8");
-  writeFileSync(join(root, "styles.css"), `${threeGameStyles}${threeCampaignStyles}${threeMasteryStyles}${threeMobilePlayFlowStyles}${threeArenaStyles}\n.three-controls [data-key=action]{grid-row:1;grid-column:3;background:color-mix(in srgb,var(--accent,#d6b968) 24%,#0d1618)}body:is([data-game-state=idle],[data-game-state=upgrade],[data-game-state=stage-complete],[data-game-state=won],[data-game-state=lost]) .three-bottom,body:is([data-game-state=idle],[data-game-state=upgrade],[data-game-state=stage-complete],[data-game-state=won],[data-game-state=lost]) .three-metrics{display:none}body[data-game-state=paused] .three-back{display:block}.three-pause{left:max(64px,calc(env(safe-area-inset-left) + 64px))!important}\n@media(max-width:720px){.three-controls{grid-template-columns:repeat(3,44px);grid-template-rows:repeat(2,44px)}body[data-game-state=playing] .three-objective,body[data-game-state=paused] .three-objective{max-width:calc(100% - 148px)}body[data-game-state=playing] .three-brand,body[data-game-state=paused] .three-brand{display:none}body[data-game-state=playing] .three-topbar,body[data-game-state=paused] .three-topbar{justify-content:flex-end;padding-left:0}}`, "utf8");
+  writeFileSync(join(root, "styles.css"), `${threeGameStyles}${threeCampaignStyles}${threeMasteryStyles}${threeMobilePlayFlowStyles}${threeArenaStyles}${failureAssistanceStyles}${onboardingRuntimeStyles}\n.three-shell>.onboarding-coach{z-index:15;top:max(72px,calc(env(safe-area-inset-top) + 72px));right:16px;bottom:auto;--theme-panel:rgba(12,20,22,.94);--theme-text:#eef4ed;--theme-muted:#b8c6c1;--theme-line:var(--line,#536468);--theme-accent:var(--accent,#d6b968);--theme-radius:14px;--theme-shadow:0 20px 54px #0009}.three-start .failure-assistance,.three-result .failure-assistance{--theme-accent:var(--accent,#d6b968);--theme-line:var(--line,#536468);--theme-panel:rgba(12,20,22,.94);--theme-text:#eef4ed;--theme-muted:#b8c6c1;--theme-soft:#8dc7ba;--theme-radius:14px}.three-controls [data-key=action]{grid-row:1;grid-column:3;background:color-mix(in srgb,var(--accent,#d6b968) 24%,#0d1618)}body:is([data-game-state=idle],[data-game-state=upgrade],[data-game-state=stage-complete],[data-game-state=won],[data-game-state=lost]) .three-bottom,body:is([data-game-state=idle],[data-game-state=upgrade],[data-game-state=stage-complete],[data-game-state=won],[data-game-state=lost]) .three-metrics{display:none}body[data-game-state=paused] .three-back{display:block}.three-pause{left:max(64px,calc(env(safe-area-inset-left) + 64px))!important}\n@media(max-width:720px){.three-shell>.onboarding-coach{top:max(60px,calc(env(safe-area-inset-top) + 60px));right:8px;width:calc(100% - 16px)}.three-controls{grid-template-columns:repeat(3,44px);grid-template-rows:repeat(2,44px)}body[data-game-state=playing] .three-objective,body[data-game-state=paused] .three-objective{max-width:calc(100% - 148px)}body[data-game-state=playing] .three-brand,body[data-game-state=paused] .three-brand{display:none}body[data-game-state=playing] .three-topbar,body[data-game-state=paused] .three-topbar{justify-content:flex-end;padding-left:0}}@media(max-width:720px) and (max-height:650px){.three-start{padding:13px 15px}.three-start h2{margin:6px 0;font-size:27px}.three-start>p{display:-webkit-box;margin-bottom:7px;overflow:hidden;font-size:10px;line-height:1.35;-webkit-box-orient:vertical;-webkit-line-clamp:2}.three-level-field{gap:3px;margin-bottom:4px}.three-level-field select{min-height:38px}.three-start [data-campaign-progress]{margin-bottom:6px}.three-start button{min-height:44px;padding:10px 18px}}`, "utf8");
   writeFileSync(join(root, "app.js"), `${threeGameScript(project)}${gameTelemetryScript(project)}`, "utf8");
   const provenanceRoot = join(root, "_studio");
   mkdirSync(provenanceRoot, { recursive: true });
@@ -2645,9 +3279,12 @@ function writeThreeArtifact(root: string, project: ProjectDetail) {
       { id: "ruin-kit", format: "procedural-three-geometry", use: "collision-landmarks", approximateTriangles: 960 },
       { id: "gate-or-arena-kit", format: "procedural-three-geometry", use: project.spec.threeMode === "arena" ? "wave-arena" : "checkpoint-and-exit", approximateTriangles: 420 },
     ],
-    glbAssets: [],
-    note: "本版本未伪造 GLB 来源；角色、敌人和环境使用明确登记的位图平面与 Three.js 程序化网格。",
-    files: trackedAssets.map((filename) => ({ filename: `assets/${filename}`, bytes: statSync(join(root, "assets", filename)).size, use: filename.includes(".wav") ? "audio" : filename.includes("sprite") || filename === "arena-player.png" || filename.startsWith("arena-enemy-") ? "role-bitmap" : "environment-texture" })),
+    glbAssets: curatedResources?.assets.map((asset) => ({ id: asset.runtimeRole, file: asset.target, bytes: asset.bytes, sha256: asset.sha256, source: asset.source })) ?? [],
+    note: curatedResources ? "收集模式使用经过许可和哈希校验的 GLB 场景件；规则碰撞仍由可复现的程序化体积负责。" : "本版本未伪造 GLB 来源；角色、敌人和环境使用明确登记的位图平面与 Three.js 程序化网格。",
+    files: [
+      ...trackedAssets.map((filename) => ({ filename: `assets/${filename}`, bytes: statSync(join(root, "assets", filename)).size, use: filename.includes(".wav") ? "audio" : filename.includes("sprite") || filename === "arena-player.png" || filename.startsWith("arena-enemy-") ? "role-bitmap" : "environment-texture" })),
+      ...(curatedResources?.assets.map((asset) => ({ filename: asset.target, bytes: asset.bytes, use: "curated-glb-scene-model" })) ?? []),
+    ],
   }, null, 2), "utf8");
   writeFileSync(join(root, "game-manifest.json"), JSON.stringify({
     title: project.title,
@@ -2662,6 +3299,8 @@ function writeThreeArtifact(root: string, project: ProjectDetail) {
     cameraMode: project.spec.cameraMode,
     inputModes: project.spec.inputModes,
     levelProgression: project.spec.levelProgression,
+    onboardingPlan: project.spec.designContract ? createOnboardingRuntimePlan(project.spec.designContract) : null,
+    assistancePlan: project.spec.designContract?.assistance ?? null,
     generatedAt: new Date().toISOString(),
     assetPack: "signal-studio",
     assetManifest: "./assets/asset-manifest.json",
@@ -2689,7 +3328,7 @@ export function writeGameArtifact(root: string, project: ProjectDetail) {
     '<link rel="preload" as="image" href="./assets/sprites/sprite-01.png">',
   );
   writeFileSync(join(root, "index.html"), html, "utf8");
-  writeFileSync(join(root, "styles.css"), `${gameStyles}${signalVisualStyles}${stageBSignalStyles}${signalMasteryStyles}${signalAspectStyles(project)}${signalMobilePlayFlowStyles}\n.arena{background-image:url("./assets/background.png")}`, "utf8");
+  writeFileSync(join(root, "styles.css"), `${gameStyles}${signalVisualStyles}${stageBSignalStyles}${signalMasteryStyles}${failureAssistanceStyles}${onboardingRuntimeStyles}${signalAspectStyles(project)}${signalMobilePlayFlowStyles}\n.arena{background-image:url("./assets/background.png")}`, "utf8");
   writeFileSync(join(root, "app.js"), `${gameScript(project)}${gameTelemetryScript(project)}`, "utf8");
   writeFileSync(
     join(root, "game-manifest.json"),
@@ -2702,6 +3341,8 @@ export function writeGameArtifact(root: string, project: ProjectDetail) {
       cameraMode: project.spec.cameraMode,
       inputModes: project.spec.inputModes,
       levelProgression: project.spec.levelProgression,
+      onboardingPlan: project.spec.designContract ? createOnboardingRuntimePlan(project.spec.designContract) : null,
+      assistancePlan: project.spec.designContract?.assistance ?? null,
       generatedAt: new Date().toISOString(),
       assetPack: "signal-studio",
       assetManifest: "./assets/asset-manifest.json",
@@ -2721,6 +3362,25 @@ function inspectAssets(root: string) {
   };
   const requiredRoles = ["cover", "gameplay-background", "music-track", "ambient-track", "ui-sfx", "legal-sfx", "illegal-sfx", "reward-sfx", "hit-sfx", "victory-sfx", "defeat-sfx"];
   const spriteAssets = manifest.assets?.filter((candidate) => candidate.role?.startsWith("sprite-")) ?? [];
+  const curatedManifestPath = join(root, "_studio", "CURATED_RESOURCES.json");
+  let curatedAssets = new Map<string, { bytes?: number; sha256?: string }>();
+  if (existsSync(curatedManifestPath)) {
+    try {
+      const curated = JSON.parse(readFileSync(curatedManifestPath, "utf8")) as { assets?: Array<{ target?: string; bytes?: number; sha256?: string }> };
+      curatedAssets = new Map((curated.assets ?? [])
+        .filter((asset): asset is { target: string; bytes?: number; sha256?: string } => typeof asset.target === "string")
+        .map((asset) => [asset.target.replaceAll("\\", "/").toLowerCase(), asset]));
+    } catch {
+      return false;
+    }
+  }
+  const matchesCuratedProvenance = (filename: string, absolutePath: string) => {
+    const entry = curatedAssets.get(`assets/${filename}`.replaceAll("\\", "/").toLowerCase());
+    if (!entry || typeof entry.bytes !== "number" || typeof entry.sha256 !== "string") return false;
+    const bytes = readFileSync(absolutePath);
+    const hash = createHash("sha256").update(bytes).digest("hex").toUpperCase();
+    return bytes.length === entry.bytes && hash === entry.sha256;
+  };
   const tracksComplete = Boolean(manifest.trackSystem?.music && manifest.trackSystem?.ambient && manifest.trackSystem?.ui && manifest.trackSystem?.gameplay?.length === 6);
   const requiredFilesComplete = requiredRoles.every((role) => {
     const asset = manifest.assets?.find((candidate) => candidate.role === role);
@@ -2732,7 +3392,7 @@ function inspectAssets(root: string) {
     const filename = asset.filename ? join(assetRoot, asset.filename) : "";
     return Boolean(filename)
       && existsSync(filename)
-      && statSync(filename).size > 1_000
+      && (statSync(filename).size > 1_000 || matchesCuratedProvenance(asset.filename!, filename))
       && asset.transparentBackground === true
       && Boolean(asset.targetSize && asset.safeCrop && asset.subjectRatio);
   });
@@ -2751,21 +3411,28 @@ export function inspectGameArtifact(root: string) {
     cameraMode?: ProjectDetail["spec"]["cameraMode"];
     inputModes?: ProjectDetail["spec"]["inputModes"];
     levelProgression?: ProjectDetail["spec"]["levelProgression"];
+    onboardingPlan?: { steps?: Array<{ id?: string; successSignal?: string }> } | null;
+    assistancePlan?: { hiddenAdaptation?: boolean; steps?: Array<{ afterFailures?: number; action?: string; message?: string; explicitToPlayer?: boolean }> } | null;
     threeMode?: ProjectDetail["spec"]["threeMode"];
   };
   const artFailures = inspectRasterAiArt(root, `${html}\n${styles}\n${script}`);
   const svgFailures = artFailures.filter((failure) => failure.includes("SVG"));
   const aiFailures = artFailures.filter((failure) => !failure.includes("SVG"));
-  if (manifest.runtimeTarget === "web-3d" && manifest.threeMode === "popup") {
-    // 纸境 · 立体书迷宫：探针随 PlayCanvas 运行时一起维护（src/server/playcanvas-popup-runtime.ts）。
-    return inspectPaperPopupArtifact(root, { html, script, styles, manifest, aiFailures, svgFailures, assetsOk: inspectAssets(root) });
-  }
   if (manifest.runtimeTarget === "web-3d") {
     const vendor = join(root, "vendor", "three.module.js");
     const vendorCore = join(root, "vendor", "three.core.js");
+    const gltfLoader = join(root, "vendor", "loaders", "GLTFLoader.js");
+    const gltfUtils = [join(root, "vendor", "utils", "BufferGeometryUtils.js"), join(root, "vendor", "utils", "SkeletonUtils.js")];
+    const collectorGlbReady = manifest.threeMode !== "collector" || (
+      existsSync(join(root, "_studio", "CURATED_RESOURCES.json"))
+      && ["bridge_stone.glb", "cactus_short.glb", "campfire_stones.glb"].every((file) => existsSync(join(root, "assets", "models", "curated", file)))
+      && script.includes("gltfLoader.loadAsync(model.path)")
+      && script.includes("collectorCuratedLayer.add(object)")
+    );
     const probes = [
       ["WebGL 2 首次加载", html.includes('id="game-canvas"') && html.includes('type="module"') && html.includes('id="start"')],
       ["Three.js 本地运行时", existsSync(vendor) && existsSync(vendorCore) && statSync(vendor).size > 100_000 && statSync(vendorCore).size > 100_000 && script.includes('from "./vendor/three.module.js"')],
+      ["本地 GLTF 模型运行时", existsSync(gltfLoader) && gltfUtils.every((file) => existsSync(file)) && script.includes('from "./vendor/loaders/GLTFLoader.js"') && collectorGlbReady],
       ["真实 3D 场景", script.includes("new THREE.WebGLRenderer") && script.includes("new THREE.PerspectiveCamera") && script.includes("new THREE.Scene")],
       ["角色拆分位图材质", script.includes("new THREE.TextureLoader") && script.includes("function loadSpriteTexture(index)") && script.includes("map: groundTexture") && script.includes("map: ruinTexture")],
       ["位图角色与收集物", script.includes("new THREE.SpriteMaterial") && script.includes("playerSprite") && script.includes("fragmentTexture") && script.includes("gateEmblem")],
@@ -2779,9 +3446,20 @@ export function inspectGameArtifact(root: string) {
       ["镜头与输入合同", Boolean(manifest.cameraMode) && Boolean(manifest.inputModes?.length) && script.includes("config.cameraMode")],
       ["统一运行状态", script.includes("function setGameSessionState(nextState)") && script.includes('document.body.dataset.gameState = nextState')],
       ["二十关渐进合同", Number(manifest.levelProgression?.levelCount) >= 20 && html.includes("data-campaign-level") && script.includes("config.campaignLevels")],
+      ["可执行新手教学", Boolean(manifest.onboardingPlan?.steps?.length)
+        && existsSync(join(root, "_studio", "ONBOARDING_PLAN.json"))
+        && script.includes("function signalOnboarding(signal)")
+        && manifest.onboardingPlan!.steps!.every(({ successSignal }) => Boolean(successSignal) && script.includes(`signalOnboarding("${successSignal}")`))],
+      ["可执行失败辅助", manifest.assistancePlan?.hiddenAdaptation === false
+        && Boolean(manifest.assistancePlan.steps?.length)
+        && existsSync(join(root, "_studio", "ASSISTANCE_PLAN.json"))
+        && script.includes("function recordFailureAssistance(cause)")
+        && script.includes("function resetFailureAssistance()")
+        && script.includes("getAssistance")],
       ["真实视听资产", inspectAssets(root)],
       ["视觉风格合同", Boolean(manifest.visualStyle) && html.includes(`data-visual-style="${manifest.visualStyle}"`) && script.includes("const styleProfiles") && script.includes("style.detail")],
       ["专业设计文档", existsSync(join(root, "_studio", "GAME_DESIGN.md"))
+        && existsSync(join(root, "_studio", "GAME_DESIGN_CONTRACT.json"))
         && existsSync(join(root, "_studio", "ART_REVIEW.md"))
         && readFileSync(join(root, "_studio", "GAME_DESIGN.md"), "utf8").includes("## 核心循环")
         && readFileSync(join(root, "_studio", "ART_REVIEW.md"), "utf8").includes("主体占据可用面积约 82%–94%")],
@@ -2799,13 +3477,23 @@ export function inspectGameArtifact(root: string) {
       ["首次加载", html.includes('id="start"') && html.includes('id="game-canvas"')],
       ["主要输入", script.includes("handleControl") && script.includes('addEventListener("click"')],
       ["模板核心规则", runtime.probeTokens.every((token) => script.includes(token))],
-      ["完成条件", script.includes("showResult(true") && (script.includes("showResult(false") || ["puzzle", "klotski", "maze", "polyomino-fit"].includes(runtime.id))],
+      ["完成条件", script.includes("showResult(true") && (script.includes("showResult(false") || ["puzzle", "klotski", "polyomino-fit"].includes(runtime.id))],
       ["重新开始", script.includes('restartButton.addEventListener("click", () => {') && script.includes('restartButton.textContent = "再次点击重开"')],
       ["响应式结构", styles.includes("@media(max-width:520px)")],
       ["目标画幅合同", Boolean(manifest.aspectRatio) && styles.includes("--game-aspect:") && script.includes("config.canvasWidth") && script.includes("config.canvasHeight")],
       ["镜头与输入合同", Boolean(manifest.cameraMode) && Boolean(manifest.inputModes?.length) && script.includes("config.cameraMode")],
       ["统一运行状态", script.includes("function setGameSessionState(nextState)") && script.includes('document.body.dataset.gameState = nextState')],
       ["二十关渐进合同", Number(manifest.levelProgression?.levelCount) >= 20 && html.includes("data-campaign-level") && script.includes("campaignScale")],
+      ["可执行新手教学", Boolean(manifest.onboardingPlan?.steps?.length)
+        && existsSync(join(root, "_studio", "ONBOARDING_PLAN.json"))
+        && script.includes("function signalOnboarding(signal)")
+        && manifest.onboardingPlan!.steps!.every(({ successSignal }) => Boolean(successSignal) && script.includes(`signalOnboarding("${successSignal}")`))],
+      ["可执行失败辅助", manifest.assistancePlan?.hiddenAdaptation === false
+        && Boolean(manifest.assistancePlan.steps?.length)
+        && existsSync(join(root, "_studio", "ASSISTANCE_PLAN.json"))
+        && script.includes("function recordFailureAssistance(cause)")
+        && script.includes('new CustomEvent("forge:assistance-shown"')
+        && styles.includes(".failure-assistance")],
       ["真实视听资产", inspectAssets(root)],
       ["角色拆分位图美术", script.includes("function drawBitmapSprite") && script.includes("const spriteImages = config.spriteFiles.map") && script.includes('backgroundArt.src = "./assets/background.png"')],
       ["个性化能力", runtime.id !== "puzzle" || html.includes('id="puzzle-upload"')],
@@ -2818,6 +3506,7 @@ export function inspectGameArtifact(root: string) {
         && script.includes("function finishCanvasStyle()")
         && runtime.script.includes("finishCanvasStyle();")],
       ["专业设计文档", existsSync(join(root, "_studio", "GAME_DESIGN.md"))
+        && existsSync(join(root, "_studio", "GAME_DESIGN_CONTRACT.json"))
         && existsSync(join(root, "_studio", "ART_REVIEW.md"))
         && readFileSync(join(root, "_studio", "GAME_DESIGN.md"), "utf8").includes("## 核心循环")
         && readFileSync(join(root, "_studio", "ART_REVIEW.md"), "utf8").includes("主体占据可用面积约 82%–94%")],
@@ -2839,10 +3528,21 @@ export function inspectGameArtifact(root: string) {
     ["镜头与输入合同", Boolean(manifest.cameraMode) && Boolean(manifest.inputModes?.length) && script.includes("config.cameraMode")],
     ["统一运行状态", script.includes("function setGameSessionState(nextState)") && script.includes('document.body.dataset.gameState = nextState')],
     ["二十关渐进合同", Number(manifest.levelProgression?.levelCount) >= 20 && html.includes("data-campaign-level") && script.includes("config.campaignLevels")],
+    ["可执行新手教学", Boolean(manifest.onboardingPlan?.steps?.length)
+      && existsSync(join(root, "_studio", "ONBOARDING_PLAN.json"))
+      && script.includes("function signalOnboarding(signal)")
+      && manifest.onboardingPlan!.steps!.every(({ successSignal }) => Boolean(successSignal) && script.includes(`signalOnboarding("${successSignal}")`))],
+    ["可执行失败辅助", manifest.assistancePlan?.hiddenAdaptation === false
+      && Boolean(manifest.assistancePlan.steps?.length)
+      && existsSync(join(root, "_studio", "ASSISTANCE_PLAN.json"))
+      && script.includes("function recordFailureAssistance(cause)")
+      && script.includes('new CustomEvent("forge:assistance-shown"')
+      && styles.includes(".failure-assistance")],
     ["真实视听资产", inspectAssets(root)],
     ["角色拆分位图美术", html.includes('href="./assets/sprites/sprite-01.png"') && styles.includes('background-image:url("./assets/sprites/sprite-01.png")')],
     ["视觉风格合同", Boolean(manifest.visualStyle) && html.includes(`data-visual-style="${manifest.visualStyle}"`) && styles.includes(`data-visual-style="${manifest.visualStyle}"`) && script.includes('visualStyle')],
     ["专业设计文档", existsSync(join(root, "_studio", "GAME_DESIGN.md"))
+      && existsSync(join(root, "_studio", "GAME_DESIGN_CONTRACT.json"))
       && existsSync(join(root, "_studio", "ART_REVIEW.md"))
       && readFileSync(join(root, "_studio", "GAME_DESIGN.md"), "utf8").includes("## 核心循环")
       && readFileSync(join(root, "_studio", "ART_REVIEW.md"), "utf8").includes("主体占据可用面积约 82%–94%")],
