@@ -25,6 +25,7 @@ import { createGameDesignContractForLegacyProject } from "../shared/game-design-
 import { readGeneratedSource } from "./generated-source.js";
 import { ArtifactValidationFailure, GenerationBudget } from "./generation-budget.js";
 import { readReusableGeneratedArt } from "./generated-art-reuse.js";
+import { blueprintSpriteFiles } from "../shared/generated-blueprint.js";
 import { readReusableRuleAudit, safeContractRules, sha256, writeRuleFidelity } from "./rule-audit-checkpoint.js";
 
 const variationRehearsalTemplates: readonly VariationRehearsalTemplate[] = ["signal-hunt", "tetris", "breakout", "snake", "space-shooter", "merge-2048", "klotski", "puzzle", "block-place", "polyomino-fit", "region-logic", "mahjong-roguelite"];
@@ -101,6 +102,13 @@ export class BuildOrchestrator {
     let sequence = 0;
     let passedProbes: string[] = [];
     let qualityChecks: QualityCheck[] = [];
+    // 图片先于代码生成；结果留给代码步骤写入溯源并在模板资源之后回写。
+    let artResult: {
+      cover: Buffer;
+      dynamicArt: DynamicArtEntry[];
+      reusedArt: ReturnType<typeof readReusableGeneratedArt>;
+      imageReceipts: Array<{ group: string; cacheHit: boolean; generatedAt: string }>;
+    } | null = null;
     try {
       // A second process may have queued the same receipt. Only the database
       // claim winner may call models or write artifacts; losers do not fail it.
@@ -133,31 +141,6 @@ export class BuildOrchestrator {
       });
       sequence += 1;
       await this.step(buildId, sequence, async () => {
-        if (project.spec.template === "generated") {
-          const experimental = await this.generateExperimentalGame(project, root, directions, detail =>
-            this.repository.reportStepProgress(buildId, sequence, detail).catch(error => {
-              // Reporting trouble must never be mistaken for defective code and trigger paid regeneration.
-              console.warn(`构建 ${buildId} 进度写入暂时失败：`, error);
-            }));
-          const modeNote = experimental.iterated
-            ? `基于上一版代码迭代修改（${directions.length} 条对话意见）`
-            : "全新生成";
-          const auditNote = experimental.audit
-            ? `；规则审计 ${experimental.audit.filter((verdict) => verdict.implemented).length}/${experimental.audit.length} 条经代码核对已实现${experimental.auditReusedFrom ? `（代码与规则未变，复用构建 ${experimental.auditReusedFrom} 的审核结果，本次未调用审核模型）` : ""}，逐条判定见 RULE_FIDELITY.json`
-            : "；规则审计本次不可用，未逐条核对（如实记录）";
-          const runtimeNote = project.spec.runtimeTarget === "web-3d" ? "基于本地 three.js 模块的 3D " : "";
-          return `页面公开：实验通道——已由 ${experimental.generation.model ?? '所选文本模型'} 按设计合同${modeNote}独有${runtimeNote}单文件代码（${experimental.generation.rounds} 轮生成，安全扫描通过，禁网络/禁外链/禁存储偷渡）；新手教学逐项接入真实玩法动作，教学期自动压力暂停${auditNote}。实现说明与哈希归档于 GENERATED_CODE.json。`;
-        }
-        writeGameArtifact(root, project);
-        const source = project.spec.templateSource;
-        const runtime = project.spec.runtimeTarget === "web-3d"
-          ? "已写入 Three.js WebGL 2 场景、第三人称移动、碰撞、收集目标、出口结算与移动端方向控制"
-          : `已按 ${project.spec.template} 模板写入独立玩法逻辑、移动端控制`;
-        return `页面公开：${runtime}、资源清单与视听资产。${source ? `代码来源：${source.sourceName} / ${source.license} / ${source.integrationMode}；没有复制上游视听资产。` : ""}`;
-      });
-      sequence += 1;
-      await this.step(buildId, sequence, async () => {
-        const style = visualStyleOptions.find((option) => option.id === project.spec.visualStyle)!;
         const resourcePlan = project.spec.resourcePlanning;
         if (resourcePlan) {
           const provenanceRoot = join(root, "_studio");
@@ -197,45 +180,89 @@ export class BuildOrchestrator {
         if (!cover) throw new Error("AI 封面生成失败，构建已中断；不会使用占位图替代。");
         const background = dynamicArt.find((entry) => entry.role === "局内背景" && entry.file === "assets/background.png");
         if (!background) throw new Error("AI 局内背景生成失败，构建已中断；不会使用程序图或 SVG 替代。");
+        // 确认方案声明的局内主体必须全部真实生成；缺图不能用程序化图形或占位图顶替。
+        const plannedSprites = blueprintSpriteFiles(project.spec.template === "generated" ? project.spec.designProfile.generatedBlueprint : null);
+        const missingSprites = plannedSprites.filter(file => !dynamicArt.some(entry => entry.file === file));
+        if (missingSprites.length) throw new Error(`确认方案要求的局内主体位图未全部生成（${missingSprites.join("、")}），构建已中断；不会用程序化图形或占位图替代。`);
+        mkdirSync(join(root, "assets"), { recursive: true });
         writeFileSync(join(root, "assets", "cover.png"), cover);
         for (const entry of dynamicArt) {
           const target = join(root, entry.file);
           mkdirSync(dirname(target), { recursive: true });
           writeFileSync(target, entry.bytes);
         }
+        artResult = { cover, dynamicArt, reusedArt, imageReceipts };
+        const planningSummary = resourcePlan ? `生成前已检索 ${resourcePlan.decisions.length} 个资源需求：${resourcePlan.summary.needsReview} 个候选待复核，${resourcePlan.summary.needsGeneration} 个需生成或补状态。` : "旧项目没有资源规划记录。";
+        return `页面公开：${reusedArt ? "图像要求未变，已复用同项目核验过的位图，本次未再次生图；" : ""}封面、局内背景${plannedSprites.length ? `与 ${plannedSprites.length} 张局内主体位图（${plannedSprites.join("、")}）` : ""}均由 ${this.options.coverArt.model ?? 'gpt-image-2'} 在代码生成之前完成并落盘；${planningSummary}后续代码只能加载并绘制这些位图，不得程序化自绘主体。`;
+      });
+      sequence += 1;
+      await this.step(buildId, sequence, async () => {
+        const art = artResult;
+        if (!art) throw new Error("资源步骤没有完成，未继续生成代码。");
+        const codeSummary = await (async (): Promise<string> => {
+          if (project.spec.template === "generated") {
+            const experimental = await this.generateExperimentalGame(project, root, directions, detail =>
+              this.repository.reportStepProgress(buildId, sequence, detail).catch(error => {
+                // Reporting trouble must never be mistaken for defective code and trigger paid regeneration.
+                console.warn(`构建 ${buildId} 进度写入暂时失败：`, error);
+              }));
+            const modeNote = experimental.iterated
+              ? `基于上一版代码迭代修改（${directions.length} 条对话意见）`
+              : "全新生成";
+            const auditNote = experimental.audit
+              ? `；规则审计 ${experimental.audit.filter((verdict) => verdict.implemented).length}/${experimental.audit.length} 条经代码核对已实现${experimental.auditReusedFrom ? `（代码与规则未变，复用构建 ${experimental.auditReusedFrom} 的审核结果，本次未调用审核模型）` : ""}，逐条判定见 RULE_FIDELITY.json`
+              : "；规则审计本次不可用，未逐条核对（如实记录）";
+            const runtimeNote = project.spec.runtimeTarget === "web-3d" ? "基于本地 three.js 模块的 3D " : "";
+            return `页面公开：实验通道——已由 ${experimental.generation.model ?? '所选文本模型'} 按设计合同${modeNote}独有${runtimeNote}单文件代码（${experimental.generation.rounds} 轮生成，安全扫描通过，禁网络/禁外链/禁存储偷渡）；新手教学逐项接入真实玩法动作，教学期自动压力暂停${auditNote}。实现说明与哈希归档于 GENERATED_CODE.json。`;
+          }
+          writeGameArtifact(root, project);
+          const source = project.spec.templateSource;
+          const runtime = project.spec.runtimeTarget === "web-3d"
+            ? "已写入 Three.js WebGL 2 场景、第三人称移动、碰撞、收集目标、出口结算与移动端方向控制"
+            : `已按 ${project.spec.template} 模板写入独立玩法逻辑、移动端控制`;
+          return `页面公开：${runtime}、资源清单与视听资产。${source ? `代码来源：${source.sourceName} / ${source.license} / ${source.integrationMode}；没有复制上游视听资产。` : ""}`;
+        })();
+        // 模板资源可能与 AI 位图同名：先写代码产物，再回写 AI 位图，保证最终游戏用的是 AI 美术。
+        mkdirSync(join(root, "assets"), { recursive: true });
+        writeFileSync(join(root, "assets", "cover.png"), art.cover);
+        for (const entry of art.dynamicArt) {
+          const target = join(root, entry.file);
+          mkdirSync(dirname(target), { recursive: true });
+          writeFileSync(target, entry.bytes);
+        }
+        const style = visualStyleOptions.find((option) => option.id === project.spec.visualStyle)!;
         // 黄金模板在 AI 位图落盘后覆盖已核验的运行时槽位，确保最终游戏实际使用精选资源。
         // 被覆盖的槽位必须从 AI 清单剔除，避免错误声明素材来源。
         const curatedResources = applyQualifiedProjectResources(root, project);
         const curatedTargets = new Set(curatedResources?.assets.map(({ target }) => target.replaceAll("\\", "/").toLowerCase()) ?? []);
-        const writtenDynamicArt = dynamicArt.filter(({ file }) => !curatedTargets.has(file.replaceAll("\\", "/").toLowerCase()));
+        const writtenDynamicArt = art.dynamicArt.filter(({ file }) => !curatedTargets.has(file.replaceAll("\\", "/").toLowerCase()));
         const provenanceRoot = join(root, "_studio");
         mkdirSync(provenanceRoot, { recursive: true });
-        if (imageReceipts.length) writeFileSync(join(provenanceRoot, "IMAGE_GENERATION_RECEIPTS.json"), JSON.stringify(imageReceipts, null, 2), "utf8");
+        if (art.imageReceipts.length) writeFileSync(join(provenanceRoot, "IMAGE_GENERATION_RECEIPTS.json"), JSON.stringify(art.imageReceipts, null, 2), "utf8");
         const entries = [
-          { file: "assets/cover.png", role: "封面", bytes: cover.length, prompt: coverPrompt(project) },
+          { file: "assets/cover.png", role: "封面", bytes: art.cover.length, prompt: coverPrompt(project) },
           ...writtenDynamicArt.map((entry) => ({ file: entry.file, role: entry.role, bytes: entry.bytes.length, prompt: entry.prompt })),
         ];
-        writeFileSync(join(provenanceRoot, "DYNAMIC_ART.json"), reusedArt ? reusedArt.provenanceJson : JSON.stringify({
+        writeFileSync(join(provenanceRoot, "DYNAMIC_ART.json"), art.reusedArt ? art.reusedArt.provenanceJson : JSON.stringify({
           schemaVersion: 2,
-          model: this.options.coverArt.model ?? "gpt-image-2",
-          generatedAt: imageReceipts.length ? imageReceipts.map(item => item.generatedAt).sort().at(-1) : new Date().toISOString(),
+          model: this.options.coverArt?.model ?? "gpt-image-2",
+          generatedAt: art.imageReceipts.length ? art.imageReceipts.map(item => item.generatedAt).sort().at(-1) : new Date().toISOString(),
           entries,
         }, null, 2), "utf8");
-        if (reusedArt) writeFileSync(join(provenanceRoot, "ART_REUSE.json"), JSON.stringify({ sourceBuildId: reusedArt.sourceBuildId, reusedAt: new Date().toISOString(), reason: "同项目模型、提示词、运行时和画幅一致；文件完整性复验通过；本次未调用生图模型" }, null, 2), "utf8");
+        if (art.reusedArt) writeFileSync(join(provenanceRoot, "ART_REUSE.json"), JSON.stringify({ sourceBuildId: art.reusedArt.sourceBuildId, reusedAt: new Date().toISOString(), reason: "同项目模型、提示词、运行时和画幅一致；文件完整性复验通过；本次未调用生图模型" }, null, 2), "utf8");
         if (curatedResources) writeQualifiedResourceProvenance(root, curatedResources);
         const visualSource = ["index.html", "styles.css", "app.js"]
           .map((file) => readFileSync(join(root, file), "utf8"))
           .join("\n");
         assertRasterAiArt(root, visualSource);
         const v11Project = writeV11BuildMetadata(root, project, { directions, previousRoot: join(this.artifactRoot, project.version.id) });
-        const planningSummary = resourcePlan ? `生成前已检索 ${resourcePlan.decisions.length} 个资源需求：${resourcePlan.summary.needsReview} 个候选待复核，${resourcePlan.summary.needsGeneration} 个需生成或补状态。` : "旧项目没有资源规划记录。";
         const curatedFamilies = curatedResources ? [...new Set(curatedResources.bindings.map(({ familyId }) => familyId))].join("、") : "";
         const curatedSummary = curatedResources ? `；${curatedResources.assets.length} 个运行时槽位使用 ${curatedFamilies} 精选资源，许可、哈希、需求与配方证据已归档` : "";
-        return `页面公开：${reusedArt ? "复用同项目已核验图像，本次未再次生图；" : ""}封面与${writtenDynamicArt.map((entry) => entry.role).join("、")}均由 ${this.options.coverArt.model ?? 'gpt-image-2'} 生成，提示词与来源已归档${curatedSummary}；${planningSummary}SVG 禁用门禁通过。${style.label}视觉系统已应用到页面编排、组件造型、字体层级、${style.detailLabel}、画布细节和反馈动效。1.1 工程清单已冻结（${v11Project.objects.length} 个对象、${v11Project.rules.length} 条规则）。`;
+        return `${codeSummary}${curatedSummary}；SVG 禁用门禁通过。${style.label}视觉系统已应用到页面编排、组件造型、字体层级、${style.detailLabel}、画布细节和反馈动效。1.1 工程清单已冻结（${v11Project.objects.length} 个对象、${v11Project.rules.length} 条规则）。`;
       });
       sequence += 1;
       await this.step(buildId, sequence, () => {
-        passedProbes = project.spec.template === "generated" ? inspectGeneratedArtifact(root, { expectedCampaign: project.spec.designProfile.generatedCampaign ?? null }) : inspectGameArtifact(root);
+        passedProbes = project.spec.template === "generated" ? inspectGeneratedArtifact(root, { expectedCampaign: project.spec.designProfile.generatedCampaign ?? null, expectedBlueprint: project.spec.designProfile.generatedBlueprint ?? null }) : inspectGameArtifact(root);
         qualityChecks = passedProbes.map((label, index) => ({
           id: `STATIC-${String(index + 1).padStart(2, "0")}`,
           label,
@@ -429,7 +456,7 @@ export class BuildOrchestrator {
       try {
         // 代码阶段只检查结构、运行时与 AI 背景接入声明；真实位图和溯源在下一资产阶段落盘后统一验收。
         await report(`第 ${round} 次制作：正在检查生成产物与运行契约`);
-        inspectGeneratedArtifact(root, { requireAiArt: false, expectedCampaign: project.spec.designProfile.generatedCampaign ?? null });
+        inspectGeneratedArtifact(root, { requireAiArt: false, expectedCampaign: project.spec.designProfile.generatedCampaign ?? null, expectedBlueprint: project.spec.designProfile.generatedBlueprint ?? null });
         if (this.options.browserAudit !== false) {
           await report(`第 ${round} 次制作：正在真实浏览器中检查操作、教学、关卡与结算`);
           await inspectGeneratedGameInBrowser(root, { expectedCampaign: project.spec.designProfile.generatedCampaign ?? null });

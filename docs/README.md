@@ -22,6 +22,7 @@
 - [平台游戏引擎层](58-engine-layer.md)
 - [换机与开发恢复](50-machine-transfer.md)
 - [托管、数据库与独立网址](07-hosting-and-delivery.md)
+- [知识蓝图、图先行与玩法深度](96-knowledge-blueprint-and-art-first.md)：生成游戏必须从机制图谱选机制、写清取舍，并在代码之前先生成局内美术位图。
 - [文本模型接入本机 Claude Code CLI](94-claude-cli-text-provider.md)：`STUDIO_TEXT_PROVIDER=claude-cli` 时策划、审核与代码生成走 CLI 订阅额度，图片仍用 OpenAI。
 - [本机后台服务](local-background-services.md)：Windows 下以隐藏 Node 进程启动 4311/4312/4313，重启前核对活动制作任务。
 - [PostgreSQL 发布并发验证](87-postgres-publication-concurrency.md)：`npm run test:publication-postgres` 的隔离真实数据库测试。

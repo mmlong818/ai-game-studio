@@ -255,8 +255,9 @@ type PlayActivityRow = {
 const buildPlan = [
   { kind: "analyze", title: "解析玩法合同", detail: "确认核心循环、硬约束与目标运行时。" },
   { kind: "document", title: "写入制作文档", detail: "生成玩法、美术与声音方向，作为后续步骤的公开依据。" },
-  { kind: "code", title: "生成可玩核心", detail: "写入独立 HTML、样式与游戏逻辑。" },
-  { kind: "asset", title: "集成视听资源", detail: "装配可追溯的生成图像、环境音乐、音效与界面反馈。" },
+  // 图片先于代码：代码生成时局内主体位图已经存在，游戏只需绘制这些位图。
+  { kind: "asset", title: "生成视听资源", detail: "先生成可追溯的封面、局内背景与局内主体位图。" },
+  { kind: "code", title: "生成可玩核心", detail: "写入独立 HTML、样式与游戏逻辑，并接入已生成的位图。" },
   { kind: "test", title: "执行试玩探针", detail: "检查加载、输入、核心循环、结束、重开与脚本错误。" },
   { kind: "delivery", title: "打包不可变版本", detail: "冻结通过检查的文件并生成版本网址。" },
 ] as const;

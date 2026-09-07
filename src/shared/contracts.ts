@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { generatedCampaignSchema } from "./generated-campaign.js";
+import { generatedBlueprintSchema } from "./generated-blueprint.js";
 import { getOpenSourceTemplateReference } from "./open-source-templates.js";
 import { defaultLevelProgression } from "./level-progression.js";
 import { OFFICIAL_SERVER_TEMPLATE_IDS } from "./official-games/index.js";
@@ -135,6 +136,8 @@ export const gameDesignProfileSchema = z.object({
   accessibility: z.array(z.string().min(1)).min(2).max(6),
   productionRisks: z.array(z.string().min(1)).max(6),
   generatedCampaign: generatedCampaignSchema.optional(),
+  /** 无模板生成游戏的知识蓝图：机制、修饰器、玩法取舍与局内美术清单。 */
+  generatedBlueprint: generatedBlueprintSchema.optional(),
 });
 
 export const levelProgressionSchema = z.object({

@@ -702,3 +702,14 @@ test("只有归档项目能永久删除，并同时清理构建记录和生成�
     if (safeRoot.startsWith(resolve(tmpdir()))) rmSync(safeRoot, { recursive: true, force: true });
   }
 });
+
+test("构建步骤把视听资源排在代码之前，保证代码生成时位图已存在", async () => {
+  const { database, repository } = await createRepository();
+  try {
+    const created = await repository.create({ idea: "海边捡贝壳装满竹篮，五关数量递增，不会失败。", template: "generated" });
+    const build = await repository.createBuild(created.id);
+    const titles = build.steps.map(({ title }) => title);
+    assert.deepEqual(titles, ["解析玩法合同", "写入制作文档", "生成视听资源", "生成可玩核心", "执行试玩探针", "打包不可变版本"]);
+    assert.ok(titles.indexOf("生成视听资源") < titles.indexOf("生成可玩核心"), "图片必须先于代码生成");
+  } finally { await database.close(); }
+});

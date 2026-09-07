@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { createDesignProfile, gameSpecSchema, generateGameSpec, type IdeaAnalysis } from "../src/shared/contracts";
-import { DesignContractGenerator } from "../src/server/design-contract";
+import { contractRules, DesignContractGenerator } from "../src/server/design-contract";
+import { DESIGN_MODIFIERS, MECHANIC_ATLAS } from "../src/shared/game-design-knowledge/mechanic-atlas";
 import { OpenAISettings } from "../src/server/openai-settings";
 
 const validKey = "sk-test_1234567890abcdef";
@@ -289,4 +290,44 @@ test("模型多给的条目按合同上限截断，而不是让整个方案作�
   assert.equal(profile.accessibility.length, 6);
   assert.equal(profile.gameFeel.length, 8);
   assert.equal(profile.accessibility[0], "大按钮");
+});
+
+test("生成游戏必须从知识库选机制并写清取舍；库外机制让整份方案作废", async () => {
+  const blueprint = {
+    mechanic_ids: [MECHANIC_ATLAS[0].id],
+    modifier_ids: [DESIGN_MODIFIERS[0].id],
+    core_decision: "每次只能带走一枚贝壳，先救临浪的还是先凑同色。",
+    tension: "篮子格位有限，顺序错了稀有贝壳会被浪带走。",
+    mastery_signal: "熟练玩家先清临浪区再凑色，用更少步数装满。",
+    sprites: [
+      { file: "assets/shell-scallop.png", role: "大扇贝", hint: "粉橙扇形贝壳，放射纹清晰" },
+      { file: "assets/basket.png", role: "竹篮", hint: "浅色编织竹篮，正面开口" },
+    ],
+  };
+  const prompts: string[] = [];
+  const generator = new DesignContractGenerator(new OpenAISettings(validKey), {
+    fetchImpl: async (_url, init) => {
+      prompts.push(String(JSON.parse(String(init?.body)).messages.at(-1).content));
+      return llmResponse({ ...themedAnswer, generated_blueprint: blueprint });
+    },
+  });
+  const profile = await generator.generate({ idea: "海边捡贝壳装满竹篮，五关数量递增，不会失败。", template: "generated" }, null);
+  assert.ok(profile?.generatedBlueprint, "生成游戏的方案必须带上知识蓝图");
+  assert.deepEqual(profile.generatedBlueprint.mechanicIds, [MECHANIC_ATLAS[0].id]);
+  assert.equal(profile.generatedBlueprint.sprites.length, 2);
+  assert.match(prompts[0], /mechanic_ids 只能从这些 id 中选/, "策划提示必须给出知识库候选菜单");
+  assert.match(prompts[0], /纯点选玩法不可接受/);
+  assert.ok(contractRules(profile).some(rule => rule.startsWith("玩家取舍:")), "取舍与位图要求必须逐条进入规则审核");
+
+  const offLibrary = new DesignContractGenerator(new OpenAISettings(validKey), {
+    fetchImpl: async () => llmResponse({ ...themedAnswer, generated_blueprint: { ...blueprint, mechanic_ids: ["click-anything"] } }),
+  });
+  assert.equal(await offLibrary.generate({ idea: "海边捡贝壳装满竹篮，五关数量递增，不会失败。", template: "generated" }, null), null);
+
+  // 官方模板不接收蓝图，避免与模板运行时冲突。
+  const templateGenerator = new DesignContractGenerator(new OpenAISettings(validKey), {
+    fetchImpl: async () => llmResponse({ ...themedAnswer, generated_blueprint: blueprint }),
+  });
+  const templateProfile = await templateGenerator.generate({ idea: snakeIdea, template: "snake" }, snakeAnalysis);
+  assert.equal(templateProfile?.generatedBlueprint, undefined);
 });

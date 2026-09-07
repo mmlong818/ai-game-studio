@@ -4,6 +4,7 @@ import { createDesignKnowledgeShadow, type DesignKnowledgeShadow } from "../game
 import { migrateLegacyProjectToV11 } from "../project-schema/migrate-v1.js";
 import { auditGameDesignContract, gameDesignContractV1Schema, type DifficultyVector, type GameDesignContractV1 } from "./index.js";
 import { merge2048DesignSample } from "./samples.js";
+import { blueprintMechanics } from "../generated-blueprint.js";
 
 type LegacyContractSource = {
   projectId: string;
@@ -93,7 +94,13 @@ export function createGameDesignContractForLegacyProject(source: LegacyContractS
       probeSignals: [`mechanic-${index + 1}-completed`],
     };
   });
-  const mechanicSources = catalogMechanics.length ? catalogMechanics : fallbackMechanics;
+  // 有知识蓝图时，合同直接采用图谱里的真实机制卡，不再落到位置回退 ID。
+  const blueprintCards = source.spec.template === "generated"
+    ? blueprintMechanics(source.spec.designProfile.generatedBlueprint).map(entry => ({
+        id: entry.id, label: entry.label, playerVerb: entry.playerVerb, probeSignals: [...entry.acceptanceSignals],
+      }))
+    : [];
+  const mechanicSources = catalogMechanics.length ? catalogMechanics : blueprintCards.length ? blueprintCards : fallbackMechanics;
   const coreMechanicIds = new Set(source.spec.template === "mahjong-roguelite"
     ? ["match-combo"]
     : source.spec.template === "polyomino-fit"

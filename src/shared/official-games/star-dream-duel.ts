@@ -17,8 +17,8 @@ export const starDreamDuel = defineOfficialGame({
     buildOutputs: [
       "单人限步收集、人机对战各有 20 关；另有无目标无限休闲，三种玩法独立存档。",
       "GAME_DESIGN、ART_DIRECTION、SOUND_DIRECTION 已形成。",
-      "已接入棋盘规则、玩家输入、AI 回合与结算逻辑。",
       "棋子、音效、PWA 图标与触控反馈已经集成。",
+      "已接入棋盘规则、玩家输入、AI 回合与结算逻辑。",
       "规则、单人首关双端真实输入、恢复隔离与原有对战回归已验证；完整体验调校仍在进行。",
       "稳定玩家网址和不可变版本网址已生成。",
     ],
