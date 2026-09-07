@@ -9,8 +9,8 @@ export const islandKart = defineOfficialGame({
   fixture: { metaKey: 'island_kart_fixture_initialized', buildOutputs: [
     '三车同场、连续转向、三圈计时与无限自由驾驶规则已实现。',
     '视频观察、原创资源溯源、首次操作帮助与验收边界已归档。',
-    '键盘与多点触控、暂停恢复、冲刺和自动道具效果已接入。',
     '原创程序化海岛、木桥、Kenney CC0 车辆及植被与 Web Audio 音效随产物提供。',
+    '键盘与多点触控、暂停恢复、冲刺和自动道具效果已接入。',
     '独立规则内核与浏览器回归测试随项目提供；品质仍待玩家体验评审。',
     '官方仅游玩作品沿用平台发布通道，不提供用户模板或改造入口。',
   ] },

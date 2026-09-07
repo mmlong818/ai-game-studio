@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { generatedCampaignSchema } from "../shared/generated-campaign.js";
+import { blueprintPlanningPrompt, blueprintRules, generatedBlueprintSchema } from "../shared/generated-blueprint.js";
 import { streamLines } from "../shared/stream-lines.js";
 import { gameDesignPrinciplesPrompt } from "../shared/game-presentation-policy.js";
 import {
@@ -22,8 +23,18 @@ const MAX_ATTEMPTS = 2;
 
 // LLM 输出骨架(docs/33 第 4 节):字段与 gameDesignProfileSchema 一一对应,
 // productionRisks 例外——模板基线风险是工程事实,由平台合并,LLM 只补充题材相关新风险。
+const llmBlueprintSchema = z.object({
+  mechanic_ids: z.array(z.string()),
+  modifier_ids: z.array(z.string()),
+  core_decision: z.string(),
+  tension: z.string(),
+  mastery_signal: z.string(),
+  sprites: z.array(z.object({ file: z.string(), role: z.string(), hint: z.string() })),
+});
+
 const llmDesignSchema = z.object({
   generated_campaign: generatedCampaignSchema.nullable().optional(),
+  generated_blueprint: llmBlueprintSchema.nullable().optional(),
   genre: z.string().min(1),
   target_player: z.string().min(1),
   player_fantasy: z.string().min(1),
@@ -48,7 +59,7 @@ const responseJsonSchema = {
   required: [
     "genre", "target_player", "player_fantasy", "session_length", "core_loop", "win_condition",
     "fail_condition", "progression", "difficulty_curve", "game_feel", "onboarding", "accessibility",
-    "extra_production_risks", "generated_campaign",
+    "extra_production_risks", "generated_campaign", "generated_blueprint",
   ],
   properties: {
     generated_campaign: {
@@ -65,6 +76,32 @@ const responseJsonSchema = {
         },
       }],
       description: "无模板游戏填写，官方模板填null。按玩家需求选择闯关或无限，不默认20关。有限关卡的milestones从1开始递增；无限为0关、milestones为空。difficultyKeys为真实递增参数的英文标识，无限可为空；不得虚构速度或密度。rationale解释安排，面向普通玩家书写：只用中文与具体数字，不出现字段名、英文参数名或“forbidden/required”这类取值；并在progression/difficulty_curve用普通人能懂的中文表达同一方案。",
+    },
+    generated_blueprint: {
+      anyOf: [{ type: "null" }, {
+        type: "object", additionalProperties: false,
+        required: ["mechanic_ids", "modifier_ids", "core_decision", "tension", "mastery_signal", "sprites"],
+        properties: {
+          mechanic_ids: { type: "array", items: { type: "string" }, description: "1–3 个知识库机制 id，只能取自候选清单。" },
+          modifier_ids: { type: "array", items: { type: "string" }, description: "1–2 个设计修饰器 id，只能取自候选清单。" },
+          core_decision: { type: "string", description: "玩家每次操作前的真实取舍，不同选择导致不同结果，不超过 80 字。" },
+          tension: { type: "string", description: "取舍为什么有意义；无失败玩法也必须有张力，不超过 80 字。" },
+          mastery_signal: { type: "string", description: "技巧更好的玩家在同一关里的可观察差别，不超过 80 字。" },
+          sprites: {
+            type: "array",
+            description: "2–5 个玩家直接看到或操作的局内主体，代码生成前会先生成为透明底位图。",
+            items: {
+              type: "object", additionalProperties: false, required: ["file", "role", "hint"],
+              properties: {
+                file: { type: "string", description: "形如 assets/shell-scallop.png 的小写短横线文件名，不含封面与背景。" },
+                role: { type: "string", description: "中文短名，不超过 12 字。" },
+                hint: { type: "string", description: "外形、材质与辨识特征，不超过 60 字。" },
+              },
+            },
+          },
+        },
+      }],
+      description: "无模板生成游戏必填，官方模板填 null。机制与修饰器只能取自候选清单；玩法必须有真实取舍，纯点选不可接受。",
     },
     genre: { type: "string", description: "结合题材的玩法类型定位,不超过 20 字" },
     target_player: { type: "string", description: "目标玩家画像,指出主要动机(如成就感/掌控感/收集欲),不超过 60 字" },
@@ -221,6 +258,7 @@ export function contractRules(profile: GameDesignProfile): string[] {
       profile.generatedCampaign.mode === "endless" ? "无限玩法没有最终胜利、强制通关或关卡选择；按确认规则持续供给可玩的内容。" : `关卡总数严格为${profile.generatedCampaign.levelCount}，结构变化关为${profile.generatedCampaign.milestones.join("/")}，不得增减。`,
       `难度维度${profile.generatedCampaign.difficultyKeys.join("、")}必须实际影响规则，不得只伪造探针返回值。依据：${profile.generatedCampaign.rationale}`,
     ] : []),
+    ...blueprintRules(profile.generatedBlueprint),
   ];
 }
 
@@ -351,7 +389,10 @@ export class DesignContractGenerator {
   ): Promise<GameDesignProfile> {
     const messages = [
       { role: "system", content: buildSystemPrompt(template, baseline, difficulty) },
-      { role: "user", content: buildUserPrompt(idea, analysis, directions, directions.length ? baseline : undefined) },
+      { role: "user", content: [
+        buildUserPrompt(idea, analysis, directions, directions.length ? baseline : undefined),
+        ...(template === "generated" ? [blueprintPlanningPrompt(idea)] : []),
+      ].join("\n") },
     ];
     const content = await this.requestContent(messages, "design_contract", responseJsonSchema, apiKey, onDelta);
     return this.parseDesign(content, baseline, template);
@@ -464,6 +505,17 @@ export class DesignContractGenerator {
       accessibility: clipList(answer.accessibility, 80),
       productionRisks: [...baseline.productionRisks, ...extraRisks].slice(0, 6),
       ...(template === "generated" && answer.generated_campaign ? { generatedCampaign: answer.generated_campaign } : {}),
+      // 蓝图只对无模板生成游戏有效；机制与修饰器 id 由 schema 对照知识库校验，选错即整份方案作废。
+      ...(template === "generated" && answer.generated_blueprint ? {
+        generatedBlueprint: generatedBlueprintSchema.parse({
+          mechanicIds: answer.generated_blueprint.mechanic_ids,
+          modifierIds: answer.generated_blueprint.modifier_ids,
+          coreDecision: answer.generated_blueprint.core_decision,
+          tension: answer.generated_blueprint.tension,
+          masterySignal: answer.generated_blueprint.mastery_signal,
+          sprites: answer.generated_blueprint.sprites.slice(0, 5),
+        }),
+      } : {}),
     });
   }
 }

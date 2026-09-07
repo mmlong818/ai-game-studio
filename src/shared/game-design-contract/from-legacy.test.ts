@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { createDesignProfile, gameDesignProfileSchema, generateGameSpec } from "../contracts.js";
 import { createGameDesignContractForLegacyProject } from "./from-legacy.js";
+import { DESIGN_MODIFIERS, MECHANIC_ATLAS } from "../game-design-knowledge/mechanic-atlas.js";
 
 const createdAt = "2026-09-05T00:00:00.000Z";
 
@@ -63,5 +64,31 @@ describe("普通项目完整设计合同编排", () => {
       expect(contract.onboarding.map(({ successSignal }) => successSignal)).toEqual(item.signals);
       expect(contract.knowledge.integrationStatus).not.toBe("research-required");
     }
+  });
+
+  it("有知识蓝图时合同采用图谱真实机制，不再落到位置回退 ID", () => {
+    const mechanic = MECHANIC_ATLAS[0];
+    const profile = gameDesignProfileSchema.parse({
+      ...createDesignProfile("generated", "standard"),
+      onboarding: ["先点击 3 枚贝壳放进篮子", "再抓住 3 枚会被浪带走的金贝"],
+      generatedCampaign: { mode: "campaign", failurePolicy: "forbidden", levelCount: 5, milestones: [1, 3, 5], difficultyKeys: ["shellQuota"], rationale: "五关递增，无失败。" },
+      generatedBlueprint: {
+        mechanicIds: [mechanic.id],
+        modifierIds: [DESIGN_MODIFIERS[0].id],
+        coreDecision: "每次只能带走一枚贝壳，先救临浪的还是先凑同色。",
+        tension: "篮子格位有限，顺序错了稀有贝壳会被浪带走。",
+        masterySignal: "熟练玩家先清临浪区再凑色，用更少步数装满。",
+        sprites: [
+          { file: "assets/shell-scallop.png", role: "大扇贝", hint: "粉橙扇形贝壳，放射纹清晰" },
+          { file: "assets/basket.png", role: "竹篮", hint: "浅色编织竹篮，正面开口" },
+        ],
+      },
+    });
+    const spec = generateGameSpec({ idea: "海边捡贝壳装满竹篮，五关递增，不会失败。", template: "generated" }, null, profile);
+    const contract = createGameDesignContractForLegacyProject({ projectId: "project-blueprint", title: spec.title, idea: spec.vision, createdAt, spec });
+    expect(contract.mechanics.map(({ id }) => id)).toEqual([mechanic.id]);
+    expect(contract.mechanics[0].label).toBe(mechanic.label);
+    expect(contract.mechanics.some(({ id }) => id.startsWith("core-mechanic-"))).toBe(false);
+    expect(contract.onboarding[0].teachesMechanicId).toBe(mechanic.id);
   });
 });

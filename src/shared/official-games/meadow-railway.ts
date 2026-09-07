@@ -9,8 +9,8 @@ export const meadowRailway = defineOfficialGame({
   fixture: { metaKey: 'meadow_railway_fixture_initialized', buildOutputs: [
     '独立轨道沙盒与真实参考交互研究已归档。',
     '直弯坡桥隧道按末端切线连接，闭环和开放线路共用路径内核。',
-    '火车启停、末端折返、撤销重做与本地保存已实现。',
     '首次帮助、桌面及触控按钮和相机观察已接入。',
+    '火车启停、末端折返、撤销重做与本地保存已实现。',
     '原创程序化 3D 模型与 MIT 引擎均随静态产物提供。',
     '官方仅游玩作品，不进入用户模板和改造流程；试玩验收边界单独记录。',
   ] },

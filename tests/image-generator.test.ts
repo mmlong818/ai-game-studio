@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { generateGameSpec, type ProjectDetail } from "../src/shared/contracts";
-import { CoverArtGenerator } from "../src/server/image-generator";
+import { CoverArtGenerator, dynamicArtPlan } from "../src/server/image-generator";
+import { DESIGN_MODIFIERS, MECHANIC_ATLAS } from "../src/shared/game-design-knowledge/mechanic-atlas";
 import { OpenAISettings } from "../src/server/openai-settings";
 
 const validKey = "sk-test_1234567890abcdef";
@@ -162,4 +163,30 @@ test("接口持续 5xx 时重试一次后返回 null", async () => {
   });
   assert.equal(await generator.generate(fakeProject()), null);
   assert.equal(calls, 2);
+});
+
+test("生成式游戏的局内主体进入图片计划，与背景同批生成并共享风格锚点", () => {
+  const blueprint = {
+    mechanicIds: [MECHANIC_ATLAS[0].id],
+    modifierIds: [DESIGN_MODIFIERS[0].id],
+    coreDecision: "每次只能带走一枚贝壳，先救临浪的还是先凑同色。",
+    tension: "篮子格位有限，顺序错了稀有贝壳会被浪带走。",
+    masterySignal: "熟练玩家先清临浪区再凑色，用更少步数装满。",
+    sprites: [
+      { file: "assets/shell-scallop.png", role: "大扇贝", hint: "粉橙扇形贝壳，放射纹清晰" },
+      { file: "assets/basket.png", role: "竹篮", hint: "浅色编织竹篮，正面开口" },
+    ],
+  };
+  const spec = generateGameSpec({ idea: "海边捡贝壳装满竹篮，五关数量递增，不会失败。", template: "generated" });
+  const project = { id: "p-shell", title: "海边贝壳收集", spec: { ...spec, designProfile: { ...spec.designProfile, generatedBlueprint: blueprint } } } as unknown as ProjectDetail;
+  const plan = dynamicArtPlan(project);
+  assert.deepEqual(plan.map(({ file }) => file), ["assets/background.png", "assets/shell-scallop.png", "assets/basket.png"]);
+  const scallop = plan.find(({ file }) => file === "assets/shell-scallop.png")!;
+  assert.match(scallop.prompt, /放射纹清晰/);
+  assert.match(scallop.prompt, /同一款游戏的一套局内主体位图之一，共 2 张/, "同批主体必须共享风格锚点");
+  assert.match(scallop.prompt, /完全透明背景/);
+  // 没有蓝图的项目保持原有模板计划，不新增图片开销。
+  const templatePlan = dynamicArtPlan(fakeProject()).map(({ file }) => file);
+  assert.ok(templatePlan.includes("assets/background.png"));
+  assert.ok(!templatePlan.some(file => file === "assets/basket.png" || file === "assets/shell-scallop.png"));
 });

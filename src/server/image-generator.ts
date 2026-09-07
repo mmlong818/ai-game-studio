@@ -121,12 +121,25 @@ export interface DynamicArtEntry {
 }
 
 /** Pure plan for cache validation; never requests images or needs a key. */
+/**
+ * 生成式游戏的局内主体来自确认方案里的知识蓝图，与背景同批生成，
+ * 因此代码生成时这些位图已经存在，可以直接绘制而不是用程序化图形自绘。
+ * 同批主体共享一个风格锚点，避免几张图各自为政。
+ */
+function blueprintSpritePlan(project: ProjectDetail): Array<Omit<DynamicArtEntry, "bytes">> {
+  const blueprint = project.spec.template === "generated" ? project.spec.designProfile.generatedBlueprint : undefined;
+  if (!blueprint) return [];
+  const anchor = `这是同一款游戏的一套局内主体位图之一，共 ${blueprint.sprites.length} 张：全部共用相同的笔触、描边语言、光照方向与配色体系，彼此并排出现时必须像同一位美术在同一天画的；每张只画本条描述的单一主体`;
+  return blueprint.sprites.map(spec => ({ file: spec.file, role: spec.role, prompt: roleBitmapPrompt(project, spec, anchor) }));
+}
+
 export function dynamicArtPlan(project: ProjectDetail): Array<Omit<DynamicArtEntry, "bytes">> {
   const set = spriteSetPlanFor(project.spec.template);
   return [
     { file: "assets/background.png", role: "局内背景", prompt: backgroundPrompt(project) },
     ...roleArtPlanFor(project.spec.template).map(spec => ({ file: spec.file, role: spec.role, prompt: roleBitmapPrompt(project, spec) })),
     ...(set?.entries.map(spec => ({ file: spec.file, role: spec.role, prompt: roleBitmapPrompt(project, spec, set.anchor) })) ?? []),
+    ...blueprintSpritePlan(project),
   ];
 }
 

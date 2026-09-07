@@ -16,6 +16,7 @@ import { OpenAISettings } from "../src/server/openai-settings";
 import { createGameDesignContractForLegacyProject } from "../src/shared/game-design-contract/from-legacy";
 import { generatedDesignHtml } from "./generated-design-fixture";
 import { GenerationBudget } from "../src/server/generation-budget";
+import { DESIGN_MODIFIERS, MECHANIC_ATLAS } from "../src/shared/game-design-knowledge/mechanic-atlas";
 
 const validKey = "sk-test_1234567890abcdef";
 
@@ -399,4 +400,36 @@ test("generated 不进入模板目录,不参与匹配", () => {
   const spec = generateGameSpec({ idea: "守夜人在灯塔上转动光束驱散雾兽。", template: "generated", dimensions: "2d" });
   assert.equal(spec.template, "generated");
   assert.equal(spec.runtimeTarget, "web-2d");
+});
+
+test("局内主体位图先于代码生成后，代码必须真的加载它们，否则静态验收拒收", () => {
+  const root = mkdtempSync(join(tmpdir(), "forge-blueprint-"));
+  try {
+    const blueprint = {
+      mechanicIds: [MECHANIC_ATLAS[0].id],
+      modifierIds: [DESIGN_MODIFIERS[0].id],
+      coreDecision: "每次只能带走一枚贝壳，先救临浪的还是先凑同色。",
+      tension: "篮子格位有限，顺序错了稀有贝壳会被浪带走。",
+      masterySignal: "熟练玩家先清临浪区再凑色，用更少步数装满。",
+      sprites: [
+        { file: "assets/shell-scallop.png", role: "大扇贝", hint: "粉橙扇形贝壳，放射纹清晰" },
+        { file: "assets/basket.png", role: "竹篮", hint: "浅色编织竹篮，正面开口" },
+      ],
+    };
+    writeGeneratedArtifact(root, fakeProject(), { html: contractHtml, designNotes: "未接入位图", rounds: 1 });
+    assert.throws(
+      () => inspectGeneratedArtifact(root, { requireAiArt: false, expectedBlueprint: blueprint }),
+      /局内主体位图|assets\/shell-scallop\.png/,
+      "代码没有加载已生成的局内主体位图时必须拒收",
+    );
+    const withSprites = contractHtml.replace(
+      "</body>",
+      '<script>const forgeSprites = ["./assets/shell-scallop.png", "./assets/basket.png"].map(src => { const image = new Image(); image.src = src; return image; });</script></body>',
+    );
+    writeGeneratedArtifact(root, fakeProject(), { html: withSprites, designNotes: "已接入位图", rounds: 1 });
+    const labels = inspectGeneratedArtifact(root, { requireAiArt: false, expectedBlueprint: blueprint });
+    assert.ok(labels.includes("局内主体位图接入"));
+    // 没有蓝图的旧项目不新增这项要求。
+    assert.ok(!inspectGeneratedArtifact(root, { requireAiArt: false }).includes("局内主体位图接入"));
+  } finally { rmSync(root, { recursive: true, force: true }); }
 });

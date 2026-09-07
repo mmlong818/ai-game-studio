@@ -39,6 +39,10 @@ export function LiveDesignReview({ draft, onBack, onConfirm }: { draft: StudioDr
     ["每局时长", profile.sessionLength], ["具体怎么玩", profile.coreLoop.join(" → ")],
     ["怎样获胜", profile.winCondition], ["怎样失败", profile.failCondition],
     ...(profile.generatedCampaign ? [["关卡安排", `${profile.generatedCampaign.mode === "endless" ? "无限玩法，没有通关目标" : `共 ${profile.generatedCampaign.levelCount} 关`}；${profile.generatedCampaign.failurePolicy === "forbidden" ? "不会失败，操作失误后可以继续" : "有失败与重试"}。${profile.generatedCampaign.rationale}`]] : []),
+    ...(profile.generatedBlueprint ? [
+      ["玩法取舍", `${profile.generatedBlueprint.coreDecision}\n为什么有意义：${profile.generatedBlueprint.tension}\n玩得好的样子：${profile.generatedBlueprint.masterySignal}`],
+      ["局内美术", `会先生成图片再写代码：${profile.generatedBlueprint.sprites.map(({ role }) => role).join("、")}`],
+    ] : []),
     ["第一次怎么玩", profile.onboarding.join("\n")], ["关卡与成长", profile.progression.join("\n")],
     ["难度怎样递进", profile.difficultyCurve.join("\n")], ["操作与成就反馈", profile.gameFeel.join("\n")],
     ["手机与易用性", profile.accessibility.join("\n")], ["制作时需验证", profile.productionRisks.join("\n")],
@@ -48,8 +52,8 @@ export function LiveDesignReview({ draft, onBack, onConfirm }: { draft: StudioDr
     {!profile && !error && <WaitingActivity key={key} label="正在根据你的想法设计玩法，请稍候。" />}
     {!profile && partial.key === key && partial.text && <section aria-label="正在生成的方案"><p>以下是模型正在生成的内容，尚未完成检查。</p><div className="streaming-design-text">{streamingDesignText(partial.text)}</div></section>}
     {error && <p role="alert">{error}</p>}
-    {profile && <><span className="ready-stamp">方案草案 · 待制作验证</span><dl className="fact-list">{sections.filter(([title]) => ["玩家体验", "每局时长", "具体怎么玩", "怎样获胜", "关卡安排"].includes(title)).map(([title, text]) => <div key={title}><dt>{title}</dt><dd style={{ whiteSpace: "pre-line" }}>{text}</dd></div>)}</dl>
-      <details><summary>查看完整玩法、教学与制作要求</summary><dl className="fact-list">{sections.filter(([title]) => !["玩家体验", "每局时长", "具体怎么玩", "怎样获胜", "关卡安排"].includes(title)).map(([title, text]) => <div key={title}><dt>{title}</dt><dd style={{ whiteSpace: "pre-line" }}>{text}</dd></div>)}</dl></details>
+    {profile && <><span className="ready-stamp">方案草案 · 待制作验证</span><dl className="fact-list">{sections.filter(([title]) => ["玩家体验", "玩法取舍", "每局时长", "具体怎么玩", "怎样获胜", "关卡安排"].includes(title)).map(([title, text]) => <div key={title}><dt>{title}</dt><dd style={{ whiteSpace: "pre-line" }}>{text}</dd></div>)}</dl>
+      <details><summary>查看完整玩法、教学与制作要求</summary><dl className="fact-list">{sections.filter(([title]) => !["玩家体验", "玩法取舍", "每局时长", "具体怎么玩", "怎样获胜", "关卡安排"].includes(title)).map(([title, text]) => <div key={title}><dt>{title}</dt><dd style={{ whiteSpace: "pre-line" }}>{text}</dd></div>)}</dl></details>
       <p>确认后将调用已配置的模型制作游戏代码和图片，并执行检查与有界修正，会产生额外模型用量。已有可复用资源会保留；本次不会自动发布。</p></>}
     <div className="review-actions"><button className="secondary-action" onClick={onBack}>返回修改</button>
       {(error || profile) && <button className="secondary-action" onClick={() => setAttempt(n => n + 1)}>重新生成方案</button>}
