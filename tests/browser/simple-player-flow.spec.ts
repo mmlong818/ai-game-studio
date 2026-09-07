@@ -1,9 +1,15 @@
 import { expect, test } from "@playwright/test";
+import { createDesignProfile } from "../../src/shared/contracts";
 
 const GAME_ID = "00adee1e-4ae0-4f75-b377-bc3a6cd22ff4"; // 数织矩阵
 
 test.beforeEach(async ({ page }) => {
+  await page.route("**/api/**", route => route.request().method() === "GET" ? route.continue()
+    : route.fulfill({ status: 409, json: { error: "测试写请求已拦截" } }));
+  await page.route("**/api/design-preview", route => route.fulfill({ contentType: "application/x-ndjson",
+    body: JSON.stringify({ type: "done", profile: createDesignProfile("merge-2048", "standard") }) + "\n" }));
   await page.goto(`/player-first?game=${GAME_ID}`);
+  await expect(page.getByTitle("数织矩阵游戏画面")).toBeVisible();
   await page.evaluate(() => localStorage.clear());
   await page.reload();
 });

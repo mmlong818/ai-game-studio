@@ -6,6 +6,53 @@ import { OpenAISettings } from "../src/server/openai-settings";
 
 const validKey = "sk-test_1234567890abcdef";
 
+test("模型明确的七关无失败协议进入方案，不能影响官方模板", async () => {
+  const campaign = { mode: "campaign", failurePolicy: "forbidden", levelCount: 7, milestones: [1, 4, 7], difficultyKeys: ["pairCount"], rationale: "七关花朵配对，操作错误可以继续。" };
+  const generator = new DesignContractGenerator(new OpenAISettings(validKey), {
+    fetchImpl: async () => llmResponse({ ...themedAnswer, generated_campaign: campaign }),
+  });
+  const generated = await generator.generate({ idea: "七关花朵配对小游戏，配对全部花朵即可获胜", template: "generated" });
+  assert.deepEqual(generated?.generatedCampaign, campaign);
+  const official = await generator.generate({ idea: snakeIdea, template: "snake" }, snakeAnalysis);
+  assert.equal(official?.generatedCampaign, undefined);
+});
+
+test("长方案只裁剪简介，不能因 vision 上限使创建失败", () => {
+  const idea = "用户确认的完整方案：玩家在花园中收集星星并躲避障碍。".repeat(30);
+  const spec = generateGameSpec({ idea, template: "snake" });
+  assert.equal(spec.vision.length, 280);
+  assert.equal(gameSpecSchema.safeParse(spec).success, true);
+});
+
+test("流式设计逐段输出，完整校验后才返回合同", async () => {
+  const chunks: string[] = [];
+  const generator = new DesignContractGenerator(new OpenAISettings(validKey), {
+    fetchImpl: async (_url, init) => {
+      assert.equal(JSON.parse(String(init?.body)).stream, true);
+      const text = JSON.stringify(themedAnswer);
+      const wire = [text.slice(0, 90), text.slice(90)].map(content => "data: " + JSON.stringify({ choices: [{ delta: { content } }] }) + "\n\n").join("") + "data: [DONE]\n\n";
+      const bytes = new TextEncoder().encode(wire);
+      return new Response(new ReadableStream({ start(controller) {
+        for (let i = 0; i < bytes.length; i += 7) controller.enqueue(bytes.slice(i, i + 7));
+        controller.close();
+      } }));
+    },
+  });
+  const result = await generator.generate({ idea: snakeIdea, template: "snake" }, snakeAnalysis, [], text => chunks.push(text));
+  assert.equal(chunks.length, 2);
+  assert.equal(result?.genre, themedAnswer.genre);
+});
+
+test("方案预览可关闭隐式重试，错误只请求一次", async () => {
+  let calls = 0;
+  const generator = new DesignContractGenerator(new OpenAISettings(validKey), {
+    maxAttempts: 1,
+    fetchImpl: async () => { calls++; return new Response("temporary unavailable", { status: 503 }); },
+  });
+  assert.equal(await generator.generate({ idea: "一个在花园中收集星星并躲避障碍的小游戏", template: "generated" }), null);
+  assert.equal(calls, 1);
+});
+
 function llmResponse(answer: Record<string, unknown>) {
   return new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify(answer) } }] }), {
     status: 200,
@@ -205,4 +252,30 @@ test("旧版本没有 designSource 字段的合同仍能解析并视为模板设
   delete legacy.designSource;
   const parsed = gameSpecSchema.parse(legacy);
   assert.equal(parsed.designSource, "template");
+});
+
+test("规则审计少报或多报结果都不能作为完整验收", async () => {
+  const profile = createDesignProfile("snake", "standard");
+  for (const count of [1, profile.coreLoop.length + 3]) {
+    const generator = new DesignContractGenerator(new OpenAISettings(validKey), {
+      fetchImpl: async () => llmResponse({ verdicts: Array.from({ length: count }, () => ({
+        rule: "测试规则", implemented: true, evidence: "测试代码已实现",
+      })) }),
+    });
+    assert.equal(await generator.auditRuleFidelity(profile, "<html></html>"), null);
+  }
+});
+
+test("修改提示包含已确认方案，不能只根据最初想法重做", async () => {
+  const confirmed = { ...createDesignProfile("snake", "standard"), winCondition: "收集七枚独有的蓝色莲子" };
+  let prompt = "";
+  const generator = new DesignContractGenerator(new OpenAISettings(validKey), {
+    fetchImpl: async (_url, init) => {
+      prompt = String(init?.body);
+      return llmResponse(themedAnswer);
+    },
+  });
+  assert.ok(await generator.generate({ idea: snakeIdea, template: "snake", confirmedDesignProfile: confirmed }, snakeAnalysis, ["只修改背景为傍晚"]));
+  assert.match(prompt, /收集七枚独有的蓝色莲子/);
+  assert.match(prompt, /只修改背景为傍晚/);
 });

@@ -1,0 +1,35 @@
+.workspace-summary { padding: 24px 0 16px; }
+.workspace-summary > span { font-size: 13px; color: var(--workbench-muted); }
+.workspace-summary h3 { margin: 10px 0; font-size: 23px; line-height: 1.4; letter-spacing: -.025em; }
+.workspace-summary p, .revision-composer p, .workspace-details > p { font-size: 14px; line-height: 1.7; color: var(--workbench-muted); }
+.revision-composer { padding: 18px 0 26px; }
+.revision-composer > label { display: block; font-size: 17px; font-weight: 650; }
+.revision-composer textarea { display: block; box-sizing: border-box; width: 100%; min-height: 128px; padding: 14px; resize: vertical; border: 1px solid var(--workbench-border); border-radius: 10px; color: var(--workbench-text); background: var(--workbench-panel); font: inherit; font-size: 15px; line-height: 1.7; }
+.revision-composer textarea:focus-visible { outline: 2px solid #b84a27; outline-offset: 2px; }
+.revision-composer button { min-height: 44px; padding: 10px 16px; border: 1px solid var(--workbench-border); border-radius: 8px; color: var(--workbench-text); background: var(--workbench-panel); font: inherit; font-size: 14px; font-weight: 600; cursor: pointer; }
+.revision-composer > button { margin-top: 12px; width: 100%; }
+.revision-composer .revision-primary { background: #b84a27; color: #fff; border-color: transparent; }
+.revision-composer .revision-primary:hover:not(:disabled) { background: #983c20; }
+.revision-composer button:disabled { cursor: not-allowed; opacity: .5; }
+.revision-confirmation { margin-top: 18px; padding-top: 16px; border-top: 1px solid var(--workbench-border); }
+.revision-confirmation h3 { font-size: 18px; margin: 0 0 10px; }
+.revision-confirmation .revision-quote { padding: 12px; color: var(--workbench-text); border-left: 3px solid #b84a27; white-space: pre-wrap; overflow-wrap: anywhere; }
+.revision-confirmation > div { display: flex; flex-wrap: wrap; gap: 8px; }
+.workspace-details { border-top: 1px solid var(--workbench-border); padding: 8px 0; }
+.workspace-details > summary { cursor: pointer; padding: 14px 0; font-size: 14px; font-weight: 600; }
+.manual-art-review { grid-column: 1 / -1; width: 100%; min-width: 0; }
+.manual-art-review > summary { padding: 12px 0; cursor: pointer; font-size: 14px; }
+.manual-art-review select { width: 100%; min-height: 44px; margin: 8px 0 16px; border: 1px solid var(--workbench-border); background: var(--workbench-panel); color: var(--workbench-text); font: inherit; }
+.version-description > p { font-size: 12px; line-height: 1.7; white-space: normal; }
+.art-review-history { grid-column: 1 / -1; min-width: 0; width: 100%; }
+.art-review-history > summary { padding: 12px 0; cursor: pointer; font-size: 14px; }
+.art-review-history p { font-size: 13px; line-height: 1.8; overflow-wrap: anywhere; white-space: pre-wrap; }
+.version-history .art-review-history ol { padding: 0; list-style: none; }
+.version-history .art-review-history li { display: block; padding: 14px 0; border-top: 1px solid var(--workbench-border); }
+.art-review-history time { display: block; margin: 8px 0; font-size: 12px; color: var(--workbench-muted); }
+.art-review-history button { min-height: 44px; }
+@media (max-width: 760px) { .workspace-summary h3 { font-size: 21px; } .revision-confirmation > div > button { flex: 1 1 auto; } }
+@media (max-width: 760px) {
+  .workbench-topbar-actions { flex-wrap: wrap; justify-content: flex-start; }
+  .workbench-topbar-actions .workbench-button { flex-shrink: 0; white-space: nowrap; min-height: 44px; }
+}

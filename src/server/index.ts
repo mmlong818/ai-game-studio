@@ -1,7 +1,7 @@
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
-import { generateGameSpec, getTemplateCatalog, projectInputSchema } from "../shared/contracts.js";
+import { generateGameSpec, projectInputSchema, projectRevisionInputSchema } from "../shared/contracts.js";
 import { PLATFORM_VERSION_INFO } from "../shared/platform-version.js";
 import { OFFICIAL_GAMES, OFFICIAL_SERVER_TEMPLATE_IDS } from "../shared/official-games/index.js";
 import { createDesignKnowledgeShadow } from "../shared/game-design-knowledge/shadow.js";
@@ -10,7 +10,10 @@ import { LOCAL_DESIGN_SOURCE_SUMMARY } from "../shared/game-design-knowledge/loc
 import { createResourcePlanningForGameSpec } from "../shared/resource-planning/index.js";
 import { AccessControl } from "./access-control.js";
 import { openDatabase } from "./database.js";
+import { acquireRuntimeOwnership } from "./runtime-ownership.js";
 import { BuildOrchestrator } from "./build-orchestrator.js";
+import { ProductionJobs } from "./production-jobs.js";
+import { resolveCreationDesign } from "./creation-design.js";
 import { DesignContractGenerator } from "./design-contract.js";
 import { readJson, sendError, sendJson } from "./http.js";
 import { IdeaAnalyzer } from "./idea-analyzer.js";
@@ -35,7 +38,14 @@ const publicGameOrigin = process.env.PUBLIC_GAME_ORIGIN ?? `http://${host}:${gam
 const projectRoot = process.cwd();
 const connectionString = process.env.DATABASE_URL ?? "postgresql://studio@127.0.0.1:54329/ai_game_studio";
 const legacySqlitePath = process.env.LEGACY_SQLITE_PATH ?? process.env.DATABASE_PATH ?? join(projectRoot, "data", "studio.db");
-const database = await openDatabase(connectionString);
+const runtimeOwnership = await acquireRuntimeOwnership(connectionString, () => {
+  console.error("数据库运行权连接已丢失，停止服务以防止多个执行器并行处理同一任务。中断调用不会自动重试。");
+  process.exit(1);
+});
+const database = await openDatabase(connectionString).catch(async error => {
+  await runtimeOwnership.release();
+  throw error;
+});
 const importedProjectCount = await importLegacySqliteIfEmpty(database, legacySqlitePath);
 const resourceFamilies = await loadCuratedResourceLibrary(join(projectRoot, "assets", "library", "curated"));
 const promotedResourceRoot = join(projectRoot, "data", "resource-library", "promoted");
@@ -53,6 +63,7 @@ if ((process.env.HTTPS_PROXY || process.env.HTTP_PROXY) && process.env.NODE_USE_
 }
 const ideaAnalyzer = new IdeaAnalyzer(openAISettings);
 const designContracts = new DesignContractGenerator(openAISettings);
+const previewDesignContracts = new DesignContractGenerator(openAISettings, { maxAttempts: 1 });
 const coverArt = new CoverArtGenerator(openAISettings);
 const codeGenerator = new GameCodeGenerator(openAISettings);
 const orchestrator = new BuildOrchestrator(repository, artifactRoot, {
@@ -62,7 +73,7 @@ const orchestrator = new BuildOrchestrator(repository, artifactRoot, {
   resourceFamilies,
   maxConcurrentBuilds: Number.parseInt(process.env.BUILD_CONCURRENCY ?? "2", 10) || 2,
 });
-const accessControl = new AccessControl(process.env.STUDIO_ACCESS_TOKEN?.trim() || null);
+const accessControl = new AccessControl(process.env.STUDIO_ACCESS_TOKEN?.trim() || null, undefined, process.env.STUDIO_REVIEW_TOKEN?.trim() || null);
 const researchPrototypes = new ResearchPrototypeService(repository, researchPrototypeRoot, publicGameOrigin, undefined, promotedResourceRoot);
 const projectLifecycle = new ProjectLifecycle(repository, artifactRoot);
 // 创作页可用的模板封面目录：由官方游戏登记表派生（含固定游戏所落的 signal-hunt）。
@@ -118,11 +129,66 @@ function messagesProjectIdFrom(pathname: string) {
   return pathname.match(/^\/api\/projects\/([^/]+)\/messages$/)?.[1] ?? null;
 }
 
-function projectActionIdFrom(pathname: string, action: "archive" | "restore") {
+function projectActionIdFrom(pathname: string, action: "archive" | "restore" | "playable-build") {
   return pathname.match(new RegExp(`^/api/projects/([^/]+)/${action}$`))?.[1] ?? null;
 }
 
+async function createAnalyzedProject(rawInput: ReturnType<typeof projectInputSchema.parse>, report: (title: string) => Promise<void> = async () => {}) {
+    const { input, analysis, designProfile } = await resolveCreationDesign(rawInput, {
+      analyze: input => ideaAnalyzer.analyze(input),
+      generate: (input, analysis) => designContracts.generate(input, analysis),
+    }, report);
+    await report("正在准备机制与资源计划");
+    // 影子策划评估只写入规格供比较和审计；当前生产模板选择仍由 IdeaAnalyzer 决定。
+    const designKnowledge = createDesignKnowledgeShadow(input, analysis, await repository.currentDesignKnowledgeLibrary());
+    const resourcePlanning = createResourcePlanningForGameSpec(generateGameSpec(input, analysis, designProfile, designKnowledge), resourceFamilies);
+    await report("正在保存游戏项目");
+    return repository.create(input, analysis, designProfile, designKnowledge, resourcePlanning);
+}
+
+const productionJobs = new ProductionJobs(database, async (input, report) => {
+  const parsed = projectInputSchema.parse(input);
+  let project = parsed.requestId ? await repository.get(parsed.requestId) : null;
+  if (project && project.idea !== parsed.idea) throw new Error("制作请求与已有项目不一致。");
+  project ??= await createAnalyzedProject(parsed, report);
+  await report("正在启动资源生成与游戏构建");
+  await orchestrator.start(project.id);
+});
+await productionJobs.initialize();
+await orchestrator.resumeQueuedBuilds();
+
 async function handleApi(request: IncomingMessage, response: ServerResponse, pathname: string) {
+  if (request.method === "POST" && pathname === "/api/production-jobs") {
+    sendJson(response, 202, { job: await productionJobs.submit(projectInputSchema.parse(await readJson(request))) });
+    return true;
+  }
+  const productionJobId = pathname.match(/^\/api\/production-jobs\/([^/]+)$/)?.[1];
+  const streamJobId = pathname.match(/^\/api\/production-jobs\/([^/]+)\/stream$/)?.[1];
+  if (request.method === "GET" && streamJobId) {
+    const id = decodeURIComponent(streamJobId);
+    response.writeHead(200, { "Content-Type": "application/x-ndjson; charset=utf-8", "Cache-Control": "no-store", "X-Accel-Buffering": "no" });
+    response.flushHeaders();
+    let closed = false, previous = "", lastSentAt = Date.now();
+    response.on("close", () => { closed = true; });
+    try {
+      while (!closed) {
+        const job = await productionJobs.get(id);
+        const build = job?.status === "building" ? await repository.latestBuild(id) : null;
+        const snapshot = JSON.stringify({ job, build });
+        if (closed) break;
+        if (snapshot !== previous) { response.write(snapshot + "\n"); previous = snapshot; lastSentAt = Date.now(); }
+        else if (Date.now() - lastSentAt >= 15_000) { response.write(JSON.stringify({ type: "heartbeat" }) + "\n"); lastSentAt = Date.now(); }
+        if (!job || job.status === "failed" || build?.status === "succeeded" || build?.status === "failed") break;
+        await new Promise(resolve => setTimeout(resolve, 750));
+      }
+    } catch { if (!closed) response.write(JSON.stringify({ error: "进度连接暂时中断，任务仍在服务端运行。" }) + "\n"); }
+    response.end();
+    return true;
+  }
+  if (request.method === "GET" && productionJobId) {
+    sendJson(response, 200, { job: await productionJobs.get(decodeURIComponent(productionJobId)) });
+    return true;
+  }
   if (request.method === "GET" && pathname === "/api/health") {
     sendJson(response, 200, {
       status: "ok",
@@ -317,27 +383,38 @@ async function handleApi(request: IncomingMessage, response: ServerResponse, pat
     sendJson(response, 200, { activities: await repository.playActivities(activityPlayerId) });
     return true;
   }
-  if (request.method === "POST" && pathname === "/api/projects") {
-    const rawInput = projectInputSchema.parse(await readJson(request));
-    const analysis = await ideaAnalyzer.analyze(rawInput);
-    // 实验通道:LLM 判定没有模板能承载该玩法时,不再拒绝(422),改为走无模板代码生成;
-    // 2D 生成单文件 HTML,3D 生成基于本地 three.js 模块的场景。
-    // 没有密钥(走关键词识别)时不存在该判定,维持原有模板路径。
-    const experimental = analysis.source === "llm" && analysis.template === null;
-    const experimentalDimensions = analysis.dimensions === "3d" ? "3d" as const : "2d" as const;
-    const input = experimental ? { ...rawInput, template: "generated" as const, dimensions: experimentalDimensions } : rawInput;
-    const designProfile = await designContracts.generate(input, analysis);
-    // 影子策划评估只写入规格供比较和审计；当前生产模板选择仍由 IdeaAnalyzer 决定。
-    const designKnowledge = createDesignKnowledgeShadow(input, analysis, await repository.currentDesignKnowledgeLibrary());
-    const resourcePlanning = createResourcePlanningForGameSpec(generateGameSpec(input, analysis, designProfile, designKnowledge), resourceFamilies);
-    if (experimental && !designProfile) {
-      const supported = [...new Set(getTemplateCatalog().map((entry) => entry.genre))].join("、");
-      sendJson(response, 422, {
-        error: `暂时无法生成这种玩法：${analysis.summary ?? "没有模板能承载它"}，且实验性设计生成未成功，请稍后重试。当前成熟支持的玩法类型：${supported}。`,
-      });
+  if (request.method === "POST" && pathname === "/api/design-preview") {
+    const input = projectInputSchema.parse(await readJson(request));
+    const streaming = request.headers.accept?.includes("application/x-ndjson");
+    const emit = (event: unknown) => { if (!response.destroyed) response.write(JSON.stringify(event) + "\n"); };
+    if (streaming) {
+      response.writeHead(200, { "Content-Type": "application/x-ndjson; charset=utf-8", "Cache-Control": "no-store", "X-Accel-Buffering": "no" });
+      response.flushHeaders();
+      emit({ type: "status", message: "模型请求已提交" });
+    }
+    const profile = await previewDesignContracts.generate(input, null, [
+      "这是用户确认前的实时游戏策划。根据本次描述设计具体玩法，不要返回通用套话。使用普通人能懂的中文，说明实际操作、目标、新手引导、递进与成功反馈。用户未明确的细节给出合理且操作简单的建议。灵感仅是输入，不是固定方案。",
+    ], streaming ? text => emit({ type: "delta", text }) : undefined);
+    if (streaming) {
+      emit(profile ? { type: "done", profile, source: "llm" } : { type: "error", error: "模型输出未完成或未通过检查，请检查模型设置后重试；当前片段不能用于制作。" });
+      response.end();
       return true;
     }
-    sendJson(response, 201, { project: await repository.create(input, analysis, designProfile, designKnowledge, resourcePlanning) });
+    if (!profile) { sendJson(response, 503, { error: "实时方案生成失败，请检查模型设置或稍后重试。没有使用固定方案替代。" }); return true; }
+    sendJson(response, 200, { profile, source: "llm" });
+    return true;
+  }
+  if (request.method === "POST" && pathname === "/api/projects") {
+    const rawInput = projectInputSchema.parse(await readJson(request));
+    if (rawInput.requestId) {
+      const existing = await repository.get(rawInput.requestId);
+      if (existing) {
+        if (existing.idea !== rawInput.idea) { sendJson(response, 409, { error: "创建请求与已有项目不一致。" }); return true; }
+        sendJson(response, 200, { project: existing });
+        return true;
+      }
+    }
+    sendJson(response, 201, { project: await createAnalyzedProject(rawInput) });
     return true;
   }
 
@@ -353,6 +430,21 @@ async function handleApi(request: IncomingMessage, response: ServerResponse, pat
   }
 
   const buildProjectId = buildProjectIdFrom(pathname);
+  const revisionRoute = pathname.match(/^\/api\/projects\/([^/]+)\/revisions(?:\/([^/]+))?$/);
+  if (revisionRoute && request.method === "POST" && !revisionRoute[2]) {
+    const input = projectRevisionInputSchema.parse(await readJson(request));
+    sendJson(response, 202, { build: await orchestrator.start(decodeURIComponent(revisionRoute[1]), input) });
+    return true;
+  }
+  if (revisionRoute && request.method === "GET" && revisionRoute[2]) {
+    sendJson(response, 200, { build: await repository.revisionBuild(decodeURIComponent(revisionRoute[1]), decodeURIComponent(revisionRoute[2])) });
+    return true;
+  }
+  const playableProjectId = projectActionIdFrom(pathname, "playable-build");
+  if (request.method === "GET" && playableProjectId) {
+    sendJson(response, 200, { build: await repository.latestPlayableBuild(decodeURIComponent(playableProjectId)) });
+    return true;
+  }
   if (request.method === "GET" && buildProjectId) {
     sendJson(response, 200, { build: await repository.latestBuild(decodeURIComponent(buildProjectId)) });
     return true;
@@ -391,11 +483,18 @@ async function handleApi(request: IncomingMessage, response: ServerResponse, pat
   }
 
   const versionArtReview = versionArtReviewFrom(pathname);
+  if (request.method === "GET" && versionArtReview) {
+    sendJson(response, 200, { reviews: await repository.listVersionArtReviews(
+      decodeURIComponent(versionArtReview.projectId), decodeURIComponent(versionArtReview.versionId),
+    ) });
+    return true;
+  }
   if (request.method === "POST" && versionArtReview) {
     sendJson(response, 200, { versions: await repository.reviewVersionArt(
       decodeURIComponent(versionArtReview.projectId),
       decodeURIComponent(versionArtReview.versionId),
       await readJson(request),
+      accessControl.reviewIdentity(request) ?? undefined,
     ) });
     return true;
   }
@@ -405,13 +504,14 @@ async function handleApi(request: IncomingMessage, response: ServerResponse, pat
     sendJson(response, 200, { project: await repository.publish(
       decodeURIComponent(publicationVersion.projectId),
       decodeURIComponent(publicationVersion.versionId),
+      true,
     ) });
     return true;
   }
 
   const publicationProjectId = publicationProjectIdFrom(pathname);
   if (request.method === "POST" && publicationProjectId) {
-    sendJson(response, 200, { project: await repository.publish(decodeURIComponent(publicationProjectId)) });
+    sendJson(response, 200, { project: await repository.publish(decodeURIComponent(publicationProjectId), undefined, true) });
     return true;
   }
   return false;
@@ -571,7 +671,10 @@ gameServer.listen(gamePort, host, () => {
 
 function closeServer() {
   gameServer.close();
-  server.close(() => void database.close());
+  server.close(() => void database.close().finally(async () => {
+    await runtimeOwnership.release();
+    process.exit(0);
+  }));
 }
 
 process.on("SIGINT", closeServer);

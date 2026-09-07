@@ -4,6 +4,8 @@ import type { QualityCheck } from "../shared/contracts.js";
 import type { GameDesignContractV1 } from "../shared/game-design-contract/index.js";
 
 const evidenceIds = {
+  "no-failure": (id: string) => id === "NO-FAILURE-SAMPLED",
+  "endless-sampled": (id: string) => id === "ENDLESS-SAMPLED",
   onboarding: (id: string) => id.startsWith("ONBOARDING-") || id === "GEN-BROWSER-ONBOARDING",
   progression: (id: string) => id === "PROGRESSION-RUNTIME",
   assistance: (id: string) => id === "ASSISTANCE-RUNTIME",

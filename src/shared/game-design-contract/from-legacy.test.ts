@@ -1,10 +1,24 @@
 import { describe, expect, it } from "vitest";
-import { generateGameSpec } from "../contracts.js";
+import { createDesignProfile, gameDesignProfileSchema, generateGameSpec } from "../contracts.js";
 import { createGameDesignContractForLegacyProject } from "./from-legacy.js";
 
 const createdAt = "2026-09-05T00:00:00.000Z";
 
 describe("普通项目完整设计合同编排", () => {
+  it.each(["campaign", "endless"])("%s无失败方案不再生成矛盾的失败帮助合同", (mode) => {
+    const profile = gameDesignProfileSchema.parse({ ...createDesignProfile("generated", "standard"), generatedCampaign: {
+      mode, failurePolicy: "forbidden", levelCount: mode === "endless" ? 0 : 7,
+      milestones: mode === "endless" ? [] : [1, 4, 7], difficultyKeys: mode === "endless" ? [] : ["pairCount"], rationale: "按照确认方案进行自由翻牌。",
+    } });
+    const spec = generateGameSpec({ idea: "花园翻牌，没有失败和时间压力", template: "generated" }, null, profile);
+    const contract = createGameDesignContractForLegacyProject({ projectId: "project-no-failure", title: spec.title, idea: spec.vision, createdAt, spec });
+    expect(contract.failurePolicy).toBe("forbidden");
+    expect(contract.assistance.steps).toEqual([]);
+    expect(contract.acceptance.some(item => item.kind === "no-failure")).toBe(true);
+    expect(contract.acceptance.some(item => item.kind === "assistance")).toBe(false);
+    expect(contract.content.mode).toBe(mode === "endless" ? "endless" : "finite-campaign");
+    expect(contract.acceptance.some(item => item.kind === "progression")).toBe(mode !== "endless");
+  });
   it("把成熟模板编排为包含教学、递进、辅助和验收的可校验合同", () => {
     const spec = generateGameSpec({ idea: "滑动数字方块合并到目标数字。", template: "merge-2048", dimensions: "2d" });
     const contract = createGameDesignContractForLegacyProject({ projectId: "project-merge", title: spec.title, idea: spec.vision, createdAt, spec });

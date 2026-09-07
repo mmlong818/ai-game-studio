@@ -1,6 +1,6 @@
 # 开发文档导航
 
-更新时间：2026-09-06。
+更新时间：2026-09-07。
 
 本文是开发文档的唯一导航入口。文档分为“当前规范、操作手册、实施计划、游戏合同、历史证据”五类。发生冲突时，优先级依次为：代码与测试、当前规范、操作手册、实施计划、历史证据。
 
@@ -13,6 +13,8 @@
 - [开发完成审计](07-implementation-status.md)：当前能力与仍需外部凭证的项目。
 - [游戏设计知识系统](63-game-design-knowledge-system.md)：独立机制、玩法模式、研究与晋升规则。
 - [游戏设计原则](33-game-design-knowledge.md)：含赛车与铁路沙盒复盘的 11 条原则、适用范围和审核问题，已接入设计与生成提示。
+- [生成式游戏验收能力](generated-game-acceptance-capabilities.md)：验收服从确认方案的两层合同、`required | forbidden | not-applicable` 语义与迁移边界。
+- [制作安全与审核权限](92-production-safety-and-review.md)：修改生成的费用边界、图片检查点复用、`STUDIO_REVIEW_TOKEN` 正式审核与发布事务复核。
 
 ## 操作手册与工程说明
 
@@ -20,10 +22,12 @@
 - [平台游戏引擎层](58-engine-layer.md)
 - [换机与开发恢复](50-machine-transfer.md)
 - [托管、数据库与独立网址](07-hosting-and-delivery.md)
+- [本机后台服务](local-background-services.md)：Windows 下以隐藏 Node 进程启动 4311/4312/4313，重启前核对活动制作任务。
+- [PostgreSQL 发布并发验证](87-postgres-publication-concurrency.md)：`npm run test:publication-postgres` 的隔离真实数据库测试。
 
 ## 当前实施计划
 
-- [全部官方游戏新版改造](67-official-game-renovation.md)：16 款游戏的独立改造目标、平台接入与逐款验收。
+- [全部官方游戏新版改造](67-official-game-renovation.md)：全部官方游戏的独立改造目标、平台接入与逐款验收；数量以登记表为准，文内 16 款为 2026-09-05 立项时的范围。
 - [引擎评估与采用](59-engine-evaluation-and-adoption-plan.md)
 - [资源供给与资产库](60-resource-supply-and-library-design.md)
 - [游戏设计完整性](61-game-design-completeness-plan.md)
@@ -44,6 +48,7 @@
 
 以下内容保留用于追溯，不代表当前产品状态：
 
+- `76`–`92`：2026-09-06 至 09-07 的创作区与整体产品改造记录。`76` 创作入口与状态真实性、`77`–`80` 核心流程／作品空间／设置／大厅四阶段、`81` 私有作品封面交付、`82`–`84` 审核证据与历史、`85` 低高度窗口、`86` 发布事务、`88` 有限关卡与无失败验收、`89` 制作执行权数据库边界、`90` 无限玩法与安全恢复、`91` 真实创作链路修复记录、`93` 规则审核回执复用。其中标注“尚未完成”的事项以 [开发完成审计](07-implementation-status.md) 为准。
 - `00-product-vision.md`、`01-landscape-research.md`、`02-product-and-workflow.md`、`03-match3-golden-path.md`、`04-experience-design.md`、`05-m0-implementation-reference-lock.md`、`05-system-architecture.md`、`06-delivery-plan.md`：早期愿景、研究和架构过程。
 - `10`–`16`、`18`–`32`：第三方接入评审、真实使用审计和阶段完成证据。
 - `33`–`37`、`OPEN_SOURCE_GAME_TEMPLATE_RESEARCH.md`：设计方法与来源研究。

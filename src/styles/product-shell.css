@@ -1,0 +1,32 @@
+/* Shared application chrome; deliberately does not target game iframes. */
+:root { --primary: #b84a27; --primary-hover: #983c20; }
+.app-header {
+  background: var(--surface);
+  color: var(--text);
+  border-bottom: 1px solid var(--border);
+}
+.app-header :is(.brand-copy strong, .header-nav, .header-nav > a) { color: var(--text); }
+.app-header .brand-copy small { color: var(--text-muted); }
+.app-header .brand-mark { background: var(--text); color: var(--surface); }
+.header-nav > a[aria-current="page"]::after { background: var(--primary); }
+.workbench-topbar { border-bottom: 1px solid var(--border); }
+.model-settings-status[data-configured="false"] { color: var(--text-muted); background: var(--canvas); border-color: var(--border-strong); }
+.model-key-form { border-top: 0; }
+.model-settings-dialog { font-weight: 400; }
+body .app-header .model-settings-dialog .model-key-save { background: var(--primary); color: var(--on-primary); border: 1px solid transparent; }
+body .app-header .model-settings-dialog .model-key-save:hover:not(:disabled) { background: var(--primary-hover); }
+.model-key-form > p, .model-options > p { font-size: 14px; line-height: 1.7; color: var(--text-muted); }
+.model-options { border-block: 1px solid var(--border); margin: 8px 0; }
+.model-options summary { padding: 16px 0; cursor: pointer; font-weight: 600; font-size: 14px; }
+.model-options .model-roster { padding: 0 0 16px; }
+.model-options select { color: var(--text); background: var(--surface-raised); border-color: var(--border-strong); }
+.model-settings-dialog :is(button, input, select, summary):focus-visible { outline: 2px solid var(--primary); outline-offset: 3px; }
+.model-settings-actions button { min-height: 44px; border-radius: 8px; }
+.model-settings-actions { padding-top: 12px; }
+@media (max-width: 600px) {
+  .app-header { height: auto; min-height: 66px; align-items: flex-start; gap: 4px 12px; padding-block: 8px; }
+  .header-nav { min-width: 0; flex: 1; flex-wrap: wrap; justify-content: flex-end; }
+  .header-nav > a { white-space: nowrap; }
+  .model-options .model-roster { grid-template-columns: 1fr; }
+  .model-key-form { padding: 20px; }
+}

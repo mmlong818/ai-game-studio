@@ -68,6 +68,20 @@ const postgresSchema = `
   ALTER TABLE versions ADD COLUMN IF NOT EXISTS art_review_summary TEXT;
   ALTER TABLE versions ADD COLUMN IF NOT EXISTS art_reviewed_at TIMESTAMPTZ;
 
+  CREATE TABLE IF NOT EXISTS version_art_reviews (
+    id TEXT PRIMARY KEY,
+    project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    version_id TEXT NOT NULL REFERENCES versions(id) ON DELETE CASCADE,
+    sequence INTEGER NOT NULL,
+    previous_status TEXT NOT NULL,
+    status TEXT NOT NULL CHECK (status IN ('passed', 'failed')),
+    summary TEXT NOT NULL,
+    reviewed_at TIMESTAMPTZ NOT NULL,
+    UNIQUE(version_id, sequence)
+  );
+
+  ALTER TABLE version_art_reviews ADD COLUMN IF NOT EXISTS reviewer_id TEXT;
+
   CREATE TABLE IF NOT EXISTS publications (
     id TEXT PRIMARY KEY,
     project_id TEXT NOT NULL UNIQUE REFERENCES projects(id) ON DELETE CASCADE,
@@ -284,6 +298,15 @@ const sqliteSchema = `
     quality_status TEXT NOT NULL DEFAULT 'legacy', quality_summary TEXT, quality_report_json TEXT,
     quality_checked_at TEXT, art_review_status TEXT NOT NULL DEFAULT 'legacy', art_review_summary TEXT,
     art_reviewed_at TEXT, created_at TEXT NOT NULL, UNIQUE(project_id, number)
+  );
+  CREATE TABLE version_art_reviews (
+    id TEXT PRIMARY KEY,
+    project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    version_id TEXT NOT NULL REFERENCES versions(id) ON DELETE CASCADE,
+    sequence INTEGER NOT NULL, previous_status TEXT NOT NULL,
+    status TEXT NOT NULL CHECK (status IN ('passed', 'failed')),
+    summary TEXT NOT NULL, reviewed_at TEXT NOT NULL, reviewer_id TEXT,
+    UNIQUE(version_id, sequence)
   );
   CREATE TABLE publications (
     id TEXT PRIMARY KEY, project_id TEXT NOT NULL UNIQUE REFERENCES projects(id) ON DELETE CASCADE,

@@ -45,6 +45,7 @@ import {
   projectDetailSchema,
   projectInputSchema,
   projectMessageInputSchema,
+  projectRevisionInputSchema,
   projectMessageSchema,
   playActivitySchema,
   playEventInputSchema,
@@ -484,7 +485,11 @@ function toSummary(row: ProjectRow, gameOrigin: string): ProjectSummary {
     isOfficial: Boolean(row.is_official),
     coverUrl: lobbyCover ? `${origin}/media/official-cover/${lobbyCover.split('/').pop()}` : row.publication_status && row.stable_path
       ? `${origin}${row.stable_path}assets/cover.png`
-      : null,
+      // A verified private build is already an artifact, not a publication.
+      // Never invent a template cover or require publishing just to see its art.
+      : row.quality_status === "passed"
+        ? `${origin}/version/${row.version_id}/assets/cover.png`
+        : null,
     createdAt: iso(row.created_at),
     archivedAt: iso(row.archived_at),
     version: {
@@ -748,7 +753,7 @@ export class StudioRepository {
 
   async failInterruptedBuilds() {
     const interrupted = (await this.database.query<{ id: string }>(
-      "SELECT id FROM builds WHERE status IN ('queued', 'running')",
+      "SELECT id FROM builds WHERE status = 'running'",
     )).rows;
     if (interrupted.length === 0) return;
     const message = "服务重启中断了本次构建；已保留既有成功版本，可以重新构建。";
@@ -765,6 +770,10 @@ export class StudioRepository {
         );
       }
     });
+  }
+
+  async queuedBuildIds(): Promise<string[]> {
+    return (await this.database.query<{ id: string }>("SELECT id FROM builds WHERE status = 'queued' ORDER BY created_at, id")).rows.map(row => row.id);
   }
 
   private async ensureFixtureBuild(projectId: string, outputs: string[]) {
@@ -1621,7 +1630,7 @@ export class StudioRepository {
 
   async create(rawInput: unknown, ideaAnalysis: IdeaAnalysis | null = null, designProfile: GameDesignProfile | null = null, designKnowledge: DesignKnowledgeShadow | null = null, resourcePlanning: ResourcePlanningShadow | null = null) {
     const input = projectInputSchema.parse(rawInput);
-    const projectId = randomUUID();
+    const projectId = input.requestId ?? randomUUID();
     const createdAt = new Date().toISOString();
     const preliminarySpec = designKnowledge ? null : generateGameSpec(input, ideaAnalysis, designProfile, null, resourcePlanning);
     const resolvedKnowledge = designKnowledge ?? createDesignKnowledgeShadow({
@@ -1644,10 +1653,31 @@ export class StudioRepository {
     // uniqueSlug() checks-then-inserts against the slug UNIQUE constraint; serialize all
     // project creation without a preferred slug through one lock so two concurrent creates
     // with the same title cannot both observe "no such slug yet" and collide.
-    await this.locks.run(SLUG_LOCK_KEY, () => insertProject(this.database, input, spec, null, undefined, false, projectId));
+    await this.locks.run(SLUG_LOCK_KEY, async () => {
+      const existing = await this.get(projectId);
+      if (existing) {
+        if (existing.idea !== input.idea) throw new Error("创建请求与已有项目不一致。");
+        return;
+      }
+      await insertProject(this.database, input, spec, null, undefined, false, projectId);
+    });
     const project = await this.get(projectId);
     if (!project) throw new Error("项目写入后无法读取。");
     return project;
+  }
+
+  async latestPlayableBuild(projectId: string) {
+    const row = (await this.database.query<{ id: string }>(
+      "SELECT id FROM builds WHERE project_id = $1 AND status = 'succeeded' AND version_id IS NOT NULL ORDER BY created_at DESC LIMIT 1", [projectId],
+    )).rows[0];
+    return row ? this.buildById(row.id) : null;
+  }
+
+  async recentReusableBuilds(projectId: string, excludeBuildId: string): Promise<Array<{ id: string }>> {
+    return (await this.database.query<{ id: string }>(
+      "SELECT id FROM builds WHERE project_id = $1 AND id <> $2 AND status IN ('failed', 'succeeded') ORDER BY created_at DESC, id DESC LIMIT 8",
+      [projectId, excludeBuildId],
+    )).rows;
   }
 
   async latestBuild(projectId: string) {
@@ -1661,23 +1691,53 @@ export class StudioRepository {
     return toBuild(row, steps, this.gameOrigin);
   }
 
-  async createBuild(projectId: string) {
+  async revisionBuild(projectId: string, requestId: string) {
+    const row = (await this.database.query<{ id: string }>(
+      "SELECT b.id FROM builds b JOIN project_messages m ON m.id = b.id AND m.project_id = b.project_id WHERE b.id = $1 AND b.project_id = $2 AND m.role = 'user'", [requestId, projectId],
+    )).rows[0];
+    return row ? this.buildById(row.id) : null;
+  }
+
+  async createBuild(projectId: string, revision?: { requestId: string; content: string }) {
+    const confirmed = revision ? projectRevisionInputSchema.parse(revision) : null;
     // The "is there already a queued/running build" check and the INSERT that follows must be
     // atomic per project, otherwise two concurrent calls (e.g. a double click) can both see "no
     // active build" and each insert their own build row.
     return this.locks.run(`build:${projectId}`, async () => {
       const project = await this.get(projectId);
       if (!project) throw new Error("项目不存在。");
-      if (project.archivedAt) throw new Error("归档项目不能开始新的构建，请先恢复项目。");
-      if (project.fixtureKind) throw new Error("黄金游戏已经有完整构建记录。");
-      const active = (await this.database.query<{ id: string }>(
+      const buildId = await this.database.transaction(async transaction => {
+      const lockedProject = (await transaction.query<{ archived_at: string | null; fixture_kind: string | null }>(
+        `SELECT archived_at, fixture_kind FROM projects WHERE id = $1${transaction.provider === "postgresql" ? " FOR UPDATE" : ""}`, [projectId],
+      )).rows[0];
+      if (!lockedProject) throw new Error("项目不存在。");
+      if (confirmed) {
+        const existing = (await transaction.query<{ project_id: string; content: string }>(
+          "SELECT b.project_id, m.content FROM builds b LEFT JOIN project_messages m ON m.id = b.id WHERE b.id = $1", [confirmed.requestId],
+        )).rows[0];
+        if (existing) {
+          if (existing.project_id !== projectId || existing.content !== confirmed.content) throw new Error("修改请求编号已用于其他内容，不能重复使用。");
+          return confirmed.requestId;
+        }
+      }
+      if (lockedProject.archived_at) throw new Error("归档项目不能开始新的构建，请先恢复项目。");
+      if (lockedProject.fixture_kind) throw new Error("黄金游戏已经有完整构建记录。");
+      const active = (await transaction.query<{ id: string }>(
         "SELECT id FROM builds WHERE project_id = $1 AND status IN ('queued', 'running') LIMIT 1", [projectId],
       )).rows[0];
-      if (active) return this.buildById(active.id);
+      if (active) {
+        if (confirmed) throw new Error("当前游戏仍在制作，请等本次任务结束后再确认修改。");
+        return active.id;
+      }
 
-      const buildId = randomUUID();
+      const buildId = confirmed?.requestId ?? randomUUID();
       const now = new Date().toISOString();
-      await this.database.transaction(async (transaction) => {
+        // The direction and build receipt are one transaction: neither can exist
+        // without the other. Repeating this receipt never creates another build.
+        if (confirmed) await transaction.query(
+          "INSERT INTO project_messages (id, project_id, role, content, created_at) VALUES ($1, $2, 'user', $3, $4)",
+          [buildId, projectId, confirmed.content, now],
+        );
         await transaction.query(
           `INSERT INTO builds (id, project_id, status, runtime_target, created_at, started_at, completed_at, version_id, error_message)
            VALUES ($1, $2, 'queued', $3, $4, NULL, NULL, NULL, NULL)`,
@@ -1690,6 +1750,7 @@ export class StudioRepository {
             [randomUUID(), buildId, sequence, step.kind, step.title, step.detail],
           );
         }
+        return buildId;
       });
       return this.buildById(buildId);
     });
@@ -1705,13 +1766,21 @@ export class StudioRepository {
   }
 
   async markBuildRunning(buildId: string) {
-    await this.database.query("UPDATE builds SET status = 'running', started_at = $1 WHERE id = $2", [new Date().toISOString(), buildId]);
+    const claimed = await this.database.query("UPDATE builds SET status = 'running', started_at = $1 WHERE id = $2 AND status = 'queued'", [new Date().toISOString(), buildId]);
+    return claimed.rowCount === 1;
   }
 
   async markStepRunning(buildId: string, sequence: number) {
     await this.database.query(
       "UPDATE build_steps SET status = 'running', started_at = $1 WHERE build_id = $2 AND sequence = $3",
       [new Date().toISOString(), buildId, sequence],
+    );
+  }
+
+  async reportStepProgress(buildId: string, sequence: number, detail: string) {
+    await this.database.query(
+      "UPDATE build_steps SET detail = $1 WHERE build_id = $2 AND sequence = $3 AND status = 'running'",
+      [detail, buildId, sequence],
     );
   }
 
@@ -1870,7 +1939,16 @@ export class StudioRepository {
     }));
   }
 
-  async reviewVersionArt(projectId: string, versionId: string, rawInput: unknown) {
+  async listVersionArtReviews(projectId: string, versionId: string) {
+    const version = await this.database.query("SELECT id FROM versions WHERE project_id = $1 AND id = $2", [projectId, versionId]);
+    if (!version.rowCount) throw new Error("要查询审核记录的版本不存在。");
+    const rows = (await this.database.query<{
+      id: string; sequence: number; previous_status: string; status: string; summary: string; reviewed_at: DateValue; reviewer_id: string | null;
+    }>("SELECT id, sequence, previous_status, status, summary, reviewed_at, reviewer_id FROM version_art_reviews WHERE project_id = $1 AND version_id = $2 ORDER BY sequence DESC", [projectId, versionId])).rows;
+    return rows.map(row => ({ id: row.id, projectId, versionId, sequence: row.sequence, previousStatus: row.previous_status, status: row.status, summary: row.summary, reviewedAt: iso(row.reviewed_at), reviewerId: row.reviewer_id, source: row.reviewer_id ? "operator-credential" as const : "manual-unverified" as const }));
+  }
+
+  async reviewVersionArt(projectId: string, versionId: string, rawInput: unknown, reviewer?: { id: string }) {
     const project = await this.get(projectId);
     if (!project) throw new Error("项目不存在。");
     if (project.archivedAt) throw new Error("归档项目不能验收，请先恢复项目。");
@@ -1895,6 +1973,15 @@ export class StudioRepository {
       )),
     });
     await this.database.transaction(async (transaction) => {
+      // Serialize reviewers on this version in PostgreSQL. SQLite test transactions
+      // already serialize writes. Evidence and the current verdict must commit together.
+      await transaction.query(`SELECT id FROM versions WHERE id = $1${transaction.provider === "postgresql" ? " FOR UPDATE" : ""}`, [versionId]);
+      await transaction.query(
+        `INSERT INTO version_art_reviews (id, project_id, version_id, sequence, previous_status, status, summary, reviewed_at, reviewer_id)
+         SELECT $1, $2, v.id, (SELECT COALESCE(MAX(r.sequence), 0) + 1 FROM version_art_reviews r WHERE r.version_id = v.id), v.art_review_status, $3, $4, $5, $7
+         FROM versions v WHERE v.id = $6 AND v.project_id = $2`,
+        [randomUUID(), projectId, input.status, input.summary, reviewedAt, versionId, reviewer?.id ?? null],
+      );
       await transaction.query(
         "UPDATE versions SET art_review_status = $1, art_review_summary = $2, art_reviewed_at = $3 WHERE id = $4",
         [input.status, input.summary, reviewedAt, versionId],
@@ -1904,32 +1991,40 @@ export class StudioRepository {
     return this.listVersions(projectId);
   }
 
-  async publish(projectId: string, requestedVersionId?: string) {
+  async publish(projectId: string, requestedVersionId?: string, requireVerifiedReviewer = false) {
     const project = await this.get(projectId);
     if (!project) throw new Error("项目不存在。");
     if (project.archivedAt) throw new Error("归档项目不能发布，请先恢复项目。");
     if (project.status === "contract_ready") throw new Error("玩法合同已经保存，但还没有可发布的游戏构建。");
     const versionId = requestedVersionId ?? project.version.id;
-    const targetVersion = (await this.database.query<{
-      id: string;
-      quality_status: ProjectVersion["qualityStatus"];
-      art_review_status: ProjectVersion["artReviewStatus"];
-    }>("SELECT id, quality_status, art_review_status FROM versions WHERE id = $1 AND project_id = $2", [versionId, projectId])).rows[0];
-    if (!targetVersion) throw new Error("要发布的游戏版本不存在。");
-    if (targetVersion.quality_status !== "passed") {
-      throw new Error(targetVersion.quality_status === "failed"
-        ? "这个版本没有通过质量验收，不能发布。"
-        : "这个版本还没有完成质量验收，不能发布。");
-    }
-    if (targetVersion.art_review_status !== "passed") {
-      throw new Error(targetVersion.art_review_status === "failed"
-        ? "这个版本没有通过主美复核，不能发布。"
-        : "这个版本还没有通过主美复核，不能发布。");
-    }
     const now = new Date().toISOString();
     const versionPath = `/version/${versionId}/`;
     const stablePath = `/play/${project.slug}/`;
     await this.database.transaction(async (transaction) => {
+      // Re-check under database locks, not from the earlier UI/project snapshot.
+      // Project first serializes publication switches and archive; version lock
+      // is shared with manual review so a stale verdict cannot authorize a switch.
+      const lock = transaction.provider === "postgresql" ? " FOR UPDATE" : "";
+      const current = (await transaction.query<{ archived_at: DateValue | null; status: string }>(
+        `SELECT archived_at, status FROM projects WHERE id = $1${lock}`, [projectId],
+      )).rows[0];
+      if (!current) throw new Error("项目不存在。");
+      if (current.archived_at) throw new Error("归档项目不能发布，请先恢复项目。");
+      if (current.status === "contract_ready") throw new Error("玩法合同已经保存，但还没有可发布的游戏构建。");
+      const targetVersion = (await transaction.query<{
+        id: string; quality_status: ProjectVersion["qualityStatus"]; art_review_status: ProjectVersion["artReviewStatus"];
+      }>(`SELECT id, quality_status, art_review_status FROM versions WHERE id = $1 AND project_id = $2${lock}`, [versionId, projectId])).rows[0];
+      if (!targetVersion) throw new Error("要发布的游戏版本不存在。");
+      if (targetVersion.quality_status !== "passed") throw new Error(targetVersion.quality_status === "failed"
+        ? "这个版本没有通过质量验收，不能发布。" : "这个版本还没有完成质量验收，不能发布。");
+      if (targetVersion.art_review_status !== "passed") throw new Error(targetVersion.art_review_status === "failed"
+        ? "这个版本没有通过主美复核，不能发布。" : "这个版本还没有通过主美复核，不能发布。");
+      if (requireVerifiedReviewer) {
+        const review = (await transaction.query<{ status: string; reviewer_id: string | null }>(
+          "SELECT status, reviewer_id FROM version_art_reviews WHERE version_id = $1 AND project_id = $2 ORDER BY sequence DESC LIMIT 1", [versionId, projectId],
+        )).rows[0];
+        if (!review?.reviewer_id || review.status !== "passed") throw new Error("正式发布需要平台审核凭据确认的最新通过记录，历史未验证记录不能替代。私下试玩不受影响。");
+      }
       await transaction.query(
         `INSERT INTO publications (id, project_id, version_id, status, stable_path, version_path, published_at)
          VALUES ($1, $2, $3, 'live', $4, $5, $6)
@@ -1960,19 +2055,28 @@ export class StudioRepository {
     if (project.archivedAt) throw new Error("归档项目不能修改，请先恢复项目。");
     const input = projectMessageInputSchema.parse(rawInput);
     const now = new Date();
-    const userId = randomUUID();
+    const userId = input.clientMessageId ?? randomUUID();
     const assistantId = randomUUID();
     const assistantContent = `我已把这条意见归入“${messageFocus(input.content)}”。下一次启动构建时，全部对话意见会被读入并用于修订设计合同；当前 v${project.version.number} 和已发布游戏不会被自动改动。`;
-    await this.database.transaction(async (transaction) => {
-      await transaction.query(
-        "INSERT INTO project_messages (id, project_id, role, content, created_at) VALUES ($1, $2, 'user', $3, $4)",
+    await this.locks.run(`message:${userId}`, () => this.database.transaction(async (transaction) => {
+      const inserted = await transaction.query(
+        "INSERT INTO project_messages (id, project_id, role, content, created_at) VALUES ($1, $2, 'user', $3, $4) ON CONFLICT(id) DO NOTHING",
         [userId, projectId, input.content, now.toISOString()],
       );
+      if (!inserted.rowCount) {
+        const existing = (await transaction.query<{ project_id: string; role: string; content: string }>(
+          "SELECT project_id, role, content FROM project_messages WHERE id = $1", [userId],
+        )).rows[0];
+        if (!existing || existing.project_id !== projectId || existing.role !== "user" || existing.content !== input.content) {
+          throw new Error("意见标识已被其他内容使用，请刷新后重新提交。");
+        }
+        return;
+      }
       await transaction.query(
         "INSERT INTO project_messages (id, project_id, role, content, created_at) VALUES ($1, $2, 'assistant', $3, $4)",
         [assistantId, projectId, assistantContent, new Date(now.getTime() + 1).toISOString()],
       );
-    });
+    }));
     return this.listMessages(projectId);
   }
 

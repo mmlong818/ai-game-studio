@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState, type CSSProperties, type FormEvent } from "react";
+import { useEffect, useRef, useState, type CSSProperties } from "react";
+import { ArtReviewHistory } from "./ArtReviewHistory";
 import {
   Activity,
   Archive,
@@ -26,7 +27,6 @@ import {
   Rocket,
   RotateCcw,
   ScanSearch,
-  Send,
   Smartphone,
   Sparkles,
   UserRound,
@@ -36,17 +36,17 @@ import { visualStyleOptions, type Build, type BuildStep, type IdeaAnalysis, type
 import {
   archiveProject,
   getLatestBuild,
+  getPlayableBuild,
   getProject,
   getProjectMessages,
   getProjectVersions,
   publishProject,
   publishProjectVersion,
-  reviewVersionArt,
   restoreProject,
-  sendProjectMessage,
-  startBuild,
 } from "./api";
 import { ModelSettingsButton } from "./ModelSettingsButton";
+import { RevisionComposer } from "./RevisionComposer";
+import { confirmProjectRevision, recoverPendingRevision } from "./project-revision";
 import { localizedTemplateNames, PreferenceControls, usePreferences, type ResolvedLocale } from "./preferences";
 
 const statusLabelKeys = {
@@ -105,14 +105,26 @@ function CopyButton({ value, label }: { value: string; label: string }) {
   );
 }
 
-function PreviewPane({ project, build }: { project: ProjectDetail; build: Build | null }) {
+export function PreviewPane({ project, build }: { project: ProjectDetail; build: Build | null }) {
   const { t } = usePreferences();
   const [frameKey, setFrameKey] = useState(0);
   const [device, setDevice] = useState<"desktop" | "mobile">(() => (
     typeof window !== "undefined" && window.matchMedia("(max-width: 620px)").matches ? "mobile" : "desktop"
   ));
   const shellRef = useRef<HTMLDivElement>(null);
-  const previewUrl = build?.previewUrl ?? project.publication?.stableUrl;
+  const [playable, setPlayable] = useState<{ projectId: string; url: string } | null>(null);
+  useEffect(() => {
+    let active = true;
+    if (build?.status === "succeeded" && build.previewUrl) {
+      setPlayable({ projectId: project.id, url: build.previewUrl });
+    } else {
+      void getPlayableBuild(project.id).then(previous => {
+        if (active && previous?.previewUrl) setPlayable({ projectId: project.id, url: previous.previewUrl });
+      }).catch(() => { /* Keep the last known playable version during a read outage. */ });
+    }
+    return () => { active = false; };
+  }, [project.id, build?.id, build?.status, build?.previewUrl]);
+  const previewUrl = (build?.status === "succeeded" ? build.previewUrl : null) ?? (playable?.projectId === project.id ? playable.url : null) ?? project.publication?.stableUrl;
   const [aspectWidth, aspectHeight] = project.spec.aspectRatio.split(":").map(Number);
   const previewStyle = {
     "--preview-aspect": project.spec.aspectRatio.replace(":", " / "),
@@ -129,6 +141,7 @@ function PreviewPane({ project, build }: { project: ProjectDetail; build: Build 
 
   return (
     <section className="workbench-preview" aria-labelledby="preview-heading">
+      {previewUrl && (build?.status === "running" || build?.status === "queued" || build?.status === "failed") && <p className="preview-version-notice" role="status">{build.status === "failed" ? "新版未完成，仍可试玩上一个成功版本。" : "新版正在制作，当前仍可试玩上一个成功版本。"}</p>}
       <header className="workbench-preview-toolbar">
         <div className="device-switch" aria-label={t("studio.previewSize")}>
           <button
@@ -435,12 +448,12 @@ function DeliveryUrls({ project }: { project: ProjectDetail }) {
   );
 }
 
-function VersionHistory({ versions, busy, archived, onPublish, onReview }: {
+function VersionHistory({ projectId, versions, busy, archived, onPublish }: {
+  projectId: string;
   versions: ProjectVersion[];
   busy: boolean;
   archived: boolean;
   onPublish: (versionId: string) => Promise<void>;
-  onReview: (versionId: string) => Promise<void>;
 }) {
   const { locale, t } = usePreferences();
   if (!versions.length) return null;
@@ -449,7 +462,7 @@ function VersionHistory({ versions, busy, archived, onPublish, onReview }: {
 
   const renderVersion = (version: ProjectVersion) => {
     const canPublish = !archived && !version.isPublished && version.qualityStatus === "passed";
-    const canReview = !archived && version.qualityStatus === "passed" && version.artReviewStatus === "pending";
+    const canReview = !archived && version.qualityStatus === "passed" && (version.artReviewStatus === "pending" || version.artReviewStatus === "failed");
     return (
       <li key={version.id}>
         <div className={`version-quality quality-${version.qualityStatus}`}>
@@ -457,18 +470,18 @@ function VersionHistory({ versions, busy, archived, onPublish, onReview }: {
           <span>v{version.number}</span>
         </div>
         <div className="version-description">
+          <p>自动检查：{version.qualityStatus === "passed" ? "通过" : version.qualityStatus === "failed" ? "未通过" : "尚未完成"} · 人工美术审核：{version.artReviewStatus === "passed" ? "有通过记录" : version.artReviewStatus === "failed" ? "未通过" : "待审核"}</p>
           <strong>{version.isPublished ? t("studio.onlineVersion") : t(qualityLabelKeys[version.qualityStatus])}</strong>
           <small title={version.artReviewSummary ?? version.qualitySummary ?? undefined}>{version.artReviewStatus === "passed" ? version.artReviewSummary ?? t("studio.artPassed") : version.artReviewStatus === "failed" ? version.artReviewSummary ?? t("studio.artFailed") : version.qualitySummary ?? new Intl.DateTimeFormat(locale, { dateStyle: "medium", timeStyle: "short" }).format(new Date(version.createdAt))}</small>
         </div>
         {canReview ? (
-          <button type="button" disabled={busy} onClick={() => onReview(version.id)}>
-            <Sparkles size={14} aria-hidden="true" />{t("studio.approveArt")}
-          </button>
+          <p>正式复核由平台审核端完成。你可以直接试玩和提出修改，无需自行填写专业审核结论。</p>
         ) : canPublish && version.artReviewStatus === "passed" ? (
           <button type="button" disabled={busy} onClick={() => onPublish(version.id)}>
             <RotateCcw size={14} aria-hidden="true" />{t("studio.publishVersion")}
           </button>
         ) : <span className="version-current">{version.isPublished ? t("studio.currentOnline") : ""}</span>}
+        <ArtReviewHistory key={`${projectId}-${version.id}`} projectId={projectId} versionId={version.id} revision={version.artReviewedAt} />
       </li>
     );
   };
@@ -562,56 +575,29 @@ type WorkbenchPanelProps = {
   onSend: (content: string) => Promise<void>;
   onStartBuild: () => void;
   onPublishVersion: (versionId: string) => Promise<void>;
-  onReviewVersion: (versionId: string) => Promise<void>;
 };
 
-function WorkbenchPanel({ project, build, messages, loading, sending, archived, versions, busy, canStartBuild, onSend, onStartBuild, onPublishVersion, onReviewVersion }: WorkbenchPanelProps) {
+function WorkbenchPanel({ project, build, messages, loading, sending, archived, versions, busy, canStartBuild, onSend, onStartBuild, onPublishVersion }: WorkbenchPanelProps) {
   const { t } = usePreferences();
-  const [draft, setDraft] = useState("");
   const streamRef = useRef<HTMLDivElement>(null);
-  const buildSignature = build?.steps.map((step) => step.status).join(":") ?? "empty";
   const completedSteps = build?.steps.filter((step) => step.status === "succeeded" || step.status === "failed").length ?? 0;
   const totalSteps = build?.steps.length ?? 0;
   const progress = totalSteps ? Math.round((completedSteps / totalSteps) * 100) : 0;
 
-  useEffect(() => {
-    if (!draft.trim()) return;
-    const warnBeforeLeave = (event: BeforeUnloadEvent) => {
-      event.preventDefault();
-      event.returnValue = "";
-    };
-    window.addEventListener("beforeunload", warnBeforeLeave);
-    return () => window.removeEventListener("beforeunload", warnBeforeLeave);
-  }, [draft]);
-
-  useEffect(() => {
-    const stream = streamRef.current;
-    if (stream) stream.scrollTop = stream.scrollHeight;
-  }, [build?.status, buildSignature, messages.length]);
-
-  async function submit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const content = draft.trim();
-    if (content.length < 2 || sending) return;
-    try {
-      await onSend(content);
-      setDraft("");
-    } catch {
-      // 页面上方会显示可恢复错误，保留草稿便于重试。
-    }
-  }
-
   return (
     <aside className="workbench-panel" aria-labelledby="workbench-panel-heading">
       <header className="workbench-panel-header">
-        <div className="panel-title"><h2 id="workbench-panel-heading">{t("studio.productionPulse")}</h2></div>
+        <div className="panel-title"><h2 id="workbench-panel-heading">你的作品空间</h2></div>
         <div className="panel-pulse">
-          <output className="panel-progress" aria-label={t("studio.progress", { progress })}>{progress}%</output>
-          <span className={`panel-live-state state-${build?.status ?? "idle"}`}><i />{build?.status === "running" ? t("studio.building") : t("studio.discuss")}</span>
+          <span className={`panel-live-state state-${build?.status ?? "idle"}`}><i />{build?.status === "running" || build?.status === "queued" ? t("studio.building") : "试玩 · 修改"}</span>
         </div>
       </header>
 
-      <div className="workbench-stream" ref={streamRef} role="log" aria-live="polite" aria-busy={loading}>
+      <div className="workbench-stream" ref={streamRef} aria-busy={loading}>
+        <section className="workspace-summary" aria-live="polite"><span>当前进展</span><h3>{loading ? "正在读取你的游戏…" : build?.status === "succeeded" ? "游戏已准备好，先玩一局吧。" : build?.status === "failed" ? "本次制作未完成，已有成功版本不会被覆盖。" : build?.status === "running" ? "正在把修改做进游戏。" : build?.status === "queued" ? "修改已收到，等待开始制作。" : "从这份方案继续制作。"}</h3><p>{build?.status === "running" ? build.steps.find(step => step.status === "running")?.detail ?? "服务端正在处理，无需重复提交。" : "先试玩，再告诉我们哪里还可以更好。每次修改都沿用这个作品。"}</p></section>
+        <RevisionComposer key={project.id} projectId={project.id} disabled={archived || busy || sending || loading || !canStartBuild} working={build?.status === "running" || build?.status === "queued"} onConfirm={onSend} />
+        {!!messages.filter(message => message.role === "user").length && <details className="workspace-details"><summary>最近的修改意见</summary><DirectionLog messages={messages.filter(message => message.role === "user").slice(-3)} /></details>}
+        <details className="workspace-details"><summary>查看完整方案、制作与审核记录</summary><p>以下为专业制作详情。实际审核仍按原有标准执行，不以展开或关闭记录代替审核。</p>
         <CreatorBrief project={project} />
 
         <div className="production-system-note"><Sparkles size={15} aria-hidden="true" /><p>{t("studio.intro")}</p></div>
@@ -628,7 +614,8 @@ function WorkbenchPanel({ project, build, messages, loading, sending, archived, 
         <DirectionLog messages={messages} />
 
         <DeliveryUrls project={project} />
-        <VersionHistory versions={versions} busy={busy} archived={archived} onPublish={onPublishVersion} onReview={onReviewVersion} />
+        <VersionHistory projectId={project.id} versions={versions} busy={busy} archived={archived} onPublish={onPublishVersion} />
+        </details>
       </div>
 
       {build && (build.status === "queued" || build.status === "running") ? (
@@ -639,31 +626,6 @@ function WorkbenchPanel({ project, build, messages, loading, sending, archived, 
         </div>
       ) : null}
 
-      <form className="workbench-composer" onSubmit={submit}>
-        <div className="composer-heading">
-          <strong>{t("studio.directionTitle")}</strong>
-          <p>{t("studio.directionHint")}</p>
-        </div>
-        <label className="sr-only" htmlFor="project-message">{t("studio.messageLabel")}</label>
-        <div className="composer-field">
-          <textarea
-            id="project-message"
-            name="project-message"
-            value={draft}
-            rows={2}
-            minLength={2}
-            maxLength={2_000}
-            autoComplete="off"
-            placeholder={t("studio.messagePlaceholder")}
-            onChange={(event) => setDraft(event.currentTarget.value)}
-            disabled={archived}
-          />
-          <button type="submit" disabled={archived || sending || draft.trim().length < 2} aria-label={t("studio.send")}>
-            {sending ? <LoaderCircle className="spin" size={18} aria-hidden="true" /> : <Send size={18} aria-hidden="true" />}
-          </button>
-        </div>
-        <div className="composer-note"><span>{archived ? t("studio.archivedNote") : t("studio.messageNote")}</span><output>{draft.length}/2000</output></div>
-      </form>
     </aside>
   );
 }
@@ -686,7 +648,7 @@ export function ProjectStudio({ project, onProjectChange }: ProjectStudioProps) 
   useEffect(() => {
     let active = true;
     setLoading(true);
-    Promise.all([getLatestBuild(project.id), getProjectMessages(project.id), getProjectVersions(project.id)])
+    Promise.all([recoverPendingRevision(project.id).then(recovered => recovered ?? getLatestBuild(project.id)), getProjectMessages(project.id), getProjectVersions(project.id)])
       .then(([nextBuild, nextMessages, nextVersions]) => {
         if (!active) return;
         setBuild(nextBuild);
@@ -727,15 +689,7 @@ export function ProjectStudio({ project, onProjectChange }: ProjectStudioProps) 
   }, [build?.status, onProjectChange, project.id]);
 
   async function beginBuild() {
-    setBusy(true);
-    setError(null);
-    try {
-      setBuild(await startBuild(project.id));
-    } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "无法启动构建。");
-    } finally {
-      setBusy(false);
-    }
+    document.getElementById("revision-message")?.focus();
   }
 
   async function publish() {
@@ -766,19 +720,6 @@ export function ProjectStudio({ project, onProjectChange }: ProjectStudioProps) 
     }
   }
 
-  async function reviewArt(versionId: string) {
-    setBusy(true);
-    setError(null);
-    try {
-      setVersions(await reviewVersionArt(project.id, versionId, "passed", t("studio.artReviewEvidence")));
-      onProjectChange(await getProject(project.id));
-    } catch (caught) {
-      setError(caught instanceof Error ? caught.message : t("studio.artReviewFailed"));
-    } finally {
-      setBusy(false);
-    }
-  }
-
   async function toggleArchive() {
     setBusy(true);
     setError(null);
@@ -800,9 +741,12 @@ export function ProjectStudio({ project, onProjectChange }: ProjectStudioProps) 
     setSending(true);
     setError(null);
     try {
-      setMessages(await sendProjectMessage(project.id, content));
+      setBuild(await confirmProjectRevision(project.id, content));
+      // Failure to refresh discussion after acceptance must never make the
+      // confirmed paid request look unaccepted or encourage another submission.
+      try { setMessages(await getProjectMessages(project.id)); } catch { /* Build receipt already confirmed. */ }
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "制作意见没有保存，请稍后重试。");
+      setError("修改接收状态尚未确认。请保留当前内容并刷新恢复记录，系统不会自动重复提交。");
       throw caught;
     } finally {
       setSending(false);
@@ -840,7 +784,7 @@ export function ProjectStudio({ project, onProjectChange }: ProjectStudioProps) 
           {canBuild ? (
             <button className="workbench-button button-secondary" type="button" disabled={busy} onClick={beginBuild}>
               {busy ? <LoaderCircle className="spin" size={16} aria-hidden="true" /> : <Code2 size={16} aria-hidden="true" />}
-              {build?.status === "failed" ? t("studio.rebuild") : build?.status === "succeeded" ? t("studio.newBuild") : t("studio.build")}
+              修改游戏
             </button>
           ) : null}
           {canPublish ? (
@@ -877,7 +821,6 @@ export function ProjectStudio({ project, onProjectChange }: ProjectStudioProps) 
           onSend={sendMessage}
           onStartBuild={beginBuild}
           onPublishVersion={publishVersion}
-          onReviewVersion={reviewArt}
         />
       </div>
 

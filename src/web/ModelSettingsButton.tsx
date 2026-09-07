@@ -116,18 +116,32 @@ export function ModelSettingsButton({ compact = false }: { compact?: boolean }) 
           <div>
             <span className="model-settings-kicker">OPENAI</span>
             <h2 id="model-settings-title">{t("models.title")}</h2>
-            <p>{t("models.description")}</p>
+            <p>连接模型服务后即可制作游戏。平台会自动推荐可用模型，无需了解技术参数。</p>
           </div>
           <button className="model-settings-close" type="button" onClick={() => setOpen(false)} aria-label={t("models.close")}>
             <X size={19} aria-hidden="true" />
           </button>
         </header>
 
-        <div className="model-settings-status" aria-live="polite">
-          {busy && !status ? <LoaderCircle className="spin" size={16} aria-hidden="true" /> : <CheckCircle2 size={16} aria-hidden="true" />}
-          <span>{statusText}</span>
+        <div className="model-settings-status" data-configured={Boolean(status?.configured)} aria-live="polite">
+          {busy && !status ? <LoaderCircle className="spin" size={16} aria-hidden="true" /> : status?.configured ? <CheckCircle2 size={16} aria-hidden="true" /> : <KeyRound size={16} aria-hidden="true" />}
+          <span>{busy && !status ? "正在读取连接设置…" : status?.configured ? "已配置模型服务" : "尚未连接，请先填写 Key"}</span>
         </div>
 
+        <form className="model-key-form" onSubmit={save}>
+          <label htmlFor="openai-api-key">{t("models.keyLabel")}</label>
+          <div className="model-key-field">
+            <KeyRound size={17} aria-hidden="true" />
+            <input id="openai-api-key" type="password" value={apiKey}
+              onChange={(event) => { setApiKey(event.currentTarget.value); setCatalog(null); setModels({ text: "", image: "" }); setError(""); setSaved(false); }}
+              placeholder={status?.configured ? "已配置，更换时填写新 Key" : "sk-…"}
+              autoComplete="off" spellCheck={false} required={!status?.configured} minLength={20} disabled={busy} />
+          </div>
+          <p className="model-security-note"><ShieldCheck size={15} aria-hidden="true" />{t("models.security")}</p>
+          <p className="model-connection-hint">保存设置不会开始制作游戏；实际制作会使用模型服务额度。</p>
+          <details className="model-options">
+          <summary>模型选择与连接详情（可选）</summary>
+          <p>{statusText}。可以沿用自动推荐，也可以自行调整。</p>
         <div className="model-roster" aria-label={t("models.available")}>
           <article>
             <span>{t("models.textRole")}</span>
@@ -146,6 +160,7 @@ export function ModelSettingsButton({ compact = false }: { compact?: boolean }) 
             <p>{t("models.imageDetail")}</p>
           </article>
         </div>
+          </details>
 
         <p aria-live="polite">{loadingModels ? "正在自动获取远端模型列表…" : catalog ? "已按兼容模型的版本排序，优先推荐新版本。可直接保存，也可调整选择。" : "输入完整 Key 后自动获取可用模型。"}
           {!loadingModels && (apiKey.trim().length >= 20 || status?.configured) ? <button type="button" disabled={busy} onClick={() => { setCatalog(null); setRetry(value => value + 1); }}>重新获取</button> : null}
@@ -153,24 +168,6 @@ export function ModelSettingsButton({ compact = false }: { compact?: boolean }) 
         {catalog && (!catalog.text.length || !catalog.image.length) ? <p role="alert">当前账号缺少平台兼容的文本或图像模型，暂不能保存。模型列表权限不等于实际调用额度。</p> : null}
         {saved ? <p role="status">已保存，后续生成使用所选模型（当前服务会话）。</p> : null}
 
-        <form className="model-key-form" onSubmit={save}>
-          <label htmlFor="openai-api-key">{t("models.keyLabel")}</label>
-          <div className="model-key-field">
-            <KeyRound size={17} aria-hidden="true" />
-            <input
-              id="openai-api-key"
-              type="password"
-              value={apiKey}
-              onChange={(event) => { setApiKey(event.currentTarget.value); setCatalog(null); setModels({ text: "", image: "" }); setError(""); setSaved(false); }}
-              placeholder="sk-…"
-              autoComplete="off"
-              spellCheck={false}
-              required={!status?.configured}
-              minLength={20}
-              disabled={busy}
-            />
-          </div>
-          <p className="model-security-note"><ShieldCheck size={15} aria-hidden="true" />{t("models.security")}</p>
           {error ? <p className="model-settings-error" role="alert">{error}</p> : null}
           <footer className="model-settings-actions">
             {status?.source === "session" ? <button className="model-key-clear" type="button" onClick={clear} disabled={busy}>{t("models.clear")}</button> : <span />}

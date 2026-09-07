@@ -1,0 +1,35 @@
+import { beforeEach, expect, it, vi } from "vitest";
+import { confirmProjectRevision, pendingRevision, recoverPendingRevision } from "./project-revision";
+import { getProjectRevision, submitProjectRevision } from "./api";
+import type { Build } from "../shared/contracts";
+vi.mock("./api", () => ({ getProjectRevision: vi.fn(), submitProjectRevision: vi.fn() }));
+beforeEach(() => { vi.resetAllMocks(); localStorage.clear(); vi.mocked(getProjectRevision).mockResolvedValue(null); });
+it("先持久化请求，再提交一次原子修改", async () => {
+  vi.mocked(submitProjectRevision).mockImplementation(async (id, input) => {
+    expect(pendingRevision(id)).toEqual(input);
+    return { id: input.requestId, status: "queued" } as Build;
+  });
+  const build = await confirmProjectRevision("p1", "增加配对反馈");
+  expect(build.status).toBe("queued");
+  expect(pendingRevision("p1")).toBeNull();
+  expect(submitProjectRevision).toHaveBeenCalledTimes(1);
+});
+it("响应丢失后只读恢复同一任务，不重复提交", async () => {
+  vi.mocked(submitProjectRevision).mockRejectedValue(new Error("response lost"));
+  await expect(confirmProjectRevision("p1", "增加配对反馈")).rejects.toThrow();
+  const receipt = pendingRevision("p1")!;
+  vi.mocked(getProjectRevision).mockResolvedValue({ id: receipt.requestId, status: "running" } as Build);
+  expect((await recoverPendingRevision("p1"))?.id).toBe(receipt.requestId);
+  expect(submitProjectRevision).toHaveBeenCalledTimes(1);
+});
+it("服务端尚无回执时不自动提交，明确再次确认复用原编号", async () => {
+  vi.mocked(submitProjectRevision).mockRejectedValue(new Error("lost"));
+  await expect(confirmProjectRevision("p1", "增加配对反馈")).rejects.toThrow();
+  const receipt = pendingRevision("p1")!;
+  expect(await recoverPendingRevision("p1")).toBeNull();
+  expect(submitProjectRevision).toHaveBeenCalledTimes(1);
+  await expect(confirmProjectRevision("p1", "增加配对反馈")).rejects.toThrow();
+  expect(vi.mocked(submitProjectRevision).mock.calls[1][1].requestId).toBe(receipt.requestId);
+  await expect(confirmProjectRevision("p1", "另一种修改请求")).rejects.toThrow(/上次修改/);
+  expect(submitProjectRevision).toHaveBeenCalledTimes(2);
+});

@@ -16,6 +16,16 @@ beforeEach(() => {
   vi.mocked(saveOpenAIKey).mockResolvedValue({...status,configured:true,source:"session",models:{text:"gpt-5.9",image:"gpt-image-3"}});
 });
 afterEach(cleanup);
+it("首先展示连接输入，模型调整默认收起且不自动保存", async () => {
+  await open();
+  const options = screen.getByText("模型选择与连接详情（可选）").closest("details");
+  expect(options).not.toHaveAttribute("open");
+  expect(screen.getByText("尚未连接，请先填写 Key")).toBeVisible();
+  expect(screen.getByLabelText("models.keyLabel").compareDocumentPosition(options!)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+  expect(saveOpenAIKey).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByText("模型选择与连接详情（可选）"));
+  expect(options).toHaveAttribute("open");
+});
 async function open() { render(<ModelSettingsButton/>); fireEvent.click(screen.getByRole("button",{name:"models.trigger"})); await waitFor(()=>expect(screen.getByLabelText("models.keyLabel")).toBeEnabled()); }
 it("输入 Key 自动查询、预选推荐项，用户调整后一起保存", async()=>{
   await open(); fireEvent.change(screen.getByLabelText("models.keyLabel"),{target:{value:"sk-test_1234567890abcdef"}});

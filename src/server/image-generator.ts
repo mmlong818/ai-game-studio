@@ -120,6 +120,16 @@ export interface DynamicArtEntry {
   prompt: string;
 }
 
+/** Pure plan for cache validation; never requests images or needs a key. */
+export function dynamicArtPlan(project: ProjectDetail): Array<Omit<DynamicArtEntry, "bytes">> {
+  const set = spriteSetPlanFor(project.spec.template);
+  return [
+    { file: "assets/background.png", role: "局内背景", prompt: backgroundPrompt(project) },
+    ...roleArtPlanFor(project.spec.template).map(spec => ({ file: spec.file, role: spec.role, prompt: roleBitmapPrompt(project, spec) })),
+    ...(set?.entries.map(spec => ({ file: spec.file, role: spec.role, prompt: roleBitmapPrompt(project, spec, set.anchor) })) ?? []),
+  ];
+}
+
 interface CoverArtOptions {
   fetchImpl?: typeof fetch;
   endpoint?: string;

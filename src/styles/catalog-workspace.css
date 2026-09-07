@@ -1,0 +1,66 @@
+/* Shared collection surfaces, isolated from all playable game documents. */
+[data-theme="dark"] { --primary: #ef805b; --primary-hover: #f49371; }
+:root :is(.library-page, .studio-home-shell) {
+  --hall-yellow: var(--primary);
+  --hall-yellow-edge: var(--primary-active);
+  --hall-blue: var(--primary);
+  --hall-blue-hover: var(--primary-hover);
+  --hall-blue-dark: var(--primary-active);
+  --hall-deep: var(--canvas);
+  --hall-sky: var(--canvas-deep);
+  --hall-card: var(--surface-raised);
+  --hall-ink: var(--text);
+  --hall-ink-muted: var(--text-muted);
+  --hall-ink-subtle: var(--text-muted);
+  --hall-input-bg: var(--surface);
+  --hall-input-border: var(--border);
+  --hall-selected-bg: var(--primary-tint);
+  --hall-card-shadow: 0 4px 20px rgb(50 44 34 / 5%);
+  --hall-card-shadow-hover: 0 10px 28px rgb(50 44 34 / 10%);
+  background: var(--canvas);
+  color: var(--text);
+}
+.library-page :is(.library-hero h1, .library-summary strong, .library-empty h2),
+.studio-home-shell :is(.projects-heading h2, .not-found-page h1) { color: var(--text); font-weight: 650; line-height: 1.2; }
+.library-page :is(.library-summary > span, .library-summary p, .library-footer, .library-footer span:first-child),
+.studio-home-shell :is(.projects-heading > a, .studio-home-footer, .studio-home-footer span:first-child, .studio-home-footer small, .text-action-link, .not-found-page > p:not(.eyebrow)) { color: var(--text-muted); }
+.studio-home-shell .eyebrow { color: var(--primary); }
+.projects-heading, .library-footer, .studio-home-footer { border-color: var(--border); }
+.studio-home-shell .project-view-tabs { border-radius: 10px; border-color: var(--border); background: var(--surface); }
+.studio-home-shell .project-view-tabs a { color: var(--text-muted); border-radius: 7px; min-height: 40px; font-size: 14px; }
+.studio-home-shell .project-view-tabs a[aria-current="page"] { background: var(--surface-raised); color: var(--text); box-shadow: 0 1px 4px rgb(50 44 34 / 8%); }
+.studio-home-shell .project-view-tabs strong { color: var(--text-muted); background: var(--canvas-deep); }
+.studio-home-shell .project-view-tabs a[aria-current="page"] strong { background: var(--primary-tint); }
+.library-card, .project-card { border: 1px solid var(--border); border-radius: 16px; box-shadow: var(--hall-card-shadow); }
+.library-card:hover, .project-card:hover { box-shadow: var(--hall-card-shadow-hover); transform: translateY(-2px); }
+.project-card { grid-template-rows: 1fr auto; }
+.project-card-body > div:first-child { flex-wrap: wrap; gap: 6px 12px; }
+.project-card h3 { white-space: normal; overflow-wrap: anywhere; font-size: 24px; line-height: 1.3; margin: 0; }
+.project-card-body > p, .library-card-idea { font-size: 14px; line-height: 1.7; }
+.project-card-body footer { font-size: 12px; flex-wrap: wrap; }
+.project-card-actions { flex-wrap: wrap; justify-content: flex-start; gap: 8px; padding: 14px 6px; }
+.project-card-actions :is(button, a, .project-play-link) { min-height: 44px; font-size: 13px; white-space: nowrap; }
+.project-card-actions button:last-child { margin-left: auto; }
+.project-card-actions .project-play-link, .library-play-link { box-shadow: none; color: var(--on-primary); font-weight: 600; }
+.studio-home-shell .project-cover, .library-page .library-art { background: var(--canvas-deep); }
+[data-theme="dark"] .studio-home-shell .project-cover { background: var(--canvas-deep); }
+.library-page .library-card-category { color: var(--primary); }
+.library-page .library-play-link { color: var(--on-primary); }
+.project-cover::after { display: none; }
+.project-cover-placeholder { height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; padding: 40px 12px 16px; color: var(--text-muted); }
+.project-cover-placeholder span { font-size: 15px; font-weight: 600; }
+.project-cover-placeholder small { font-size: 12px; }
+.library-page .header-search { background: var(--surface-raised); border: 1px solid var(--border); box-shadow: none; }
+.library-page .library-marquee-chip { color: var(--text-muted); }
+.library-page :is(.library-empty, .library-message:not(.is-error)) { background: var(--surface); color: var(--text-muted); }
+.library-page .library-empty :is(a, button) { color: var(--on-primary); }
+.library-page .library-empty :is(a, button):hover { background: var(--primary-hover); }
+.library-page .library-badge { background: var(--canvas-deep); color: var(--text-muted); }
+.library-page .library-badge.is-complete { background: var(--success-bg); color: var(--success); }
+.library-page .library-badge.is-new { background: var(--warning-bg); color: var(--warning); }
+.library-skeleton-grid span, .project-skeleton-grid span { background-image: linear-gradient(100deg, var(--canvas-deep) 10%, var(--surface-raised) 28%, var(--canvas-deep) 46%); }
+@media (max-width: 720px) {
+  .project-card-body { padding: 16px; }
+  .projects-heading h2 { font-size: 32px; }
+  .library-hero h1 { font-size: 36px; }
+}

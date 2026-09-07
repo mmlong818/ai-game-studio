@@ -17,7 +17,7 @@ test("根网址默认进入游戏大厅，头部提供游戏大厅、游戏创�
   await expect(page.locator('.header-nav > a[href="/projects"]')).toBeVisible();
 
   await page.goto("/create");
-  await expect(page.getByRole("heading", { name: "今天想做什么？" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "把想法，变成好玩的。" })).toBeVisible();
 
   await page.goto("/projects");
   await expect(page.locator(".projects-heading h2")).toBeVisible();

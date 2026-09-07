@@ -50,6 +50,20 @@ test("未配置令牌时不做鉴权", () => {
   assert.deepEqual(control.check(fakeRequest("GET"), "/api/projects"), { allowed: true });
 });
 
+test("正式复核默认关闭，普通访问令牌不能冒充审核凭据", () => {
+  const path = "/api/projects/p1/versions/v1/art-review";
+  const request = fakeRequest("POST");
+  assert.equal(new AccessControl().check(request, path).allowed, false);
+  const control = new AccessControl(null, undefined, "test-only-review-credential");
+  assert.equal(control.check(request, path).allowed, false);
+  request.headers["x-studio-review-token"] = "incorrect";
+  assert.equal(control.reviewIdentity(request), null);
+  request.headers["x-studio-review-token"] = "test-only-review-credential";
+  assert.deepEqual(control.check(request, path), { allowed: true });
+  assert.deepEqual(control.reviewIdentity(request), { id: "configured-reviewer" });
+  assert.equal(new AccessControl().check(fakeRequest("GET"), path).allowed, true);
+});
+
 test("配置令牌后 API 需要 Bearer 令牌，玩家侧端点保持公开", () => {
   const control = new AccessControl("secret-token");
   const denied = control.check(fakeRequest("GET"), "/api/projects");

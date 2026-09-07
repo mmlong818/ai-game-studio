@@ -23,6 +23,8 @@ import {
 } from "./api";
 import { GameLibrary } from "./GameLibrary";
 import { ProjectStudio } from "./ProjectStudio";
+import { PrivateGamePreview } from "./PrivateGamePreview";
+import { ProjectCover } from "./ProjectCover";
 import { SiteHeader } from "./SiteHeader";
 import { AdvancedStudioApp } from "../App";
 import { usePreferences, type ResolvedLocale } from "./preferences";
@@ -68,12 +70,12 @@ function ProjectList({ projects, archived, busyId, onArchive, onRestore, onDelet
   return (
     <div className="project-card-grid">
       {projects.map((project) => {
-        const cover = project.coverUrl ?? `/media/template-art/${project.template}/cover.png`;
+        const cover = project.coverUrl ?? (project.template === "generated" ? null : `/media/template-art/${project.template}/cover.png`);
         return (
           <article className={`project-card ${archived ? "is-archived" : ""}`} key={project.id}>
             <a className="project-card-link" href={projectPath(project.id)}>
               <div className="project-cover">
-                <img src={cover} alt={t("projects.coverAlt", { title: project.title })} width="640" height="360" loading="lazy" />
+                <ProjectCover src={cover} alt={t("projects.coverAlt", { title: project.title })} />
                 <span className={`status-pill status-${project.status}`}>{archived ? t("projects.archived") : project.status === "published" ? t("projects.published") : project.status === "playable" ? t("projects.playable") : t("projects.contractReady")}</span>
               </div>
               <div className="project-card-body">
@@ -90,8 +92,8 @@ function ProjectList({ projects, archived, busyId, onArchive, onRestore, onDelet
                 </>
               ) : (
                 <>
-                  {project.publication?.status === "live" ? (
-                    <a className="project-play-link" href={`/player-first?game=${encodeURIComponent(project.id)}`}><Play size={15} aria-hidden="true" />{t("projects.play")}</a>
+                  {project.status === "playable" || project.publication?.status === "live" ? (
+                    <a className="project-play-link" href={project.publication?.status === "live" ? `/player-first?game=${encodeURIComponent(project.id)}` : `${projectPath(project.id)}?view=play`}><Play size={15} aria-hidden="true" />{t("projects.play")}</a>
                   ) : (
                     <span className="project-play-link is-disabled" title={t("projects.playNeedsPublish")} aria-disabled="true"><Play size={15} aria-hidden="true" />{t("projects.play")}</span>
                   )}
@@ -263,7 +265,7 @@ function ProjectPage({ projectId, legacyUrl = false }: { projectId: string; lega
 
   return (
     <div className="app-shell studio-route-shell">
-      {project ? <ProjectStudio project={project} onProjectChange={setProject} /> : (
+      {project ? new URLSearchParams(location.search).get("view") === "play" ? <PrivateGamePreview project={project} /> : <ProjectStudio project={project} onProjectChange={setProject} /> : (
         <main className="project-page-state">
           {error ? <div className="global-error" role="alert">{error}</div> : <div className="loading-state" role="status"><LoaderCircle className="spin" size={20} /> {t("studio.loadingPage")}</div>}
           <a className="secondary-button" href="/projects#projects">{t("studio.backProjects")}</a>

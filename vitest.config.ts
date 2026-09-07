@@ -9,5 +9,8 @@ export default defineConfig({
     setupFiles: ["./src/test/setup.ts"],
     exclude: ["tests/browser/**", "node_modules/**", "dist/**"],
     css: true,
+    // Keep regression runs usable alongside the API, browser and Docker on
+    // ordinary development machines; CLI flags may explicitly raise this.
+    maxWorkers: 1,
   },
 });

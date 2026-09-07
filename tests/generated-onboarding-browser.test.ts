@@ -11,6 +11,72 @@ import { generatedDesignHtml } from "./generated-design-fixture";
 
 const html = generatedDesignHtml("shot-fired");
 
+for (const failurePolicy of ["required", "forbidden"] as const) {
+test(`无限玩法 ${failurePolicy} 不要求胜利或关卡钩子，隐藏胜利必须拒绝`, { skip: !browserQualityAvailable(), timeout: 60_000 }, async () => {
+  const root = mkdtempSync(join(tmpdir(), "studio-endless-"));
+  const sample = project();
+  sample.spec.designProfile.generatedCampaign = { mode: "endless", failurePolicy, levelCount: 0, milestones: [], difficultyKeys: [], rationale: "持续自由练习，没有最终目标。" };
+  let endlessHtml = html.replace("getState:()=>({state,", 'getState:()=>({mode:"endless",state,').replace("setLevel:(level)=>applyLevel(level),restart,", "restart,").replace(/  forceWin:[^\n]+\n/, "");
+  if (failurePolicy === "forbidden") endlessHtml = endlessHtml.replace(/  forceLose:[^\n]+\n/, "");
+  try {
+    writeGeneratedArtifact(root, sample, { html: endlessHtml, designNotes: "无限分支测试夹具，不证明内容品质", rounds: 1 });
+    writeFileSync(join(root, "assets", "background.png"), Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=", "base64"));
+    const result = await inspectGeneratedGameInBrowser(root, { expectedCampaign: sample.spec.designProfile.generatedCampaign });
+    assert.equal(result.checks.find(check => check.id === "ENDLESS-SAMPLED")?.status, "passed");
+    assert.equal(result.checks.some(check => check.id === "PROGRESSION-RUNTIME"), false);
+    assert.equal(result.checks.some(check => check.id === "CONTENT-VARIATION-REHEARSAL"), false);
+    writeGeneratedArtifact(root, sample, { html: endlessHtml.replace("function fireShot(){", 'function fireShot(){setState("won");setState("playing");'), designNotes: "偷偷胜利负例", rounds: 1 });
+    await assert.rejects(() => inspectGeneratedGameInBrowser(root), /禁止的won状态/);
+  } finally {
+    const safeRoot = resolve(root);
+    if (safeRoot.startsWith(resolve(tmpdir()) + "\\") && safeRoot.includes("studio-endless-")) rmSync(safeRoot, { recursive: true, force: true });
+  }
+});
+}
+
+test("无失败方案不要求forceLose，短暂失败也不能被刷新掩盖", { skip: !browserQualityAvailable(), timeout: 60_000 }, async () => {
+  const root = mkdtempSync(join(tmpdir(), "studio-no-failure-"));
+  const sample = project();
+  sample.spec.designProfile.generatedCampaign = { failurePolicy: "forbidden", levelCount: 7, milestones: [1, 4, 7], difficultyKeys: ["goalMultiplier"], rationale: "七关无失败练习。" };
+  const noFailure = html.replace("Math.min(20,", "Math.min(7,").replace("(safeLevel-1)/4", "(safeLevel-1)/3").replace(/  forceLose:[^\n]+\n/, "");
+  try {
+    writeGeneratedArtifact(root, sample, { html: noFailure, designNotes: "无失败测试，不是实际玩法质量证明", rounds: 1 });
+    writeFileSync(join(root, "assets", "background.png"), Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=", "base64"));
+    const result = await inspectGeneratedGameInBrowser(root, { expectedCampaign: sample.spec.designProfile.generatedCampaign });
+    assert.equal(result.checks.some(check => check.id === "ASSISTANCE-RUNTIME"), false);
+    assert.equal(result.checks.find(check => check.id === "NO-FAILURE-SAMPLED")?.status, "passed");
+    const report = JSON.parse(readFileSync(join(root, "_studio", "ASSISTANCE_QUALITY_REPORT.json"), "utf8"));
+    assert.equal(report.status, "not-applicable");
+    writeGeneratedArtifact(root, sample, { html: noFailure.replace("function fireShot(){", 'function fireShot(){setState("lost");setState("playing");'), designNotes: "短暂隐藏失败负例", rounds: 1 });
+    await assert.rejects(() => inspectGeneratedGameInBrowser(root), /禁止的lost状态/);
+  } finally {
+    const safeRoot = resolve(root);
+    if (safeRoot.startsWith(resolve(tmpdir()) + "\\") && safeRoot.includes("studio-no-failure-")) rmSync(safeRoot, { recursive: true, force: true });
+  }
+});
+
+test("确认七关使用真实维度；二十关冒充七关必须被拒绝", { skip: !browserQualityAvailable(), timeout: 60_000 }, async () => {
+  const root = mkdtempSync(join(tmpdir(), "studio-seven-campaign-"));
+  const sample = project();
+  sample.spec.designProfile.generatedCampaign = { levelCount: 7, milestones: [1, 4, 7], difficultyKeys: ["targetCount"], rationale: "目标数量逐关增加，三阶段结构变化。" };
+  const sevenHtml = html.replace("Math.min(20,", "Math.min(7,").replace("(safeLevel-1)/4", "(safeLevel-1)/3").replace("const difficulty={", "const difficulty={targetCount:3+safeLevel+stage*2,");
+  try {
+    writeGeneratedArtifact(root, sample, { html: sevenHtml, designNotes: "隔离七关验收样本", rounds: 1 });
+    writeFileSync(join(root, "assets", "background.png"), Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=", "base64"));
+    await inspectGeneratedGameInBrowser(root);
+    const progression = JSON.parse(readFileSync(join(root, "_studio", "DIFFICULTY_QUALITY_REPORT.json"), "utf8"));
+    assert.equal(progression.levelsChecked, 7);
+    assert.equal(progression.milestones.length, 3);
+    const variation = JSON.parse(readFileSync(join(root, "_studio", "VARIATION_QUALITY_REPORT.json"), "utf8"));
+    assert.equal(variation.rehearsalLevel, 7);
+    writeGeneratedArtifact(root, sample, { html: sevenHtml.replace("Math.min(7,", "Math.min(20,"), designNotes: "错误关数负例", rounds: 1 });
+    await assert.rejects(() => inspectGeneratedGameInBrowser(root), /越界选择却进入第 8 关/);
+  } finally {
+    const safeRoot = resolve(root);
+    if (safeRoot.startsWith(resolve(tmpdir()) + "\\") && safeRoot.includes("studio-seven-campaign-")) rmSync(safeRoot, { recursive: true, force: true });
+  }
+});
+
 function project(): ProjectDetail {
   const baseSpec = generateGameSpec({ idea: "守夜人在灯塔上转动光束射击逼近的雾兽。", template: "generated", dimensions: "2d" });
   const designContract = createGameDesignContractForLegacyProject({ projectId: "generated-onboarding", title: "灯塔守夜人", idea: baseSpec.vision, createdAt: "2026-09-05T00:00:00.000Z", spec: baseSpec });

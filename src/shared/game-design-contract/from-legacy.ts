@@ -70,10 +70,15 @@ export function createGameDesignContractForLegacyProject(source: LegacyContractS
   const plannedMechanicIds = source.spec.template === "mahjong-roguelite"
     ? ["match-combo", ...knowledge.plan.mechanicIds]
     : knowledge.plan.mechanicIds;
-  const catalogMechanics = [...new Set(plannedMechanicIds)]
+  const authoredGenerated = source.spec.template === "generated" && source.spec.designSource === "llm";
+  const campaign = source.spec.template === "generated" ? source.spec.designProfile.generatedCampaign : undefined;
+  const noFailure = campaign?.failurePolicy === "forbidden";
+  const endless = campaign?.mode === "endless";
+  const catalogMechanics = [...new Set(authoredGenerated ? [] : plannedMechanicIds)]
     .map((id) => GAME_DESIGN_KNOWLEDGE_LIBRARY.mechanics.find((item) => item.id === id))
     .filter((item): item is (typeof GAME_DESIGN_KNOWLEDGE_LIBRARY.mechanics)[number] => Boolean(item));
-  const fallbackMechanics = source.spec.mechanics.slice(0, 2).map((label, index) => ({
+  const fallbackLabels = authoredGenerated ? source.spec.designProfile.onboarding : source.spec.mechanics.slice(0, 2);
+  const fallbackMechanics = fallbackLabels.map((label, index) => ({
     id: stableId(label, `core-mechanic-${index + 1}`),
     label,
     playerVerb: label,
@@ -84,7 +89,7 @@ export function createGameDesignContractForLegacyProject(source: LegacyContractS
     ? ["match-combo"]
     : source.spec.template === "polyomino-fit"
       ? ["polyomino-placement"]
-      : selectedPattern?.coreMechanicIds ?? mechanicSources.map(({ id }) => id));
+      : !authoredGenerated && selectedPattern ? selectedPattern.coreMechanicIds : mechanicSources.map(({ id }) => id));
   const mechanics = mechanicSources.map((mechanic) => ({
     id: mechanic.id,
     label: short(mechanic.label, "核心操作"),
@@ -145,21 +150,24 @@ export function createGameDesignContractForLegacyProject(source: LegacyContractS
     },
     mechanics,
     onboarding,
-    content: { mode: "finite-campaign", beats: [
+    ...(campaign ? { failurePolicy: campaign.failurePolicy } : {}),
+    content: { mode: endless ? "endless" : "finite-campaign", beats: [
       { id: "BEAT-SAFE", label: "安全理解", pressure: "safe", introducesMechanicIds: mechanicIds, practicesMechanicIds: [], difficulty: zeroDifficulty, changeReason: "先让玩家在无惩罚环境中完成全部核心动作", expectedSeconds: Math.min(60, Math.round(totalSeconds * 0.15)) },
       { id: "BEAT-PRACTICE", label: "独立练习", pressure: "normal", introducesMechanicIds: [], practicesMechanicIds: mechanicIds, difficulty: practiceDifficulty, changeReason: short(source.spec.designProfile.difficultyCurve[0], "逐步加入决策压力"), expectedSeconds: Math.max(45, Math.round(totalSeconds * 0.35)) },
       { id: "BEAT-COMBINE", label: "组合掌握", pressure: "high", introducesMechanicIds: [], practicesMechanicIds: mechanicIds, difficulty: masteryDifficulty, changeReason: short(source.spec.designProfile.difficultyCurve.at(-1) ?? "组合已学机制形成后段挑战", "组合已学机制形成后段挑战"), expectedSeconds: Math.max(60, Math.round(totalSeconds * 0.5)) },
     ] },
-    assistance: { hiddenAdaptation: false, steps: [
+    assistance: { hiddenAdaptation: false, steps: noFailure ? [] : [
       { afterFailures: 1, action: "explain-cause", message: short(`说明失败原因：${source.spec.designProfile.failCondition}`, "说明本次失败的直接原因"), explicitToPlayer: true },
       { afterFailures: 2, action: "highlight-rule", message: "突出与失败直接相关的规则和可改变动作。", explicitToPlayer: true },
       { afterFailures: 4, action: "directional-hint", message: "给出一个方向性建议，不替玩家自动完成。", explicitToPlayer: true },
     ] },
     acceptance: [
       { id: "ACCEPT-ONBOARD", label: "新存档可真实完成全部核心动作教学", kind: "onboarding", mechanicIds, onboardingStepIds: onboarding.map(({ id }) => id), beatIds: ["BEAT-SAFE"] },
-      { id: "ACCEPT-PROGRESSION", label: "难度从安全理解逐步进入组合挑战", kind: "progression", mechanicIds, onboardingStepIds: [], beatIds: ["BEAT-SAFE", "BEAT-PRACTICE", "BEAT-COMBINE"] },
-      { id: "ACCEPT-ASSISTANCE", label: "失败后解释原因并逐级提供显式帮助", kind: "assistance", mechanicIds: [], onboardingStepIds: [], beatIds: [] },
-      { id: "ACCEPT-VARIATION", label: "后续阶段改变决策结构而非只提高数值", kind: "content-variation", mechanicIds, onboardingStepIds: [], beatIds: ["BEAT-PRACTICE", "BEAT-COMBINE"] },
+      ...(endless ? [{ id: "ACCEPT-ENDLESS", label: "无限模式重开正常且抽样期间没有通关终点（不证明长期内容供给）", kind: "endless-sampled", mechanicIds, onboardingStepIds: [], beatIds: [] }] : [
+        { id: "ACCEPT-PROGRESSION", label: "难度从安全理解逐步进入组合挑战", kind: "progression", mechanicIds, onboardingStepIds: [], beatIds: ["BEAT-SAFE", "BEAT-PRACTICE", "BEAT-COMBINE"] },
+        { id: "ACCEPT-VARIATION", label: "后续阶段改变决策结构而非只提高数值", kind: "content-variation", mechanicIds, onboardingStepIds: [], beatIds: ["BEAT-PRACTICE", "BEAT-COMBINE"] },
+      ]),
+      { id: "ACCEPT-ASSISTANCE", label: noFailure ? "已测操作未进入失败状态（抽样检查）" : "失败后解释原因并逐级提供显式帮助", kind: noFailure ? "no-failure" : "assistance", mechanicIds: [], onboardingStepIds: [], beatIds: [] },
     ],
   });
   const migrated = migrateLegacyProjectToV11({ id: source.projectId, title: source.title, createdAt: source.createdAt, spec: source.spec });

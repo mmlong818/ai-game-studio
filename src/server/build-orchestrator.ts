@@ -1,5 +1,5 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { basename, dirname, join } from "node:path";
 import {
   generateGameSpec,
   recommendedArtStyle,
@@ -13,14 +13,19 @@ import { inspectDifficultyProgressionInBrowser, inspectFailureAssistanceInBrowse
 import { writeDesignAcceptanceReport } from "./design-acceptance.js";
 import type { DesignContractGenerator } from "./design-contract.js";
 import { inspectGameArtifact, writeDesignDocuments, writeGameArtifact } from "./game-artifact.js";
-import { inspectGeneratedArtifact, stripPlatformSegments, writeGeneratedArtifact, type GameCodeGenerator, type PreviousGeneration } from "./game-generator.js";
+import { inspectGeneratedArtifact, writeGeneratedArtifact, type GameCodeGenerator, type GeneratedGame, type PreviousGeneration } from "./game-generator.js";
 import { assertRasterAiArt } from "./art-policy.js";
-import { coverPrompt, type CoverArtGenerator } from "./image-generator.js";
+import { coverPrompt, dynamicArtPlan, type DynamicArtEntry, type CoverArtGenerator } from "./image-generator.js";
+import { getOrGenerateArtCheckpoint } from "./art-checkpoint.js";
 import { applyQualifiedProjectResources, writeQualifiedResourceProvenance } from "./golden-resource-bindings.js";
 import type { StudioRepository } from "./studio-repository.js";
 import { writeV11BuildMetadata } from "./v11-build-metadata.js";
 import { createResourcePlanningForGameSpec } from "../shared/resource-planning/index.js";
 import { createGameDesignContractForLegacyProject } from "../shared/game-design-contract/from-legacy.js";
+import { readGeneratedSource } from "./generated-source.js";
+import { ArtifactValidationFailure, GenerationBudget } from "./generation-budget.js";
+import { readReusableGeneratedArt } from "./generated-art-reuse.js";
+import { readReusableRuleAudit, safeContractRules, sha256, writeRuleFidelity } from "./rule-audit-checkpoint.js";
 
 const variationRehearsalTemplates: readonly VariationRehearsalTemplate[] = ["signal-hunt", "tetris", "breakout", "snake", "space-shooter", "merge-2048", "klotski", "puzzle", "block-place", "polyomino-fit", "region-logic", "mahjong-roguelite"];
 const failureAssistanceTemplates: readonly FailureAssistanceTemplate[] = ["tetris", "breakout", "snake", "space-shooter", ...variationRehearsalTemplates];
@@ -51,14 +56,25 @@ export class BuildOrchestrator {
     this.maxConcurrentBuilds = Math.max(1, options.maxConcurrentBuilds ?? 2);
   }
 
-  async start(projectId: string): Promise<Build> {
-    const build = await this.repository.createBuild(projectId);
-    if (build.status === "queued" && !this.enqueuedBuildIds.has(build.id)) {
-      this.enqueuedBuildIds.add(build.id);
-      this.pendingBuildIds.push(build.id);
+  async start(projectId: string, revision?: { requestId: string; content: string }): Promise<Build> {
+    const build = revision ? await this.repository.createBuild(projectId, revision) : await this.repository.createBuild(projectId);
+    if (build.status === "queued") this.enqueue(build.id);
+    return build;
+  }
+
+  async resumeQueuedBuilds() {
+    // Called only after acquiring runtime ownership and failing uncertain runs.
+    const ids = await this.repository.queuedBuildIds();
+    ids.forEach(id => this.enqueue(id));
+    return ids.length;
+  }
+
+  private enqueue(id: string) {
+    if (!this.enqueuedBuildIds.has(id)) {
+      this.enqueuedBuildIds.add(id);
+      this.pendingBuildIds.push(id);
       setTimeout(() => void this.drainQueue(), 20);
     }
-    return build;
   }
 
   // 构建是重资源操作(真实浏览器验收),必须限制并发,其余任务排队等待空位。
@@ -86,10 +102,13 @@ export class BuildOrchestrator {
     let passedProbes: string[] = [];
     let qualityChecks: QualityCheck[] = [];
     try {
-      await this.repository.markBuildRunning(buildId);
+      // A second process may have queued the same receipt. Only the database
+      // claim winner may call models or write artifacts; losers do not fail it.
+      if (!await this.repository.markBuildRunning(buildId)) return;
       const build = await this.repository.buildById(buildId);
       const storedProject = await this.repository.get(build.projectId);
       if (!storedProject) throw new Error("项目不存在。");
+      if (storedProject.archivedAt) throw new Error("项目已归档，未继续制作或调用模型；恢复项目后可明确启动新任务。");
       const directions = (await this.repository.listMessages(build.projectId))
         .filter((message) => message.role === "user")
         .map((message) => message.content);
@@ -115,12 +134,16 @@ export class BuildOrchestrator {
       sequence += 1;
       await this.step(buildId, sequence, async () => {
         if (project.spec.template === "generated") {
-          const experimental = await this.generateExperimentalGame(project, root, directions);
+          const experimental = await this.generateExperimentalGame(project, root, directions, detail =>
+            this.repository.reportStepProgress(buildId, sequence, detail).catch(error => {
+              // Reporting trouble must never be mistaken for defective code and trigger paid regeneration.
+              console.warn(`构建 ${buildId} 进度写入暂时失败：`, error);
+            }));
           const modeNote = experimental.iterated
             ? `基于上一版代码迭代修改（${directions.length} 条对话意见）`
             : "全新生成";
           const auditNote = experimental.audit
-            ? `；规则审计 ${experimental.audit.filter((verdict) => verdict.implemented).length}/${experimental.audit.length} 条经代码核对已实现，逐条判定见 RULE_FIDELITY.json`
+            ? `；规则审计 ${experimental.audit.filter((verdict) => verdict.implemented).length}/${experimental.audit.length} 条经代码核对已实现${experimental.auditReusedFrom ? `（代码与规则未变，复用构建 ${experimental.auditReusedFrom} 的审核结果，本次未调用审核模型）` : ""}，逐条判定见 RULE_FIDELITY.json`
             : "；规则审计本次不可用，未逐条核对（如实记录）";
           const runtimeNote = project.spec.runtimeTarget === "web-3d" ? "基于本地 three.js 模块的 3D " : "";
           return `页面公开：实验通道——已由 ${experimental.generation.model ?? '所选文本模型'} 按设计合同${modeNote}独有${runtimeNote}单文件代码（${experimental.generation.rounds} 轮生成，安全扫描通过，禁网络/禁外链/禁存储偷渡）；新手教学逐项接入真实玩法动作，教学期自动压力暂停${auditNote}。实现说明与哈希归档于 GENERATED_CODE.json。`;
@@ -142,10 +165,34 @@ export class BuildOrchestrator {
           writeFileSync(join(provenanceRoot, "RESOURCE_PLAN.json"), JSON.stringify(resourcePlan, null, 2), "utf8");
         }
         if (!this.options.coverArt) throw new Error("AI 生图服务未配置，构建已中断。请先配置 OpenAI API Key。");
-        // 封面与动态美术全部并行生成；任何核心位图缺失都中断构建，禁止退回占位图。
-        const [cover, dynamicArt] = await Promise.all([
-          this.options.coverArt.generate(project),
-          this.options.coverArt.generateDynamicArt(project),
+        let reusedArt: ReturnType<typeof readReusableGeneratedArt> = null;
+        if (project.spec.template === "generated") {
+          for (const candidate of await this.repository.recentReusableBuilds(project.id, buildId)) {
+            const prior = await this.repository.buildById(candidate.id);
+            reusedArt = readReusableGeneratedArt(project, this.options.coverArt.model ?? "gpt-image-2", { root: join(this.artifactRoot, candidate.id), projectId: prior.projectId, buildId: prior.id, status: prior.status });
+            if (reusedArt) break;
+          }
+        }
+        await this.repository.reportStepProgress(buildId, sequence, reusedArt ? "图像要求未变，正在复用同项目已核验的封面与背景，不重复生图" : "正在并行生成封面与局内美术，完成后核查来源与实际接入");
+        const imageReceipts: Array<{ group: string; cacheHit: boolean; generatedAt: string }> = [];
+        const generateGroup = async (group: "cover" | "dynamic", plan: Array<Omit<DynamicArtEntry, "bytes">>, generate: () => Promise<DynamicArtEntry[]>) => {
+          if (project.spec.template !== "generated") return generate();
+          const receipt = await getOrGenerateArtCheckpoint(join(this.artifactRoot, "_image-checkpoints", project.id), {
+            projectId: project.id, model: this.options.coverArt!.model ?? "gpt-image-2", runtimeTarget: project.spec.runtimeTarget,
+            aspectRatio: project.spec.aspectRatio, group, plan,
+          }, generate);
+          imageReceipts.push({ group, cacheHit: receipt.cacheHit, generatedAt: receipt.generatedAt });
+          await this.repository.reportStepProgress(buildId, sequence, `${group === "cover" ? "封面" : "局内图片"}${receipt.cacheHit ? "已恢复已保存的生成结果，无需再次生图" : receipt.entries.length ? "已生成并保存" : "未返回完整图片"}；正在汇总资源并检查接入`).catch(() => {});
+          return receipt.entries;
+        };
+        const coverPlan = { file: "assets/cover.png", role: "封面", prompt: coverPrompt(project) };
+        // Only identical, verified assets may be reused. Missing assets never become placeholders.
+        const [cover, dynamicArt] = reusedArt ? [reusedArt.cover, reusedArt.dynamicArt] : await Promise.all([
+          generateGroup("cover", [coverPlan], async () => {
+            const bytes = await this.options.coverArt!.generate(project);
+            return bytes ? [{ ...coverPlan, bytes }] : [];
+          }).then(entries => entries[0]?.bytes ?? null),
+          generateGroup("dynamic", dynamicArtPlan(project), () => this.options.coverArt!.generateDynamicArt(project)),
         ]);
         if (!cover) throw new Error("AI 封面生成失败，构建已中断；不会使用占位图替代。");
         const background = dynamicArt.find((entry) => entry.role === "局内背景" && entry.file === "assets/background.png");
@@ -163,16 +210,18 @@ export class BuildOrchestrator {
         const writtenDynamicArt = dynamicArt.filter(({ file }) => !curatedTargets.has(file.replaceAll("\\", "/").toLowerCase()));
         const provenanceRoot = join(root, "_studio");
         mkdirSync(provenanceRoot, { recursive: true });
+        if (imageReceipts.length) writeFileSync(join(provenanceRoot, "IMAGE_GENERATION_RECEIPTS.json"), JSON.stringify(imageReceipts, null, 2), "utf8");
         const entries = [
           { file: "assets/cover.png", role: "封面", bytes: cover.length, prompt: coverPrompt(project) },
           ...writtenDynamicArt.map((entry) => ({ file: entry.file, role: entry.role, bytes: entry.bytes.length, prompt: entry.prompt })),
         ];
-        writeFileSync(join(provenanceRoot, "DYNAMIC_ART.json"), JSON.stringify({
+        writeFileSync(join(provenanceRoot, "DYNAMIC_ART.json"), reusedArt ? reusedArt.provenanceJson : JSON.stringify({
           schemaVersion: 2,
           model: this.options.coverArt.model ?? "gpt-image-2",
-          generatedAt: new Date().toISOString(),
+          generatedAt: imageReceipts.length ? imageReceipts.map(item => item.generatedAt).sort().at(-1) : new Date().toISOString(),
           entries,
         }, null, 2), "utf8");
+        if (reusedArt) writeFileSync(join(provenanceRoot, "ART_REUSE.json"), JSON.stringify({ sourceBuildId: reusedArt.sourceBuildId, reusedAt: new Date().toISOString(), reason: "同项目模型、提示词、运行时和画幅一致；文件完整性复验通过；本次未调用生图模型" }, null, 2), "utf8");
         if (curatedResources) writeQualifiedResourceProvenance(root, curatedResources);
         const visualSource = ["index.html", "styles.css", "app.js"]
           .map((file) => readFileSync(join(root, file), "utf8"))
@@ -182,11 +231,11 @@ export class BuildOrchestrator {
         const planningSummary = resourcePlan ? `生成前已检索 ${resourcePlan.decisions.length} 个资源需求：${resourcePlan.summary.needsReview} 个候选待复核，${resourcePlan.summary.needsGeneration} 个需生成或补状态。` : "旧项目没有资源规划记录。";
         const curatedFamilies = curatedResources ? [...new Set(curatedResources.bindings.map(({ familyId }) => familyId))].join("、") : "";
         const curatedSummary = curatedResources ? `；${curatedResources.assets.length} 个运行时槽位使用 ${curatedFamilies} 精选资源，许可、哈希、需求与配方证据已归档` : "";
-        return `页面公开：封面与${writtenDynamicArt.map((entry) => entry.role).join("、")}均由 ${this.options.coverArt.model ?? 'gpt-image-2'} 生成，提示词与来源已归档${curatedSummary}；${planningSummary}SVG 禁用门禁通过。${style.label}视觉系统已应用到页面编排、组件造型、字体层级、${style.detailLabel}、画布细节和反馈动效。1.1 工程清单已冻结（${v11Project.objects.length} 个对象、${v11Project.rules.length} 条规则）。`;
+        return `页面公开：${reusedArt ? "复用同项目已核验图像，本次未再次生图；" : ""}封面与${writtenDynamicArt.map((entry) => entry.role).join("、")}均由 ${this.options.coverArt.model ?? 'gpt-image-2'} 生成，提示词与来源已归档${curatedSummary}；${planningSummary}SVG 禁用门禁通过。${style.label}视觉系统已应用到页面编排、组件造型、字体层级、${style.detailLabel}、画布细节和反馈动效。1.1 工程清单已冻结（${v11Project.objects.length} 个对象、${v11Project.rules.length} 条规则）。`;
       });
       sequence += 1;
       await this.step(buildId, sequence, () => {
-        passedProbes = project.spec.template === "generated" ? inspectGeneratedArtifact(root) : inspectGameArtifact(root);
+        passedProbes = project.spec.template === "generated" ? inspectGeneratedArtifact(root, { expectedCampaign: project.spec.designProfile.generatedCampaign ?? null }) : inspectGameArtifact(root);
         qualityChecks = passedProbes.map((label, index) => ({
           id: `STATIC-${String(index + 1).padStart(2, "0")}`,
           label,
@@ -201,7 +250,7 @@ export class BuildOrchestrator {
           return "页面公开：测试环境跳过浏览器验收；成功构建将冻结为不可变版本。";
         }
         if (project.spec.template === "generated") {
-          const generatedResult = await inspectGeneratedGameInBrowser(root);
+          const generatedResult = await inspectGeneratedGameInBrowser(root, { expectedCampaign: project.spec.designProfile.generatedCampaign ?? null });
           qualityChecks.push(...generatedResult.checks);
           if (project.spec.designContract) qualityChecks.push(writeDesignAcceptanceReport(root, project.spec.designContract, qualityChecks));
           return `页面公开：真实浏览器已按运行时契约验证生成代码——教学安全等待、20 关平滑递进、第 9 关真实机制复演、连续失败显式帮助、完成状态恢复、重看和跳过均通过，同时验证 idle→开始→playing→won→重开→lost 完整状态环、3 档画幅布局与错误监听；保存 ${generatedResult.screenshotPaths.length} 张验收截图。实验性作品：通过自动验收，但玩法深度仍以真人试玩为准。`;
@@ -333,49 +382,97 @@ export class BuildOrchestrator {
    * 契约失败或规则未实现都会把原因喂回模型再生成一轮;两轮后契约仍失败则构建失败,
    * 规则仍有未实现的如实记录到 RULE_FIDELITY.json,不静默美化。
    */
-  private async generateExperimentalGame(project: ProjectDetail, root: string, directions: string[]) {
+  private async generateExperimentalGame(project: ProjectDetail, root: string, directions: string[], report: (detail: string) => Promise<void> = async () => {}) {
     const generator = this.options.codeGenerator;
     if (!generator) throw new Error("实验通道未启用：服务端没有配置玩法代码生成器。");
-    const previousIndexPath = join(this.artifactRoot, project.version.id, "index.html");
-    const previous: PreviousGeneration | null = existsSync(previousIndexPath)
-      ? { html: stripPlatformSegments(readFileSync(previousIndexPath, "utf8")), directions }
-      : null;
+    let previous: PreviousGeneration | null = null;
+    let reusable: GeneratedGame | null = null;
+    let reusableSourceBuildId: string | null = null;
+    const candidates = await this.repository.recentReusableBuilds(project.id, basename(root));
+    for (const candidate of candidates) {
+      const html = readGeneratedSource(join(this.artifactRoot, candidate.id));
+      if (!html) continue;
+      const priorBuild = await this.repository.buildById(candidate.id);
+      previous = { html, directions: [...directions, ...(priorBuild.error ? [`上一版验收问题：${priorBuild.error}`] : []), "保留已实现玩法；以本次确认方案与教学合同为准修正，不保留旧占位教学。"] };
+      if (directions.length === 0 && project.spec.designContract) {
+        try {
+          const previousContract = JSON.parse(readFileSync(join(this.artifactRoot, candidate.id, "_studio", "GAME_DESIGN_CONTRACT.json"), "utf8"));
+          const metadata = JSON.parse(readFileSync(join(this.artifactRoot, candidate.id, "_studio", "GENERATED_CODE.json"), "utf8"));
+          if (JSON.stringify(previousContract) === JSON.stringify(project.spec.designContract)) {
+            reusable = { html, designNotes: `复用构建 ${candidate.id} 的代码并重新验收。${typeof metadata.designNotes === "string" ? metadata.designNotes : ""}`, rounds: Number.isInteger(metadata.rounds) ? metadata.rounds : 1, ...(typeof metadata.model === "string" ? { model: metadata.model } : {}) };
+            reusableSourceBuildId = candidate.id;
+          }
+        } catch { /* Missing or obsolete metadata requires normal targeted generation. */ }
+      }
+      await report("已恢复上一版完整游戏代码，将针对已发现问题修正，不从头制作");
+      break;
+    }
+    if (!previous) {
+      const html = readGeneratedSource(join(this.artifactRoot, project.version.id));
+      if (html) previous = { html, directions };
+    }
     let feedback: string[] = [];
-    let generation = await generator.generate(project, feedback, previous);
+    const initialReport = (detail: string) => report(`${previous ? "第 1 次制作 · 沿用已有版本修改" : "第 1 次制作 · 初次生成"}：${detail}`);
+    const repairReport = (detail: string) => report(`第 2 次制作 · 针对验收问题修正：${detail}`);
+    const requestBudget = new GenerationBudget(3);
+    const recordAttempt = (round: number, phase: string, reasons: string[]) => {
+      if (!existsSync(root)) return;
+      mkdirSync(join(root, "_studio"), { recursive: true });
+      appendFileSync(join(root, "_studio", "GENERATION_ATTEMPTS.jsonl"), JSON.stringify({
+        recordedAt: new Date().toISOString(), round, phase, reasons,
+      }) + "\n", "utf8");
+    };
+    if (reusable) await report("确认方案未变，先重新验收已有代码；通过则不再调用代码生成模型");
+    let generation = reusable ?? await generator.generate(project, feedback, previous, initialReport, requestBudget);
     writeGeneratedArtifact(root, project, generation);
     for (let round = 1; ; round += 1) {
       try {
         // 代码阶段只检查结构、运行时与 AI 背景接入声明；真实位图和溯源在下一资产阶段落盘后统一验收。
-        inspectGeneratedArtifact(root, { requireAiArt: false });
-        if (this.options.browserAudit !== false) await inspectGeneratedGameInBrowser(root);
+        await report(`第 ${round} 次制作：正在检查生成产物与运行契约`);
+        inspectGeneratedArtifact(root, { requireAiArt: false, expectedCampaign: project.spec.designProfile.generatedCampaign ?? null });
+        if (this.options.browserAudit !== false) {
+          await report(`第 ${round} 次制作：正在真实浏览器中检查操作、教学、关卡与结算`);
+          await inspectGeneratedGameInBrowser(root, { expectedCampaign: project.spec.designProfile.generatedCampaign ?? null });
+        }
       } catch (error) {
         const reason = error instanceof Error ? error.message : String(error);
+        recordAttempt(round, error instanceof ArtifactValidationFailure ? "artifact-rejected" : "infrastructure-error", [reason]);
+        if (!(error instanceof ArtifactValidationFailure)) throw new Error(`验收服务未能完成检查，已停止自动付费修复：${reason}`);
         if (round >= 2) throw new Error(`生成代码两轮均未通过产物契约验收：${reason}`);
-        generation = await generator.generate(project, [reason], previous);
+        await report("首次验收发现问题，正在进行第 2 次针对性修复");
+        generation = await generator.generate(project, [reason], { html: generation.html, directions: [...directions, reason] }, repairReport, requestBudget);
         writeGeneratedArtifact(root, project, generation);
         continue;
       }
       if (this.options.browserAudit === false) return { generation, audit: null, iterated: previous !== null };
-      const audit = this.options.designContracts
-        ? await this.options.designContracts.auditRuleFidelity(project.spec.designProfile, generation.html)
+      await report(`第 ${round} 次制作：正在逐条核对方案规则是否在代码中实现`);
+      // 复用代码且规则清单未变时，同一份源码的已通过审核回执可以复用；审核模型只在代码或规则变化时付费调用。
+      const rules = this.options.designContracts ? safeContractRules(project.spec.designProfile) : null;
+      const reusedAudit = reusable && round === 1 && reusableSourceBuildId && rules && generation.html === reusable.html
+        ? readReusableRuleAudit(join(this.artifactRoot, reusableSourceBuildId), { rules, sourceSha256: sha256(generation.html) })
         : null;
+      const reusedAuditFrom = reusedAudit ? reusableSourceBuildId : null;
+      if (reusedAudit) await report(`代码与规则清单均与构建 ${reusedAuditFrom} 一致，复用其已通过的逐条规则审核，本次不调用审核模型`);
+      const audit = reusedAudit ?? (this.options.designContracts
+        ? await this.options.designContracts.auditRuleFidelity(project.spec.designProfile, generation.html)
+        : null);
       const missing = audit?.filter((verdict) => !verdict.implemented) ?? [];
+      recordAttempt(round, reusedAudit ? "rule-audit-reused" : audit ? "rule-audit" : "rule-audit-unavailable", reusedAudit ? [`复用构建 ${reusedAuditFrom} 的规则审核`] : missing.map(verdict => `${verdict.rule}：${verdict.evidence}`));
+      if (this.options.designContracts && (!audit || !audit.length)) throw new Error("规则审核未返回完整结果，已保留代码并停止后续生图及交付；不会因审核服务故障自动重新生成代码。");
       if (missing.length > 0 && round < 2) {
         feedback = missing.map((verdict) => `规则审计判定未实现:${verdict.rule}——${verdict.evidence}`);
-        generation = await generator.generate(project, feedback, previous);
+        await report(`规则审核发现 ${missing.length} 项待修复，正在进行第 2 次针对性修复`);
+        generation = await generator.generate(project, feedback, { html: generation.html, directions: [...directions, ...feedback] }, repairReport, requestBudget);
         writeGeneratedArtifact(root, project, generation);
         continue;
       }
       if (audit) {
-        writeFileSync(join(root, "_studio", "RULE_FIDELITY.json"), JSON.stringify({
-          schemaVersion: 1,
-          checkedAt: new Date().toISOString(),
-          implemented: audit.filter((verdict) => verdict.implemented).length,
-          total: audit.length,
-          verdicts: audit,
-        }, null, 2), "utf8");
+        // 记录被审核源码的可复原哈希；后续同项目复用同一份代码时可据此复用通过的审核，不能复用未通过或不完整的审核。
+        const reconstructed = existsSync(root) ? readGeneratedSource(root) : null;
+        writeRuleFidelity(root, { verdicts: audit, ...(reconstructed ? { sourceSha256: sha256(reconstructed) } : {}), ...(reusedAuditFrom ? { reusedFromBuildId: reusedAuditFrom } : {}) });
       }
-      return { generation, audit, iterated: previous !== null };
+      if (missing.length) throw new Error(`规则审核仍有 ${missing.length} 项未落实，已停止后续生图及交付：${missing.map(item => item.rule).join("；")}`);
+      return { generation, audit, iterated: previous !== null, auditReusedFrom: reusedAuditFrom };
     }
   }
 
@@ -386,11 +483,12 @@ export class BuildOrchestrator {
     // 模板静态设计则重新生成,以便老项目吃到蓝图修订。
     const revisedDesign = directions.length > 0 && this.options.designContracts
       ? await this.options.designContracts.generate(
-          { idea: project.idea, template: project.spec.template, difficulty: project.spec.difficulty },
+          { idea: project.idea, template: project.spec.template, difficulty: project.spec.difficulty, confirmedDesignProfile: project.spec.designProfile },
           project.spec.ideaAnalysis ?? null,
           directions,
         )
       : null;
+    if (directions.length && this.options.designContracts && !revisedDesign) throw new Error("修改方案未能完成，原版本保持不变；本次没有继续生成代码或图片。");
     const preservedDesign = project.spec.designSource === "llm" ? project.spec.designProfile : null;
     const baseSpec = generateGameSpec({
         title: project.title,
