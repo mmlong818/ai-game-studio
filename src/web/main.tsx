@@ -11,6 +11,11 @@ import "../styles/creator.css";
 import "../styles/review.css";
 import "../styles/production.css";
 import "../styles/responsive.css";
+import "../styles/creation-start.css";
+import "../styles/creation-workspace.css";
+import "../styles/works-space.css";
+import "../styles/product-shell.css";
+import "../styles/catalog-workspace.css";
 
 const root = document.getElementById("root");
 if (!root) throw new Error("页面缺少应用挂载节点。");

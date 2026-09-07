@@ -303,8 +303,10 @@ function drawGardenBoard(layout) {
     if ((row + column) % 2 === 0) { ctx.fillStyle = "rgba(74,132,104,.055)"; ctx.fillRect(originX + column * cell, originY + row * cell, cell, cell); }
   }
   ctx.strokeStyle = "rgba(45,104,82,.2)"; ctx.lineWidth = 1.35;
-  for (let index = 0; index <= gridColumns; index += 1) { ctx.beginPath(); ctx.moveTo(originX + index * cell, originY); ctx.lineTo(originX + index * cell, originY + boardHeight); ctx.stroke(); }
-  for (let index = 0; index <= gridRows; index += 1) { ctx.beginPath(); ctx.moveTo(originX, originY + index * cell); ctx.lineTo(originX + boardWidth, originY + index * cell); ctx.stroke(); }
+  ctx.beginPath();
+  for (let index = Math.max(0, Math.ceil(-originX / cell)); index <= Math.min(gridColumns, Math.floor((720 - originX) / cell)); index += 1) { ctx.moveTo(originX + index * cell, originY); ctx.lineTo(originX + index * cell, originY + boardHeight); }
+  for (let index = Math.max(0, Math.ceil(-originY / cell)); index <= Math.min(gridRows, Math.floor((gameSceneHeight() - originY) / cell)); index += 1) { ctx.moveTo(originX, originY + index * cell); ctx.lineTo(originX + boardWidth, originY + index * cell); }
+  ctx.stroke();
   ctx.restore();
 }
 
@@ -345,8 +347,8 @@ function rebuildSnakeStaticLayer() {
 }
 
 function drawSnake(timestamp = performance.now()) {
-  snakeStaticDirty = true;
-  const signature = [backgroundArtReady, backgroundArt.naturalWidth, stageCImages[4]?.naturalWidth || 0, stageCImages[5]?.naturalWidth || 0].join(":");
+  const camera = snakeLayout();
+  const signature = [backgroundArtReady, backgroundArt.naturalWidth, ...stageCImages.map(image => image?.naturalWidth || 0), camera.originX, camera.originY, camera.cell, canvas.width, canvas.height].join(":");
   if (signature !== snakeStaticAssetSignature) { snakeStaticAssetSignature = signature; snakeStaticDirty = true; }
   if (snakeStaticDirty) rebuildSnakeStaticLayer();
   ctx.clearRect(0, 0, canvas.width, canvas.height); ctx.drawImage(snakeStaticLayer, 0, 0); ctx.save(); ctx.translate(0, gameSceneTop());

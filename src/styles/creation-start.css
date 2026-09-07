@@ -1,0 +1,30 @@
+.creation-start { display: grid; grid-template-columns: minmax(0, 1.7fr) minmax(230px, 1fr); gap: 32px; align-items: start; }
+.studio-app:has(.creation-start) .studio-layout { width: min(1120px, calc(100% - 48px)); }
+.studio-app:has(.creation-start) .intro-row h1 { line-height: 1.16; }
+.creation-composer { background: var(--surface); color: var(--ink); border-radius: 24px; padding: 28px; box-shadow: var(--shadow-raised); min-width: 0; }
+.creation-composer-heading { display: flex; justify-content: space-between; gap: 12px; color: var(--ink-muted); font-size: 12px; margin-bottom: 28px; }
+.creation-composer label { display: block; font-size: 23px; font-weight: 650; margin-bottom: 16px; }
+.creation-composer textarea { width: 100%; box-sizing: border-box; resize: vertical; min-height: 190px; max-height: 500px; padding: 18px; border: 1px solid var(--line, #abc0c9); border-radius: 12px; background: var(--surface); color: var(--ink); font: inherit; line-height: 1.8; }
+.creation-composer textarea::placeholder { color: var(--ink-muted); opacity: .85; }
+.creation-submit-row { display: flex; flex-wrap: wrap; gap: 16px; align-items: center; justify-content: space-between; margin-top: 20px; }
+.creation-submit-row p { font-size: 12px; color: var(--ink-muted); max-width: 26ch; margin: 0; }
+.creation-inspiration { border-top: 1px solid var(--line, #abc0c9); margin-top: 26px; padding-top: 20px; display: flex; gap: 10px; flex-wrap: wrap; }
+.creation-inspiration > span { width: 100%; font-size: 12px; color: var(--ink-muted); margin-bottom: 2px; }
+.creation-inspiration button, .creation-replace button { border: 1px solid var(--line, #abc0c9); background: transparent; color: var(--ink); padding: 10px 12px; border-radius: 8px; cursor: pointer; font: inherit; font-size: 13px; }
+.creation-companion { color: var(--on-canvas); padding: 12px 0; }
+.creation-companion h2 { font-size: 28px; line-height: 1.45; margin: 12px 0 24px; letter-spacing: -.03em; }
+.creation-companion ol { padding-left: 24px; margin: 0; }
+.creation-companion li { padding: 0 0 14px 8px; }
+.creation-companion li::marker { color: var(--lego-yellow); font-variant-numeric: tabular-nums; }
+.creation-companion strong { font-size: 15px; }
+.creation-companion p { font-size: 13px; line-height: 1.7; color: var(--on-canvas-muted); margin: 6px 0 0; }
+.creation-remix { display: block; width: 100%; text-align: left; color: var(--on-canvas); padding: 22px 0 0; margin-top: 16px; border: 0; border-top: 1px solid currentColor; background: transparent; cursor: pointer; }
+.creation-remix > span { display: block; color: var(--on-canvas-muted); font-size: 13px; margin-top: 8px; }
+.creation-remix strong { display: flex; justify-content: space-between; }
+.creation-start button { transition: transform .16s, background .16s; }
+.creation-start button:hover:not(:disabled) { transform: translateY(-2px); }
+.creation-start button:active:not(:disabled) { transform: translateY(1px); }
+.creation-start :is(button, textarea):focus-visible { outline: 3px solid var(--lego-yellow); outline-offset: 3px; }
+.creation-replace { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; font-size: 13px; margin-top: 14px; }
+@media (max-width: 760px) { .creation-start { grid-template-columns: 1fr; gap: 20px; } .creation-composer { padding: 20px; } .creation-companion h2 br { display: none; } .creation-companion { padding: 12px; } .creation-submit-row .primary-action { width: 100%; } .creation-submit-row p { max-width: none; } }
+@media (prefers-reduced-motion: reduce) { .creation-start button { transition: none; } }

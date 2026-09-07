@@ -1,5 +1,7 @@
 import {
+  artReviewHistoryResponseSchema,
   buildSchema,
+  gameDesignProfileSchema,
   openAISettingsStatusSchema,
   playActivitiesResponseSchema,
   projectDetailSchema,
@@ -16,6 +18,7 @@ import {
   type ProjectVersion,
   type PlayActivity,
 } from "../shared/contracts";
+import { streamLines } from "../shared/stream-lines";
 import type { DesignKnowledgeReviewReport } from "../server/design-knowledge-review";
 import type { GameplayRadarView, GameplaySignal } from "../shared/game-design-knowledge/gameplay-radar";
 import type { MECHANIC_ATLAS_SUMMARY, searchMechanicAtlas } from "../shared/game-design-knowledge/mechanic-atlas";
@@ -158,6 +161,35 @@ export async function createProject(input: ProjectInput): Promise<ProjectDetail>
   return projectDetailSchema.parse(payload.project);
 }
 
+export type ProductionJob = { id: string; status: "queued" | "creating" | "building" | "failed"; error: string | null; events?: { title: string; createdAt: string }[] };
+export async function submitProduction(input: ProjectInput): Promise<ProductionJob> {
+  const payload = await apiRequest("/api/production-jobs", { method: "POST", body: JSON.stringify(input) });
+  return payload.job as ProductionJob;
+}
+export async function getProductionJob(id: string): Promise<ProductionJob | null> {
+  const payload = await apiRequest("/api/production-jobs/" + encodeURIComponent(id));
+  return payload.job as ProductionJob | null;
+}
+
+export async function watchProductionJob(id: string, signal: AbortSignal, onUpdate: (job: ProductionJob, build: Build | null) => void) {
+  const token = accessToken();
+  const response = await fetch("/api/production-jobs/" + encodeURIComponent(id) + "/stream", {
+    signal, headers: token ? { Authorization: "Bearer " + token } : {},
+  });
+  if (!response.ok || !response.body) throw new Error("无法连接制作进度流。");
+  let terminal = false;
+  for await (const line of streamLines(response.body)) {
+    if (!line.trim()) continue;
+    const event = JSON.parse(line);
+    if (event.type === "heartbeat") continue;
+    if (event.error || !event.job) throw new Error(event.error ?? "任务不存在。");
+    const build = event.build ? buildSchema.parse(event.build) : null;
+    onUpdate(event.job, build);
+    terminal = event.job.status === "failed" || build?.status === "succeeded" || build?.status === "failed";
+  }
+  if (!terminal) throw new Error("进度连接已断开，正在重新连接；不会重新制作。");
+}
+
 export async function getLatestBuild(projectId: string): Promise<Build | null> {
   const payload = (await apiRequest(`/api/projects/${encodeURIComponent(projectId)}/build`)) as {
     build: unknown;
@@ -165,11 +197,52 @@ export async function getLatestBuild(projectId: string): Promise<Build | null> {
   return payload.build === null ? null : buildSchema.parse(payload.build);
 }
 
+export async function generateDesignPreview(input: ProjectInput, signal?: AbortSignal, onDelta?: (text: string) => void) {
+  if (onDelta) {
+    const token = accessToken();
+    const response = await fetch("/api/design-preview", {
+      method: "POST", signal, body: JSON.stringify(input),
+      headers: { "Content-Type": "application/json", Accept: "application/x-ndjson", ...(token ? { Authorization: "Bearer " + token } : {}) },
+    });
+    if (!response.ok) {
+      const failure = await response.json().catch(() => ({}));
+      throw new Error(failure.error ?? "无法开始流式方案生成。");
+    }
+    if (!response.body) throw new Error("服务端未返回输出流。");
+    for await (const line of streamLines(response.body)) {
+      if (!line.trim()) continue;
+      const event = JSON.parse(line);
+      if (event.type === "delta" && typeof event.text === "string") onDelta(event.text);
+      if (event.type === "error") throw new Error(event.error);
+      if (event.type === "done") return gameDesignProfileSchema.parse(event.profile);
+    }
+    throw new Error("输出连接中断，方案尚未完成。");
+  }
+  const result = await apiRequest("/api/design-preview", { method: "POST", body: JSON.stringify(input), signal });
+  if (result.source !== "llm") throw new Error("未获得实时模型方案。");
+  return gameDesignProfileSchema.parse(result.profile);
+}
+
+export async function getPlayableBuild(projectId: string): Promise<Build | null> {
+  const payload = await apiRequest(`/api/projects/${encodeURIComponent(projectId)}/playable-build`);
+  return payload.build == null ? null : buildSchema.parse(payload.build);
+}
+
 export async function startBuild(projectId: string): Promise<Build> {
   const payload = (await apiRequest(`/api/projects/${encodeURIComponent(projectId)}/build`, {
     method: "POST",
   })) as { build: unknown };
   return buildSchema.parse(payload.build);
+}
+
+export async function submitProjectRevision(projectId: string, input: { requestId: string; content: string }): Promise<Build> {
+  const payload = await apiRequest(`/api/projects/${encodeURIComponent(projectId)}/revisions`, { method: "POST", body: JSON.stringify(input) });
+  return buildSchema.parse(payload.build);
+}
+
+export async function getProjectRevision(projectId: string, requestId: string): Promise<Build | null> {
+  const payload = await apiRequest(`/api/projects/${encodeURIComponent(projectId)}/revisions/${encodeURIComponent(requestId)}`);
+  return payload.build == null ? null : buildSchema.parse(payload.build);
 }
 
 export async function publishProject(projectId: string): Promise<ProjectDetail> {
@@ -183,6 +256,13 @@ export async function getProjectVersions(projectId: string): Promise<ProjectVers
   return projectVersionsResponseSchema.parse(
     await apiRequest(`/api/projects/${encodeURIComponent(projectId)}/versions`),
   ).versions;
+}
+
+export async function getArtReviewHistory(projectId: string, versionId: string, signal?: AbortSignal) {
+  const payload = await apiRequest(`/api/projects/${encodeURIComponent(projectId)}/versions/${encodeURIComponent(versionId)}/art-review`, { signal });
+  const reviews = artReviewHistoryResponseSchema.parse(payload).reviews;
+  if (reviews.some(review => review.projectId !== projectId || review.versionId !== versionId)) throw new Error("审核记录与当前版本不一致。");
+  return reviews;
 }
 
 export async function publishProjectVersion(projectId: string, versionId: string): Promise<ProjectDetail> {
@@ -205,10 +285,10 @@ export async function getProjectMessages(projectId: string): Promise<ProjectMess
   ).messages;
 }
 
-export async function sendProjectMessage(projectId: string, content: string): Promise<ProjectMessage[]> {
+export async function sendProjectMessage(projectId: string, content: string, clientMessageId?: string): Promise<ProjectMessage[]> {
   return projectMessagesResponseSchema.parse(await apiRequest(
     `/api/projects/${encodeURIComponent(projectId)}/messages`,
-    { method: "POST", body: JSON.stringify({ content }) },
+    { method: "POST", body: JSON.stringify({ content, clientMessageId }) },
   )).messages;
 }
 

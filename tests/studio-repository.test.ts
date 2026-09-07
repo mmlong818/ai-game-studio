@@ -9,6 +9,7 @@ import { ProjectLifecycle } from "../src/server/project-lifecycle";
 import { StudioRepository } from "../src/server/studio-repository";
 import { loadCuratedResourceLibrary } from "../src/server/resource-library";
 import { generateGameSpec } from "../src/shared/contracts";
+import { officialFixtureGames } from "../src/shared/official-games";
 import { createResourcePlanningForGameSpec } from "../src/shared/resource-planning";
 
 async function createRepository() {
@@ -198,7 +199,8 @@ test("空档接龙固定游戏随星梦对决一起注册为官方游戏并使�
     assert.deepEqual(project.spec.inputModes, ["pointer", "drag", "keyboard"]);
     assert.equal((await repository.resolveGameBySlug("freecell"))?.fixture_kind, "freecell");
     const lobby = await repository.publishedGames();
-    assert.deepEqual(lobby.map((game) => game.fixtureKind).sort(), ["bug-climb", "freecell", "star-dream-duel"]);
+    assert.deepEqual(lobby.map((game) => game.fixtureKind).sort(), officialFixtureGames().map((game) => game.fixtureKind).sort());
+    assert.equal(lobby.some((game) => game.fixtureKind === "bug-climb"), false, "已删除的虫虫攀枝不得被重新注册");
     // 重复调用幂等,不会重复插入。
     assert.equal((await repository.ensureOfficialFixtures()).freecell, fixtures.freecell);
     assert.equal(Number((await database.query<{ count: number }>("SELECT COUNT(*) AS count FROM projects WHERE fixture_kind = 'freecell'")).rows[0]?.count), 1);
@@ -673,10 +675,14 @@ test("只有归档项目能永久删除，并同时清理构建记录和生成�
     await assert.rejects(() => repository.deleteArchived(project.id), /必须先归档/);
 
     const build = await repository.createBuild(project.id);
+    await repository.markBuildRunning(build.id);
     await repository.failInterruptedBuilds();
     const artifactPath = join(artifactRoot, build.id);
     mkdirSync(artifactPath, { recursive: true });
     writeFileSync(join(artifactPath, "index.html"), "temporary", "utf8");
+    const checkpointPath = join(artifactRoot, "_image-checkpoints", project.id);
+    mkdirSync(checkpointPath, { recursive: true });
+    writeFileSync(join(checkpointPath, "receipt.json"), "{}", "utf8");
 
     await repository.archive(project.id);
     await assert.rejects(() => repository.createBuild(project.id), /归档项目不能/);
@@ -684,9 +690,10 @@ test("只有归档项目能永久删除，并同时清理构建记录和生成�
 
     const result = await new ProjectLifecycle(repository, artifactRoot).deleteArchived(project.id);
     assert.equal(result.deleted, true);
-    assert.equal(result.artifactsDeleted, 1);
+    assert.equal(result.artifactsDeleted, 2);
     assert.equal(await repository.get(project.id), null);
     assert.equal(existsSync(artifactPath), false);
+    assert.equal(existsSync(checkpointPath), false);
     assert.equal(await repository.resolveGameBySlug(originalSlug), undefined);
     assert.equal(await repository.resolveGameByVersion(originalVersionId), undefined);
   } finally {

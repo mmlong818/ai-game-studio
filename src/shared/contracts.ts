@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { generatedCampaignSchema } from "./generated-campaign.js";
 import { getOpenSourceTemplateReference } from "./open-source-templates.js";
 import { defaultLevelProgression } from "./level-progression.js";
 import { OFFICIAL_SERVER_TEMPLATE_IDS } from "./official-games/index.js";
@@ -74,11 +75,13 @@ export const puzzlePieceCountSchema = z.union([
 ]);
 
 export const projectInputSchema = z.object({
+  requestId: z.string().uuid().optional(),
+  confirmedDesignProfile: z.lazy(() => gameDesignProfileSchema).optional(),
   idea: z
     .string()
     .trim()
     .min(12, "请至少说明玩家做什么，以及怎样算完成。")
-    .max(2_000, "玩法描述不能超过 2,000 个字符。"),
+    .max(12_000, "完整玩法方案不能超过 12,000 个字符。"),
   title: z.string().trim().max(60, "游戏名称不能超过 60 个字符。").optional(),
   dimensions: z.enum(["auto", "2d", "3d"]).default("auto"),
   template: z.union([z.literal("auto"), gameTemplateSchema]).default("auto"),
@@ -129,6 +132,7 @@ export const gameDesignProfileSchema = z.object({
   onboarding: z.array(z.string().min(1)).min(2).max(6),
   accessibility: z.array(z.string().min(1)).min(2).max(6),
   productionRisks: z.array(z.string().min(1)).max(6),
+  generatedCampaign: generatedCampaignSchema.optional(),
 });
 
 export const levelProgressionSchema = z.object({
@@ -187,7 +191,7 @@ export const gameSpecSchema = z.object({
   templateSource: templateSourceSchema.nullable().default(null),
   designProfile: gameDesignProfileSchema.default(legacyDesignProfile),
   designSource: z.enum(["template", "llm"]).default("template"),
-  levelProgression: levelProgressionSchema.default(defaultLevelProgression),
+  levelProgression: levelProgressionSchema.extend({ levelCount: z.number().int().min(0) }).default(defaultLevelProgression),
   artStyle: artStyleSchema.default("ink"),
   visualStyle: visualStyleSchema.default("classic"),
   difficulty: difficultySchema.default("standard"),
@@ -222,6 +226,11 @@ export const gameSpecSchema = z.object({
   designKnowledge: designKnowledgeShadowSchema.nullable().default(null),
   designContract: gameDesignContractV1Schema.nullable().default(null),
   resourcePlanning: resourcePlanningShadowSchema.nullable().default(null),
+}).superRefine((spec, ctx) => {
+  const campaign = spec.template === "generated" ? spec.designProfile.generatedCampaign : undefined;
+  if (campaign ? spec.levelProgression.levelCount !== campaign.levelCount : spec.levelProgression.levelCount < 20) {
+    ctx.addIssue({ code: "custom", path: ["levelProgression", "levelCount"], message: campaign ? "关卡总数必须与确认方案一致。" : "旧版本与官方模板保留至少二十关协议。" });
+  }
 });
 
 export const projectSummarySchema = z.object({
@@ -308,6 +317,15 @@ export const projectVersionsResponseSchema = z.object({
   versions: z.array(projectVersionSchema),
 });
 
+export const artReviewHistoryResponseSchema = z.object({
+  reviews: z.array(z.object({
+    id: z.string(), projectId: z.string(), versionId: z.string(), sequence: z.number().int().positive(),
+    previousStatus: artReviewStatusSchema, status: z.enum(["passed", "failed"]),
+    summary: z.string(), reviewedAt: z.string().datetime(), source: z.enum(["manual-unverified", "operator-credential"]), reviewerId: z.string().nullable().optional(),
+  })),
+});
+export type ArtReviewHistoryEntry = z.infer<typeof artReviewHistoryResponseSchema>["reviews"][number];
+
 export const projectsResponseSchema = z.object({
   projects: z.array(projectSummarySchema),
 });
@@ -379,6 +397,7 @@ export const projectMessageSchema = z.object({
 });
 
 export const projectMessageInputSchema = z.object({
+  clientMessageId: z.string().uuid().optional(),
   content: z.string().trim().min(2, "请说明你希望修改或讨论的内容。").max(2_000, "单条消息不能超过 2,000 个字符。")
     // 客户端编码错误(如 GBK 终端)会产生替换字符;这类乱码一旦入库会持续污染后续合同修订。
     .refine((value) => !value.includes("�"), "消息包含无法解码的字符，请检查输入编码后重发。"),
@@ -386,6 +405,11 @@ export const projectMessageInputSchema = z.object({
 
 export const projectMessagesResponseSchema = z.object({
   messages: z.array(projectMessageSchema),
+});
+
+export const projectRevisionInputSchema = z.object({
+  requestId: z.string().uuid(),
+  content: projectMessageInputSchema.shape.content,
 });
 
 export type ProjectInput = z.input<typeof projectInputSchema>;
@@ -866,7 +890,7 @@ export function generateGameSpec(
     schemaVersion: 1,
     presentationVersion: 5,
     title,
-    vision: input.idea,
+    vision: input.idea.slice(0, 280),
     dimensions,
     runtimeTarget: dimensions === "3d" ? "web-3d" : "web-2d",
     perspective: inferPerspective(input.idea, dimensions, template),
@@ -874,7 +898,9 @@ export function generateGameSpec(
     templateSource: createTemplateSource(template),
     designProfile: designProfile ?? createDesignProfile(template, input.difficulty),
     designSource: designProfile ? "llm" : "template",
-    levelProgression: defaultLevelProgression,
+    levelProgression: template === "generated" && designProfile?.generatedCampaign
+      ? { ...defaultLevelProgression, levelCount: designProfile.generatedCampaign.levelCount }
+      : defaultLevelProgression,
     artStyle: input.artStyle === "auto" ? templateDefaults[template].style : input.artStyle,
     visualStyle: input.visualStyle,
     difficulty: input.difficulty,

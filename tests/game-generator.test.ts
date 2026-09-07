@@ -15,10 +15,26 @@ import { inspectRasterAiArt } from "../src/server/art-policy";
 import { OpenAISettings } from "../src/server/openai-settings";
 import { createGameDesignContractForLegacyProject } from "../src/shared/game-design-contract/from-legacy";
 import { generatedDesignHtml } from "./generated-design-fixture";
+import { GenerationBudget } from "../src/server/generation-budget";
 
 const validKey = "sk-test_1234567890abcdef";
 
 const contractHtml = generatedDesignHtml("shot-fired");
+
+test("安全修正与后续玩法修复共用额度，不能叠加出第四次请求", async () => {
+  let calls = 0;
+  const generator = new GameCodeGenerator(new OpenAISettings(validKey), {
+    fetchImpl: async () => {
+      calls++;
+      return llmResponse({ html: calls < 3 ? contractHtml.replace("<script>", '<script>fetch("/forbidden");') : contractHtml, design_notes: "模拟安全修复" });
+    },
+  });
+  const budget = new GenerationBudget(3);
+  const result = await generator.generate(fakeProject(), [], null, async () => {}, budget);
+  assert.equal(result.rounds, 3);
+  await assert.rejects(generator.generate(fakeProject(), ["再修复玩法"], { html: result.html, directions: [] }, async () => {}, budget), /达到 3 次请求上限/);
+  assert.equal(calls, 3);
+});
 
 function fakeProject(): ProjectDetail {
   const baseSpec = generateGameSpec({ idea: "守夜人在灯塔上转动光束驱散一波波逼近的雾兽。", template: "generated", dimensions: "2d" });
@@ -29,6 +45,67 @@ function fakeProject(): ProjectDetail {
 function llmResponse(answer: Record<string, unknown>) {
   return new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify(answer) } }] }), { status: 200 });
 }
+
+test("确认关卡计划同时进入生成指令与交付清单", async () => {
+  const project = fakeProject();
+  project.spec.designProfile.generatedCampaign = { levelCount: 7, milestones: [1, 4, 7], difficultyKeys: ["pairCount"], rationale: "按七关配对数量递进。" };
+  const generator = new GameCodeGenerator(new OpenAISettings(validKey), {
+    fetchImpl: async (_url, init) => {
+      const body = JSON.parse(String(init?.body));
+      const prompt = body.messages[0].content;
+      assert.match(prompt, /7 个可选择关卡/);
+      assert.doesNotMatch(prompt, /必须是 20 关|必须实现 20|setLevel\(1\.\.20\)|第 9 关/);
+      return llmResponse({ html: contractHtml, design_notes: "合同传递测试" });
+    },
+  });
+  const generation = await generator.generate(project);
+  const root = mkdtempSync(join(tmpdir(), "confirmed-campaign-"));
+  try {
+    writeGeneratedArtifact(root, project, generation);
+    const manifest = JSON.parse(readFileSync(join(root, "game-manifest.json"), "utf8"));
+    assert.equal(manifest.levelProgression.levelCount, 7);
+    assert.deepEqual(manifest.generatedCampaign, project.spec.designProfile.generatedCampaign);
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
+function streamedAnswer(content: string, done = true) {
+  const chunks = Array.from({ length: Math.ceil(content.length / 40) }, (_, index) =>
+    `data: ${JSON.stringify({ choices: [{ delta: { content: content.slice(index * 40, index * 40 + 40) } }] })}\n\n`);
+  return new Response(chunks.join("") + (done ? "data: [DONE]\n\n" : ""), { headers: { "Content-Type": "text/event-stream" } });
+}
+
+test("代码流式输出节流报告数量，不向进度泄露代码", async () => {
+  const reports: string[] = [];
+  const generator = new GameCodeGenerator(new OpenAISettings(validKey), {
+    fetchImpl: async (_url, init) => {
+      assert.equal(JSON.parse(String(init?.body)).stream, true);
+      return streamedAnswer(JSON.stringify({ html: contractHtml, design_notes: "流式验收" }));
+    },
+  });
+  const result = await generator.generate(fakeProject(), [], null, async detail => { reports.push(detail); });
+  assert.equal(result.html, contractHtml);
+  assert.ok(reports.some(detail => detail.includes("已收到")));
+  assert.ok(reports.length < 10, "大量分片不应产生同量数据库写入");
+  assert.ok(reports.every(detail => !detail.includes("<script")));
+});
+
+test("代码流中断不接受半份代码且不重新付费调用", async () => {
+  let calls = 0;
+  const generator = new GameCodeGenerator(new OpenAISettings(validKey), {
+    fetchImpl: async () => { calls++; return streamedAnswer(JSON.stringify({ html: contractHtml, design_notes: "完整JSON但流未结束" }), false); },
+  });
+  await assert.rejects(() => generator.generate(fakeProject()), /输出流中断/);
+  assert.equal(calls, 1);
+});
+
+test("网络结果未知不自动发起第二次付费请求", async () => {
+  let calls = 0;
+  const generator = new GameCodeGenerator(new OpenAISettings(validKey), {
+    fetchImpl: async () => { calls++; throw new TypeError("connection reset"); },
+  });
+  await assert.rejects(() => generator.generate(fakeProject()), /connection reset/);
+  assert.equal(calls, 1);
+});
 
 function writeAiArtProvenance(root: string) {
   mkdirSync(join(root, "assets"), { recursive: true });
@@ -81,6 +158,8 @@ test("首轮违规时带违规原因重试,第二轮合规则返回 rounds=2", a
   const generated = await generator.generate(fakeProject());
   assert.equal(generated.rounds, 2);
   assert.match(prompts[1] ?? "", /安全扫描违规/);
+  assert.match(prompts[1] ?? "", /上一版代码\(修改基础\)/);
+  assert.ok(prompts[1]?.includes(`${contractHtml}<script>fetch("/steal")</script>`), "安全修正必须使用刚失败的代码而非重头制作");
 });
 
 test("连续三轮违规后抛错,构建应当失败", async () => {
@@ -132,9 +211,9 @@ test("产物写入+静态探针:拆分为外链三件套(生产 CSP 禁内联),�
     assert.ok(labels.includes("安全扫描"));
     assert.ok(labels.includes("试玩遥测注入"));
     assert.ok(labels.includes("教学计划归档"));
-    assert.ok(labels.includes("真实教学信号接线"));
+    assert.ok(labels.includes("教学接口与信号声明"));
     assert.ok(labels.includes("教学安全压力"));
-    assert.ok(labels.includes("二十关设计协议"));
+    assert.ok(labels.includes("确认关卡设计协议"));
     assert.ok(labels.includes("显式失败辅助协议"));
     const written = readFileSync(join(root, "index.html"), "utf8");
     assert.ok(!/<script(?![^>]*\bsrc)[^>]*>[\s\S]*?<\/script>/i.test(written), "index.html 不得残留内联脚本");
@@ -168,7 +247,7 @@ test("自由生成静态门禁拒绝伪造、漏接或未安全暂停的教学",
   try {
     writeGeneratedArtifact(wrongSignalRoot, fakeProject(), { html: contractHtml.replaceAll("shot-fired", "made-up-signal"), designNotes: "错误信号", rounds: 1 });
     writeAiArtProvenance(wrongSignalRoot);
-    assert.throws(() => inspectGeneratedArtifact(wrongSignalRoot), /真实动作处理器.*shot-fired/);
+    assert.throws(() => inspectGeneratedArtifact(wrongSignalRoot), /合同信号声明.*shot-fired/);
 
     writeGeneratedArtifact(unsafeRoot, fakeProject(), { html: contractHtml.replace("!window.__FORGE_ONBOARDING__.isActive()", "true"), designNotes: "未暂停压力", rounds: 1 });
     writeAiArtProvenance(unsafeRoot);
@@ -177,6 +256,61 @@ test("自由生成静态门禁拒绝伪造、漏接或未安全暂停的教学",
     rmSync(wrongSignalRoot, { recursive: true, force: true });
     rmSync(unsafeRoot, { recursive: true, force: true });
   }
+});
+
+test("静态教学接线接受真实花园翻牌的const别名、压力包装函数和探针方法简写", () => {
+  const root = mkdtempSync(join(tmpdir(), "forge-gen-onboarding-alias-"));
+  const aliased = contractHtml
+    .replace('<script>', '<script>const onboarding=window.__FORGE_ONBOARDING__||null; function isOnboardingActive(){return !!(onboarding&&onboarding.isActive&&onboarding.isActive());}')
+    .replaceAll('window.__FORGE_ONBOARDING__.signal(', 'onboarding.signal(')
+    .replace('!window.__FORGE_ONBOARDING__.isActive()', '!isOnboardingActive()')
+    .replace('performOnboardingStep:()=>fireShot()', 'performOnboardingStep(){fireShot()}');
+  try {
+    writeGeneratedArtifact(root, fakeProject(), { html: aliased, designNotes: "真实失败案例简化回归", rounds: 1 });
+    assert.ok(inspectGeneratedArtifact(root, { requireAiArt: false }).includes("教学接口与信号声明"));
+    writeGeneratedArtifact(root, fakeProject(), { html: aliased.replace('onboarding.isActive()', 'false'), designNotes: "缺少实际压力检查", rounds: 1 });
+    assert.throws(() => inspectGeneratedArtifact(root, { requireAiArt: false }), /未冻结教学期自动压力/);
+    writeGeneratedArtifact(root, fakeProject(), { html: aliased.replace('window.__FORGE_ONBOARDING__||null', '{signal(){},isActive(){return false}}'), designNotes: "同名伪造对象", rounds: 1 });
+    assert.throws(() => inspectGeneratedArtifact(root, { requireAiArt: false }), /平台教学 signal 接口接线/);
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
+test("真实制作的空值安全getter与var别名不触发付费修复误报", () => {
+  const root = mkdtempSync(join(tmpdir(), "forge-gen-getter-"));
+  const html = contractHtml.replace('<script>', '<script>function getOnboarding(){return window.__FORGE_ONBOARDING__||null} var o=getOnboarding();')
+    .replaceAll('window.__FORGE_ONBOARDING__.signal(', 'o.signal(')
+    .replaceAll('window.__FORGE_ONBOARDING__.isActive()', 'o.isActive()');
+  try {
+    writeGeneratedArtifact(root, fakeProject(), { html, designNotes: "真实样本回归", rounds: 1 });
+    assert.ok(inspectGeneratedArtifact(root, { requireAiArt: false }).includes("教学接口与信号声明"));
+    writeGeneratedArtifact(root, fakeProject(), { html: html.replace('return window.__FORGE_ONBOARDING__||null', 'return {}'), designNotes: "伪接口", rounds: 1 });
+    assert.throws(() => inspectGeneratedArtifact(root, { requireAiArt: false }), /平台教学 signal 接口接线/);
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
+test("教学静态预检允许参数化signal helper，完全缺少平台调用仍拒绝", () => {
+  const root = mkdtempSync(join(tmpdir(), "forge-gen-signal-wrapper-"));
+  const wrapped = contractHtml.replace('<script>', '<script>const onboarding=window.__FORGE_ONBOARDING__||null;const tutorialSignals=["shot-fired"];function emitSignal(name){onboarding.signal(name)}')
+    .replace('window.__FORGE_ONBOARDING__.signal("shot-fired")', 'emitSignal(tutorialSignals[0])');
+  try {
+    writeGeneratedArtifact(root, fakeProject(), { html: wrapped, designNotes: "参数化信号", rounds: 1 });
+    assert.ok(inspectGeneratedArtifact(root, { requireAiArt: false }).includes("教学接口与信号声明"));
+    writeGeneratedArtifact(root, fakeProject(), { html: wrapped.replace('onboarding.signal(name)', 'void name'), designNotes: "缺少调用", rounds: 1 });
+    assert.throws(() => inspectGeneratedArtifact(root, { requireAiArt: false }), /平台教学 signal 接口接线/);
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
+test("仅2D记忆翻牌产物声明自然配对检查", () => {
+  const root = mkdtempSync(join(tmpdir(), "forge-gen-memory-capability-"));
+  try {
+    const project = fakeProject();
+    project.spec.designProfile.genre = "花园休闲记忆配对";
+    writeGeneratedArtifact(root, project, { html: contractHtml, designNotes: "记忆配对", rounds: 1 });
+    assert.deepEqual(JSON.parse(readFileSync(join(root, "game-manifest.json"), "utf8")).naturalInteractionChecks, ["memory-match"]);
+    project.spec.designProfile.genre = "灯塔射击";
+    writeGeneratedArtifact(root, project, { html: contractHtml, designNotes: "射击", rounds: 1 });
+    assert.deepEqual(JSON.parse(readFileSync(join(root, "game-manifest.json"), "utf8")).naturalInteractionChecks, []);
+  } finally { rmSync(root, { recursive: true, force: true }); }
 });
 
 test("AI 位图门禁要求游戏实际加载背景，并拒绝产物中的 SVG", () => {

@@ -1,4 +1,6 @@
 import { z } from "zod";
+import { generatedCampaignSchema } from "../shared/generated-campaign.js";
+import { streamLines } from "../shared/stream-lines.js";
 import { gameDesignPrinciplesPrompt } from "../shared/game-presentation-policy.js";
 import {
   createDesignProfile,
@@ -21,6 +23,7 @@ const MAX_ATTEMPTS = 2;
 // LLM 输出骨架(docs/33 第 4 节):字段与 gameDesignProfileSchema 一一对应,
 // productionRisks 例外——模板基线风险是工程事实,由平台合并,LLM 只补充题材相关新风险。
 const llmDesignSchema = z.object({
+  generated_campaign: generatedCampaignSchema.nullable().optional(),
   genre: z.string().min(1),
   target_player: z.string().min(1),
   player_fantasy: z.string().min(1),
@@ -44,9 +47,24 @@ const responseJsonSchema = {
   required: [
     "genre", "target_player", "player_fantasy", "session_length", "core_loop", "win_condition",
     "fail_condition", "progression", "difficulty_curve", "game_feel", "onboarding", "accessibility",
-    "extra_production_risks",
+    "extra_production_risks", "generated_campaign",
   ],
   properties: {
+    generated_campaign: {
+      anyOf: [{ type: "null" }, {
+        type: "object", additionalProperties: false,
+        required: ["mode", "levelCount", "milestones", "difficultyKeys", "rationale", "failurePolicy"],
+        properties: {
+          mode: { type: "string", enum: ["campaign", "endless"], description: "有限闯关或无目标无限玩法；无限玩法总关数0、milestones空数组，不得强加胜利目标。" },
+          failurePolicy: { type: "string", enum: ["required", "forbidden"], description: "有失败条件为required，无失败玩法为forbidden。必须与fail_condition一致，不得为了验收给无失败玩法增加失败。" },
+          levelCount: { type: "integer", minimum: 0, maximum: 60 },
+          milestones: { type: "array", items: { type: "integer", minimum: 1, maximum: 60 } },
+          difficultyKeys: { type: "array", items: { type: "string" } },
+          rationale: { type: "string" },
+        },
+      }],
+      description: "无模板游戏填写，官方模板填null。按玩家需求选择闯关或无限，不默认20关。有限关卡的milestones从1开始递增；无限为0关、milestones为空。difficultyKeys为真实递增参数的英文标识，无限可为空；不得虚构速度或密度。rationale解释安排，并在progression/difficulty_curve用普通人能懂的中文表达同一方案。",
+    },
     genre: { type: "string", description: "结合题材的玩法类型定位,不超过 20 字" },
     target_player: { type: "string", description: "目标玩家画像,指出主要动机(如成就感/掌控感/收集欲),不超过 60 字" },
     player_fantasy: { type: "string", description: "玩家幻想:玩家在本作里扮演什么、体验什么,用题材语言,不超过 60 字" },
@@ -107,12 +125,13 @@ function buildSystemPrompt(template: GameTemplate, baseline: GameDesignProfile, 
   ].join("\n");
 }
 
-function buildUserPrompt(idea: string, analysis: IdeaAnalysis | null, directions: string[]): string {
+function buildUserPrompt(idea: string, analysis: IdeaAnalysis | null, directions: string[], currentProfile?: GameDesignProfile): string {
   const lines = [`玩法描述:${idea}`];
   if (analysis?.summary) lines.push(`玩法解析概括:${analysis.summary}`);
   if (analysis?.mechanics.length) lines.push(`已识别机制:${analysis.mechanics.join("、")}`);
   if (analysis?.hardConstraints.length) lines.push(`用户硬性约束(设计合同必须尊重):${analysis.hardConstraints.map((item) => `“${item}”`).join("、")}`);
   if (directions.length) {
+    if (currentProfile) lines.push(`当前已确认并实现的方案：${JSON.stringify(currentProfile)}。在此基础上只修改用户明确要求的部分；未涉及的关数、模式、失败条件、节奏、计分和资源方向保持不变。`);
     lines.push("创作者在制作对话中提出的修改意见(按时间顺序,越靠后优先级越高,设计合同必须落实;与规则基线冲突时在基线内尽量满足):");
     lines.push(...directions.map((item, index) => `${index + 1}. ${item}`));
   }
@@ -197,6 +216,10 @@ export function contractRules(profile: GameDesignProfile): string[] {
     ...profile.coreLoop.map((step, index) => `核心循环第 ${index + 1} 步:${step}`),
     `胜利条件:${profile.winCondition}`,
     `失败条件:${profile.failCondition}`,
+    ...(profile.generatedCampaign ? [
+      profile.generatedCampaign.mode === "endless" ? "无限玩法没有最终胜利、强制通关或关卡选择；按确认规则持续供给可玩的内容。" : `关卡总数严格为${profile.generatedCampaign.levelCount}，结构变化关为${profile.generatedCampaign.milestones.join("/")}，不得增减。`,
+      `难度维度${profile.generatedCampaign.difficultyKeys.join("、")}必须实际影响规则，不得只伪造探针返回值。依据：${profile.generatedCampaign.rationale}`,
+    ] : []),
   ];
 }
 
@@ -204,14 +227,17 @@ interface DesignContractOptions {
   fetchImpl?: typeof fetch;
   endpoint?: string;
   timeoutMs?: number;
+  maxAttempts?: number;
 }
 
 export class DesignContractGenerator {
+  private readonly maxAttempts: number;
   private readonly fetchImpl: typeof fetch;
   private readonly endpoint: string;
   private readonly timeoutMs: number;
 
   constructor(private readonly settings: OpenAISettings, options: DesignContractOptions = {}) {
+    this.maxAttempts = options.maxAttempts ?? MAX_ATTEMPTS;
     this.fetchImpl = options.fetchImpl ?? fetch;
     this.endpoint = options.endpoint ?? DEFAULT_ENDPOINT;
     this.timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
@@ -221,17 +247,17 @@ export class DesignContractGenerator {
    * 返回 LLM 定制的设计合同;没有密钥或调用失败时返回 null,调用方回退到模板静态设计。
    * directions 传入创作者在制作对话中的历史修改意见(时间顺序),用于重建时修订设计合同。
    */
-  async generate(rawInput: ProjectInput, analysis: IdeaAnalysis | null = null, directions: string[] = []): Promise<GameDesignProfile | null> {
+  async generate(rawInput: ProjectInput, analysis: IdeaAnalysis | null = null, directions: string[] = [], onDelta?: (text: string) => void): Promise<GameDesignProfile | null> {
     const input = projectInputSchema.parse(rawInput);
     const apiKey = this.settings.getApiKey();
     if (!apiKey) return null;
     const template = resolveGameTemplate(input, analysis);
-    const baseline = createDesignProfile(template, input.difficulty);
+    const baseline = input.confirmedDesignProfile ?? createDesignProfile(template, input.difficulty);
     try {
-      return await this.requestDesign(input.idea, template, baseline, input.difficulty, analysis, directions.slice(-10), apiKey);
+      return await this.requestDesign(input.idea, template, baseline, input.difficulty, analysis, directions.slice(-10), apiKey, onDelta);
     } catch (error) {
       const reason = error instanceof Error ? error.message : "LLM 设计合同生成失败。";
-      console.warn(`设计合同 LLM 生成失败，已回退到模板静态设计：${reason}`);
+      console.warn(`设计合同 LLM 生成失败，未返回可确认的方案：${reason}`);
       return null;
     }
   }
@@ -275,7 +301,7 @@ export class DesignContractGenerator {
 
   /**
    * 规则正确性审计:拿设计合同的规则清单与生成代码,逐条判定是否实现。
-   * 没有密钥或调用失败返回 null(记录"审计不可用",不拦截构建)。
+   * 没有密钥、缺少逐条结果或调用失败返回 null，由生产编排阻止未审计交付。
    */
   async auditRuleFidelity(profile: GameDesignProfile, gameCode: string): Promise<RuleVerdict[] | null> {
     const apiKey = this.settings.getApiKey();
@@ -299,6 +325,7 @@ export class DesignContractGenerator {
     try {
       const content = await this.requestContent(messages, "rule_fidelity", ruleAuditJsonSchema, apiKey);
       const parsed = ruleAuditAnswerSchema.parse(JSON.parse(content));
+      if (parsed.verdicts.length !== rules.length) throw new Error(`规则审核不完整：要求${rules.length}条，实际${parsed.verdicts.length}条。`);
       return parsed.verdicts.slice(0, rules.length).map((verdict, index) => ({
         rule: rules[index] ?? verdict.rule,
         implemented: verdict.implemented,
@@ -306,7 +333,7 @@ export class DesignContractGenerator {
       }));
     } catch (error) {
       const reason = error instanceof Error ? error.message : "规则审计失败。";
-      console.warn(`生成代码规则审计失败，本版只记录审计不可用：${reason}`);
+      console.warn(`生成代码规则审计失败，制作流程必须停止后续生图及交付：${reason}`);
       return null;
     }
   }
@@ -319,13 +346,14 @@ export class DesignContractGenerator {
     analysis: IdeaAnalysis | null,
     directions: string[],
     apiKey: string,
+    onDelta?: (text: string) => void,
   ): Promise<GameDesignProfile> {
     const messages = [
       { role: "system", content: buildSystemPrompt(template, baseline, difficulty) },
-      { role: "user", content: buildUserPrompt(idea, analysis, directions) },
+      { role: "user", content: buildUserPrompt(idea, analysis, directions, directions.length ? baseline : undefined) },
     ];
-    const content = await this.requestContent(messages, "design_contract", responseJsonSchema, apiKey);
-    return this.parseDesign(content, baseline);
+    const content = await this.requestContent(messages, "design_contract", responseJsonSchema, apiKey, onDelta);
+    return this.parseDesign(content, baseline, template);
   }
 
   private async requestContent(
@@ -333,9 +361,11 @@ export class DesignContractGenerator {
     schemaName: string,
     jsonSchema: unknown,
     apiKey: string,
+    onDelta?: (text: string) => void,
   ): Promise<string> {
     let lastError: unknown = null;
-    for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt += 1) {
+    const attempts = onDelta ? 1 : this.maxAttempts;
+    for (let attempt = 1; attempt <= attempts; attempt += 1) {
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), this.timeoutMs);
       try {
@@ -349,6 +379,7 @@ export class DesignContractGenerator {
           body: JSON.stringify({
             model: this.settings.status().models.text,
             messages,
+            ...(onDelta ? { stream: true } : {}),
             response_format: {
               type: "json_schema",
               json_schema: { name: schemaName, strict: true, schema: jsonSchema },
@@ -359,11 +390,27 @@ export class DesignContractGenerator {
           const retryable = response.status === 429 || response.status >= 500;
           const detail = (await response.text().catch(() => "")).slice(0, 200);
           const error = new Error(`模型接口返回 ${response.status}。${detail}`);
-          if (retryable && attempt < MAX_ATTEMPTS) {
+          if (retryable && attempt < attempts) {
             lastError = error;
             continue;
           }
           throw error;
+        }
+        if (onDelta) {
+          if (!response.body) throw new Error("模型未提供输出流。");
+          let text = "", complete = false;
+          for await (const line of streamLines(response.body)) {
+            if (!line.startsWith("data:")) continue;
+            const data = line.slice(5).trim();
+            if (data === "[DONE]") { complete = true; break; }
+            const event = JSON.parse(data);
+            if (event.error) throw new Error("模型流式输出失败。");
+            const delta = event.choices?.[0]?.delta;
+            if (delta?.refusal) throw new Error("模型拒绝了该请求。");
+            if (typeof delta?.content === "string") { text += delta.content; onDelta(delta.content); }
+          }
+          if (!complete) throw new Error("模型输出连接中断，方案尚未完成。");
+          return text;
         }
         const body = (await response.json()) as { choices?: Array<{ message?: { content?: string | null; refusal?: string | null } }> };
         const message = body.choices?.[0]?.message;
@@ -373,10 +420,10 @@ export class DesignContractGenerator {
       } catch (error) {
         if (error instanceof Error && error.name === "AbortError") {
           lastError = new Error(`模型接口在 ${this.timeoutMs}ms 内没有响应。`);
-          if (attempt < MAX_ATTEMPTS) continue;
+          if (attempt < attempts) continue;
           throw lastError;
         }
-        if (attempt < MAX_ATTEMPTS && error instanceof TypeError) {
+        if (attempt < attempts && error instanceof TypeError) {
           lastError = error;
           continue;
         }
@@ -388,7 +435,7 @@ export class DesignContractGenerator {
     throw lastError instanceof Error ? lastError : new Error("模型接口调用失败。");
   }
 
-  private parseDesign(content: string, baseline: GameDesignProfile): GameDesignProfile {
+  private parseDesign(content: string, baseline: GameDesignProfile, template: GameTemplate): GameDesignProfile {
     let raw: unknown;
     try {
       raw = JSON.parse(content);
@@ -414,6 +461,7 @@ export class DesignContractGenerator {
       onboarding: clipList(answer.onboarding, 80),
       accessibility: clipList(answer.accessibility, 80),
       productionRisks: [...baseline.productionRisks, ...extraRisks].slice(0, 6),
+      ...(template === "generated" && answer.generated_campaign ? { generatedCampaign: answer.generated_campaign } : {}),
     });
   }
 }

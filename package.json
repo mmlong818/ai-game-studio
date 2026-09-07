@@ -18,6 +18,7 @@
     "test": "npm run test:platform && npm run test:legacy",
     "test:platform": "vitest run",
     "test:legacy": "tsx --test --test-concurrency=1 tests/*.test.ts",
+    "test:publication-postgres": "node --env-file-if-exists=.env.local --import tsx --test tests/publication-postgres.integration.ts",
     "test:watch": "vitest",
     "resources:inspect-curated": "tsx scripts/inspect-curated-resource-packs.ts",
     "resources:import-curated": "tsx scripts/import-curated-resource-packs.ts",

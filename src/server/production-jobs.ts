@@ -1,0 +1,69 @@
+import { randomUUID } from "node:crypto";
+import { projectInputSchema, type ProjectInput } from "../shared/contracts.js";
+import type { StudioDatabase } from "./database.js";
+
+export type ProductionJob = { id: string; status: "queued" | "creating" | "building" | "failed"; error: string | null; events?: { title: string; createdAt: string }[] };
+export class ProductionJobs {
+  private active = 0;
+  private waiting: { id: string; input: ProjectInput }[] = [];
+  constructor(private db: StudioDatabase, private execute: (input: ProjectInput, report: (title: string) => Promise<void>) => Promise<void>) {}
+  async initialize() {
+    await this.db.query("CREATE TABLE IF NOT EXISTS production_jobs (id TEXT PRIMARY KEY, input_json TEXT NOT NULL, status TEXT NOT NULL, error TEXT)");
+    await this.db.query("CREATE TABLE IF NOT EXISTS production_job_events (id TEXT PRIMARY KEY, job_id TEXT NOT NULL, title TEXT NOT NULL, created_at TEXT NOT NULL)");
+    // The API owns the database runtime lease before calling initialize. Only
+    // queued receipts are safe to resume: creating may already have incurred cost.
+    await this.db.query("UPDATE production_jobs SET status = 'failed', error = '服务重启导致创建阶段中断，未自动重试。' WHERE status = 'creating'");
+    const queued = (await this.db.query<{ id: string; input_json: string }>("SELECT id, input_json FROM production_jobs WHERE status = 'queued' ORDER BY id")).rows;
+    for (const row of queued) {
+      try {
+        const input = projectInputSchema.parse(JSON.parse(row.input_json));
+        if (input.requestId !== row.id) throw new Error("制作回执与方案编号不一致。");
+        this.waiting.push({ id: row.id, input });
+      } catch {
+        await this.db.query("UPDATE production_jobs SET status = 'failed', error = '排队方案无法恢复，未启动模型调用。' WHERE id = $1 AND status = 'queued'", [row.id]);
+      }
+    }
+    if (this.waiting.length) setTimeout(() => this.drain(), 0);
+  }
+  async get(id: string): Promise<ProductionJob | null> {
+    const job = (await this.db.query<ProductionJob>("SELECT id, status, error FROM production_jobs WHERE id = $1", [id])).rows[0];
+    if (!job) return null;
+    const events = (await this.db.query<{ title: string; created_at: string }>("SELECT title, created_at FROM production_job_events WHERE job_id = $1 ORDER BY created_at, id", [id])).rows;
+    return { ...job, events: events.map(event => ({ title: event.title, createdAt: event.created_at })) };
+  }
+  async submit(raw: ProjectInput): Promise<ProductionJob> {
+    const input = projectInputSchema.parse(raw);
+    const id = input.requestId ?? randomUUID();
+    const payload = JSON.stringify({ ...input, requestId: id });
+    const inserted = await this.db.query("INSERT INTO production_jobs (id, input_json, status) VALUES ($1, $2, 'queued') ON CONFLICT(id) DO NOTHING", [id, payload]);
+    if (!inserted.rowCount) {
+      const previous = (await this.db.query<{ input_json: string }>("SELECT input_json FROM production_jobs WHERE id = $1", [id])).rows[0];
+      if (JSON.stringify(projectInputSchema.parse(JSON.parse(previous.input_json))) !== payload) throw new Error("该制作请求已对应另一份方案。");
+    } else {
+      // The persisted receipt exists before accepting the request. Browser lifetime is irrelevant.
+      this.waiting.push({ id, input: { ...input, requestId: id } });
+      setTimeout(() => this.drain(), 0);
+    }
+    return (await this.get(id))!;
+  }
+  private drain() {
+    while (this.active < 2 && this.waiting.length) {
+      const next = this.waiting.shift()!;
+      this.active++;
+      void this.run(next.id, next.input).finally(() => { this.active--; this.drain(); });
+    }
+  }
+  private async run(id: string, input: ProjectInput) {
+    try {
+      const claimed = await this.db.query("UPDATE production_jobs SET status = 'creating' WHERE id = $1 AND status = 'queued'", [id]);
+      if (claimed.rowCount !== 1) return;
+      await this.execute(input, async title => {
+        await this.db.query("INSERT INTO production_job_events (id, job_id, title, created_at) VALUES ($1, $2, $3, $4)", [randomUUID(), id, title, new Date().toISOString()]);
+      });
+      await this.db.query("UPDATE production_jobs SET status = 'building' WHERE id = $1", [id]);
+    } catch (reason) {
+      const error = reason instanceof Error ? reason.message : "项目创建失败。";
+      await this.db.query("UPDATE production_jobs SET status = 'failed', error = $2 WHERE id = $1", [id, error]).catch(() => {});
+    }
+  }
+}

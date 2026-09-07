@@ -13,6 +13,16 @@ const completeChecks = [
   { id: "CONTENT-VARIATION-REHEARSAL", label: "变化", status: "passed" as const, evidence: "第 9 关" },
 ];
 
+it.each([['no-failure', 'NO-FAILURE-SAMPLED'], ['endless-sampled', 'ENDLESS-SAMPLED']] as const)("%s必须具有自己的抽样证据，不能用不适用项冒充", (kind, evidenceId) => {
+  const root = mkdtempSync(join(tmpdir(), "design-policy-"));
+  const contract = { ...merge2048DesignSample, acceptance: [{ ...merge2048DesignSample.acceptance[0], kind }] };
+  try {
+    expect(() => writeDesignAcceptanceReport(root, contract, completeChecks)).toThrow(/未闭环/);
+    expect(writeDesignAcceptanceReport(root, contract, [{ id: evidenceId, label: "明确范围的抽样", status: "passed", evidence: "仅覆盖测试路径" }]).status).toBe("passed");
+    expect(() => writeDesignAcceptanceReport(root, contract, [{ id: evidenceId, label: "抽样发现违规", status: "failed", evidence: "曾进入禁止状态" }])).toThrow(/未闭环/);
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
 it("普通输入回归不能冒充手感评审", () => {
   const root=mkdtempSync(join(tmpdir(), 'design-feel-'));
   const contract={...merge2048DesignSample,acceptance:[{...merge2048DesignSample.acceptance[0],kind:'game-feel' as const,label:'动作与反馈清楚且及时'}]};

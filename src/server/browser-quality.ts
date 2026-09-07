@@ -2,9 +2,11 @@ import { createServer, type Server } from "node:http";
 import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { extname, join, normalize, relative, resolve } from "node:path";
-import { chromium, type Browser, type Page } from "playwright";
+import { chromium, type Browser, type Page, type Locator } from "playwright";
 import type { QualityCheck } from "../shared/contracts.js";
 import { gameContentSecurityPolicy } from "./static-files.js";
+import { ArtifactValidationFailure } from "./generation-budget.js";
+import { verifyGeneratedCampaign } from "../shared/generated-campaign.js";
 
 const viewports = [
   { name: "phone-small", width: 320, height: 568 },
@@ -2183,7 +2185,143 @@ async function clickObstructionDiagnosis(page: Page, selector: string): Promise<
 
 // 无模板生成游戏的通用验收:不懂具体玩法规则,只验证平台运行时契约——
 // 状态机、开始/重开控件、probe 门禁的胜负探针、布局与浏览器错误。
-export async function inspectGeneratedGameInBrowser(root: string): Promise<BrowserQualityResult> {
+export function requiresMemoryMatchNaturalCheck(root: string): boolean {
+  const manifestPath = join(root, "game-manifest.json");
+  if (!existsSync(manifestPath)) return false;
+  const manifest = JSON.parse(readFileSync(manifestPath, "utf8"));
+  if (manifest.runtimeTarget !== "web-2d") return false;
+  if (manifest.naturalInteractionChecks?.includes("memory-match")) return true;
+  // Backwards compatibility for existing artifacts produced before the manifest declaration.
+  const designPath = join(root, "_studio", "GAME_DESIGN.md");
+  const genre = existsSync(designPath) ? readFileSync(designPath, "utf8").match(/^- 类型[：:]\s*(.+)$/m)?.[1] : "";
+  return /记忆配对|翻牌/.test(genre ?? "");
+}
+
+async function clickAnimatedControl(page: Page, target: Locator) {
+  await target.evaluate(element => element.scrollIntoView({ block: "nearest", inline: "nearest", behavior: "instant" }));
+  if (!(await target.isEnabled())) throw new Error("自然操作目标处于禁用状态。");
+  // Breathing hints never become geometrically stable. Keep real pointer input
+  // and hit-testing; do not force-click through an obstructing overlay.
+  const point = await target.evaluate(element => {
+    const box = element.getBoundingClientRect();
+    const x = box.x + box.width / 2, y = box.y + box.height / 2;
+    const hit = document.elementFromPoint(x, y);
+    return box.width > 0 && box.height > 0 && hit && element.contains(hit) ? { x, y } : null;
+  });
+  if (!point) throw new Error("自然操作目标不可见或被其他界面遮挡。");
+  await page.mouse.click(point.x, point.y);
+}
+
+export async function completeMemoryMatchThroughInput(page: Page): Promise<void> {
+  const cards = page.locator('[role="gridcell"]');
+  const count = await cards.count();
+  if (count < 2 || count > 120 || count % 2) throw new Error("完整翻牌验收需要2至120张成对牌。");
+  for (let turn = 0; turn < count / 2; turn++) {
+    const state = await cards.evaluateAll(items => items.map((card, index) => ({ index, face: (card as HTMLElement).dataset.faceName, state: (card as HTMLElement).dataset.cardState })));
+    const remaining = state.filter(card => card.state !== "matched");
+    if (!remaining.length) break;
+    const first = remaining.find(card => card.state === "open") ?? remaining[0];
+    const mate = remaining.find(card => card.index !== first.index && card.face === first.face);
+    if (!first.face || !mate) throw new Error("未配对牌中存在没有对应牌面的卡片。");
+    for (const card of [first, mate]) if (card.state === "closed") await clickAnimatedControl(page, cards.nth(card.index));
+    await page.waitForFunction(indices => indices.every(index => (document.querySelectorAll('[role="gridcell"]')[index] as HTMLElement)?.dataset.cardState === "matched"), [first.index, mate.index], { timeout: 3000 });
+  }
+  await page.waitForFunction(() => document.body.dataset.gameState === "won", undefined, { timeout: 3000 });
+  await assertMemoryResultNotClipped(page);
+}
+
+export async function assertMemoryResultNotClipped(page: Page): Promise<void> {
+  const result = page.locator('#result');
+  if (!await result.count() || !await result.isVisible()) return;
+  const clipped = await result.evaluate(panel => {
+    const controls = Array.from(panel.querySelectorAll('button')).filter(button => button.getBoundingClientRect().height > 0);
+    return controls.some(button => {
+      const rect = button.getBoundingClientRect();
+      for (let parent = button.parentElement; parent; parent = parent.parentElement) {
+        const style = getComputedStyle(parent), box = parent.getBoundingClientRect();
+        if (/(hidden|clip)/.test(style.overflowY) && (rect.top < box.top - 1 || rect.bottom > box.bottom + 1)) return true;
+        if (/(hidden|clip)/.test(style.overflowX) && (rect.left < box.left - 1 || rect.right > box.right + 1)) return true;
+      }
+      return false;
+    });
+  });
+  if (clipped) throw new Error('结算按钮被容器裁切，必须完整展示下一关或重玩操作。');
+}
+
+export async function inspectMemoryMatchNaturalActions(page: Page, outOfOrder = false): Promise<void> {
+  await page.locator("#start").click({ timeout: 3000 });
+  await page.locator('[role="gridcell"]').first().waitFor({ state: "visible", timeout: 3000 });
+  const faces = await page.locator('[role="gridcell"]').evaluateAll(cards => cards.map(card =>
+    card.getAttribute("data-face-name") ?? card.querySelector(".flower-name, .card-front")?.textContent?.trim() ?? ""));
+  const pairA = faces.findIndex((face, index) => Boolean(face) && faces.indexOf(face, index + 1) !== -1);
+  const pairB = pairA >= 0 ? faces.indexOf(faces[pairA], pairA + 1) : -1;
+  if (pairA < 0 || pairB < 0) throw new Error("记忆翻牌缺少可观察的成对牌面名称（role=gridcell/data-face-name）。");
+  const cards = page.locator('[role="gridcell"]');
+  const waitClosed = async (indices: number[]) => {
+    try {
+      await page.waitForFunction(indices => indices.every(index => {
+        const card = document.querySelectorAll('[role="gridcell"]')[index];
+        return card?.getAttribute("data-card-state") === "closed" || (card && !card.classList.contains("open") && /未翻开/.test(card.getAttribute("aria-label") ?? ""));
+      }), indices, { timeout: 2000 });
+    } catch { throw new Error("记忆翻牌自然错配后2秒内没有自动盖回：教学暂停只能冻结自动压力，不能冻结翻牌反馈、回盖或输入解锁；不得依赖第三次点击或probe收起。"); }
+  };
+  if (outOfOrder) {
+    const wrong = faces.findIndex(face => face !== faces[pairA]);
+    if (wrong < 0) throw new Error("缺少不同牌面用于先错配教学检查。");
+    await clickAnimatedControl(page, cards.nth(pairA)); await clickAnimatedControl(page, cards.nth(wrong));
+    await waitClosed([pairA, wrong]);
+  }
+  await clickAnimatedControl(page, cards.nth(pairA)); await clickAnimatedControl(page, cards.nth(pairB));
+  await page.waitForFunction(indices => indices.every(index => {
+    const card = document.querySelectorAll('[role="gridcell"]')[index];
+    return card?.getAttribute("data-card-state") === "matched" || card?.classList.contains("matched");
+  }), [pairA, pairB], { timeout: 2000 });
+  const first = faces.findIndex((_, index) => index !== pairA && index !== pairB);
+  const second = faces.findIndex((face, index) => index !== pairA && index !== pairB && index !== first && face !== faces[first]);
+  if (first < 0 || second < 0) throw new Error("记忆翻牌没有足够牌面进行自然错配检查。");
+  const completedBefore = outOfOrder ? await page.evaluate(() => (window as any).__FORGE_ONBOARDING__?.getState()?.completedStepIds?.length ?? 0) : 0;
+  await clickAnimatedControl(page, cards.nth(first)); await clickAnimatedControl(page, cards.nth(second));
+  const teaching = await page.evaluate(() => (window as any).__FORGE_ONBOARDING__?.isActive());
+  if (!teaching) throw new Error("记忆翻牌自然错配时教学已提前结束，未能覆盖教学期反馈。");
+  await waitClosed([first, second]);
+  if (outOfOrder) {
+    const completedAfter = await page.evaluate(() => (window as any).__FORGE_ONBOARDING__?.getState()?.completedStepIds?.length ?? 0);
+    if (completedAfter <= completedBefore) throw new Error("记忆翻牌先错配→再配对→再错配后教学未推进：乱序signal被平台拒绝时不能提前写入本地completedTutorial去重；必须以平台acceptedSignals/完成步骤为准，允许后续真实动作重新上报。");
+  }
+  await clickAnimatedControl(page, cards.nth(first));
+  await page.waitForFunction(index => {
+    const card = document.querySelectorAll('[role="gridcell"]')[index];
+    return card?.getAttribute("data-card-state") === "open" || card?.classList.contains("open");
+  }, first, { timeout: 1000 });
+}
+
+async function monitorForbiddenLoss(page: Page, failures: string[], forbidden: "lost" | "won" = "lost") {
+  const binding = `__recordForbidden_${forbidden}`;
+  await page.exposeFunction(binding, () => { failures.push(`确认方案出现了禁止的${forbidden}状态`); });
+  // Source string avoids tsx injecting a Node-only __name helper into the page.
+  await page.addInitScript({ content: `
+    (() => {
+    let observed = false;
+    const record = () => {
+      if (!observed) void window[${JSON.stringify(binding)}]();
+      observed = true;
+    };
+    const check = () => { if (document.body?.dataset.gameState === ${JSON.stringify(forbidden)}) record(); };
+    addEventListener("game:state-change", event => {
+      if (event.detail?.state === ${JSON.stringify(forbidden)}) record();
+      check();
+    });
+    new MutationObserver(check).observe(document, { attributes: true, subtree: true, childList: true });
+    })();
+  ` });
+}
+
+export async function inspectGeneratedGameInBrowser(root: string, options: { expectedCampaign?: unknown } = {}): Promise<BrowserQualityResult> {
+  const manifest = JSON.parse(readFileSync(join(root, "game-manifest.json"), "utf8"));
+  const campaign = verifyGeneratedCampaign(manifest.generatedCampaign, options.expectedCampaign);
+  const rehearsalLevel = Math.min(9, campaign.levelCount);
+  const failureAllowed = campaign.failurePolicy !== "forbidden";
+  const endless = campaign.mode === "endless";
   const executablePath = requireBrowserExecutable();
   const qualityRoot = join(root, "_studio", "quality");
   mkdirSync(qualityRoot, { recursive: true });
@@ -2193,6 +2331,8 @@ export async function inspectGeneratedGameInBrowser(root: string): Promise<Brows
   let progressionReport: Record<string, unknown> | null = null;
   let variationReport: Record<string, unknown> | null = null;
   let assistanceReport: Record<string, unknown> | null = null;
+  const memoryMatch = requiresMemoryMatchNaturalCheck(root);
+  let memoryFailure: string | null = null;
   const generatedViewports = [
     { name: "phone-small", width: 360, height: 640 },
     { name: "phone-standard", width: 390, height: 844 },
@@ -2202,9 +2342,32 @@ export async function inspectGeneratedGameInBrowser(root: string): Promise<Brows
   let browser: Browser | null = null;
   try {
     browser = await chromium.launch({ executablePath, headless: true, args: ["--enable-unsafe-swiftshader", "--use-angle=swiftshader"] });
+    if (memoryMatch) {
+      for (const outOfOrder of [false, true]) {
+      const naturalPage = await browser.newPage({ viewport: outOfOrder ? { width: 1366, height: 900 } : { width: 390, height: 844 } });
+      try {
+        if (!failureAllowed) await monitorForbiddenLoss(naturalPage, failures);
+        if (endless) await monitorForbiddenLoss(naturalPage, failures, "won");
+        await naturalPage.goto(url, { waitUntil: "domcontentloaded", timeout: 10000 });
+        await inspectMemoryMatchNaturalActions(naturalPage, outOfOrder);
+        if (!endless && !campaign.legacy) {
+          await completeMemoryMatchThroughInput(naturalPage);
+          await takeScreenshot(naturalPage, join(qualityRoot, outOfOrder ? "memory-completed-out-of-order.png" : "memory-completed-natural.png"), screenshotPaths);
+        }
+      } catch (error) {
+        memoryFailure = error instanceof Error ? error.message : String(error);
+        failures.push(memoryFailure);
+      } finally {
+        await takeScreenshot(naturalPage, join(qualityRoot, outOfOrder ? "memory-match-out-of-order.png" : "memory-match-natural.png"), screenshotPaths);
+        await naturalPage.close();
+      }
+      }
+    }
     for (const viewport of generatedViewports) {
       const page = await browser.newPage({ viewport: { width: viewport.width, height: viewport.height } });
       const runtimeErrors: string[] = [];
+      if (!failureAllowed) await monitorForbiddenLoss(page, runtimeErrors);
+      if (endless) await monitorForbiddenLoss(page, runtimeErrors, "won");
       page.on("console", (message) => {
         if (message.type() === "error" && !message.text().includes("Failed to load resource")) runtimeErrors.push(`console: ${message.text()}`);
       });
@@ -2247,8 +2410,8 @@ export async function inspectGeneratedGameInBrowser(root: string): Promise<Brows
             const debug = (window as any).__GAME_DEBUG__;
             return { hasState: Boolean(debug?.getState), hasWin: Boolean(debug?.forceWin), hasLose: Boolean(debug?.forceLose), hasOnboardingProbe: Boolean(debug?.performOnboardingStep) };
           });
-          if (!hooks.hasState || !hooks.hasWin || !hooks.hasLose || !hooks.hasOnboardingProbe) {
-            failures.push("probe 模式缺少 __GAME_DEBUG__ 的 getState/forceWin/forceLose/performOnboardingStep 钩子。");
+          if (!hooks.hasState || (!endless && !hooks.hasWin) || (failureAllowed && !hooks.hasLose) || !hooks.hasOnboardingProbe) {
+            failures.push(`probe 模式缺少 getState/performOnboardingStep${endless ? "" : "/forceWin"}${failureAllowed ? "/forceLose" : ""} 钩子。`);
           } else {
             const stepCount = onboardingWaiting.plan?.steps?.length ?? 0;
             for (let index = 0; index < stepCount; index += 1) {
@@ -2276,48 +2439,80 @@ export async function inspectGeneratedGameInBrowser(root: string): Promise<Brows
             if (replaySkip.replayed.status !== "active" || replaySkip.skipped.status !== "skipped" || replaySkip.skipped.skippedStepIds.length !== stepCount) failures.push("教学重看或跳过不可用。");
             await page.locator("#start").click({ timeout: 3_000 });
             await page.waitForFunction(() => document.body.dataset.gameState === "playing", undefined, { timeout: 5_000 });
+            if (!endless) {
             const levelStates: Array<{ level: number; difficulty: Record<string, number>; contentVariant: string; runtimeSignature: string; mechanicsActive: string[] }> = [];
-            for (let level = 1; level <= 20; level += 1) {
+            for (let level = 1; level <= campaign.levelCount; level += 1) {
               const state = await page.evaluate((targetLevel) => {
                 const debug = (window as any).__GAME_DEBUG__;
                 debug.setLevel(targetLevel); debug.restart();
                 return { ...debug.getState(), __gameState: document.body.dataset.gameState };
               }, level);
               if (state?.level !== level || state?.__gameState !== "playing") failures.push(`第 ${level} 关没有通过 setLevel/restart 真实进入 playing。`);
-              const difficulty = state?.difficulty;
-              if (![difficulty?.goalMultiplier, difficulty?.speedMultiplier, difficulty?.densityMultiplier].every(Number.isFinite)) failures.push(`第 ${level} 关缺少可验证的三维难度倍率。`);
+              // Accept named rule parameters at the top level as well as in the
+              // documented difficulty object; neither representation is proof of
+              // gameplay on its own, and both still undergo the same checks.
+              const difficulty = state?.difficulty && typeof state.difficulty === "object" ? state.difficulty : state;
+              if (!campaign.difficultyKeys.every(key => Number.isFinite(difficulty?.[key]) && difficulty[key] >= 0)) failures.push(`第 ${level} 关缺少合同要求的真实难度数值：${campaign.difficultyKeys.join("、")}。`);
               if (!state?.contentVariant || !state?.runtimeSignature || !Array.isArray(state?.mechanicsActive) || state.mechanicsActive.length === 0) failures.push(`第 ${level} 关缺少结构变化证据。`);
               levelStates.push({ level, difficulty, contentVariant: state?.contentVariant, runtimeSignature: state?.runtimeSignature, mechanicsActive: state?.mechanicsActive });
             }
             let maximumMultiplierStep = 0;
+            if (!campaign.legacy) {
+              const beyond = await page.evaluate(level => {
+                const debug = (window as any).__GAME_DEBUG__;
+                debug.setLevel(level); debug.restart(); return debug.getState()?.level;
+              }, campaign.levelCount + 1);
+              if (beyond !== campaign.levelCount) failures.push(`确认仅 ${campaign.levelCount} 关，越界选择却进入第 ${String(beyond)} 关。`);
+            }
             for (let index = 1; index < levelStates.length; index += 1) {
-              for (const key of ["goalMultiplier", "speedMultiplier", "densityMultiplier"] as const) {
+              for (const key of campaign.difficultyKeys) {
                 const step = Number((Number(levelStates[index].difficulty?.[key]) - Number(levelStates[index - 1].difficulty?.[key])).toFixed(3));
                 maximumMultiplierStep = Math.max(maximumMultiplierStep, step);
-                if (step < 0 || step > .12) failures.push(`第 ${index}→${index + 1} 关 ${key} 变化 ${step} 超出平滑范围。`);
+                if (step < 0 || (campaign.legacy && step > .12)) failures.push(`第 ${index}→${index + 1} 关 ${key} 变化 ${step} 不符合确认的递进规则。`);
               }
             }
-            const milestoneStates = [1, 5, 9, 13, 17].map((level) => levelStates[level - 1]);
-            if (new Set(milestoneStates.map(({ contentVariant }) => contentVariant)).size !== 5 || new Set(milestoneStates.map(({ runtimeSignature }) => runtimeSignature)).size !== 5) failures.push("第 1/5/9/13/17 关没有形成五种不同的规则与运行结构。");
-            progressionReport = { checkedAt: new Date().toISOString(), levelsChecked: levelStates.length, maximumMultiplierStep, milestones: milestoneStates };
+            const milestoneStates = campaign.milestones.map((level) => levelStates[level - 1]);
+            if (new Set(milestoneStates.map(({ contentVariant }) => contentVariant)).size !== campaign.milestones.length || new Set(milestoneStates.map(({ runtimeSignature }) => runtimeSignature)).size !== campaign.milestones.length) failures.push(`第 ${campaign.milestones.join("/")} 关没有形成合同要求的不同运行结构。`);
+            progressionReport = { checkedAt: new Date().toISOString(), campaign, levelsChecked: levelStates.length, maximumMultiplierStep, milestones: milestoneStates };
 
             const expectedVariationSignals = onboardingWaiting.plan.steps.map((step: any) => step.successSignal);
             await page.evaluate(`window.__forgeObservedSignals=[];window.__forgeSignalListener=function(event){window.__forgeObservedSignals.push(event.detail&&event.detail.signal)};addEventListener("forge:mechanic-signal",window.__forgeSignalListener);`);
-            await page.evaluate(() => { const debug = (window as any).__GAME_DEBUG__; debug.setLevel(9); debug.restart(); });
+            await page.evaluate(level => { const debug = (window as any).__GAME_DEBUG__; debug.setLevel(level); debug.restart(); }, rehearsalLevel);
+            // Rehearsal is a fresh tutorial run, not a request to replay a terminal
+            // platform state. Use the public replay control so generated code can
+            // correctly rely on platform-accepted progress as its sole truth.
+            await page.locator('[data-forge-replay]').click({ timeout: 3000 });
             for (let index = 0; index < expectedVariationSignals.length; index += 1) {
               await page.evaluate(() => (window as any).__GAME_DEBUG__.performOnboardingStep());
-              await page.waitForTimeout(30);
+              await page.waitForFunction((completed) => (window as any).__FORGE_ONBOARDING__?.getState?.()?.completedStepIds?.length > completed, index, { timeout: 3000 })
+                .catch(() => failures.push(`第 ${rehearsalLevel} 关第 ${index + 1} 个复演动作未完成。`));
             }
             const variation = await page.evaluate(() => {
               const forgeWindow = window as any;
               removeEventListener("forge:mechanic-signal", forgeWindow.__forgeSignalListener);
               return { state: forgeWindow.__GAME_DEBUG__.getState(), observed: [...forgeWindow.__forgeObservedSignals] };
             });
-            if (!expectedVariationSignals.every((signal: string) => variation.observed.includes(signal)) || variation.state?.level !== 9) failures.push(`第 9 关没有通过正常玩法处理器复演全部教学机制：${JSON.stringify({ expected: expectedVariationSignals, observed: variation.observed })}。`);
-            variationReport = { checkedAt: new Date().toISOString(), sourceLevel: 1, rehearsalLevel: 9, expectedSignals: expectedVariationSignals, observedSignals: variation.observed, contentVariant: variation.state?.contentVariant, runtimeSignature: variation.state?.runtimeSignature };
+            if (!expectedVariationSignals.every((signal: string) => variation.observed.includes(signal)) || variation.state?.level !== rehearsalLevel) failures.push(`第 ${rehearsalLevel} 关没有通过正常玩法处理器复演全部教学机制：${JSON.stringify({ expected: expectedVariationSignals, observed: variation.observed })}。`);
+            variationReport = { checkedAt: new Date().toISOString(), sourceLevel: 1, rehearsalLevel, expectedSignals: expectedVariationSignals, observedSignals: variation.observed, contentVariant: variation.state?.contentVariant, runtimeSignature: variation.state?.runtimeSignature };
+            // A taught action can legitimately open help. Finish that real user
+            // interaction before testing controls behind the modal.
+            const helpDialog = page.getByRole("dialog").filter({ visible: true });
+            if (await helpDialog.count() === 1) {
+              const dismiss = helpDialog.getByRole("button", { name: /^(明白了|知道了|关闭|继续游戏|返回游戏|close|got it)$/i });
+              if (await dismiss.count() === 1) await dismiss.click({ timeout: 3000 });
+            }
+            } else {
+              const mode = await page.evaluate(() => (window as any).__GAME_DEBUG__.getState()?.mode);
+              if (mode !== "endless") failures.push("无限玩法没有返回真实模式endless。");
+              await page.evaluate(() => (window as any).__GAME_DEBUG__.restart());
+              await page.waitForFunction(() => document.body.dataset.gameState === "playing", undefined, { timeout: 3000 });
+              progressionReport = { checkedAt: new Date().toISOString(), status: "not-applicable", reason: "确认无限玩法，没有有限关卡。" };
+              variationReport = { checkedAt: new Date().toISOString(), status: "not-applicable", reason: "没有第九关，不执行有限关卡复演。" };
+            }
 
+            if (failureAllowed) {
             const assistanceActions: string[] = [];
-            await page.evaluate(() => { const debug = (window as any).__GAME_DEBUG__; debug.setLevel(1); debug.restart(); });
+            await page.evaluate(infinite => { const debug = (window as any).__GAME_DEBUG__; if (!infinite) debug.setLevel(1); debug.restart(); }, endless);
             for (let failureCount = 1; failureCount <= 4; failureCount += 1) {
               const cause = `生成玩法验收失败原因 ${failureCount}`;
               await page.evaluate((value) => (window as any).__GAME_DEBUG__.forceLose(value), cause);
@@ -2333,17 +2528,30 @@ export async function inspectGeneratedGameInBrowser(root: string): Promise<Brows
             const restoredAssistance = await page.evaluate(() => (window as any).__FORGE_DESIGN__.getAssistance());
             if (restoredAssistance.active?.failureCount !== 4) failures.push("刷新后没有恢复第 4 次失败帮助。");
             await page.locator("#start").click({ timeout: 3_000 });
+            if (!endless) {
             await page.evaluate(() => (window as any).__GAME_DEBUG__.forceWin());
             await page.waitForTimeout(30);
             const resetAssistance = await page.evaluate(() => (window as any).__FORGE_DESIGN__.getAssistance());
             if (resetAssistance.active !== null || Object.keys(resetAssistance.consecutiveFailuresByLevel ?? {}).length !== 0) failures.push("成功后没有清除连续失败帮助状态。");
             assistanceReport = { checkedAt: new Date().toISOString(), observedActions: assistanceActions, persistedFailureCount: restoredAssistance.active?.failureCount, resetAfterWin: resetAssistance.active === null, hiddenAdaptation: false };
+            } else {
+              assistanceReport = { checkedAt: new Date().toISOString(), observedActions: assistanceActions, persistedFailureCount: restoredAssistance.active?.failureCount, resetAfterWin: "not-applicable", reason: "无限玩法没有胜利事件，不能伪造胜利来清零帮助。" };
+            }
+            } else {
+              assistanceReport = { checkedAt: new Date().toISOString(), status: "not-applicable", reason: "服务端确认方案禁止失败，不执行forceLose或连续失败帮助测试。" };
+            }
             await page.locator("#restart").click({ timeout: 3_000 });
             if (await page.locator("body").getAttribute("data-game-state") === "idle") await page.locator("#start").click({ timeout: 3_000 });
             await page.waitForFunction(() => document.body.dataset.gameState === "playing", undefined, { timeout: 5_000 });
+            if (!endless) {
+            if (memoryMatch && !campaign.legacy) {
+              // Prepare the largest result panel; this is layout evidence, not natural completion.
+              await page.evaluate(level => (window as any).__GAME_DEBUG__?.setLevel?.(level), campaign.levelCount);
+            }
             await page.evaluate(() => (window as Window & { __GAME_DEBUG__?: { forceWin?: () => void } }).__GAME_DEBUG__?.forceWin?.());
             await page.waitForFunction(() => document.body.dataset.gameState === "won", undefined, { timeout: 3_000 })
               .catch(() => failures.push("forceWin 后状态没有进入 won。"));
+            if (memoryMatch) await assertMemoryResultNotClipped(page);
             await takeScreenshot(page, join(qualityRoot, `${viewport.name}-result.png`), screenshotPaths);
             await page.locator("#restart").click({ timeout: 3_000 })
               .catch(async () => failures.push(`结算后 #restart 无法点击:${await clickObstructionDiagnosis(page, "#restart")}。`));
@@ -2356,11 +2564,18 @@ export async function inspectGeneratedGameInBrowser(root: string): Promise<Brows
               await page.waitForFunction(() => document.body.dataset.gameState === "playing", undefined, { timeout: 5_000 })
                 .catch(() => failures.push("重开后无法再次进入 playing。"));
             }
+            } else {
+              await page.waitForTimeout(1000);
+              if (await page.locator("body").getAttribute("data-game-state") !== "playing") failures.push("无限模式重开后的观察期未保持可玩状态。");
+              await takeScreenshot(page, join(qualityRoot, `${viewport.name}-endless.png`), screenshotPaths);
+            }
+            if (failureAllowed) {
             await page.evaluate(() => (window as Window & { __GAME_DEBUG__?: { forceLose?: () => void } }).__GAME_DEBUG__?.forceLose?.());
             await page.waitForFunction(() => document.body.dataset.gameState === "lost", undefined, { timeout: 3_000 })
               .catch(() => failures.push("forceLose 后状态没有进入 lost。"));
+            }
           }
-          evidence.push("390×844 已验证教学安全等待→真实动作逐步完成→刷新恢复→重看/跳过，以及 idle→playing→won→重开→lost 完整状态环。");
+          evidence.push(`390×844 执行教学安全等待、动作探针、刷新恢复、重看/跳过，以及 ${endless ? "无限模式声明与重开短期观察，不代表无限时长运行证明" : "idle→playing→won→重开"}${failureAllowed ? "；验证失败结算" : "；按确认方案不测试失败结算"}。`);
         }
         if (runtimeErrors.length) failures.push(`${viewport.name} 浏览器错误：${runtimeErrors.join(" | ")}`);
         evidence.push(`${viewport.width}×${viewport.height}: 无横向溢出，首屏可开局。`);
@@ -2375,20 +2590,24 @@ export async function inspectGeneratedGameInBrowser(root: string): Promise<Brows
     await closeServer(server);
   }
   const checks: QualityCheck[] = [
+    ...(memoryMatch && !endless && !campaign.legacy ? [{ id: "MEMORY-MATCH-COMPLETION", label: "通过正常点击完成首关", status: memoryFailure ? "failed" as const : "passed" as const, evidence: "读取可观察牌面身份作为解法，以真实鼠标逐对完成剩余卡牌并等待自然won状态；未调用forceWin。仅证明首关，两条输入路径。" }] : []),
+    ...(memoryMatch ? [{ id: "MEMORY-MATCH-NATURAL", label: "记忆翻牌教学期正常点击、乱序动作、自动回盖与继续操作", status: memoryFailure ? "failed" as const : "passed" as const, evidence: memoryFailure ?? "无probe：配对再错配及先错→对→错两条自然路径，教学期2秒内自动回盖、输入解锁且教学按平台进度推进。" }] : []),
     { id: "GEN-BROWSER-CONTRACT", label: "生成游戏运行时契约（状态机、开始、胜负、重开）", status: failures.length ? "failed" : "passed", evidence: evidence.join(" ") },
     { id: "GEN-BROWSER-LAYOUT", label: "三档画幅布局与触控可达", status: failures.length ? "failed" : "passed", evidence: "360/390/1366 宽度均无横向溢出且可开局。" },
     { id: "GEN-BROWSER-ERRORS", label: "浏览器错误监听", status: failures.length ? "failed" : "passed", evidence: "已监听控制台错误与未处理异常。" },
     { id: "GEN-BROWSER-ONBOARDING", label: "生成游戏合同教学（安全状态、真实信号、恢复、重看与跳过）", status: failures.length ? "failed" : "passed", evidence: "已核对 pressureClock 停止、逐步动作探针、合同信号顺序与持久化状态。" },
-    { id: "PROGRESSION-RUNTIME", label: "生成游戏二十关倍率平滑且五阶段结构不同", status: failures.length ? "failed" : "passed", evidence: "已逐关调用 setLevel/restart，并比较三维倍率、阶段规则与运行结构签名。" },
-    { id: "CONTENT-VARIATION-REHEARSAL", label: "生成游戏在第 9 关复演全部教学机制", status: failures.length ? "failed" : "passed", evidence: "第 9 关通过正常玩法处理器重新产生全部合同教学信号。" },
-    { id: "ASSISTANCE-RUNTIME", label: "生成游戏连续失败显式分层帮助且成功清零", status: failures.length ? "failed" : "passed", evidence: "已验证第 1–4 次真实失败原因、合同帮助、刷新恢复与成功清零。" },
+    ...(!endless ? [
+      { id: "PROGRESSION-RUNTIME", label: `生成游戏确认的 ${campaign.levelCount} 关递进与结构变化`, status: failures.length ? "failed" as const : "passed" as const, evidence: `逐关检查 setLevel/restart，数值维度 ${campaign.difficultyKeys.join("、")}，结构变化关 ${campaign.milestones.join("/")}。探针数据不等同于自然操作玩通。` },
+      { id: "CONTENT-VARIATION-REHEARSAL", label: `生成游戏在第 ${rehearsalLevel} 关复演教学机制`, status: failures.length ? "failed" as const : "passed" as const, evidence: `第 ${rehearsalLevel} 关通过玩法处理器探针重新产生合同教学信号。` },
+    ] : [{ id: "ENDLESS-SAMPLED", label: "无限模式声明、重开及禁止胜利状态抽样", status: failures.length ? "failed" as const : "passed" as const, evidence: "有限关卡检查不适用；短期观察不证明内容持续供给或长期性能。" }]),
+    ...(failureAllowed ? [{ id: "ASSISTANCE-RUNTIME", label: "生成游戏连续失败显式分层帮助", status: failures.length ? "failed" as const : "passed" as const, evidence: `已验证第1–4次失败探针、合同帮助与刷新恢复。${endless ? "无限模式没有胜利清零检查。" : "有限模式另检查成功清零。"}` }] : [{ id: "NO-FAILURE-SAMPLED", label: "无失败方案的已测操作未进入失败状态", status: failures.length ? "failed" as const : "passed" as const, evidence: "仅覆盖本报告的状态切换及教学操作，不代表穷尽游戏路径；失败帮助不适用且不计为通过项。" }]),
   ];
   if (progressionReport) writeFileSync(join(root, "_studio", "DIFFICULTY_QUALITY_REPORT.json"), `${JSON.stringify(progressionReport, null, 2)}\n`, "utf8");
   if (variationReport) writeFileSync(join(root, "_studio", "VARIATION_QUALITY_REPORT.json"), `${JSON.stringify(variationReport, null, 2)}\n`, "utf8");
   if (assistanceReport) writeFileSync(join(root, "_studio", "ASSISTANCE_QUALITY_REPORT.json"), `${JSON.stringify(assistanceReport, null, 2)}\n`, "utf8");
   const report = { checkedAt: new Date().toISOString(), executablePath, experimental: true, checks, failures, screenshots: screenshotPaths.map((path) => relative(root, path).replaceAll("\\", "/")) };
   writeFileSync(join(root, "_studio", "BROWSER_QUALITY_REPORT.json"), `${JSON.stringify(report, null, 2)}\n`, "utf8");
-  if (failures.length) throw new Error(`生成游戏浏览器验收失败：${failures.join(" ")}`);
+  if (failures.length) throw new ArtifactValidationFailure(`生成游戏浏览器验收失败：${failures.join(" ")}`);
   return { checks, screenshotPaths };
 }
 

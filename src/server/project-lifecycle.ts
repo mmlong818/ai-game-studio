@@ -64,6 +64,9 @@ export class ProjectLifecycle {
         const trash = resolve(trashRoot, `${deletionId}-${buildId}`);
         if (await moveIfPresent(source, trash)) moved.push({ source, trash });
       }
+      const checkpointSource = safeArtifactPath(resolve(this.artifactRoot, "_image-checkpoints"), projectId);
+      const checkpointTrash = resolve(trashRoot, `${deletionId}-images-${projectId}`);
+      if (await moveIfPresent(checkpointSource, checkpointTrash)) moved.push({ source: checkpointSource, trash: checkpointTrash });
       await this.repository.deleteArchived(projectId);
     } catch (error) {
       for (const artifact of moved.reverse()) await restoreArtifact(artifact).catch(() => undefined);

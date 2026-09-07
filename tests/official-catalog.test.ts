@@ -88,11 +88,7 @@ test("启动同步按登记表标记官方并写入大厅顺序，未登记的�
     assert.deepEqual(
       lobby.map((game) => game.title),
       [
-        OFFICIAL_GAMES.find((game) => game.id === "star-dream-duel")!.title,
-        tetrisGame.title,
-        OFFICIAL_GAMES.find((game) => game.id === "freecell")!.title,
-        "椰风海岛",
-        "牧野小火车",
+        ...officialLobbyOrder().filter((game) => first[game.id] != null).map((game) => game.title),
         "手工转官方的用户游戏",
       ],
       "大厅按当前登记顺序排列，已删除游戏不再被启动同步恢复",

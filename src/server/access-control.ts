@@ -1,4 +1,5 @@
 import type { IncomingMessage } from "node:http";
+import { timingSafeEqual } from "node:crypto";
 
 export interface RateRule {
   limit: number;
@@ -37,7 +38,7 @@ export class RateLimiter {
 // 试玩遥测来自玩家页面,给宽松额度;其余 API 给常规额度。
 const apiRateRules: Array<{ match: (method: string, pathname: string) => boolean; bucket: string; rule: RateRule }> = [
   { match: (m, p) => m === "POST" && p === "/api/projects", bucket: "create-project", rule: { limit: 5, windowMs: 60_000 } },
-  { match: (m, p) => m === "POST" && /^\/api\/projects\/[^/]+\/build$/.test(p), bucket: "start-build", rule: { limit: 10, windowMs: 60_000 } },
+  { match: (m, p) => m === "POST" && /^\/api\/projects\/[^/]+\/(?:build|revisions)$/.test(p), bucket: "start-build", rule: { limit: 10, windowMs: 60_000 } },
   { match: (m, p) => m === "POST" && /^\/api\/projects\/[^/]+\/messages$/.test(p), bucket: "send-message", rule: { limit: 20, windowMs: 60_000 } },
   { match: (m, p) => m === "POST" && p === "/api/play-events", bucket: "play-events", rule: { limit: 120, windowMs: 60_000 } },
   { match: (_, p) => p.startsWith("/api/"), bucket: "api-general", rule: { limit: 240, windowMs: 60_000 } },
@@ -47,7 +48,7 @@ export function clientKeyOf(request: IncomingMessage): string {
   return request.socket.remoteAddress ?? "unknown";
 }
 
-export type AccessDecision = { allowed: true } | { allowed: false; status: 401 | 429; error: string };
+export type AccessDecision = { allowed: true } | { allowed: false; status: 401 | 403 | 429; error: string };
 
 /**
  * API 访问控制:可选的 Bearer Token 鉴权(设置 STUDIO_ACCESS_TOKEN 后启用)+ 按 IP 限流。
@@ -57,6 +58,7 @@ export class AccessControl {
   constructor(
     private readonly accessToken: string | null = null,
     private readonly limiter: RateLimiter = new RateLimiter(),
+    private readonly reviewToken: string | null = null,
   ) {}
 
   check(request: IncomingMessage, pathname: string): AccessDecision {
@@ -74,7 +76,17 @@ export class AccessControl {
         return { allowed: false, status: 401, error: "该服务已开启访问令牌，请在请求头携带有效的 Authorization Bearer 令牌。" };
       }
     }
+    if (method === "POST" && /^\/api\/projects\/[^/]+\/versions\/[^/]+\/art-review$/.test(pathname) && !this.reviewIdentity(request)) {
+      return { allowed: false, status: 403, error: "正式审核需要平台审核凭据，普通创作者不能自行批准发布。游戏仍可私下试玩和修改。" };
+    }
     return { allowed: true };
+  }
+
+  reviewIdentity(request: IncomingMessage): { id: string } | null {
+    const supplied = request.headers["x-studio-review-token"];
+    if (!this.reviewToken || typeof supplied !== "string") return null;
+    const actual = Buffer.from(supplied), expected = Buffer.from(this.reviewToken);
+    return actual.length === expected.length && timingSafeEqual(actual, expected) ? { id: "configured-reviewer" } : null;
   }
 
   private isPublicEndpoint(method: string, pathname: string): boolean {

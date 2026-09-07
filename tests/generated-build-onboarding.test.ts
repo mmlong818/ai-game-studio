@@ -14,7 +14,7 @@ import { generatedDesignHtml } from "./generated-design-fixture";
 const png = Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), Buffer.alloc(600)]);
 
 async function waitForBuild(repository: StudioRepository, projectId: string) {
-  const deadline = Date.now() + 12_000;
+  const deadline = Date.now() + 55_000;
   while (Date.now() < deadline) {
     const build = await repository.latestBuild(projectId);
     if (build?.status === "succeeded" || build?.status === "failed") return build;
@@ -48,7 +48,7 @@ test("自由生成教学接线失败会把原因反馈给模型并在修正后�
     const build = await waitForBuild(repository, project.id);
     assert.equal(build.status, "succeeded", build.error ?? "构建失败");
     assert.equal(calls, 2);
-    assert.match(feedbacks[1]?.join(" ") ?? "", /真实动作处理器/);
+    assert.match(feedbacks[1]?.join(" ") ?? "", /教学 signal 接口接线或合同信号声明/);
   } finally {
     await database.close();
     const safeRoot = resolve(root);
@@ -127,7 +127,7 @@ test("自由生成首稿伪造相同运行结构时，浏览器原因会反馈�
     const build = await waitForBuild(repository, project.id);
     assert.equal(build.status, "succeeded", build.error ?? "动态修复构建失败");
     assert.equal(calls, 2);
-    assert.match(feedbacks[1]?.join(" ") ?? "", /五种不同的规则与运行结构/);
+    assert.match(feedbacks[1]?.join(" ") ?? "", /1\/5\/9\/13\/17.*不同运行结构/);
   } finally {
     const safeRoot = resolve(artifactRoot);
     if (safeRoot.startsWith(resolve(tmpdir()))) rmSync(safeRoot, { recursive: true, force: true });

@@ -56,7 +56,7 @@ const assistanceStepSchema = z.object({
 const designAcceptanceSchema = z.object({
   id,
   label: shortText,
-  kind: z.enum(["onboarding", "progression", "solvability", "assistance", "content-variation", "rule", "viewport", "asset", "accessibility", "game-feel"]),
+  kind: z.enum(["onboarding", "progression", "solvability", "assistance", "content-variation", "rule", "viewport", "asset", "accessibility", "game-feel", "no-failure", "endless-sampled"]),
   mechanicIds: z.array(id).default([]),
   onboardingStepIds: z.array(id).default([]),
   beatIds: z.array(id).default([]),
@@ -82,7 +82,8 @@ export const gameDesignContractV1Schema = z.object({
   mechanics: z.array(mechanicSchema).min(1),
   onboarding: z.array(onboardingStepSchema).default([]),
   content: z.object({ mode: z.enum(["finite-campaign", "endless", "run-based", "round-based", "chapter-based", "sandbox"]), beats: z.array(contentBeatSchema).min(1) }).strict(),
-  assistance: z.object({ hiddenAdaptation: z.literal(false), steps: z.array(assistanceStepSchema).min(1) }).strict(),
+  failurePolicy: z.enum(["required", "forbidden"]).optional(),
+  assistance: z.object({ hiddenAdaptation: z.literal(false), steps: z.array(assistanceStepSchema) }).strict(),
   acceptance: z.array(designAcceptanceSchema).min(1),
 }).strict();
 
@@ -142,7 +143,9 @@ export function auditGameDesignContract(project: GameProjectV3, input: unknown):
   });
   const failureThresholds = contract.assistance.steps.map(({ afterFailures }) => afterFailures);
   if (new Set(failureThresholds).size !== failureThresholds.length || failureThresholds.some((value, index) => index > 0 && value <= failureThresholds[index - 1])) gaps.push({ code: "assistance-order", severity: "error", path: "assistance.steps", message: "失败辅助必须按连续失败次数严格递增" });
-  if (contract.assistance.steps[0]?.action !== "explain-cause") gaps.push({ code: "missing-failure-cause", severity: "error", path: "assistance.steps.0", message: "首次失败应先解释原因" });
+  if (contract.failurePolicy === "forbidden") {
+    if (contract.assistance.steps.length) gaps.push({ code: "unexpected-failure-assistance", severity: "error", path: "assistance.steps", message: "无失败方案不能包含失败后触发的帮助" });
+  } else if (contract.assistance.steps[0]?.action !== "explain-cause") gaps.push({ code: "missing-failure-cause", severity: "error", path: "assistance.steps.0", message: "首次失败应先解释原因" });
 
   contract.acceptance.forEach((acceptance, index) => {
     acceptance.mechanicIds.forEach((value) => { if (!mechanicIds.has(value)) gaps.push({ code: "acceptance-missing-mechanic", severity: "error", path: `acceptance.${index}.mechanicIds`, message: `验收引用了不存在的机制 ${value}` }); });
@@ -150,7 +153,8 @@ export function auditGameDesignContract(project: GameProjectV3, input: unknown):
     acceptance.beatIds.forEach((value) => { if (!beatIds.has(value)) gaps.push({ code: "acceptance-missing-beat", severity: "error", path: `acceptance.${index}.beatIds`, message: `验收引用了不存在的内容阶段 ${value}` }); });
   });
   const acceptanceKinds = new Set(contract.acceptance.map(({ kind }) => kind));
-  (["onboarding", "progression", "assistance", "content-variation"] as const).forEach((kind) => { if (!acceptanceKinds.has(kind)) gaps.push({ code: "missing-acceptance-kind", severity: "error", path: "acceptance", message: `缺少 ${kind} 设计验收` }); });
+  const requiredKinds: GameDesignContractV1["acceptance"][number]["kind"][] = ["onboarding", contract.failurePolicy === "forbidden" ? "no-failure" : "assistance", ...(contract.content.mode === "endless" && contract.failurePolicy !== undefined ? ["endless-sampled" as const] : ["progression" as const, "content-variation" as const])];
+  requiredKinds.forEach((kind) => { if (!acceptanceKinds.has(kind)) gaps.push({ code: "missing-acceptance-kind", severity: "error", path: "acceptance", message: `缺少 ${kind} 设计验收` }); });
   return { contract, gaps, complete: !gaps.some(({ severity }) => severity === "error") };
 }
 

@@ -1,0 +1,42 @@
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { beforeEach, expect, it, vi } from "vitest";
+import { RevisionComposer } from "./RevisionComposer";
+vi.mock("./project-revision", () => ({ pendingRevision: () => null }));
+beforeEach(() => { sessionStorage.clear(); });
+it("输入和查看确认不提交，返回保持草稿，最终确认只提交一次", async () => {
+  const onConfirm = vi.fn().mockResolvedValue(undefined);
+  render(<RevisionComposer projectId="p1" disabled={false} working={false} onConfirm={onConfirm} />);
+  const input = screen.getByRole("textbox");
+  await userEvent.type(input, "配对时增加花瓣动画");
+  await userEvent.click(screen.getByRole("button", { name: "查看修改确认" }));
+  expect(onConfirm).not.toHaveBeenCalled();
+  expect(screen.getByText(/产生模型用量/)).toBeInTheDocument();
+  await userEvent.click(screen.getByRole("button", { name: "返回修改" }));
+  expect(input).toHaveValue("配对时增加花瓣动画");
+  await userEvent.click(screen.getByRole("button", { name: "查看修改确认" }));
+  await userEvent.click(screen.getByRole("button", { name: "确认修改，制作新版" }));
+  await waitFor(() => expect(input).toHaveValue(""));
+  expect(onConfirm).toHaveBeenCalledExactlyOnceWith("配对时增加花瓣动画");
+});
+it("提交未返回时双击不能重复，异常保留修改内容", async () => {
+  let reject!: (error: Error) => void;
+  const onConfirm = vi.fn(() => new Promise<void>((_resolve, fail) => { reject = fail; }));
+  render(<RevisionComposer projectId="p1" disabled={false} working={false} onConfirm={onConfirm} />);
+  fireEvent.change(screen.getByRole("textbox"), { target: { value: "保持画风并降低第一关难度" } });
+  await userEvent.click(screen.getByRole("button", { name: "查看修改确认" }));
+  await userEvent.dblClick(screen.getByRole("button", { name: "确认修改，制作新版" }));
+  expect(onConfirm).toHaveBeenCalledTimes(1);
+  reject(new Error("lost response"));
+  expect(await screen.findByRole("alert")).toHaveTextContent("请求编号已保留");
+  expect(screen.getByRole("textbox")).toHaveValue("保持画风并降低第一关难度");
+});
+it("正在制作不能确认另一轮，草稿刷新恢复且不同作品隔离", () => {
+  sessionStorage.setItem("studio-revision-draft:p1", "保留此修改草稿");
+  const view = render(<RevisionComposer projectId="p1" disabled={false} working onConfirm={vi.fn()} />);
+  expect(screen.getByRole("textbox")).toHaveValue("保留此修改草稿");
+  expect(screen.getByRole("button", { name: "查看修改确认" })).toBeDisabled();
+  view.unmount();
+  render(<RevisionComposer projectId="p2" disabled={false} working={false} onConfirm={vi.fn()} />);
+  expect(screen.getByRole("textbox")).toHaveValue("");
+});
