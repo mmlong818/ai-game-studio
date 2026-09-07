@@ -20,6 +20,7 @@ import { IdeaAnalyzer } from "./idea-analyzer.js";
 import { GameCodeGenerator } from "./game-generator.js";
 import { CoverArtGenerator } from "./image-generator.js";
 import { OpenAISettings } from "./openai-settings.js";
+import { createClaudeCliFetch, DEFAULT_CLAUDE_CLI_MODEL } from "./claude-cli-text-provider.js";
 import { ProjectLifecycle } from "./project-lifecycle.js";
 import { importLegacySqliteIfEmpty } from "./sqlite-migration.js";
 import { sendStaticFile, workbenchContentSecurityPolicy } from "./static-files.js";
@@ -61,11 +62,20 @@ const openAISettings = new OpenAISettings(process.env.OPENAI_API_KEY, openAIKeyF
 if ((process.env.HTTPS_PROXY || process.env.HTTP_PROXY) && process.env.NODE_USE_ENV_PROXY !== "1") {
   console.warn("检测到系统代理，但未设置 NODE_USE_ENV_PROXY=1：Node fetch 不会走代理，OpenAI 调用可能全部失败并回退。请用 NODE_USE_ENV_PROXY=1 启动服务。");
 }
-const ideaAnalyzer = new IdeaAnalyzer(openAISettings);
-const designContracts = new DesignContractGenerator(openAISettings);
-const previewDesignContracts = new DesignContractGenerator(openAISettings, { maxAttempts: 1 });
+// STUDIO_TEXT_PROVIDER=claude-cli：策划、规则审核与代码生成改走本机 Claude Code CLI 的订阅额度；
+// 图片仍由 OpenAI Key 承载。CLI 每次冷启动较慢，所以放宽各文本调用的超时；重试次数不变。
+const claudeCliText = process.env.STUDIO_TEXT_PROVIDER === "claude-cli"
+  ? { fetchImpl: createClaudeCliFetch({ executable: process.env.STUDIO_CLAUDE_CLI ?? "claude", model: process.env.STUDIO_CLAUDE_MODEL ?? DEFAULT_CLAUDE_CLI_MODEL }) }
+  : null;
+if (claudeCliText) {
+  openAISettings.useClaudeCliText(process.env.STUDIO_CLAUDE_MODEL ?? DEFAULT_CLAUDE_CLI_MODEL);
+  console.log(`文本模型使用本机 Claude CLI（${process.env.STUDIO_CLAUDE_MODEL ?? DEFAULT_CLAUDE_CLI_MODEL}），图片模型继续使用 OpenAI。`);
+}
+const ideaAnalyzer = new IdeaAnalyzer(openAISettings, claudeCliText ? { ...claudeCliText, timeoutMs: 90_000 } : {});
+const designContracts = new DesignContractGenerator(openAISettings, claudeCliText ? { ...claudeCliText, timeoutMs: 300_000 } : {});
+const previewDesignContracts = new DesignContractGenerator(openAISettings, { maxAttempts: 1, ...(claudeCliText ? { ...claudeCliText, timeoutMs: 300_000 } : {}) });
 const coverArt = new CoverArtGenerator(openAISettings);
-const codeGenerator = new GameCodeGenerator(openAISettings);
+const codeGenerator = new GameCodeGenerator(openAISettings, claudeCliText ? { ...claudeCliText, timeoutMs: 1_200_000 } : {});
 const orchestrator = new BuildOrchestrator(repository, artifactRoot, {
   designContracts,
   coverArt,
@@ -160,6 +170,12 @@ await orchestrator.resumeQueuedBuilds();
 async function handleApi(request: IncomingMessage, response: ServerResponse, pathname: string) {
   if (request.method === "POST" && pathname === "/api/production-jobs") {
     sendJson(response, 202, { job: await productionJobs.submit(projectInputSchema.parse(await readJson(request))) });
+    return true;
+  }
+  const retryJobId = pathname.match(/^\/api\/production-jobs\/([^/]+)\/retry$/)?.[1];
+  if (request.method === "POST" && retryJobId) {
+    const job = await productionJobs.resubmitFailed(decodeURIComponent(retryJobId), async id => Boolean(await repository.get(id)));
+    sendJson(response, 202, { job });
     return true;
   }
   const productionJobId = pathname.match(/^\/api\/production-jobs\/([^/]+)$/)?.[1];

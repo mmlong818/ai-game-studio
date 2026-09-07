@@ -47,12 +47,20 @@ export class OpenAISettings {
     this.fileKey = keyFilePath ? readKeyFile(keyFilePath) : null;
   }
 
+  private textProvider: { kind: "claude-cli"; model: string } | null = null;
+
+  /** 文本调用改走本机 Claude CLI；文本模型选择被固定，图片模型与 Key 逻辑不变。 */
+  useClaudeCliText(model: string) {
+    this.textProvider = { kind: "claude-cli", model };
+  }
+
   status(): OpenAISettingsStatus {
     return {
       provider: "openai",
       configured: Boolean(this.sessionKey ?? this.fileKey ?? this.environmentKey),
       source: this.sessionKey ? "session" : this.fileKey ? "file" : this.environmentKey ? "environment" : null,
-      models: { ...this.models },
+      models: { ...this.models, ...(this.textProvider ? { text: `claude-cli:${this.textProvider.model}` } : {}) },
+      ...(this.textProvider ? { textProvider: { ...this.textProvider } } : {}),
     };
   }
 
@@ -87,11 +95,11 @@ export class OpenAISettings {
     const draft = z.object({ apiKey: z.string().optional(), models: z.object({ text: z.string(), image: z.string() }).optional() }).parse(input);
     const catalog = await this.listModels(draft, fetcher);
     const selected = draft.models ?? catalog.recommended;
-    if (!selected.text || !catalog.text.some(m => m.id === selected.text)) throw new Error("没有可用的文本模型，请重新获取列表。");
+    if (!this.textProvider && (!selected.text || !catalog.text.some(m => m.id === selected.text))) throw new Error("没有可用的文本模型，请重新获取列表。");
     if (!selected.image || !catalog.image.some(m => m.id === selected.image)) throw new Error("没有可用的图像模型，请检查账号权限。");
     // Commit only after both roles are validated; preview never changes active settings.
     if (draft.apiKey?.trim()) this.sessionKey = openAIKeyInputSchema.parse(draft).apiKey;
-    this.models = { text: selected.text, image: selected.image };
+    this.models = { text: this.textProvider ? this.models.text : selected.text ?? this.models.text, image: selected.image };
     return this.status();
   }
 }

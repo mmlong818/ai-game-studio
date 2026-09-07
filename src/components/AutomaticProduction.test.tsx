@@ -4,7 +4,7 @@ import { beforeEach, expect, it, vi } from "vitest";
 import { AutomaticProduction } from "./AutomaticProduction";
 import { INITIAL_DRAFT } from "../domain/storage";
 import * as api from "../web/api";
-vi.mock("../web/api", () => ({ submitProduction: vi.fn(), getProductionJob: vi.fn(), watchProductionJob: vi.fn(), getProject: vi.fn(), startBuild: vi.fn(), getLatestBuild: vi.fn() }));
+vi.mock("../web/api", () => ({ submitProduction: vi.fn(), getProductionJob: vi.fn(), watchProductionJob: vi.fn(), getProject: vi.fn(), startBuild: vi.fn(), getLatestBuild: vi.fn(), retryProduction: vi.fn() }));
 const build = { id: "b1", status: "succeeded", steps: [{ id: "s1", title: "准备资源", detail: "制作游戏图片", status: "succeeded" }] } as any;
 
 it("技术校验错误默认说人话，保留详情且不重新提交", async () => {
@@ -107,4 +107,28 @@ it("不嵌入工作台同源或脚本地址", async () => {
   render(<AutomaticProduction draft={INITIAL_DRAFT} />);
   await screen.findByText("准备资源");
   expect(screen.queryByTitle("游戏试玩")).not.toBeInTheDocument();
+});
+
+it("创建阶段失败后提供同方案重试，成功后切换到新任务且不重新策划", async () => {
+  history.replaceState(null, "", "/create?production=p1");
+  const failed = { id: "p1", status: "failed" as const, error: "普通项目设计合同不完整：ID 重复：3", events: [] };
+  vi.mocked(api.getProductionJob).mockImplementation(async id => id === "p1" ? failed : { id: "p2", status: "queued" as const, error: null, events: [] });
+  vi.mocked(api.watchProductionJob).mockImplementation(async (id, _signal, update) => { if (id === "p2") update({ id: "p2", status: "creating", error: null }, null); });
+  vi.mocked(api.retryProduction).mockResolvedValue({ id: "p2", status: "queued", error: null });
+  render(<AutomaticProduction draft={INITIAL_DRAFT} />);
+  const button = await screen.findByRole("button", { name: "用同一方案重新制作" });
+  expect(screen.queryByText(/查看已保存的项目/)).not.toBeInTheDocument();
+  button.click();
+  await screen.findByText(/服务端已接收|正在提交|等待开始处理/);
+  expect(api.retryProduction).toHaveBeenCalledWith("p1");
+  expect(api.submitProduction).not.toHaveBeenCalled();
+  expect(new URLSearchParams(location.search).get("production")).toBe("p2");
+});
+
+it("构建失败（项目已存在）不提供重新创建入口", async () => {
+  history.replaceState(null, "", "/create?production=p1");
+  vi.mocked(api.getLatestBuild).mockResolvedValue({ ...build, status: "failed", error: "浏览器验收未通过", projectId: "p1" });
+  render(<AutomaticProduction draft={INITIAL_DRAFT} />);
+  await screen.findByText(/查看已保存的项目/);
+  expect(screen.queryByRole("button", { name: "用同一方案重新制作" })).not.toBeInTheDocument();
 });

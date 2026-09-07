@@ -35,5 +35,5 @@ export function verifyGeneratedCampaign(actual: unknown, expected?: unknown) {
 export function generatedCampaignPrompt(value?: unknown): string {
   const plan = resolveGeneratedCampaign(value);
   if (plan.mode === "endless") return `无限玩法，没有关卡、胜利目标或最终通关；不提供关卡选择器，不实现setLevel或forceWin，不得达到分数或时间阈值后自动胜利。probe 的getState返回mode:"endless"及真实state/score，restart重新开始一局。收集物或挑战按确认方案持续供给；不得靠修改探针数据伪装无限。${plan.rationale}`;
-  return `必须实现 ${plan.levelCount} 个可选择关卡；setLevel(1..${plan.levelCount})/restart 必须重建真实关卡，越界参数钳制到合法首末关。getState 返回 level、difficulty（数值维度：${plan.difficultyKeys.join("、")}）、contentVariant、runtimeSignature、mechanicsActive。各维度代表真实规则参数，逐关不下降${plan.legacy ? "，相邻增幅不超过0.12" : "；不得捏造未采用的速度或密度倍率"}。结构变化关 ${plan.milestones.join("/")} 必须有不同的 contentVariant 和 runtimeSignature；其他关无需强行增加机制。设计依据：${plan.rationale}。`;
+  return `必须实现 ${plan.levelCount} 个可选择关卡；setLevel(1..${plan.levelCount})/restart 必须重建真实关卡，越界参数钳制到合法首末关。getState 返回 level、difficulty（数值维度：${plan.difficultyKeys.join("、")}）、contentVariant、runtimeSignature、mechanicsActive。各维度代表真实规则参数${plan.legacy ? "，逐关不下降，相邻增幅不超过0.12" : "，按设计依据逐关朝同一方向单调变化（递增或递减均可，例如配额递增、半径或间隔递减），同一维度不得忽升忽降；不得捏造未采用的速度或密度倍率"}。结构变化关 ${plan.milestones.join("/")} 必须有不同的 contentVariant 和 runtimeSignature；其他关无需强行增加机制。设计依据：${plan.rationale}。`;
 }

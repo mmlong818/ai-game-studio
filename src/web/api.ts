@@ -166,6 +166,11 @@ export async function submitProduction(input: ProjectInput): Promise<ProductionJ
   const payload = await apiRequest("/api/production-jobs", { method: "POST", body: JSON.stringify(input) });
   return payload.job as ProductionJob;
 }
+/** 创建阶段失败后用同一份已确认方案开新任务；服务端拒绝已生成项目的任务。 */
+export async function retryProduction(id: string): Promise<ProductionJob> {
+  const payload = await apiRequest("/api/production-jobs/" + encodeURIComponent(id) + "/retry", { method: "POST" });
+  return payload.job as ProductionJob;
+}
 export async function getProductionJob(id: string): Promise<ProductionJob | null> {
   const payload = await apiRequest("/api/production-jobs/" + encodeURIComponent(id));
   return payload.job as ProductionJob | null;

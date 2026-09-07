@@ -2464,12 +2464,18 @@ export async function inspectGeneratedGameInBrowser(root: string, options: { exp
               }, campaign.levelCount + 1);
               if (beyond !== campaign.levelCount) failures.push(`确认仅 ${campaign.levelCount} 关，越界选择却进入第 ${String(beyond)} 关。`);
             }
-            for (let index = 1; index < levelStates.length; index += 1) {
-              for (const key of campaign.difficultyKeys) {
-                const step = Number((Number(levelStates[index].difficulty?.[key]) - Number(levelStates[index - 1].difficulty?.[key])).toFixed(3));
-                maximumMultiplierStep = Math.max(maximumMultiplierStep, step);
-                if (step < 0 || (campaign.legacy && step > .12)) failures.push(`第 ${index}→${index + 1} 关 ${key} 变化 ${step} 不符合确认的递进规则。`);
-              }
+            // 确认方案里的难度维度可以随关递增（配额）也可以递减（半径、间隔）；验收只要求同一维度
+            // 全程朝一个方向单调变化，不把“数值下降”本身当成违规，否则会迫使游戏偏离已确认的设计。
+            for (const key of campaign.difficultyKeys) {
+              const steps = levelStates.slice(1).map((state, index) => Number((Number(state.difficulty?.[key]) - Number(levelStates[index].difficulty?.[key])).toFixed(3)));
+              steps.forEach((step, index) => {
+                maximumMultiplierStep = Math.max(maximumMultiplierStep, Math.abs(step));
+                if (campaign.legacy && (step < 0 || step > .12)) failures.push(`第 ${index + 1}→${index + 2} 关 ${key} 变化 ${step} 不符合确认的递进规则。`);
+              });
+              // 0 表示该规则在这些关尚未启用（例如第 3 关才引入退潮）；方向一致性只看规则启用后的各关。
+              const active = levelStates.map(state => Number(state.difficulty?.[key])).filter(value => Number.isFinite(value) && value !== 0);
+              const activeSteps = active.slice(1).map((value, index) => Number((value - active[index]).toFixed(3)));
+              if (!campaign.legacy && activeSteps.some(step => step > 0) && activeSteps.some(step => step < 0)) failures.push(`${key} 在启用后的各关之间既上升又下降（${active.join("→")}），不是确认方案中方向一致的难度递进。`);
             }
             const milestoneStates = campaign.milestones.map((level) => levelStates[level - 1]);
             if (new Set(milestoneStates.map(({ contentVariant }) => contentVariant)).size !== campaign.milestones.length || new Set(milestoneStates.map(({ runtimeSignature }) => runtimeSignature)).size !== campaign.milestones.length) failures.push(`第 ${campaign.milestones.join("/")} 关没有形成合同要求的不同运行结构。`);

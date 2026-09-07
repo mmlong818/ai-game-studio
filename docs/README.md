@@ -22,6 +22,7 @@
 - [平台游戏引擎层](58-engine-layer.md)
 - [换机与开发恢复](50-machine-transfer.md)
 - [托管、数据库与独立网址](07-hosting-and-delivery.md)
+- [文本模型接入本机 Claude Code CLI](94-claude-cli-text-provider.md)：`STUDIO_TEXT_PROVIDER=claude-cli` 时策划、审核与代码生成走 CLI 订阅额度，图片仍用 OpenAI。
 - [本机后台服务](local-background-services.md)：Windows 下以隐藏 Node 进程启动 4311/4312/4313，重启前核对活动制作任务。
 - [PostgreSQL 发布并发验证](87-postgres-publication-concurrency.md)：`npm run test:publication-postgres` 的隔离真实数据库测试。
 
@@ -48,7 +49,7 @@
 
 以下内容保留用于追溯，不代表当前产品状态：
 
-- `76`–`92`：2026-09-06 至 09-07 的创作区与整体产品改造记录。`76` 创作入口与状态真实性、`77`–`80` 核心流程／作品空间／设置／大厅四阶段、`81` 私有作品封面交付、`82`–`84` 审核证据与历史、`85` 低高度窗口、`86` 发布事务、`88` 有限关卡与无失败验收、`89` 制作执行权数据库边界、`90` 无限玩法与安全恢复、`91` 真实创作链路修复记录、`93` 规则审核回执复用。其中标注“尚未完成”的事项以 [开发完成审计](07-implementation-status.md) 为准。
+- `76`–`92`：2026-09-06 至 09-07 的创作区与整体产品改造记录。`76` 创作入口与状态真实性、`77`–`80` 核心流程／作品空间／设置／大厅四阶段、`81` 私有作品封面交付、`82`–`84` 审核证据与历史、`85` 低高度窗口、`86` 发布事务、`88` 有限关卡与无失败验收、`89` 制作执行权数据库边界、`90` 无限玩法与安全恢复、`91` 真实创作链路修复记录、`93` 规则审核回执复用、`95` 海边贝壳收集真实创作第二轮。其中标注“尚未完成”的事项以 [开发完成审计](07-implementation-status.md) 为准。
 - `00-product-vision.md`、`01-landscape-research.md`、`02-product-and-workflow.md`、`03-match3-golden-path.md`、`04-experience-design.md`、`05-m0-implementation-reference-lock.md`、`05-system-architecture.md`、`06-delivery-plan.md`：早期愿景、研究和架构过程。
 - `10`–`16`、`18`–`32`：第三方接入评审、真实使用审计和阶段完成证据。
 - `33`–`37`、`OPEN_SOURCE_GAME_TEMPLATE_RESEARCH.md`：设计方法与来源研究。

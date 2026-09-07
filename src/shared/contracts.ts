@@ -15,6 +15,8 @@ export const openAISettingsStatusSchema = z.object({
     text: z.string().min(1),
     image: z.string().min(1),
   }),
+  /** 文本模型改由本机 Claude Code CLI 订阅额度承载时出现；图片仍走 OpenAI Key。 */
+  textProvider: z.object({ kind: z.literal("claude-cli"), model: z.string().min(1) }).optional(),
 });
 
 export type OpenAISettingsStatus = z.infer<typeof openAISettingsStatusSchema>;

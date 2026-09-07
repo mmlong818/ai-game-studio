@@ -19,6 +19,18 @@ describe("普通项目完整设计合同编排", () => {
     expect(contract.content.mode).toBe(mode === "endless" ? "endless" : "finite-campaign");
     expect(contract.acceptance.some(item => item.kind === "progression")).toBe(mode !== "endless");
   });
+  it("中文教学标签只剩数字时不会撞成重复机制 ID", () => {
+    const profile = gameDesignProfileSchema.parse({ ...createDesignProfile("generated", "standard"),
+      onboarding: ["先点击 3 枚贝壳放进篮子", "再抓住 3 枚会被浪带走的金贝", "看篮子装满后的庆祝"],
+      generatedCampaign: { mode: "campaign", failurePolicy: "forbidden", levelCount: 5, milestones: [1, 2, 3, 4, 5], difficultyKeys: ["shellQuota"], rationale: "用户要求五关递增，无失败。" },
+    });
+    const spec = generateGameSpec({ idea: "海边贝壳收集，点击贝壳装满篮子", template: "generated" }, null, profile);
+    const contract = createGameDesignContractForLegacyProject({ projectId: "project-shells", title: spec.title, idea: spec.vision, createdAt, spec });
+    const ids = contract.mechanics.map(({ id }) => id);
+    expect(new Set(ids).size).toBe(ids.length);
+    expect(ids.every(id => /[a-z]/.test(id))).toBe(true);
+    expect(contract.onboarding.map(({ teachesMechanicId }) => teachesMechanicId)).toEqual(ids);
+  });
   it("把成熟模板编排为包含教学、递进、辅助和验收的可校验合同", () => {
     const spec = generateGameSpec({ idea: "滑动数字方块合并到目标数字。", template: "merge-2048", dimensions: "2d" });
     const contract = createGameDesignContractForLegacyProject({ projectId: "project-merge", title: spec.title, idea: spec.vision, createdAt, spec });
