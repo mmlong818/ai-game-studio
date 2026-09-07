@@ -53,3 +53,10 @@ test("无限玩法不声明有限关卡，不强迫胜利或虚构难度维度",
   const profile = gameDesignProfileSchema.parse({ ...createDesignProfile("generated", "standard"), generatedCampaign: plan });
   assert.equal(generateGameSpec({ idea: "自由收集花朵，没有失败和最终目标", template: "generated" }, null, profile).levelProgression.levelCount, 0);
 });
+
+test("新方案提示允许难度维度递减（半径、间隔），只要求方向一致；旧方案仍要求不下降", () => {
+  const modern = generatedCampaignPrompt({ mode: "campaign", failurePolicy: "forbidden", levelCount: 5, milestones: [1, 2, 3, 4, 5], difficultyKeys: ["shellQuota", "shellRadiusPx"], rationale: "配额递增，半径递减。" });
+  assert.match(modern, /递增或递减均可/);
+  assert.doesNotMatch(modern, /逐关不下降/);
+  assert.match(generatedCampaignPrompt(undefined), /逐关不下降/);
+});

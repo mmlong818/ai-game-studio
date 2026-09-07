@@ -279,3 +279,14 @@ test("修改提示包含已确认方案，不能只根据最初想法重做", as
   assert.match(prompt, /收集七枚独有的蓝色莲子/);
   assert.match(prompt, /只修改背景为傍晚/);
 });
+
+test("模型多给的条目按合同上限截断，而不是让整个方案作废", async () => {
+  const generator = new DesignContractGenerator(new OpenAISettings(validKey), {
+    fetchImpl: async () => llmResponse({ ...themedAnswer, accessibility: ["大按钮", "高对比", "不靠颜色", "可调速度", "无倒计时", "键盘可玩", "屏幕阅读提示", "第八条多余"], game_feel: Array.from({ length: 10 }, (_, index) => `手感 ${index + 1}`) }),
+  });
+  const profile = await generator.generate({ idea: snakeIdea }, snakeAnalysis);
+  assert.ok(profile);
+  assert.equal(profile.accessibility.length, 6);
+  assert.equal(profile.gameFeel.length, 8);
+  assert.equal(profile.accessibility[0], "大按钮");
+});

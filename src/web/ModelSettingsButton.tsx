@@ -86,13 +86,16 @@ export function ModelSettingsButton({ compact = false }: { compact?: boolean }) 
     }
   }
 
-  const statusText = !status?.configured
+  const keyStatusText = !status?.configured
     ? t("models.unconfigured")
     : status.source === "environment"
       ? t("models.environment")
       : status.source === "file"
         ? t("models.file")
         : t("models.session");
+  const statusText = status?.textProvider
+    ? `${keyStatusText} · ${t("models.textProvider", { model: status.textProvider.model })}`
+    : keyStatusText;
 
   return (
     <>

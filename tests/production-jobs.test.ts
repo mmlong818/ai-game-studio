@@ -84,3 +84,33 @@ test("无法校验的排队输入失败退出，不调用制作服务", async ()
     assert.equal((await jobs.get(id))?.error, "排队方案无法恢复，未启动模型调用。");
   } finally { await db.close(); }
 });
+
+test("创建阶段失败后可用同一份已确认方案重新制作，不重新策划；已生成项目的任务拒绝", async () => {
+  const db = await openTestDatabase();
+  let attempts = 0;
+  const jobs = new ProductionJobs(db, async () => { attempts++; if (attempts === 1) throw new Error("设计合同不完整：ID 重复：3"); });
+  try {
+    await jobs.initialize();
+    const confirmedDesignProfile = {
+      genre: "休闲点击", targetPlayer: "所有人", playerFantasy: "海边拾贝", sessionLength: "5 分钟",
+      coreLoop: ["看篮子还差几枚", "点击浮现的贝壳", "装满后进入下一片海滩"], winCondition: "五关装满篮子", failCondition: "不会失败",
+      progression: ["五关数量递增"], difficultyCurve: ["前两关只加数量", "第三关加入浪"], gameFeel: ["贝壳飞入篮子", "海鸥庆祝"],
+      onboarding: ["点一枚贝壳", "看篮子计数"], accessibility: ["大按钮", "无倒计时"], productionRisks: [],
+    };
+    const idea = "海边贝壳收集，点击贝壳装满篮子";
+    const first = await jobs.submit({ idea, requestId: randomUUID(), confirmedDesignProfile });
+    for (let n = 0; n < 100 && (await jobs.get(first.id))?.status !== "failed"; n++) await new Promise(done => setTimeout(done, 5));
+    assert.equal((await jobs.get(first.id))?.status, "failed");
+    await assert.rejects(jobs.resubmitFailed(first.id, async () => true), /已生成项目/);
+    const retried = await jobs.resubmitFailed(first.id, async () => false);
+    assert.notEqual(retried.id, first.id);
+    for (let n = 0; n < 100 && (await jobs.get(retried.id))?.status !== "building"; n++) await new Promise(done => setTimeout(done, 5));
+    assert.equal((await jobs.get(retried.id))?.status, "building");
+    assert.equal(attempts, 2);
+    assert.equal((await jobs.get(first.id))?.status, "failed");
+    await assert.rejects(jobs.resubmitFailed(retried.id, async () => false), /只有已失败/);
+    await assert.rejects(jobs.resubmitFailed(randomUUID(), async () => false), /找不到/);
+    const plain = await jobs.submit({ idea: "没有确认方案的旧式提交：玩家点星星，集满十颗算完成", requestId: randomUUID() });
+    for (let n = 0; n < 100 && (await jobs.get(plain.id))?.status !== "building"; n++) await new Promise(done => setTimeout(done, 5));
+  } finally { await db.close(); }
+});

@@ -28,15 +28,16 @@ const llmDesignSchema = z.object({
   target_player: z.string().min(1),
   player_fantasy: z.string().min(1),
   session_length: z.string().min(1),
-  core_loop: z.array(z.string().min(1)).min(3).max(6),
+  // 进入口只校验下限；上限由 parseDesign 按方案合同截断，多给的条目不会让整个方案作废。
+  core_loop: z.array(z.string().min(1)).min(3).max(12),
   win_condition: z.string().min(1),
   fail_condition: z.string().min(1),
-  progression: z.array(z.string().min(1)).min(1).max(6),
-  difficulty_curve: z.array(z.string().min(1)).min(2).max(6),
-  game_feel: z.array(z.string().min(1)).min(2).max(8),
-  onboarding: z.array(z.string().min(1)).min(2).max(6),
-  accessibility: z.array(z.string().min(1)).min(2).max(6),
-  extra_production_risks: z.array(z.string().min(1)).max(4),
+  progression: z.array(z.string().min(1)).min(1).max(12),
+  difficulty_curve: z.array(z.string().min(1)).min(2).max(12),
+  game_feel: z.array(z.string().min(1)).min(2).max(16),
+  onboarding: z.array(z.string().min(1)).min(2).max(12),
+  accessibility: z.array(z.string().min(1)).min(2).max(12),
+  extra_production_risks: z.array(z.string().min(1)).max(8),
 });
 
 const stringItems = (description: string) => ({ type: "array", items: { type: "string" }, description });
@@ -63,7 +64,7 @@ const responseJsonSchema = {
           rationale: { type: "string" },
         },
       }],
-      description: "无模板游戏填写，官方模板填null。按玩家需求选择闯关或无限，不默认20关。有限关卡的milestones从1开始递增；无限为0关、milestones为空。difficultyKeys为真实递增参数的英文标识，无限可为空；不得虚构速度或密度。rationale解释安排，并在progression/difficulty_curve用普通人能懂的中文表达同一方案。",
+      description: "无模板游戏填写，官方模板填null。按玩家需求选择闯关或无限，不默认20关。有限关卡的milestones从1开始递增；无限为0关、milestones为空。difficultyKeys为真实递增参数的英文标识，无限可为空；不得虚构速度或密度。rationale解释安排，面向普通玩家书写：只用中文与具体数字，不出现字段名、英文参数名或“forbidden/required”这类取值；并在progression/difficulty_curve用普通人能懂的中文表达同一方案。",
     },
     genre: { type: "string", description: "结合题材的玩法类型定位,不超过 20 字" },
     target_player: { type: "string", description: "目标玩家画像,指出主要动机(如成就感/掌控感/收集欲),不超过 60 字" },
@@ -444,9 +445,10 @@ export class DesignContractGenerator {
     }
     const answer = llmDesignSchema.parse(raw);
     const clip = (value: string, max: number) => value.trim().slice(0, max);
-    const clipList = (values: string[], max: number) => values.map((item) => clip(item, max)).filter((item) => item.length > 0);
+    // 模型偶尔多给一两条（例如 7 条无障碍说明）；超出合同上限的条目直接截去，而不是让整个修改方案作废。
+    const clipList = (values: string[], max: number, maxItems = 6) => values.map((item) => clip(item, max)).filter((item) => item.length > 0).slice(0, maxItems);
     // 基线风险是模板代码的工程事实,永远保留;LLM 只能追加题材相关的新风险。
-    const extraRisks = clipList(answer.extra_production_risks, 80).filter((risk) => !baseline.productionRisks.includes(risk));
+    const extraRisks = clipList(answer.extra_production_risks, 80, 4).filter((risk) => !baseline.productionRisks.includes(risk));
     return gameDesignProfileSchema.parse({
       genre: clip(answer.genre, 40),
       targetPlayer: clip(answer.target_player, 120),
@@ -457,7 +459,7 @@ export class DesignContractGenerator {
       failCondition: clip(answer.fail_condition, 100),
       progression: clipList(answer.progression, 80),
       difficultyCurve: clipList(answer.difficulty_curve, 100),
-      gameFeel: clipList(answer.game_feel, 80),
+      gameFeel: clipList(answer.game_feel, 80, 8),
       onboarding: clipList(answer.onboarding, 80),
       accessibility: clipList(answer.accessibility, 80),
       productionRisks: [...baseline.productionRisks, ...extraRisks].slice(0, 6),

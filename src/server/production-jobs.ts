@@ -46,6 +46,20 @@ export class ProductionJobs {
     }
     return (await this.get(id))!;
   }
+  /**
+   * 创建阶段失败（尚未生成项目）时，用同一份已确认方案开一张新回执重新制作，
+   * 不重新策划。已生成项目的失败属于构建失败，走项目页的新版本流程，这里拒绝。
+   */
+  async resubmitFailed(id: string, projectExists: (id: string) => Promise<boolean>): Promise<ProductionJob> {
+    const job = (await this.db.query<{ status: string; input_json: string }>("SELECT status, input_json FROM production_jobs WHERE id = $1", [id])).rows[0];
+    if (!job) throw new Error("找不到该制作任务。");
+    if (job.status !== "failed") throw new Error("只有已失败且未生成项目的任务可以用同一方案重新制作。");
+    if (await projectExists(id)) throw new Error("该任务已生成项目，请在项目页启动新版本，而不是重新创建。");
+    const input = projectInputSchema.parse(JSON.parse(job.input_json));
+    if (!input.confirmedDesignProfile) throw new Error("该任务没有保存已确认方案，无法免策划重新制作。");
+    return this.submit({ ...input, requestId: randomUUID() });
+  }
+
   private drain() {
     while (this.active < 2 && this.waiting.length) {
       const next = this.waiting.shift()!;

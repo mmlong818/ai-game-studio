@@ -78,12 +78,21 @@ export function createGameDesignContractForLegacyProject(source: LegacyContractS
     .map((id) => GAME_DESIGN_KNOWLEDGE_LIBRARY.mechanics.find((item) => item.id === id))
     .filter((item): item is (typeof GAME_DESIGN_KNOWLEDGE_LIBRARY.mechanics)[number] => Boolean(item));
   const fallbackLabels = authoredGenerated ? source.spec.designProfile.onboarding : source.spec.mechanics.slice(0, 2);
-  const fallbackMechanics = fallbackLabels.map((label, index) => ({
-    id: stableId(label, `core-mechanic-${index + 1}`),
-    label,
-    playerVerb: label,
-    probeSignals: [`mechanic-${index + 1}-completed`],
-  }));
+  // 中文标签经 stableId 归一后只剩数字或标点（如“收集3枚”→“3”），两条标签会撞成同一 ID；
+  // 这类无辨识度或重复的 ID 一律改用位置回退 ID，避免设计合同因“ID 重复”整体失败。
+  const usedMechanicIds = new Set<string>();
+  const fallbackMechanics = fallbackLabels.map((label, index) => {
+    const fallback = `core-mechanic-${index + 1}`;
+    let id = stableId(label, fallback);
+    if (!/[a-z]/.test(id) || usedMechanicIds.has(id)) id = fallback;
+    usedMechanicIds.add(id);
+    return {
+      id,
+      label,
+      playerVerb: label,
+      probeSignals: [`mechanic-${index + 1}-completed`],
+    };
+  });
   const mechanicSources = catalogMechanics.length ? catalogMechanics : fallbackMechanics;
   const coreMechanicIds = new Set(source.spec.template === "mahjong-roguelite"
     ? ["match-combo"]

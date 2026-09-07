@@ -3,7 +3,7 @@ import type { StudioDraft } from "../domain/types";
 import type { Build, GameDesignProfile, ProjectInput } from "../shared/contracts";
 import { DOMAIN_TEMPLATE_ART } from "../domain/templateResolution";
 import { gameTemplateSchema } from "../shared/contracts";
-import { submitProduction, getProductionJob, watchProductionJob, getProject, getLatestBuild, type ProductionJob } from "../web/api";
+import { submitProduction, getProductionJob, watchProductionJob, getProject, getLatestBuild, retryProduction, type ProductionJob } from "../web/api";
 import { WaitingActivity } from "./WaitingActivity";
 
 const RECEIPTS_KEY = "studio-production-receipts-v1";
@@ -115,6 +115,20 @@ export function AutomaticProduction({ draft, confirmedPlan, confirmedDesignProfi
     void read();
     return () => { active = false; window.clearTimeout(timer); abort.abort(); };
   }, [projectId, refresh]);
+  const [retrying, setRetrying] = useState(false);
+  const [retryError, setRetryError] = useState("");
+  const retry = async () => {
+    if (!projectId || retrying) return;
+    setRetrying(true); setRetryError("");
+    try {
+      const next = await retryProduction(projectId);
+      const url = new URL(location.href); url.searchParams.set("production", next.id);
+      history.replaceState(null, "", url);
+      setJob(next); setBuild(null); setLoaded(false); setProjectId(next.id); setRefresh(n => n + 1);
+    } catch (reason) {
+      setRetryError(reason instanceof Error ? reason.message : "重新提交未成功，原记录保留。");
+    } finally { setRetrying(false); }
+  };
   const step = build?.steps.find(item => item.status === "running");
   const previewUrl = playableFrameUrl(build?.previewUrl);
   const label = error || job?.status === "failed" ? "本次制作未能开始" : readError ? "无法恢复制作记录" : busy ? "正在提交制作任务" : preparing ? (job?.events?.at(-1)?.title ?? "服务端已接收，等待开始处理") : working ? step?.title ?? "正在排队制作" : build?.status === "succeeded" ? "游戏制作已完成" : build?.status === "failed" ? "本次制作未完成" : loaded ? "项目已保存，尚未收到制作任务" : "正在恢复制作记录";
@@ -129,7 +143,8 @@ export function AutomaticProduction({ draft, confirmedPlan, confirmedDesignProfi
       {(busy || working || !loaded) && !error && !readError && job?.status !== "failed" && <WaitingActivity startedAt={build?.startedAt ?? job?.events?.[0]?.createdAt} label={working ? step?.detail ?? job?.events?.at(-1)?.title ?? "服务端正在处理，关闭页面也不会取消任务。" : "正在等待服务端响应，请稍候。"} />}
       {working && <p>制作在服务端继续，关闭或刷新页面不会取消任务，也不会重复提交。</p>}
       {loaded && !job && !build && !busy && !readError && <p>已确认项目存在，正在查询是否收到制作任务。这里只查询状态，不会自动重新提交付费制作。</p>}
-      {job?.status === "failed" && <><ProductionError message={job.error ?? "制作未能开始"} /><p>此错误已保存，不会自动重新提交付费制作。</p></>}
+      {job?.status === "failed" && <><ProductionError message={job.error ?? "制作未能开始"} /><p>此错误已保存，不会自动重新提交付费制作。</p>
+        {!build && <div className="review-actions"><button type="button" className="primary-action" disabled={retrying} onClick={retry}>{retrying ? "正在重新提交…" : "用同一方案重新制作"}</button><p>沿用你已确认的方案，不再重新策划；会开始一次新的制作并消耗模型用量。</p>{retryError && <p role="alert">{retryError}</p>}</div>}</>}
       {error && <><ProductionError message={error} /><p>不会自动重试付费制作。</p></>}
       {readError && <p role="alert">{readError} 正在尝试恢复连接，不会重新提交制作。</p>}
       {build?.error && <ProductionError message={build.error} />}

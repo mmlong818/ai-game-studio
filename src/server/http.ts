@@ -25,7 +25,7 @@ export function sendError(response: ServerResponse, error: unknown) {
   }
   const message = error instanceof Error ? error.message : "服务器无法完成请求。";
   const status = message.includes("不存在") ? 404
-    : /还没有可发布|必须先归档|构建正在进行|归档项目不能|缺少必要证据|必须在本复核周期|不能再修改|重新复核|不能生成知识变更集|不能再次晋级|不能再次降级|只有待审核|只有待评审|必须审核通过|基础知识版本已过期|审核状态已变化/.test(message) ? 409
+    : /还没有可发布|还没有通过主美复核|不能发布|已生成项目|只有已失败|无法免策划重新制作|已对应另一份方案|必须先归档|构建正在进行|归档项目不能|缺少必要证据|必须在本复核周期|不能再修改|重新复核|不能生成知识变更集|不能再次晋级|不能再次降级|只有待审核|只有待评审|必须审核通过|基础知识版本已过期|审核状态已变化/.test(message) ? 409
       : 500;
   sendJson(response, status, { error: message });
 }
