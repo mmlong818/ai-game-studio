@@ -26,10 +26,19 @@ type ChatRequest = {
   response_format?: { type: string; json_schema?: { name?: string; schema?: unknown } };
 };
 
-type CliResultEvent = { type: "result"; is_error?: boolean; result?: unknown; structured_output?: unknown; subtype?: string };
+type CliResultEvent = { type: "result"; is_error?: boolean; result?: unknown; structured_output?: unknown; subtype?: string; errors?: unknown };
 
 export const DEFAULT_CLAUDE_CLI_MODEL = "opus";
 const DEFAULT_MAX_COMMAND_LINE_CHARS = 28_000;
+/** 结构化输出允许的轮数：首轮作答 + 两次按 CLI 校验错误重写。 */
+export const STRUCTURED_OUTPUT_MAX_TURNS = 3;
+
+/** CLI 结果事件的可读错误：result 不是字符串时（如 error_max_turns）用 errors/subtype 说明，不再只剩“返回错误”。 */
+function cliErrorMessage(event: CliResultEvent): string {
+  if (typeof event.result === "string" && event.result.trim()) return event.result;
+  const details = Array.isArray(event.errors) ? event.errors.filter((item): item is string => typeof item === "string").join("；") : "";
+  return `Claude CLI 返回错误${event.subtype ? `（${event.subtype}）` : ""}${details ? `：${details}` : "。"}`;
+}
 
 export function claudeCliTextModelLabel(model: string) {
   return `claude-cli:${model}`;
@@ -81,8 +90,11 @@ export function createClaudeCliFetch(options: ClaudeCliTextProviderOptions = {})
 
     const scratch = mkdtempSync(join(tmpdir(), "claude-cli-text-"));
     const systemPromptFile = join(scratch, "system.txt");
+    // 结构化输出由 CLI 内置的 StructuredOutput 工具承载：模型把答案写进工具参数，CLI 按 schema 校验，
+    // 不合格时把错误作为工具结果返回让模型重写。这个纠错至少要再给一轮，否则一次格式失误就成 error_max_turns。
+    const maxTurns = schema === undefined ? "1" : String(STRUCTURED_OUTPUT_MAX_TURNS);
     const args = ["-p", "--output-format", stream ? "stream-json" : "json", ...(stream ? ["--include-partial-messages", "--verbose"] : []),
-      "--model", model, "--max-turns", "1", "--tools", "", "--strict-mcp-config", "--no-session-persistence", "--setting-sources", "",
+      "--model", model, "--max-turns", maxTurns, "--tools", "", "--strict-mcp-config", "--no-session-persistence", "--setting-sources", "",
       "--system-prompt-file", systemPromptFile];
     let systemPrompt = system;
     const baseLength = args.join(" ").length + executable.length;
@@ -124,7 +136,7 @@ export function createClaudeCliFetch(options: ClaudeCliTextProviderOptions = {})
           if (init?.signal?.aborted) { reject(abortError()); return; }
           const event = parseLastResult(stdout);
           if (!event) { resolve(new Response(`Claude CLI 未返回结果（退出码 ${code}）。${stderr.trim().slice(-300)}`, { status: 502 })); return; }
-          if (event.is_error) { const message = typeof event.result === "string" ? event.result : "Claude CLI 返回错误。"; resolve(new Response(message, { status: errorStatus(message) })); return; }
+          if (event.is_error) { const message = cliErrorMessage(event); resolve(new Response(message, { status: errorStatus(message) })); return; }
           const content = resultText(event);
           if (!content) { resolve(new Response("Claude CLI 没有返回可解析的内容。", { status: 502 })); return; }
           resolve(new Response(JSON.stringify(chatCompletion(label, content)), { status: 200, headers: { "content-type": "application/json" } }));
@@ -152,11 +164,18 @@ export function createClaudeCliFetch(options: ClaudeCliTextProviderOptions = {})
             if (typeof text === "string" && text) { streamed += text; send({ choices: [{ index: 0, delta: { content: text } }] }); }
             return;
           }
+          // CLI 拒绝了一次结构化输出（schema 不符）并让模型重写：之前转发的增量作废，通知调用方清空重新累积。
+          if (event?.type === "user" && Array.isArray(event.message?.content) && event.message.content.some((item: any) => item?.type === "tool_result" && item.is_error)) {
+            if (streamed) { streamed = ""; send({ reset: true, choices: [{ index: 0, delta: {} }] }); }
+            return;
+          }
           if (event?.type === "result") {
             const result = event as CliResultEvent;
-            if (result.is_error) { fail(typeof result.result === "string" ? result.result : "Claude CLI 返回错误。"); return; }
+            if (result.is_error) { fail(cliErrorMessage(result)); return; }
             const content = resultText(result);
-            if (!streamed && content) { streamed = content; send({ choices: [{ index: 0, delta: { content } }] }); }
+            // CLI 校验通过的最终结构化结果是唯一权威；已转发增量与之语义不同时整体替换，避免半截输出混进答案。
+            // 只是空白或键序差异不算不同，否则每次成功都会让调用方无故清空重来。
+            if (content && !sameJson(streamed, content)) { if (streamed) send({ reset: true, choices: [{ index: 0, delta: {} }] }); streamed = content; send({ choices: [{ index: 0, delta: { content } }] }); }
             if (!streamed) { fail("Claude CLI 没有返回可解析的内容。"); return; }
             send({ choices: [{ index: 0, delta: {}, finish_reason: "stop" }] });
             if (!closed) controller.enqueue(encoder.encode("data: [DONE]\n\n"));
@@ -179,6 +198,11 @@ export function createClaudeCliFetch(options: ClaudeCliTextProviderOptions = {})
     });
     return new Response(body, { status: 200, headers: { "content-type": "text/event-stream" } });
   };
+}
+
+function sameJson(left: string, right: string): boolean {
+  if (left === right) return true;
+  try { return JSON.stringify(JSON.parse(left)) === JSON.stringify(JSON.parse(right)); } catch { return false; }
 }
 
 function parseLastResult(stdout: string): CliResultEvent | null {

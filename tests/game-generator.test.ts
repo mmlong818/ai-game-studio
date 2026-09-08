@@ -6,6 +6,7 @@ import test from "node:test";
 import { generateGameSpec, getTemplateCatalog, type ProjectDetail } from "../src/shared/contracts";
 import {
   GameCodeGenerator,
+  describeGenerationProgress,
   inspectGeneratedArtifact,
   scanGeneratedHtml,
   stripPlatformSegments,
@@ -432,4 +433,19 @@ test("局内主体位图先于代码生成后，代码必须真的加载它们�
     // 没有蓝图的旧项目不新增这项要求。
     assert.ok(!inspectGeneratedArtifact(root, { requireAiArt: false }).includes("局内主体位图接入"));
   } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
+test("流式进展片段：解码 JSON 转义并说明当前写到哪一部分", () => {
+  // 模型流式返回的是 JSON 字符串内部的转义文本：换行是 \n 两个字符，引号带反斜杠。
+  const streaming = '{"html":"<!DOCTYPE html>\\n<html>\\n<head>\\n<style>\\n.panel{color:\\"#fff\\"}\\n';
+  const progress = describeGenerationProgress(streaming);
+  assert.equal(progress.phase, "正在写界面样式");
+  assert.ok(progress.excerpt.includes('.panel{color:"#fff"}'), "片段必须是解码后的代码，不是转义文本");
+  assert.ok(!progress.excerpt.includes("\\n"), "不能残留转义换行");
+  assert.ok(progress.excerpt.includes("\n<style>\n"), "转义换行必须解码成真实换行");
+  const scripting = streaming + '</style></head><body><canvas id=\\"game-canvas\\"></canvas>\\n<script>\\nconst basket = [];\\nfunction tide() {';
+  assert.equal(describeGenerationProgress(scripting).phase, "正在写游戏逻辑");
+  assert.ok(describeGenerationProgress(scripting).excerpt.endsWith("function tide() {"));
+  assert.equal(describeGenerationProgress(scripting + '</script></body></html>","design_notes":"篮格').phase, "正在写实现说明");
+  assert.ok(describeGenerationProgress("x".repeat(2000)).excerpt.length <= 260, "片段长度受限");
 });

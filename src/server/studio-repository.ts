@@ -224,6 +224,7 @@ type BuildStepRow = {
   kind: Build["steps"][number]["kind"];
   title: string;
   detail: string;
+  live_excerpt?: string | null;
   status: Build["steps"][number]["status"];
   output_text: string | null;
   started_at: DateValue | null;
@@ -537,6 +538,7 @@ function toBuild(row: BuildRow, steps: BuildStepRow[], gameOrigin: string): Buil
       kind: step.kind,
       title: step.title,
       detail: step.detail,
+      excerpt: step.live_excerpt ?? null,
       status: step.status,
       output: step.output_text,
       startedAt: iso(step.started_at),
@@ -1778,10 +1780,11 @@ export class StudioRepository {
     );
   }
 
-  async reportStepProgress(buildId: string, sequence: number, detail: string) {
+  /** 更新运行中步骤的进展说明；excerpt 是正在生成的内容片段，不传即清空，避免旧片段挂在新阶段上。 */
+  async reportStepProgress(buildId: string, sequence: number, detail: string, excerpt: string | null = null) {
     await this.database.query(
-      "UPDATE build_steps SET detail = $1 WHERE build_id = $2 AND sequence = $3 AND status = 'running'",
-      [detail, buildId, sequence],
+      "UPDATE build_steps SET detail = $1, live_excerpt = $2 WHERE build_id = $3 AND sequence = $4 AND status = 'running'",
+      [detail, excerpt, buildId, sequence],
     );
   }
 

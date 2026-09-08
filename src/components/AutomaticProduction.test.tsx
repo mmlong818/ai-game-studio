@@ -44,12 +44,13 @@ it("确认后仅启动一次，展示过程而不是操作入口", async () => {
   expect(screen.queryByRole("textbox")).not.toBeInTheDocument();
   expect(screen.queryByTitle("游戏试玩")).not.toBeInTheDocument();
 });
-it.each(["queued", "running", "succeeded", "failed"])("%s 状态都没有另建或重试按钮，刷新不会发起制作", async status => {
+it.each(["queued", "running", "succeeded", "failed"])("%s 状态刷新不会发起制作；只有失败后才出现明确的重新制作按钮", async status => {
   history.replaceState(null, "", "/create?production=p1");
   vi.mocked(api.getLatestBuild).mockResolvedValue({ ...build, status, error: status === "failed" ? "模型失败" : null });
   render(<AutomaticProduction draft={INITIAL_DRAFT} />);
   await screen.findByText("准备资源");
-  expect(screen.queryByRole("button")).not.toBeInTheDocument();
+  if (status === "failed") expect(screen.getByRole("button", { name: "重新制作这个游戏" })).toBeEnabled();
+  else expect(screen.queryByRole("button")).not.toBeInTheDocument();
   if (status === "succeeded") expect(screen.getByRole("link", { name: "继续完善这个游戏" })).toBeInTheDocument();
   else if (status === "failed") expect(screen.getByRole("link", { name: "查看已保存的项目与问题" })).toHaveAttribute("href", "/projects/p1");
   else expect(screen.queryByRole("link")).not.toBeInTheDocument();
@@ -125,10 +126,20 @@ it("创建阶段失败后提供同方案重试，成功后切换到新任务且�
   expect(new URLSearchParams(location.search).get("production")).toBe("p2");
 });
 
-it("构建失败（项目已存在）不提供重新创建入口", async () => {
+it("构建失败（项目已存在）不重新创建项目，而是在同一项目上重新制作，且只在用户点击后开始", async () => {
   history.replaceState(null, "", "/create?production=p1");
-  vi.mocked(api.getLatestBuild).mockResolvedValue({ ...build, status: "failed", error: "浏览器验收未通过", projectId: "p1" });
+  const queued = { ...build, id: "b2", status: "queued", error: null, projectId: "p1", steps: [{ ...build.steps[0], status: "pending" }] };
+  // 点击前读到的是失败记录；点击后服务端返回新排队的构建，后续轮询也读到它。
+  vi.mocked(api.getLatestBuild).mockResolvedValueOnce({ ...build, status: "failed", error: "浏览器验收未通过", projectId: "p1" }).mockResolvedValue(queued);
+  vi.mocked(api.startBuild).mockResolvedValue(queued);
   render(<AutomaticProduction draft={INITIAL_DRAFT} />);
   await screen.findByText(/查看已保存的项目/);
   expect(screen.queryByRole("button", { name: "用同一方案重新制作" })).not.toBeInTheDocument();
+  expect(api.startBuild).not.toHaveBeenCalled();
+  screen.getByRole("button", { name: "重新制作这个游戏" }).click();
+  await screen.findAllByText(/正在排队制作|正在等待服务端响应|服务端正在处理/);
+  expect(api.startBuild).toHaveBeenCalledTimes(1);
+  expect(api.startBuild).toHaveBeenCalledWith("p1");
+  expect(api.submitProduction).not.toHaveBeenCalled();
+  expect(screen.queryByRole("button", { name: "重新制作这个游戏" })).not.toBeInTheDocument();
 });

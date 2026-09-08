@@ -373,6 +373,8 @@ export const buildStepSchema = z.object({
   kind: z.enum(["analyze", "document", "code", "asset", "test", "delivery"]),
   title: z.string(),
   detail: z.string(),
+  /** 运行中步骤正在生成的内容片段（如代码尾部），仅供页面流式展示，不是产物。 */
+  excerpt: z.string().nullable().optional(),
   status: z.enum(["pending", "running", "succeeded", "failed"]),
   output: z.string().nullable(),
   startedAt: z.string().nullable(),

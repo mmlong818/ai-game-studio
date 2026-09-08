@@ -143,8 +143,10 @@ describe("creation workbench", () => {
     await waitFor(() => expect(screen.getByRole("button", { name: "确认方案，开始制作" })).toBeEnabled(), { timeout: 3000 });
     await user.click(screen.getByRole("button", { name: "确认方案，开始制作" }));
 
-    expect(screen.getByRole("heading", { name: "把想法做出来。" })).toBeInTheDocument();
+    // 制作页是左游戏位、右进度面板的工作台：面板里有"当前进展"摘要与制作进度区域。
+    expect(screen.getByText("当前进展")).toBeInTheDocument();
     expect(screen.getByRole("region", { name: "自动制作进度" })).toBeInTheDocument();
+    expect(screen.getByRole("region", { name: "游戏预览" })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "AI 资源" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "设备预览" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "质量证据" })).not.toBeInTheDocument();

@@ -35,12 +35,17 @@ const nonRealtimeOnboardingTemplates: readonly NonRealtimeOnboardingTemplate[] =
 import type { ResourceFamily } from "../shared/resource-library/index.js";
 
 const wait = (milliseconds: number) => new Promise((resolve) => setTimeout(resolve, milliseconds));
+/** 默认修正轮数：验收或审核没过就带原因再改，改到通过为止；6 轮仍不过视为巨大消耗，停止并交给用户决定。 */
+export const DEFAULT_REPAIR_ROUNDS = 6;
+/** 每一外层轮最多含 3 次安全子请求，请求预算据此推算，作为消耗硬上限。 */
+const REQUESTS_PER_ROUND = 3;
 
 export class BuildOrchestrator {
   private readonly pendingBuildIds: string[] = [];
   private readonly enqueuedBuildIds = new Set<string>();
   private activeBuildCount = 0;
   private readonly maxConcurrentBuilds: number;
+  private readonly maxRepairRounds: number;
 
   constructor(
     private readonly repository: StudioRepository,
@@ -52,9 +57,12 @@ export class BuildOrchestrator {
       codeGenerator?: GameCodeGenerator;
       maxConcurrentBuilds?: number;
       resourceFamilies?: ResourceFamily[];
+      /** 一次制作里允许的代码生成轮数（首轮 + 针对验收/审核问题的修正轮）。质量问题在上限内自动修正；网络阻断、远端故障不受此数控制，立即停止。 */
+      maxRepairRounds?: number;
     } = {},
   ) {
     this.maxConcurrentBuilds = Math.max(1, options.maxConcurrentBuilds ?? 2);
+    this.maxRepairRounds = Math.max(1, options.maxRepairRounds ?? DEFAULT_REPAIR_ROUNDS);
   }
 
   async start(projectId: string, revision?: { requestId: string; content: string }): Promise<Build> {
@@ -201,8 +209,8 @@ export class BuildOrchestrator {
         if (!art) throw new Error("资源步骤没有完成，未继续生成代码。");
         const codeSummary = await (async (): Promise<string> => {
           if (project.spec.template === "generated") {
-            const experimental = await this.generateExperimentalGame(project, root, directions, detail =>
-              this.repository.reportStepProgress(buildId, sequence, detail).catch(error => {
+            const experimental = await this.generateExperimentalGame(project, root, directions, (detail, excerpt) =>
+              this.repository.reportStepProgress(buildId, sequence, detail, excerpt ?? null).catch(error => {
                 // Reporting trouble must never be mistaken for defective code and trigger paid regeneration.
                 console.warn(`构建 ${buildId} 进度写入暂时失败：`, error);
               }));
@@ -409,7 +417,7 @@ export class BuildOrchestrator {
    * 契约失败或规则未实现都会把原因喂回模型再生成一轮;两轮后契约仍失败则构建失败,
    * 规则仍有未实现的如实记录到 RULE_FIDELITY.json,不静默美化。
    */
-  private async generateExperimentalGame(project: ProjectDetail, root: string, directions: string[], report: (detail: string) => Promise<void> = async () => {}) {
+  private async generateExperimentalGame(project: ProjectDetail, root: string, directions: string[], report: (detail: string, excerpt?: string | null) => Promise<void> = async () => {}) {
     const generator = this.options.codeGenerator;
     if (!generator) throw new Error("实验通道未启用：服务端没有配置玩法代码生成器。");
     let previous: PreviousGeneration | null = null;
@@ -439,9 +447,10 @@ export class BuildOrchestrator {
       if (html) previous = { html, directions };
     }
     let feedback: string[] = [];
-    const initialReport = (detail: string) => report(`${previous ? "第 1 次制作 · 沿用已有版本修改" : "第 1 次制作 · 初次生成"}：${detail}`);
-    const repairReport = (detail: string) => report(`第 2 次制作 · 针对验收问题修正：${detail}`);
-    const requestBudget = new GenerationBudget(3);
+    const initialReport = (detail: string, excerpt?: string | null) => report(`${previous ? "第 1 次制作 · 沿用已有版本修改" : "第 1 次制作 · 初次生成"}：${detail}`, excerpt);
+    const repairReport = (round: number) => (detail: string, excerpt?: string | null) => report(`第 ${round} 次制作 · 针对验收问题修正：${detail}`, excerpt);
+    const maxRounds = this.maxRepairRounds;
+    const requestBudget = new GenerationBudget(maxRounds * REQUESTS_PER_ROUND);
     const recordAttempt = (round: number, phase: string, reasons: string[]) => {
       if (!existsSync(root)) return;
       mkdirSync(join(root, "_studio"), { recursive: true });
@@ -459,20 +468,25 @@ export class BuildOrchestrator {
         inspectGeneratedArtifact(root, { requireAiArt: false, expectedCampaign: project.spec.designProfile.generatedCampaign ?? null, expectedBlueprint: project.spec.designProfile.generatedBlueprint ?? null });
         if (this.options.browserAudit !== false) {
           await report(`第 ${round} 次制作：正在真实浏览器中检查操作、教学、关卡与结算`);
-          await inspectGeneratedGameInBrowser(root, { expectedCampaign: project.spec.designProfile.generatedCampaign ?? null });
+          await inspectGeneratedGameInBrowser(root, {
+            expectedCampaign: project.spec.designProfile.generatedCampaign ?? null,
+            onProgress: message => report(`第 ${round} 次制作：${message}`),
+          });
         }
       } catch (error) {
         const reason = error instanceof Error ? error.message : String(error);
         recordAttempt(round, error instanceof ArtifactValidationFailure ? "artifact-rejected" : "infrastructure-error", [reason]);
         if (!(error instanceof ArtifactValidationFailure)) throw new Error(`验收服务未能完成检查，已停止自动付费修复：${reason}`);
-        if (round >= 2) throw new Error(`生成代码两轮均未通过产物契约验收：${reason}`);
-        await report("首次验收发现问题，正在进行第 2 次针对性修复");
-        generation = await generator.generate(project, [reason], { html: generation.html, directions: [...directions, reason] }, repairReport, requestBudget);
+        // 质量问题不是停下的理由：带着验收原因继续修，直到通过或达到本次制作的消耗上限。
+        if (round >= maxRounds) throw new Error(`连续 ${round} 轮生成代码均未通过产物契约验收，已达本次制作的修正上限，停止以免无限消耗：${reason}`);
+        await report(`第 ${round} 次验收发现问题，正在进行第 ${round + 1} 次针对性修复（最多 ${maxRounds} 次）`);
+        generation = await generator.generate(project, [reason], { html: generation.html, directions: [...directions, reason] }, repairReport(round + 1), requestBudget);
         writeGeneratedArtifact(root, project, generation);
         continue;
       }
       if (this.options.browserAudit === false) return { generation, audit: null, iterated: previous !== null };
-      await report(`第 ${round} 次制作：正在逐条核对方案规则是否在代码中实现`);
+      const ruleCount = safeContractRules(project.spec.designProfile)?.length;
+      await report(`第 ${round} 次制作：正在逐条核对${ruleCount ? ` ${ruleCount} 条` : ""}方案规则是否在代码中实现（模型审核，通常需要 1–3 分钟）`);
       // 复用代码且规则清单未变时，同一份源码的已通过审核回执可以复用；审核模型只在代码或规则变化时付费调用。
       const rules = this.options.designContracts ? safeContractRules(project.spec.designProfile) : null;
       const reusedAudit = reusable && round === 1 && reusableSourceBuildId && rules && generation.html === reusable.html
@@ -486,10 +500,10 @@ export class BuildOrchestrator {
       const missing = audit?.filter((verdict) => !verdict.implemented) ?? [];
       recordAttempt(round, reusedAudit ? "rule-audit-reused" : audit ? "rule-audit" : "rule-audit-unavailable", reusedAudit ? [`复用构建 ${reusedAuditFrom} 的规则审核`] : missing.map(verdict => `${verdict.rule}：${verdict.evidence}`));
       if (this.options.designContracts && (!audit || !audit.length)) throw new Error("规则审核未返回完整结果，已保留代码并停止后续生图及交付；不会因审核服务故障自动重新生成代码。");
-      if (missing.length > 0 && round < 2) {
+      if (missing.length > 0 && round < maxRounds) {
         feedback = missing.map((verdict) => `规则审计判定未实现:${verdict.rule}——${verdict.evidence}`);
-        await report(`规则审核发现 ${missing.length} 项待修复，正在进行第 2 次针对性修复`);
-        generation = await generator.generate(project, feedback, { html: generation.html, directions: [...directions, ...feedback] }, repairReport, requestBudget);
+        await report(`规则审核发现 ${missing.length} 项待修复，正在进行第 ${round + 1} 次针对性修复（最多 ${maxRounds} 次）`);
+        generation = await generator.generate(project, feedback, { html: generation.html, directions: [...directions, ...feedback] }, repairReport(round + 1), requestBudget);
         writeGeneratedArtifact(root, project, generation);
         continue;
       }
@@ -498,7 +512,7 @@ export class BuildOrchestrator {
         const reconstructed = existsSync(root) ? readGeneratedSource(root) : null;
         writeRuleFidelity(root, { verdicts: audit, ...(reconstructed ? { sourceSha256: sha256(reconstructed) } : {}), ...(reusedAuditFrom ? { reusedFromBuildId: reusedAuditFrom } : {}) });
       }
-      if (missing.length) throw new Error(`规则审核仍有 ${missing.length} 项未落实，已停止后续生图及交付：${missing.map(item => item.rule).join("；")}`);
+      if (missing.length) throw new Error(`${round} 轮修正后规则审核仍有 ${missing.length} 项未落实，已达本次制作的修正上限，停止后续生图及交付：${missing.map(item => item.rule).join("；")}`);
       return { generation, audit, iterated: previous !== null, auditReusedFrom: reusedAuditFrom };
     }
   }

@@ -140,3 +140,12 @@ body:has(.studio-app) .app-header button { color: var(--text); background: var(-
   .private-game-preview iframe { border-radius: 0; }
   .production-status-page .review-main { padding: 16px 8px; }
 }
+
+/* 流式进展片段：等宽、只留尾部几行、光标闪动，表明内容仍在增长。 */
+.live-excerpt { margin: 4px 0 12px; padding: 12px 14px; background: var(--surface); border-left: 3px solid var(--accent); border-radius: 6px; max-width: 72ch; }
+.live-excerpt figcaption { display: flex; flex-wrap: wrap; gap: 4px 12px; align-items: baseline; margin-bottom: 8px; font-size: 12px; font-weight: 600; color: var(--ink); }
+.live-excerpt figcaption small { font-weight: 400; color: var(--ink-muted); }
+.live-excerpt pre { margin: 0; font: 12px/1.6 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; white-space: pre-wrap; overflow-wrap: anywhere; max-height: 7.2em; overflow: hidden; color: var(--ink-soft, var(--ink)); }
+.live-caret { display: inline-block; width: 2px; height: 1em; margin-left: 2px; vertical-align: -0.15em; background: var(--accent); animation: live-caret-blink 1s steps(1) infinite; }
+@keyframes live-caret-blink { 50% { opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { .live-caret { animation: none; } }

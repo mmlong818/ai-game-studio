@@ -126,11 +126,19 @@ export interface DynamicArtEntry {
  * 因此代码生成时这些位图已经存在，可以直接绘制而不是用程序化图形自绘。
  * 同批主体共享一个风格锚点，避免几张图各自为政。
  */
-function blueprintSpritePlan(project: ProjectDetail): Array<Omit<DynamicArtEntry, "bytes">> {
+export function blueprintSpriteSet(project: ProjectDetail): SpriteSetSpec | null {
   const blueprint = project.spec.template === "generated" ? project.spec.designProfile.generatedBlueprint : undefined;
-  if (!blueprint) return [];
-  const anchor = `这是同一款游戏的一套局内主体位图之一，共 ${blueprint.sprites.length} 张：全部共用相同的笔触、描边语言、光照方向与配色体系，彼此并排出现时必须像同一位美术在同一天画的；每张只画本条描述的单一主体`;
-  return blueprint.sprites.map(spec => ({ file: spec.file, role: spec.role, prompt: roleBitmapPrompt(project, spec, anchor) }));
+  if (!blueprint) return null;
+  return {
+    anchor: `这是同一款游戏的一套局内主体位图之一，共 ${blueprint.sprites.length} 张：全部共用相同的笔触、描边语言、光照方向与配色体系，彼此并排出现时必须像同一位美术在同一天画的；每张只画本条描述的单一主体`,
+    entries: blueprint.sprites.map(({ file, role, hint }) => ({ file, role, hint })),
+  };
+}
+
+function blueprintSpritePlan(project: ProjectDetail): Array<Omit<DynamicArtEntry, "bytes">> {
+  const set = blueprintSpriteSet(project);
+  if (!set) return [];
+  return set.entries.map(spec => ({ file: spec.file, role: spec.role, prompt: roleBitmapPrompt(project, spec, set.anchor) }));
 }
 
 export function dynamicArtPlan(project: ProjectDetail): Array<Omit<DynamicArtEntry, "bytes">> {
@@ -218,8 +226,24 @@ export class CoverArtGenerator {
           ? { file: spec.file, role: spec.role, bytes, prompt: roleBitmapPrompt(project, spec) }
           : null)),
     ];
-    const [singles, spriteSet] = await Promise.all([Promise.all(jobs), this.generateSpriteSet(project)]);
-    return [...singles.filter((entry): entry is DynamicArtEntry => entry !== null), ...spriteSet];
+    // 蓝图声明的局内主体必须真的生成；只进入计划而不生成会让每一次生成游戏的资源步骤必定中断。
+    const blueprintSet = blueprintSpriteSet(project);
+    const [singles, spriteSet, blueprintSprites] = await Promise.all([
+      Promise.all(jobs),
+      this.generateSpriteSet(project),
+      blueprintSet
+        ? Promise.all(blueprintSet.entries.map(async (spec) => {
+            const bytes = await this.generateRoleBitmap(project, spec, blueprintSet.anchor);
+            return bytes ? { file: spec.file, role: spec.role, bytes, prompt: roleBitmapPrompt(project, spec, blueprintSet.anchor) } : null;
+          }))
+        : Promise.resolve([]),
+    ]);
+    // 顺序必须与 dynamicArtPlan 一致：图像检查点按下标比对计划与产物。
+    return [
+      ...singles.filter((entry): entry is DynamicArtEntry => entry !== null),
+      ...spriteSet,
+      ...blueprintSprites.filter((entry): entry is DynamicArtEntry => entry !== null),
+    ];
   }
 
   private async tryImage(label: string, request: { prompt: string; size: ImageSize; transparent?: boolean }): Promise<Buffer | null> {
