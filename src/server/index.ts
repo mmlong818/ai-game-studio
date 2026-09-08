@@ -11,7 +11,7 @@ import { createResourcePlanningForGameSpec } from "../shared/resource-planning/i
 import { AccessControl } from "./access-control.js";
 import { openDatabase } from "./database.js";
 import { acquireRuntimeOwnership } from "./runtime-ownership.js";
-import { BuildOrchestrator } from "./build-orchestrator.js";
+import { BuildOrchestrator, DEFAULT_REPAIR_ROUNDS } from "./build-orchestrator.js";
 import { ProductionJobs } from "./production-jobs.js";
 import { resolveCreationDesign } from "./creation-design.js";
 import { DesignContractGenerator } from "./design-contract.js";
@@ -82,6 +82,8 @@ const orchestrator = new BuildOrchestrator(repository, artifactRoot, {
   codeGenerator,
   resourceFamilies,
   maxConcurrentBuilds: Number.parseInt(process.env.BUILD_CONCURRENCY ?? "2", 10) || 2,
+  // 质量问题自动修正的轮数上限；网络阻断与远端故障不受此数控制。
+  maxRepairRounds: Number.parseInt(process.env.STUDIO_MAX_REPAIR_ROUNDS ?? "", 10) || DEFAULT_REPAIR_ROUNDS,
 });
 const accessControl = new AccessControl(process.env.STUDIO_ACCESS_TOKEN?.trim() || null, undefined, process.env.STUDIO_REVIEW_TOKEN?.trim() || null);
 const researchPrototypes = new ResearchPrototypeService(repository, researchPrototypeRoot, publicGameOrigin, undefined, promotedResourceRoot);
@@ -410,7 +412,7 @@ async function handleApi(request: IncomingMessage, response: ServerResponse, pat
     }
     const profile = await previewDesignContracts.generate(input, null, [
       "这是用户确认前的实时游戏策划。根据本次描述设计具体玩法，不要返回通用套话。使用普通人能懂的中文，说明实际操作、目标、新手引导、递进与成功反馈。用户未明确的细节给出合理且操作简单的建议。灵感仅是输入，不是固定方案。",
-    ], streaming ? text => emit({ type: "delta", text }) : undefined);
+    ], streaming ? text => emit({ type: "delta", text }) : undefined, streaming ? () => emit({ type: "reset" }) : undefined);
     if (streaming) {
       emit(profile ? { type: "done", profile, source: "llm" } : { type: "error", error: "模型输出未完成或未通过检查，请检查模型设置后重试；当前片段不能用于制作。" });
       response.end();

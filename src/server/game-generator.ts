@@ -86,7 +86,7 @@ function runtimeContract(is3d: boolean, campaign?: unknown, blueprint?: Generate
   const endless = resolveGeneratedCampaign(campaign).mode === "endless";
   return [
     "1. 状态机:document.body.dataset.gameState 只能取 idle/playing/won/lost;每次变化后必须 dispatchEvent(new CustomEvent(\"game:state-change\", { detail: { state } }))(在 window 上派发)。",
-    "2. 开始与重开:idle 态必须有 id=\"start\" 的开始按钮(至少 44x44px);游戏中与结算后必须有 id=\"restart\" 的重新开始按钮,点击后回到 idle 或直接开始新局。胜利结算必须按内容撑开容器或使用独立可滚动面板，不得被棋盘的固定高度或overflow:hidden裁切；手机最终关的标题、成绩与下一关/重玩按钮必须完整可见。",
+    "2. 开始与重开:idle 态必须有 id=\"start\" 的开始按钮(至少 44x44px),且在 360x640 的手机首屏内必须完整可见,不需要滚动就能按到;游戏中与结算后必须有 id=\"restart\" 的重新开始按钮,点击后回到 idle 或直接开始新局。结算面板出现时 #restart 必须仍然可以直接点击:要么把 #restart 放进结算面板内部,要么让结算遮罩不拦截它的指针事件——被遮罩盖住的 #restart 判为不合格。胜利结算必须按内容撑开容器或使用独立可滚动面板，不得被棋盘的固定高度或overflow:hidden裁切；手机最终关的标题、成绩与下一关/重玩按钮必须完整可见。",
     `3. 探针钩子:仅probe参数存在时挂载 __GAME_DEBUG__，提供getState/restart${endless ? "；无限玩法不实现forceWin，禁止产生won状态" : "/forceWin"}${failureAllowed ? "/forceLose" : "；不要求也不应实现forceLose，禁止产生lost状态，配错或操作失误后仍可继续"}；probe参数不存在时绝不挂载。`,
     "4. 输入:键盘与触控/指针都能完成全部操作;触控目标不小于 44x44px;禁止依赖悬停。",
     "5. 布局:必须有 <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">;在 360px 宽的手机与桌面上都不得出现横向滚动;主游戏区域使用 id=\"game-canvas\" 的 <canvas> 或等价交互区。",
@@ -121,6 +121,26 @@ const responseJsonSchema = {
     design_notes: { type: "string", description: "实现说明:规则如何映射到代码、难度如何递进、已知取舍,不超过 400 字" },
   },
 } as const;
+
+export interface GenerationProgress { phase: string; excerpt: string }
+
+/**
+ * 把流式收到的 JSON 片段（{"html": "..."} 的转义文本）变成能给玩家看的进展：
+ * 当前写到哪一部分，以及解码后的最后几行代码。只用于制作页流式展示，不参与产物。
+ */
+export function describeGenerationProgress(content: string): GenerationProgress {
+  const tail = content.slice(-900)
+    .replace(/\\u([0-9a-fA-F]{4})/g, (_, hex) => String.fromCharCode(Number.parseInt(hex, 16)))
+    .replace(/\\n/g, "\n").replace(/\\t/g, "  ").replace(/\\r/g, "").replace(/\\"/g, '"').replace(/\\\//g, "/").replace(/\\\\/g, "\\");
+  const lines = tail.split("\n").map(line => line.trimEnd()).filter(line => line.trim().length > 0);
+  const excerpt = lines.slice(-4).join("\n").slice(-260);
+  const phase = /"design_notes"\s*:/.test(content.slice(-4000)) ? "正在写实现说明"
+    : /<script[\s>]/i.test(content) && !/<\/script>/i.test(content) ? "正在写游戏逻辑"
+    : /<style[\s>]/i.test(content) && !/<\/style>/i.test(content) ? "正在写界面样式"
+    : /<body[\s>]/i.test(content) ? "正在写界面结构"
+    : "正在写页面骨架";
+  return { phase, excerpt };
+}
 
 export interface PreviousGeneration {
   html: string;
@@ -215,7 +235,7 @@ export class GameCodeGenerator {
    * previous 传入上一版代码与修改意见时走迭代模式(增量修改而非重写)。
    * 扫描不通过会带违规原因重试,MAX_GENERATION_ROUNDS 轮后仍失败则抛错(构建失败,不静默兜底)。
    */
-  async generate(project: ProjectDetail, feedback: string[] = [], previous: PreviousGeneration | null = null, report: (detail: string) => Promise<void> = async () => {}, budget = new GenerationBudget()): Promise<GeneratedGame> {
+  async generate(project: ProjectDetail, feedback: string[] = [], previous: PreviousGeneration | null = null, report: (detail: string, excerpt?: string | null) => Promise<void> = async () => {}, budget = new GenerationBudget()): Promise<GeneratedGame> {
     const apiKey = this.settings.getApiKey();
     if (!apiKey) throw new Error("实验通道需要配置 OpenAI 密钥才能生成玩法代码。");
     let pendingFeedback = [...feedback];
@@ -225,7 +245,7 @@ export class GameCodeGenerator {
       const reserved = budget.reserve();
       await report(`本任务代码生成请求额度：${reserved}/${budget.limit}；达到上限后停止自动修复。`);
       await report(`正在生成游戏代码，第 ${round} 轮（最多 ${MAX_GENERATION_ROUNDS} 轮安全修正），等待模型输出`);
-      const answer = await this.requestGame(project, pendingFeedback, repairBase, apiKey, async count => report(`正在生成游戏代码，第 ${round} 轮，已收到 ${count.toLocaleString("zh-CN")} 个字符`));
+      const answer = await this.requestGame(project, pendingFeedback, repairBase, apiKey, async (count, progress) => report(`正在生成游戏代码，第 ${round} 轮 · ${progress?.phase ?? "正在写页面骨架"} · 已收到 ${count.toLocaleString("zh-CN")} 个字符`, progress?.excerpt || null));
       await report(`第 ${round} 轮输出已接收，正在进行代码安全检查`);
       const violations = scanGeneratedHtml(answer.html, { allowThreeModule: project.spec.runtimeTarget === "web-3d" });
       if (violations.length === 0) {
@@ -238,7 +258,7 @@ export class GameCodeGenerator {
     throw new Error(`生成代码连续 ${MAX_GENERATION_ROUNDS} 轮未通过安全扫描:${lastViolations.join(";")}`);
   }
 
-  private async requestGame(project: ProjectDetail, feedback: string[], previous: PreviousGeneration | null, apiKey: string, onProgress: (count: number) => Promise<void>): Promise<z.infer<typeof answerSchema>> {
+  private async requestGame(project: ProjectDetail, feedback: string[], previous: PreviousGeneration | null, apiKey: string, onProgress: (count: number, progress?: GenerationProgress) => Promise<void>): Promise<z.infer<typeof answerSchema>> {
     let lastError: unknown = null;
     for (let attempt = 1; attempt <= MAX_NETWORK_ATTEMPTS; attempt += 1) {
       const controller = new AbortController();
@@ -282,17 +302,19 @@ export class GameCodeGenerator {
             const data = line.slice(5).trim();
             if (data === "[DONE]") { completed = true; break; }
             const event = JSON.parse(data);
-            if (event.error) throw new Error("模型代码流返回错误，未自动重试。");
+            if (event.error) throw new Error(`模型代码流返回错误，未自动重试：${typeof event.error?.message === "string" ? event.error.message : "未说明原因"}`);
+            // 提供方撤回此前增量（结构化输出被校验拒绝后重写）时从头累积，避免两次尝试拼接成坏 JSON。
+            if (event.reset) { content = ""; continue; }
             const choice = event.choices?.[0];
             if (choice?.delta?.refusal) throw new Error("模型拒绝生成本次代码。");
             if (choice?.finish_reason && choice.finish_reason !== "stop") throw new Error(`代码输出未完整结束（${choice.finish_reason}），未自动重试。`);
             if (typeof choice?.delta?.content === "string") {
               content += choice.delta.content;
-              if (Date.now() - lastReport >= 1500) { await onProgress(content.length); lastReport = Date.now(); }
+              if (Date.now() - lastReport >= 1500) { await onProgress(content.length, describeGenerationProgress(content)); lastReport = Date.now(); }
             }
           }
           if (!completed) throw new Error("代码输出流中断，未自动重新发起付费生成。");
-          await onProgress(content.length);
+          await onProgress(content.length, describeGenerationProgress(content));
           return answerSchema.parse(JSON.parse(content));
         }
         // OpenAI-compatible providers may still return a complete JSON response.
@@ -361,7 +383,7 @@ const generatedOnboardingStyles = `
 `;
 
 const generatedDesignStyles = `
-.forge-assistance{position:fixed;z-index:2147483001;left:50%;bottom:16px;display:grid;width:min(420px,calc(100vw - 32px));transform:translateX(-50%);gap:6px;padding:14px 15px;border:1px solid rgba(255,196,105,.55);border-radius:14px;background:rgba(20,22,30,.96);color:#fff;box-shadow:0 18px 54px rgba(0,0,0,.48);font:13px/1.45 system-ui,"Microsoft YaHei",sans-serif;backdrop-filter:blur(12px)}.forge-assistance[hidden]{display:none!important}.forge-assistance>span{color:#ffc469;font-size:10px;font-weight:800;letter-spacing:.12em}.forge-assistance strong{font-size:14px}.forge-assistance p,.forge-assistance small{margin:0}.forge-assistance small{color:#cbd1dc}.forge-assistance[data-action="highlight-rule"]{box-shadow:inset 4px 0 #ffc469,0 18px 54px rgba(0,0,0,.48)}@media(max-width:520px){.forge-assistance{bottom:8px;width:calc(100vw - 16px);padding:12px}}
+.forge-assistance{position:fixed;z-index:2147483001;left:50%;bottom:16px;display:grid;width:min(420px,calc(100vw - 32px));transform:translateX(-50%);gap:6px;padding:14px 15px;border:1px solid rgba(255,196,105,.55);border-radius:14px;background:rgba(20,22,30,.96);color:#fff;box-shadow:0 18px 54px rgba(0,0,0,.48);font:13px/1.45 system-ui,"Microsoft YaHei",sans-serif;backdrop-filter:blur(12px)}.forge-assistance{pointer-events:none}.forge-assistance[hidden]{display:none!important}.forge-assistance button{pointer-events:auto;justify-self:end;min-height:36px;padding:0 14px;border:1px solid rgba(255,196,105,.6);border-radius:999px;background:transparent;color:#ffc469;font:inherit;font-weight:700;cursor:pointer}.forge-assistance button:focus-visible{outline:2px solid #ffc469;outline-offset:2px}.forge-assistance>span{color:#ffc469;font-size:10px;font-weight:800;letter-spacing:.12em}.forge-assistance strong{font-size:14px}.forge-assistance p,.forge-assistance small{margin:0}.forge-assistance small{color:#cbd1dc}.forge-assistance[data-action="highlight-rule"]{box-shadow:inset 4px 0 #ffc469,0 18px 54px rgba(0,0,0,.48)}@media(max-width:520px){.forge-assistance{bottom:8px;width:calc(100vw - 16px);padding:12px}}
 `;
 
 function generatedDesignPlatformScript(
@@ -375,13 +397,16 @@ const forgeAssistanceStorageKey = ${JSON.stringify(storageKey)};
 let forgeAssistanceState = { schemaVersion: "failure-assistance-state-v1", consecutiveFailuresByLevel: {}, active: null };
 const forgeAssistanceHost = document.createElement("aside");
 forgeAssistanceHost.className = "forge-assistance"; forgeAssistanceHost.hidden = true; forgeAssistanceHost.setAttribute("aria-live", "polite");
-forgeAssistanceHost.innerHTML = '<span>失败后帮助</span><strong data-forge-assistance-title></strong><p data-forge-assistance-message></p><small data-forge-assistance-meta></small>';
+forgeAssistanceHost.innerHTML = '<span>失败后帮助</span><strong data-forge-assistance-title></strong><p data-forge-assistance-message></p><small data-forge-assistance-meta></small><button type="button" data-forge-assistance-dismiss>知道了</button>';
 document.body.append(forgeAssistanceHost);
+// 帮助只在失败当下显示：玩家点“知道了”或重新开始进入 playing 就收起；失败计数与升级仍然保留并持久化。
+let forgeAssistanceCollapsed = true;
+forgeAssistanceHost.querySelector("[data-forge-assistance-dismiss]").addEventListener("click", () => { forgeAssistanceCollapsed = true; forgeRenderAssistance(); });
 const forgeAssistanceLabels = { "explain-cause": "先说明原因", "highlight-rule": "突出相关规则", "directional-hint": "给一个方向提示", "show-step": "演示下一步", checkpoint: "从检查点继续", "lower-one-dimension": "明确降低一项难度" };
 function forgeGeneratedLevelKey() { return String(window.__GAME_DEBUG__?.getState?.()?.level || 1); }
 function forgeSaveAssistance() { try { safeStorage.setItem(forgeAssistanceStorageKey, JSON.stringify(forgeAssistanceState)); } catch {} }
 function forgeRenderAssistance() {
-  const active = forgeAssistanceState.active; forgeAssistanceHost.hidden = !active;
+  const active = forgeAssistanceState.active; forgeAssistanceHost.hidden = !active || forgeAssistanceCollapsed;
   if (!active) return;
   forgeAssistanceHost.dataset.action = active.action;
   forgeAssistanceHost.querySelector("[data-forge-assistance-title]").textContent = forgeAssistanceLabels[active.action] || "失败后帮助";
@@ -398,6 +423,7 @@ function forgeRecordFailure(cause) {
   forgeAssistanceState.consecutiveFailuresByLevel[levelKey] = failureCount;
   const step = [...forgeAssistancePlan.steps].filter((item) => item.afterFailures <= failureCount).at(-1) || null;
   forgeAssistanceState.active = step ? { ...step, failureCount, cause: String(cause || "本局目标未完成") } : null;
+  forgeAssistanceCollapsed = false;
   forgeSaveAssistance(); forgeRenderAssistance();
   if (forgeAssistanceState.active) dispatchEvent(new CustomEvent("forge:assistance-shown", { detail: structuredClone(forgeAssistanceState.active) }));
 }
@@ -405,6 +431,7 @@ function forgeResetAssistance() { delete forgeAssistanceState.consecutiveFailure
 window.__FORGE_DESIGN__ = Object.freeze({ assistancePlan: forgeAssistancePlan, getAssistance: () => structuredClone(forgeAssistanceState) });
 addEventListener("game:state-change", (event) => queueMicrotask(() => {
   if (event.detail?.state === "lost") forgeRecordFailure(window.__GAME_DEBUG__?.getState?.()?.failureReason || "未提供具体失败原因");
+  if (event.detail?.state === "playing") { forgeAssistanceCollapsed = true; forgeRenderAssistance(); }
   if (event.detail?.state === "won") forgeResetAssistance();
 }));
 forgeLoadAssistance();

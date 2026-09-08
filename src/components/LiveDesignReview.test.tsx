@@ -22,7 +22,8 @@ it("显示模型结果并提交同一方案，修改描述立即禁用旧方案"
   expect(confirm.mock.calls[0][0]).toContain(profile.playerFantasy);
   expect(confirm.mock.calls[0][1]).toEqual(profile);
   expect(confirm.mock.calls[0][2]).toBe(draft.newGameBrief);
-  expect(generateDesignPreview).toHaveBeenCalledWith(expect.objectContaining({ idea: draft.newGameBrief, template: "generated" }), expect.any(AbortSignal), expect.any(Function));
+  // 第四个参数是预览被服务端撤回时清空半截文本的回调。
+  expect(generateDesignPreview).toHaveBeenCalledWith(expect.objectContaining({ idea: draft.newGameBrief, template: "generated" }), expect.any(AbortSignal), expect.any(Function), expect.any(Function));
   view.rerender(<LiveDesignReview draft={{ ...draft, newGameBrief: "在水下探索珊瑚城，收集珍珠并躲避鲨鱼" }} onBack={vi.fn()} onConfirm={confirm} />);
   expect(screen.getByRole("button", { name: "确认方案，开始制作" })).toBeDisabled();
   expect(screen.queryByText(profile.playerFantasy)).not.toBeInTheDocument();

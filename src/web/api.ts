@@ -202,7 +202,7 @@ export async function getLatestBuild(projectId: string): Promise<Build | null> {
   return payload.build === null ? null : buildSchema.parse(payload.build);
 }
 
-export async function generateDesignPreview(input: ProjectInput, signal?: AbortSignal, onDelta?: (text: string) => void) {
+export async function generateDesignPreview(input: ProjectInput, signal?: AbortSignal, onDelta?: (text: string) => void, onReset?: () => void) {
   if (onDelta) {
     const token = accessToken();
     const response = await fetch("/api/design-preview", {
@@ -218,6 +218,7 @@ export async function generateDesignPreview(input: ProjectInput, signal?: AbortS
       if (!line.trim()) continue;
       const event = JSON.parse(line);
       if (event.type === "delta" && typeof event.text === "string") onDelta(event.text);
+      if (event.type === "reset") onReset?.();
       if (event.type === "error") throw new Error(event.error);
       if (event.type === "done") return gameDesignProfileSchema.parse(event.profile);
     }

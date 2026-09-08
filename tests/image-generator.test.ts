@@ -190,3 +190,32 @@ test("生成式游戏的局内主体进入图片计划，与背景同批生成�
   assert.ok(templatePlan.includes("assets/background.png"));
   assert.ok(!templatePlan.some(file => file === "assets/basket.png" || file === "assets/shell-scallop.png"));
 });
+
+test("生成式游戏的局内主体真的会被生成，产物与计划逐项一致", async () => {
+  const blueprint = {
+    mechanicIds: [MECHANIC_ATLAS[0].id],
+    modifierIds: [DESIGN_MODIFIERS[0].id],
+    coreDecision: "每次只能带走一枚贝壳，先救临浪的还是先凑同色。",
+    tension: "篮子格位有限，顺序错了稀有贝壳会被浪带走。",
+    masterySignal: "熟练玩家先清临浪区再凑色，用更少步数装满。",
+    sprites: [
+      { file: "assets/shell-scallop.png", role: "大扇贝", hint: "粉橙扇形贝壳，放射纹清晰" },
+      { file: "assets/basket.png", role: "竹篮", hint: "浅色编织竹篮，正面开口" },
+    ],
+  };
+  const spec = generateGameSpec({ idea: "海边捡贝壳装满竹篮，五关数量递增，不会失败。", template: "generated" });
+  const project = { id: "p-shell", title: "海边贝壳收集", spec: { ...spec, designProfile: { ...spec.designProfile, generatedBlueprint: blueprint } } } as unknown as ProjectDetail;
+  const prompts: string[] = [];
+  const generator = new CoverArtGenerator(new OpenAISettings(validKey), {
+    fetchImpl: async (_url, init) => {
+      prompts.push(String((JSON.parse(String(init?.body)) as { prompt: string }).prompt));
+      return imageResponse(pngBytes());
+    },
+  });
+  const entries = await generator.generateDynamicArt(project);
+  const plan = dynamicArtPlan(project);
+  // 图像检查点按下标比对计划与产物：文件、角色、提示词、顺序都必须一致。
+  assert.deepEqual(entries.map(({ file, role, prompt }) => ({ file, role, prompt })), plan);
+  assert.equal(prompts.length, plan.length, "蓝图声明的每张局内主体都要真的调用生图接口");
+  assert.ok(prompts.some(prompt => /大扇贝/.test(prompt) && /完全透明背景/.test(prompt)));
+});

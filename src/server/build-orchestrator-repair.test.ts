@@ -110,15 +110,40 @@ it("审核服务没有结果时停止交付，不重新付费生成代码", asyn
   expect(generate).toHaveBeenCalledTimes(1);
 });
 
-it("第二轮仍有未实现规则不能被当成可交付成果", async () => {
+it("到达修正轮上限仍有未实现规则不能被当成可交付成果，并说明是上限所致", async () => {
   const generate = vi.fn().mockResolvedValue(first);
   const auditRuleFidelity = vi.fn().mockResolvedValue([{ rule: "必须配对才得分", implemented: false, evidence: "点击就得分" }]);
   const root = mkdtempSync(join(tmpdir(), "rule-rejected-")); mkdirSync(join(root, "_studio"));
   try {
-    const orchestrator = new BuildOrchestrator({ recentReusableBuilds: async () => [] } as never, root, { codeGenerator: { generate } as never, designContracts: { auditRuleFidelity } as never });
+    const orchestrator = new BuildOrchestrator({ recentReusableBuilds: async () => [] } as never, root, { codeGenerator: { generate } as never, designContracts: { auditRuleFidelity } as never, maxRepairRounds: 2 });
     await expect((orchestrator as any).generateExperimentalGame(project, root, [])).rejects.toThrow("规则审核仍有 1 项未落实");
-    expect(generate).toHaveBeenCalledTimes(2);
+    await expect((orchestrator as any).generateExperimentalGame(project, root, [])).rejects.toThrow("修正上限");
+    expect(generate).toHaveBeenCalledTimes(4);
   } finally { if (dirname(root) === tmpdir()) rmSync(root, { recursive: true, force: true }); }
+});
+
+it("质量问题不交给用户重试：验收连续失败时带原因继续修正，直到通过", async () => {
+  vi.mocked(inspectGeneratedArtifact)
+    .mockImplementationOnce(() => { throw new ArtifactValidationFailure("开始按钮不在首屏"); })
+    .mockImplementationOnce(() => { throw new ArtifactValidationFailure("结算面板盖住重开按钮"); })
+    .mockImplementationOnce(() => { throw new ArtifactValidationFailure("教学第二步未完成"); });
+  const generate = vi.fn().mockResolvedValueOnce(first).mockResolvedValueOnce(first).mockResolvedValueOnce(first).mockResolvedValueOnce(repaired);
+  const report = vi.fn().mockResolvedValue(undefined);
+  const orchestrator = new BuildOrchestrator({ recentReusableBuilds: async () => [] } as never, "missing-test-artifact-root", { browserAudit: false, codeGenerator: { generate } as never });
+  const result = await (orchestrator as any).generateExperimentalGame(project, "unused-root", [], report);
+  expect(result.generation.html).toBe(repaired.html);
+  expect(generate).toHaveBeenCalledTimes(4);
+  expect(generate.mock.calls[3][1]).toEqual(["教学第二步未完成"]);
+  expect(report.mock.calls.map(call => call[0]).some((text: string) => text.includes("第 4 次针对性修复（最多 6 次）"))).toBe(true);
+});
+
+it("修正轮用尽仍未通过验收才停止，错误写明是上限而不是服务故障", async () => {
+  vi.mocked(inspectGeneratedArtifact).mockImplementation(() => { throw new ArtifactValidationFailure("横向溢出"); });
+  const generate = vi.fn().mockResolvedValue(first);
+  const orchestrator = new BuildOrchestrator({ recentReusableBuilds: async () => [] } as never, "missing-test-artifact-root", { browserAudit: false, codeGenerator: { generate }, maxRepairRounds: 3 } as never);
+  await expect((orchestrator as any).generateExperimentalGame(project, "unused-root", [])).rejects.toThrow("连续 3 轮生成代码均未通过产物契约验收，已达本次制作的修正上限");
+  expect(generate).toHaveBeenCalledTimes(3);
+  vi.mocked(inspectGeneratedArtifact).mockReset();
 });
 
 it("恢复同项目失败构建的完整代码与错误，不重新从空白制作", async () => {

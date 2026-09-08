@@ -118,6 +118,9 @@ const postgresSchema = `
     UNIQUE(build_id, sequence)
   );
 
+  -- 运行中的步骤可附带一段正在生成的内容片段，让制作页能流式展示进展。
+  ALTER TABLE build_steps ADD COLUMN IF NOT EXISTS live_excerpt TEXT;
+
   CREATE TABLE IF NOT EXISTS project_messages (
     id TEXT PRIMARY KEY,
     project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
@@ -320,7 +323,7 @@ const sqliteSchema = `
   );
   CREATE TABLE build_steps (
     id TEXT PRIMARY KEY, build_id TEXT NOT NULL REFERENCES builds(id) ON DELETE CASCADE,
-    sequence INTEGER NOT NULL, kind TEXT NOT NULL, title TEXT NOT NULL, detail TEXT NOT NULL,
+    sequence INTEGER NOT NULL, kind TEXT NOT NULL, title TEXT NOT NULL, detail TEXT NOT NULL, live_excerpt TEXT,
     status TEXT NOT NULL, output_text TEXT, started_at TEXT, completed_at TEXT,
     UNIQUE(build_id, sequence)
   );

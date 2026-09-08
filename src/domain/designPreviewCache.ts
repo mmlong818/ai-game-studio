@@ -29,6 +29,10 @@ export function getDesignPreview(input: ProjectInput, regenerate = false, onText
   const pending = generateDesignPreview(input, new AbortController().signal, delta => {
     entry.text += delta;
     for (const listener of listeners) listener(entry.text);
+  }, () => {
+    // 模型上一次输出被服务端校验拒绝并重写：已显示的半截内容作废。
+    entry.text = "";
+    for (const listener of listeners) listener("");
   });
   entry.pending = pending;
   entries.set(key, entry);

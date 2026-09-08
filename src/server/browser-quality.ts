@@ -2316,7 +2316,7 @@ async function monitorForbiddenLoss(page: Page, failures: string[], forbidden: "
   ` });
 }
 
-export async function inspectGeneratedGameInBrowser(root: string, options: { expectedCampaign?: unknown } = {}): Promise<BrowserQualityResult> {
+export async function inspectGeneratedGameInBrowser(root: string, options: { expectedCampaign?: unknown; onProgress?: (message: string) => void | Promise<void> } = {}): Promise<BrowserQualityResult> {
   const manifest = JSON.parse(readFileSync(join(root, "game-manifest.json"), "utf8"));
   const campaign = verifyGeneratedCampaign(manifest.generatedCampaign, options.expectedCampaign);
   const rehearsalLevel = Math.min(9, campaign.levelCount);
@@ -2364,6 +2364,9 @@ export async function inspectGeneratedGameInBrowser(root: string, options: { exp
       }
     }
     for (const viewport of generatedViewports) {
+      const viewportIndex = generatedViewports.indexOf(viewport) + 1;
+      // 进度只是给页面看的说明，写入失败不能影响验收结果。
+      void Promise.resolve(options.onProgress?.(`正在真实浏览器中检查第 ${viewportIndex}/${generatedViewports.length} 种画幅 ${viewport.name}（${viewport.width}×${viewport.height}）：加载、开局、教学、关卡、结算与重开`)).catch(() => {});
       const page = await browser.newPage({ viewport: { width: viewport.width, height: viewport.height } });
       const runtimeErrors: string[] = [];
       if (!failureAllowed) await monitorForbiddenLoss(page, runtimeErrors);
@@ -2546,8 +2549,11 @@ export async function inspectGeneratedGameInBrowser(root: string, options: { exp
             } else {
               assistanceReport = { checkedAt: new Date().toISOString(), status: "not-applicable", reason: "服务端确认方案禁止失败，不执行forceLose或连续失败帮助测试。" };
             }
-            await page.locator("#restart").click({ timeout: 3_000 });
-            if (await page.locator("body").getAttribute("data-game-state") === "idle") await page.locator("#start").click({ timeout: 3_000 });
+            // 被结算遮罩盖住的 #restart 是合同违规，必须变成可修正的判定，而不是让整轮验收异常中断。
+            await page.locator("#restart").click({ timeout: 3_000 })
+              .catch(async () => failures.push(`游戏中 #restart 无法点击:${await clickObstructionDiagnosis(page, "#restart")}。`));
+            if (await page.locator("body").getAttribute("data-game-state") === "idle") await page.locator("#start").click({ timeout: 3_000 })
+              .catch(async () => failures.push(`回到 idle 后 #start 无法点击:${await clickObstructionDiagnosis(page, "#start")}。`));
             await page.waitForFunction(() => document.body.dataset.gameState === "playing", undefined, { timeout: 5_000 });
             if (!endless) {
             if (memoryMatch && !campaign.legacy) {

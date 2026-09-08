@@ -17,3 +17,11 @@ export function WaitingActivity({ label, startedAt }: { label: string; startedAt
     </div>
   </div>;
 }
+
+/** 正在生成内容的尾部片段：让人看到制作在往前走，而不是只有计时。 */
+export function LiveExcerpt({ text, title = "正在写入的游戏代码" }: { text: string; title?: string }) {
+  return <figure className="live-excerpt" aria-live="off">
+    <figcaption>{title}<small>只显示最后几行，完整代码在制作完成后可查</small></figcaption>
+    <pre>{text}<i className="live-caret" aria-hidden="true" /></pre>
+  </figure>;
+}

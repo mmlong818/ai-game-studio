@@ -1,10 +1,11 @@
+import { LiveExcerpt } from "../components/WaitingActivity";
+import { BuildStageList } from "../components/BuildStageList";
 import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { ArtReviewHistory } from "./ArtReviewHistory";
 import {
   Activity,
   Archive,
   ArchiveRestore,
-  Braces,
   Check,
   CheckCircle2,
   Clock3,
@@ -12,16 +13,12 @@ import {
   Copy,
   ExternalLink,
   FileCheck2,
-  FileText,
-  FlaskConical,
   Globe2,
   History,
-  Image as ImageIcon,
   LoaderCircle,
   Maximize2,
   MessageSquareText,
   Monitor,
-  PackageCheck,
   Play,
   RefreshCw,
   Rocket,
@@ -32,7 +29,7 @@ import {
   UserRound,
   XCircle,
 } from "lucide-react";
-import { visualStyleOptions, type Build, type BuildStep, type IdeaAnalysis, type ProjectDetail, type ProjectMessage, type ProjectVersion } from "../shared/contracts";
+import { visualStyleOptions, type Build, type IdeaAnalysis, type ProjectDetail, type ProjectMessage, type ProjectVersion } from "../shared/contracts";
 import {
   archiveProject,
   getLatestBuild,
@@ -43,6 +40,7 @@ import {
   publishProject,
   publishProjectVersion,
   restoreProject,
+  startBuild,
 } from "./api";
 import { ModelSettingsButton } from "./ModelSettingsButton";
 import { RevisionComposer } from "./RevisionComposer";
@@ -62,31 +60,6 @@ const qualityLabelKeys = {
   passed: "studio.quality.passed",
   failed: "studio.quality.failed",
 } as const;
-
-const stepActionLabels: Record<BuildStep["kind"], string> = {
-  analyze: "ANALYZE",
-  document: "WRITE DOC",
-  code: "WRITE CODE",
-  asset: "GENERATE ASSET",
-  test: "RUN TEST",
-  delivery: "PACKAGE",
-};
-
-function StepIcon({ status }: { status: BuildStep["status"] }) {
-  if (status === "succeeded") return <CheckCircle2 size={16} aria-hidden="true" />;
-  if (status === "running") return <LoaderCircle className="spin" size={16} aria-hidden="true" />;
-  if (status === "failed") return <XCircle size={16} aria-hidden="true" />;
-  return <Clock3 size={16} aria-hidden="true" />;
-}
-
-function StepKindIcon({ kind }: { kind: BuildStep["kind"] }) {
-  if (kind === "analyze") return <ScanSearch size={15} aria-hidden="true" />;
-  if (kind === "document") return <FileText size={15} aria-hidden="true" />;
-  if (kind === "code") return <Braces size={15} aria-hidden="true" />;
-  if (kind === "asset") return <ImageIcon size={15} aria-hidden="true" />;
-  if (kind === "test") return <FlaskConical size={15} aria-hidden="true" />;
-  return <PackageCheck size={15} aria-hidden="true" />;
-}
 
 function CopyButton({ value, label }: { value: string; label: string }) {
   const { t } = usePreferences();
@@ -400,30 +373,7 @@ function BuildSteps({ build, project, busy, canConfirm, onConfirm }: {
         <h3 id="build-stream-heading">{t("studio.stageLane")}</h3>
         <output>{t("studio.stageCount", { completed, total: build.steps.length })}</output>
       </header>
-      <ol className="production-stages">
-        {build.steps.map((step, index) => (
-          <li className={`production-stage step-${step.status}`} key={step.id}>
-            <div className="stage-rail" aria-hidden="true">
-              <span>{String(index + 1).padStart(2, "0")}</span>
-              <i />
-            </div>
-            <article className="stage-body">
-              <header>
-                <span className="stage-action"><StepKindIcon kind={step.kind} />{stepActionLabels[step.kind]}</span>
-                <span className="stage-status"><StepIcon status={step.status} /></span>
-              </header>
-              <strong>{step.title}</strong>
-              <p>{step.detail}</p>
-              {step.output ? (
-                <div className="stage-evidence">
-                  <span>{t("studio.stageEvidence")}</span>
-                  <p>{step.output}</p>
-                </div>
-              ) : null}
-            </article>
-          </li>
-        ))}
-      </ol>
+      <BuildStageList steps={build.steps} evidenceLabel={t("studio.stageEvidence")} />
       {build.error ? <div className="workbench-build-error"><strong>{t("studio.rawError")}</strong><p>{build.error}</p></div> : null}
     </section>
   );
@@ -574,10 +524,11 @@ type WorkbenchPanelProps = {
   canStartBuild: boolean;
   onSend: (content: string) => Promise<void>;
   onStartBuild: () => void;
+  onRetryBuild: () => Promise<void>;
   onPublishVersion: (versionId: string) => Promise<void>;
 };
 
-function WorkbenchPanel({ project, build, messages, loading, sending, archived, versions, busy, canStartBuild, onSend, onStartBuild, onPublishVersion }: WorkbenchPanelProps) {
+function WorkbenchPanel({ project, build, messages, loading, sending, archived, versions, busy, canStartBuild, onSend, onStartBuild, onRetryBuild, onPublishVersion }: WorkbenchPanelProps) {
   const { t } = usePreferences();
   const streamRef = useRef<HTMLDivElement>(null);
   const completedSteps = build?.steps.filter((step) => step.status === "succeeded" || step.status === "failed").length ?? 0;
@@ -594,7 +545,11 @@ function WorkbenchPanel({ project, build, messages, loading, sending, archived, 
       </header>
 
       <div className="workbench-stream" ref={streamRef} aria-busy={loading}>
-        <section className="workspace-summary" aria-live="polite"><span>当前进展</span><h3>{loading ? "正在读取你的游戏…" : build?.status === "succeeded" ? "游戏已准备好，先玩一局吧。" : build?.status === "failed" ? "本次制作未完成，已有成功版本不会被覆盖。" : build?.status === "running" ? "正在把修改做进游戏。" : build?.status === "queued" ? "修改已收到，等待开始制作。" : "从这份方案继续制作。"}</h3><p>{build?.status === "running" ? build.steps.find(step => step.status === "running")?.detail ?? "服务端正在处理，无需重复提交。" : "先试玩，再告诉我们哪里还可以更好。每次修改都沿用这个作品。"}</p></section>
+        <section className="workspace-summary" aria-live="polite"><span>当前进展</span><h3>{loading ? "正在读取你的游戏…" : build?.status === "succeeded" ? "游戏已准备好，先玩一局吧。" : build?.status === "failed" ? "本次制作未完成，已有成功版本不会被覆盖。" : build?.status === "running" ? "正在把修改做进游戏。" : build?.status === "queued" ? "修改已收到，等待开始制作。" : "从这份方案继续制作。"}</h3><p>{build?.status === "running" ? build.steps.find(step => step.status === "running")?.detail ?? "服务端正在处理，无需重复提交。" : "先试玩，再告诉我们哪里还可以更好。每次修改都沿用这个作品。"}</p>{build?.status === "running" && build.steps.find(step => step.status === "running")?.excerpt ? <LiveExcerpt text={build.steps.find(step => step.status === "running")!.excerpt!} /> : null}</section>
+        {build?.status === "failed" && !archived && canStartBuild && <div className="production-retry" role="group" aria-label="重新制作">
+          <button type="button" className="workbench-button button-primary" disabled={busy} onClick={() => void onRetryBuild()}>{busy ? <LoaderCircle className="spin" size={16} aria-hidden="true" /> : <RotateCcw size={16} aria-hidden="true" />} 重新制作这个游戏</button>
+          <p>沿用已确认方案，已生成的图片直接复用不再付费；代码会针对失败原因重新生成并再次检查，会消耗文本模型用量。也可以先在下方写下修改意见再制作。</p>
+        </div>}
         <RevisionComposer key={project.id} projectId={project.id} disabled={archived || busy || sending || loading || !canStartBuild} working={build?.status === "running" || build?.status === "queued"} onConfirm={onSend} />
         {!!messages.filter(message => message.role === "user").length && <details className="workspace-details"><summary>最近的修改意见</summary><DirectionLog messages={messages.filter(message => message.role === "user").slice(-3)} /></details>}
         <details className="workspace-details"><summary>查看完整方案、制作与审核记录</summary><p>以下为专业制作详情。实际审核仍按原有标准执行，不以展开或关闭记录代替审核。</p>
@@ -690,6 +645,19 @@ export function ProjectStudio({ project, onProjectChange }: ProjectStudioProps) 
 
   async function beginBuild() {
     document.getElementById("revision-message")?.focus();
+  }
+
+  // 失败后的重新制作只由用户点击触发，沿用当前方案与已生成的图片，不改项目记录。
+  async function retryBuild() {
+    setBusy(true);
+    setError(null);
+    try {
+      setBuild(await startBuild(project.id));
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "重新制作没有开始，原记录保留。");
+    } finally {
+      setBusy(false);
+    }
   }
 
   async function publish() {
@@ -820,6 +788,7 @@ export function ProjectStudio({ project, onProjectChange }: ProjectStudioProps) 
           canStartBuild={canBuild}
           onSend={sendMessage}
           onStartBuild={beginBuild}
+          onRetryBuild={retryBuild}
           onPublishVersion={publishVersion}
         />
       </div>

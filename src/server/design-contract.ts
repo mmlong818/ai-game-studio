@@ -70,8 +70,8 @@ const responseJsonSchema = {
           mode: { type: "string", enum: ["campaign", "endless"], description: "有限闯关或无目标无限玩法；无限玩法总关数0、milestones空数组，不得强加胜利目标。" },
           failurePolicy: { type: "string", enum: ["required", "forbidden"], description: "有失败条件为required，无失败玩法为forbidden。必须与fail_condition一致，不得为了验收给无失败玩法增加失败。" },
           levelCount: { type: "integer", minimum: 0, maximum: 60 },
-          milestones: { type: "array", items: { type: "integer", minimum: 1, maximum: 60 } },
-          difficultyKeys: { type: "array", items: { type: "string" } },
+          milestones: { type: "array", maxItems: 20, items: { type: "integer", minimum: 1, maximum: 60 } },
+          difficultyKeys: { type: "array", maxItems: 6, items: { type: "string", pattern: "^[a-z][a-zA-Z0-9]{0,39}$" }, description: "最多 6 个，小写英文开头的驼峰标识，如 basketSlots、tideInterval。" },
           rationale: { type: "string" },
         },
       }],
@@ -286,14 +286,14 @@ export class DesignContractGenerator {
    * 返回 LLM 定制的设计合同;没有密钥或调用失败时返回 null,调用方回退到模板静态设计。
    * directions 传入创作者在制作对话中的历史修改意见(时间顺序),用于重建时修订设计合同。
    */
-  async generate(rawInput: ProjectInput, analysis: IdeaAnalysis | null = null, directions: string[] = [], onDelta?: (text: string) => void): Promise<GameDesignProfile | null> {
+  async generate(rawInput: ProjectInput, analysis: IdeaAnalysis | null = null, directions: string[] = [], onDelta?: (text: string) => void, onReset?: () => void): Promise<GameDesignProfile | null> {
     const input = projectInputSchema.parse(rawInput);
     const apiKey = this.settings.getApiKey();
     if (!apiKey) return null;
     const template = resolveGameTemplate(input, analysis);
     const baseline = input.confirmedDesignProfile ?? createDesignProfile(template, input.difficulty);
     try {
-      return await this.requestDesign(input.idea, template, baseline, input.difficulty, analysis, directions.slice(-10), apiKey, onDelta);
+      return await this.requestDesign(input.idea, template, baseline, input.difficulty, analysis, directions.slice(-10), apiKey, onDelta, onReset);
     } catch (error) {
       const reason = error instanceof Error ? error.message : "LLM 设计合同生成失败。";
       console.warn(`设计合同 LLM 生成失败，未返回可确认的方案：${reason}`);
@@ -386,6 +386,7 @@ export class DesignContractGenerator {
     directions: string[],
     apiKey: string,
     onDelta?: (text: string) => void,
+    onReset?: () => void,
   ): Promise<GameDesignProfile> {
     const messages = [
       { role: "system", content: buildSystemPrompt(template, baseline, difficulty) },
@@ -394,7 +395,7 @@ export class DesignContractGenerator {
         ...(template === "generated" ? [blueprintPlanningPrompt(idea)] : []),
       ].join("\n") },
     ];
-    const content = await this.requestContent(messages, "design_contract", responseJsonSchema, apiKey, onDelta);
+    const content = await this.requestContent(messages, "design_contract", responseJsonSchema, apiKey, onDelta, onReset);
     return this.parseDesign(content, baseline, template);
   }
 
@@ -404,6 +405,7 @@ export class DesignContractGenerator {
     jsonSchema: unknown,
     apiKey: string,
     onDelta?: (text: string) => void,
+    onReset?: () => void,
   ): Promise<string> {
     let lastError: unknown = null;
     const attempts = onDelta ? 1 : this.maxAttempts;
@@ -446,7 +448,9 @@ export class DesignContractGenerator {
             const data = line.slice(5).trim();
             if (data === "[DONE]") { complete = true; break; }
             const event = JSON.parse(data);
-            if (event.error) throw new Error("模型流式输出失败。");
+            if (event.error) throw new Error(`模型流式输出失败：${typeof event.error?.message === "string" ? event.error.message : "未说明原因"}`);
+            // 提供方撤回了此前的增量（例如结构化输出被校验拒绝后重写），从头累积。
+            if (event.reset) { text = ""; onReset?.(); continue; }
             const delta = event.choices?.[0]?.delta;
             if (delta?.refusal) throw new Error("模型拒绝了该请求。");
             if (typeof delta?.content === "string") { text += delta.content; onDelta(delta.content); }
