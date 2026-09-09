@@ -121,6 +121,99 @@ test("自由生成游戏在真实浏览器中完成安全教学、恢复、重�
   }
 });
 
+test("生成浏览器报告逐项保留失败现场，未执行项不冒充通过", { skip: !browserQualityAvailable(), timeout: 45_000 }, async () => {
+  const root = mkdtempSync(join(tmpdir(), "studio-generated-report-"));
+  // This remains a local fixture: forceLose deliberately fails the same
+  // lost+active predicate that production validation requires.
+  const assistanceTimeoutHtml = html.replace(
+    'forceLose:(cause="目标未完成")=>{failureReason=String(cause);setState("lost");}',
+    'forceLose:(cause="目标未完成")=>{failureReason=String(cause);setState("playing");}',
+  );
+  try {
+    writeGeneratedArtifact(root, project(), { html: assistanceTimeoutHtml, designNotes: "浏览器报告逐项状态夹具", rounds: 1 });
+    mkdirSync(join(root, "assets"), { recursive: true });
+    writeFileSync(join(root, "assets", "background.png"), Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=", "base64"));
+    await assert.rejects(() => inspectGeneratedGameInBrowser(root), /ASSISTANCE-RUNTIME 等待失败：期待 gameState=lost 且 assistance\.active=true；实际 \{"gameState":"playing","assistanceActive":false,"assistanceAction":null,"assistanceFailureCount":null\}/);
+    const report = JSON.parse(readFileSync(join(root, "_studio", "BROWSER_QUALITY_REPORT.json"), "utf8"));
+    const check = (id: string) => report.checks.find((item: { id: string }) => item.id === id);
+    assert.equal(check("ASSISTANCE-RUNTIME").status, "failed");
+    assert.match(check("ASSISTANCE-RUNTIME").evidence, /期待 gameState=lost 且 assistance\.active=true；实际 \{"gameState":"playing"/);
+    for (const id of ["GEN-BROWSER-LAYOUT", "GEN-BROWSER-ERRORS", "GEN-BROWSER-ONBOARDING", "PROGRESSION-RUNTIME", "CONTENT-VARIATION-REHEARSAL"]) {
+      assert.equal(check(id).status, "passed", `${id} should retain its independently completed result`);
+    }
+  } finally {
+    const safeRoot = resolve(root);
+    if (safeRoot.startsWith(resolve(tmpdir()))) rmSync(safeRoot, { recursive: true, force: true });
+  }
+});
+
+test("局部布局失败不会把已完成的生成游戏检查连坐标为失败", { skip: !browserQualityAvailable(), timeout: 45_000 }, async () => {
+  const root = mkdtempSync(join(tmpdir(), "studio-generated-layout-report-"));
+  try {
+    writeGeneratedArtifact(root, project(), { html: html.replace("overflow-x:hidden", "overflow-x:visible;min-width:800px"), designNotes: "局部布局失败的报告夹具", rounds: 1 });
+    mkdirSync(join(root, "assets"), { recursive: true });
+    writeFileSync(join(root, "assets", "background.png"), Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=", "base64"));
+    await assert.rejects(() => inspectGeneratedGameInBrowser(root), /横向溢出/);
+    const report = JSON.parse(readFileSync(join(root, "_studio", "BROWSER_QUALITY_REPORT.json"), "utf8"));
+    const check = (id: string) => report.checks.find((item: { id: string }) => item.id === id);
+    assert.equal(check("GEN-BROWSER-LAYOUT").status, "failed");
+    for (const id of ["GEN-BROWSER-ERRORS", "GEN-BROWSER-ONBOARDING", "PROGRESSION-RUNTIME", "CONTENT-VARIATION-REHEARSAL", "ASSISTANCE-RUNTIME"]) {
+      assert.equal(check(id).status, "passed", `${id} should retain its independently completed result`);
+    }
+  } finally {
+    const safeRoot = resolve(root);
+    if (safeRoot.startsWith(resolve(tmpdir()))) rmSync(safeRoot, { recursive: true, force: true });
+  }
+});
+
+test("生成浏览器报告将启动前中断后的检查标为未执行，二态门禁仍拒绝", { skip: !browserQualityAvailable(), timeout: 35_000 }, async () => {
+  const root = mkdtempSync(join(tmpdir(), "studio-generated-not-run-"));
+  try {
+    const startMissingHtml = html
+      .replace('<button id="start">开始</button>', "")
+      // Keep the fixture's own optional start control from creating a separate
+      // runtime error: this test isolates the validator's blocked check path.
+      .replace('document.querySelector("#start").addEventListener', 'document.querySelector("#start")?.addEventListener');
+    writeGeneratedArtifact(root, project(), { html: startMissingHtml, designNotes: "启动控件缺失夹具", rounds: 1 });
+    mkdirSync(join(root, "assets"), { recursive: true });
+    writeFileSync(join(root, "assets", "background.png"), Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=", "base64"));
+    await assert.rejects(() => inspectGeneratedGameInBrowser(root), /#start/);
+    const report = JSON.parse(readFileSync(join(root, "_studio", "BROWSER_QUALITY_REPORT.json"), "utf8"));
+    const check = (id: string) => report.checks.find((item: { id: string }) => item.id === id);
+    assert.equal(check("GEN-BROWSER-LAYOUT").status, "failed");
+    for (const id of ["GEN-BROWSER-ERRORS", "GEN-BROWSER-ONBOARDING", "PROGRESSION-RUNTIME", "CONTENT-VARIATION-REHEARSAL", "ASSISTANCE-RUNTIME"]) {
+      assert.equal(check(id).status, "not-run", `${id} must not be reported as passed after the blocking start failure`);
+      assert.match(check(id).notRunReason, /^未执行：|^未完整执行：/);
+    }
+    // inspectGeneratedGameInBrowser returns the shared binary QualityCheck type;
+    // the thrown gate is the externally observable proof that not-run is not pass.
+  } finally {
+    const safeRoot = resolve(root);
+    if (safeRoot.startsWith(resolve(tmpdir()))) rmSync(safeRoot, { recursive: true, force: true });
+  }
+});
+
+test("试玩文档在加载阶段失败时不会把布局或错误监听写成通过", { skip: !browserQualityAvailable(), timeout: 20_000 }, async () => {
+  const root = mkdtempSync(join(tmpdir(), "studio-generated-load-failure-"));
+  try {
+    writeGeneratedArtifact(root, project(), { html, designNotes: "仅用于本地文档加载失败诊断", rounds: 1 });
+    mkdirSync(join(root, "assets"), { recursive: true });
+    writeFileSync(join(root, "assets", "background.png"), Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=", "base64"));
+    rmSync(join(root, "index.html"));
+    await assert.rejects(() => inspectGeneratedGameInBrowser(root), /试玩文档加载失败：HTTP 404/);
+    const report = JSON.parse(readFileSync(join(root, "_studio", "BROWSER_QUALITY_REPORT.json"), "utf8"));
+    const check = (id: string) => report.checks.find((item: { id: string }) => item.id === id);
+    assert.equal(check("GEN-BROWSER-CONTRACT").status, "failed");
+    for (const id of ["GEN-BROWSER-LAYOUT", "GEN-BROWSER-ERRORS", "GEN-BROWSER-ONBOARDING", "PROGRESSION-RUNTIME", "CONTENT-VARIATION-REHEARSAL", "ASSISTANCE-RUNTIME"]) {
+      assert.equal(check(id).status, "not-run", `${id} must not pass without a loaded document`);
+      assert.match(check(id).notRunReason, /^未执行：|^未完整执行：/);
+    }
+  } finally {
+    const safeRoot = resolve(root);
+    if (safeRoot.startsWith(resolve(tmpdir()))) rmSync(safeRoot, { recursive: true, force: true });
+  }
+});
+
 test("3D 自由生成模块同样执行合同教学平台", { skip: !browserQualityAvailable(), timeout: 40_000 }, async () => {
   const root = mkdtempSync(join(tmpdir(), "studio-generated-3d-onboarding-"));
   try {
