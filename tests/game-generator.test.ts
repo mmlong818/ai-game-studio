@@ -51,9 +51,16 @@ function llmResponse(answer: Record<string, unknown>) {
 test("确认关卡计划同时进入生成指令与交付清单", async () => {
   const project = fakeProject();
   project.spec.designProfile.generatedCampaign = { levelCount: 7, milestones: [1, 4, 7], difficultyKeys: ["pairCount"], rationale: "按七关配对数量递进。" };
-  const generator = new GameCodeGenerator(new OpenAISettings(validKey), {
+  const settings = new OpenAISettings(null);
+  await settings.save({ apiKey: validKey }, (async () => new Response(JSON.stringify({ data: [
+    { id: "gpt-6-astra", created: 3 }, { id: "gpt-5.6-sol", created: 2 }, { id: "gpt-image-2", created: 1 },
+  ] }))) as typeof fetch);
+  const generator = new GameCodeGenerator(settings, {
     fetchImpl: async (_url, init) => {
       const body = JSON.parse(String(init?.body));
+      assert.equal(body.reasoning_effort, "low");
+      assert.equal(body.model, "gpt-5.6-sol");
+      assert.equal(body.response_format.json_schema.strict, true);
       const prompt = body.messages[0].content;
       assert.match(prompt, /7 个可选择关卡/);
       assert.doesNotMatch(prompt, /必须是 20 关|必须实现 20|setLevel\(1\.\.20\)|第 9 关/);
@@ -74,6 +81,33 @@ function streamedAnswer(content: string, done = true) {
   const chunks = Array.from({ length: Math.ceil(content.length / 40) }, (_, index) =>
     `data: ${JSON.stringify({ choices: [{ delta: { content: content.slice(index * 40, index * 40 + 40) } }] })}\n\n`);
   return new Response(chunks.join("") + (done ? "data: [DONE]\n\n" : ""), { headers: { "Content-Type": "text/event-stream" } });
+}
+
+function timedStreamedAnswer(content: string, delays: number[], signal?: AbortSignal, includeDone = true) {
+  const pieces = delays.map((_, index) => content.slice(Math.floor(index * content.length / delays.length), Math.floor((index + 1) * content.length / delays.length)));
+  const encoder = new TextEncoder();
+  const timers: ReturnType<typeof setTimeout>[] = [];
+  return new Response(new ReadableStream<Uint8Array>({
+    start(controller) {
+      let closed = false;
+      const abort = () => {
+        if (closed) return;
+        closed = true;
+        timers.forEach(clearTimeout);
+        controller.error(new DOMException("Aborted", "AbortError"));
+      };
+      signal?.addEventListener("abort", abort, { once: true });
+      delays.forEach((delay, index) => timers.push(setTimeout(() => {
+        if (closed) return;
+        controller.enqueue(encoder.encode(`data: ${JSON.stringify({ choices: [{ delta: { content: pieces[index] } }] })}\n\n`));
+        if (index === delays.length - 1 && includeDone) {
+          closed = true;
+          controller.enqueue(encoder.encode("data: [DONE]\n\n"));
+          controller.close();
+        }
+      }, delay)));
+    },
+  }), { headers: { "Content-Type": "text/event-stream" } });
 }
 
 test("代码流式输出节流报告数量，不向进度泄露代码", async () => {
@@ -97,6 +131,47 @@ test("代码流中断不接受半份代码且不重新付费调用", async () =>
     fetchImpl: async () => { calls++; return streamedAnswer(JSON.stringify({ html: contractHtml, design_notes: "完整JSON但流未结束" }), false); },
   });
   await assert.rejects(() => generator.generate(fakeProject()), /输出流中断/);
+  assert.equal(calls, 1);
+});
+
+test("代码流持续返回有效内容时可以超过初始等待时限", async () => {
+  const content = JSON.stringify({ html: contractHtml, design_notes: "长流持续输出" });
+  const generator = new GameCodeGenerator(new OpenAISettings(validKey), {
+    timeoutMs: 25,
+    fetchImpl: async (_url, init) => timedStreamedAnswer(content, [15, 30, 45, 60], init?.signal ?? undefined),
+  });
+  const generated = await generator.generate(fakeProject());
+  assert.equal(generated.html, contractHtml);
+  assert.equal(generated.designNotes, "长流持续输出");
+});
+
+test("代码流返回首段后停顿超过空闲时限会中止", async () => {
+  let calls = 0;
+  const content = JSON.stringify({ html: contractHtml, design_notes: "停流" });
+  const generator = new GameCodeGenerator(new OpenAISettings(validKey), {
+    timeoutMs: 20,
+    streamIdleTimeoutMs: 20,
+    fetchImpl: async (_url, init) => {
+      calls++;
+      return timedStreamedAnswer(content, [0, 80], init?.signal ?? undefined);
+    },
+  });
+  await assert.rejects(() => generator.generate(fakeProject()), /代码流连续 20ms 没有返回有效内容/);
+  assert.equal(calls, 1, "空闲超时不得自动重复付费请求");
+});
+
+test("代码流没有首段有效内容时保留初始等待超时与请求预算", async () => {
+  let calls = 0;
+  const budget = new GenerationBudget(1);
+  const generator = new GameCodeGenerator(new OpenAISettings(validKey), {
+    timeoutMs: 20,
+    fetchImpl: async (_url, init) => {
+      calls++;
+      return timedStreamedAnswer("", [80], init?.signal ?? undefined);
+    },
+  });
+  await assert.rejects(() => generator.generate(fakeProject(), [], null, async () => {}, budget), /20ms 内没有返回首段有效内容/);
+  await assert.rejects(() => generator.generate(fakeProject(), [], null, async () => {}, budget), /达到 1 次请求上限/);
   assert.equal(calls, 1);
 });
 

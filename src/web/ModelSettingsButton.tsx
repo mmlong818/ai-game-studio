@@ -23,8 +23,10 @@ export function ModelSettingsButton({ compact = false }: { compact?: boolean }) 
     const controller = new AbortController();
     setLoadingModels(true);
     const timer = setTimeout(() => {
-      void getOpenAIModels(apiKey.trim(), controller.signal).then(result => {
+      void getOpenAIModels(apiKey.trim(), controller.signal).then(async result => {
+        const currentStatus = await getOpenAISettings();
         if (controller.signal.aborted) return;
+        setStatus(currentStatus);
         setCatalog(result);
         setModels({
           text: !apiKey.trim() && result.text.some(m => m.id === status?.models.text) ? status!.models.text : result.recommended.text ?? "",
@@ -36,7 +38,7 @@ export function ModelSettingsButton({ compact = false }: { compact?: boolean }) 
       }).finally(() => { if (!controller.signal.aborted) setLoadingModels(false); });
     }, 600);
     return () => { clearTimeout(timer); controller.abort(); setLoadingModels(false); };
-  }, [open, apiKey, status, retry]);
+  }, [open, apiKey, status?.configured, status?.models.text, status?.models.image, retry]);
 
   useEffect(() => {
     const dialog = dialogRef.current;
@@ -96,6 +98,17 @@ export function ModelSettingsButton({ compact = false }: { compact?: boolean }) 
   const statusText = status?.textProvider
     ? `${keyStatusText} · ${t("models.textProvider", { model: status.textProvider.model })}`
     : keyStatusText;
+  const routingReason = status?.textRouting?.reason === "catalog-route"
+    ? "已按模型能力分工。"
+    : status?.textRouting?.reason === "planner-unavailable"
+      ? "所选规划模型已不可用，请重新选择并保存。"
+    : status?.textRouting?.reason === "catalog-unavailable"
+      ? "尚无当前密钥的已验证模型目录，暂用同一模型。"
+      : status?.textRouting?.reason === "no-qualified-executor"
+        ? "没有合格的代码执行模型，暂用同一模型。"
+        : status?.textRouting?.reason === "provider-fixed"
+          ? "当前文本提供方固定使用同一模型。"
+          : "";
 
   return (
     <>
@@ -145,6 +158,9 @@ export function ModelSettingsButton({ compact = false }: { compact?: boolean }) 
           <details className="model-options">
           <summary>模型选择与连接详情（可选）</summary>
           <p>{statusText}。可以沿用自动推荐，也可以自行调整。</p>
+          {status?.textRouting ? <p className="model-routing-summary" aria-label="当前文本模型分工">
+            规划与验收：<strong>{status.textRouting.planner}</strong>；代码生成：<strong>{status.textRouting.executor}</strong>。{routingReason}
+          </p> : null}
         <div className="model-roster" aria-label={t("models.available")}>
           <article>
             <span>{t("models.textRole")}</span>

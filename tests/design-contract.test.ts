@@ -7,6 +7,31 @@ import { OpenAISettings } from "../src/server/openai-settings";
 
 const validKey = "sk-test_1234567890abcdef";
 
+test("主动取消方案立即传递给提供方且不进入重试", async () => {
+  const cancellation = new AbortController();
+  let calls = 0;
+  const generator = new DesignContractGenerator(new OpenAISettings(validKey), {
+    fetchImpl: async (_url, init) => {
+      calls++;
+      return new Promise((_resolve, reject) => {
+        init!.signal!.addEventListener("abort", () => reject(new DOMException("取消", "AbortError")), { once: true });
+        cancellation.abort();
+      });
+    },
+  });
+  await assert.rejects(generator.generate({ idea: "花园中寻找配对花朵的记忆小游戏", template: "puzzle" }, null, [], undefined, undefined, cancellation.signal), { name: "AbortError" });
+  assert.equal(calls, 1);
+});
+
+test("已取消的方案不启动任何模型调用", async () => {
+  let calls = 0;
+  const generator = new DesignContractGenerator(new OpenAISettings(validKey), {
+    fetchImpl: async () => { calls++; throw new Error("不应请求"); },
+  });
+  await assert.rejects(generator.generate({ idea: "花园中寻找配对花朵的记忆小游戏" }, null, [], undefined, undefined, AbortSignal.abort()), { name: "AbortError" });
+  assert.equal(calls, 0);
+});
+
 test("模型明确的七关无失败协议进入方案，不能影响官方模板", async () => {
   const campaign = { mode: "campaign", failurePolicy: "forbidden", levelCount: 7, milestones: [1, 4, 7], difficultyKeys: ["pairCount"], rationale: "七关花朵配对，操作错误可以继续。" };
   const generator = new DesignContractGenerator(new OpenAISettings(validKey), {
@@ -29,7 +54,10 @@ test("流式设计逐段输出，完整校验后才返回合同", async () => {
   const chunks: string[] = [];
   const generator = new DesignContractGenerator(new OpenAISettings(validKey), {
     fetchImpl: async (_url, init) => {
-      assert.equal(JSON.parse(String(init?.body)).stream, true);
+      const body = JSON.parse(String(init?.body));
+      assert.equal(body.stream, true);
+      assert.equal(body.reasoning_effort, "low");
+      assert.equal(body.response_format.json_schema.strict, true);
       const text = JSON.stringify(themedAnswer);
       const wire = [text.slice(0, 90), text.slice(90)].map(content => "data: " + JSON.stringify({ choices: [{ delta: { content } }] }) + "\n\n").join("") + "data: [DONE]\n\n";
       const bytes = new TextEncoder().encode(wire);
@@ -91,6 +119,118 @@ const themedAnswer = {
   accessibility: ["键盘与触控四向输入等价", "桂花糕用形状和亮度区别于蛇身"],
   extra_production_risks: ["园林背景纹样不能淹没蛇身与食物的可读性"],
 };
+
+function scheduledSseResponse(events: Array<{ afterMs: number; line?: string }>, signal: AbortSignal | null | undefined, cleanup: { aborted: number; cancelled: number }) {
+  const encoder = new TextEncoder();
+  let closed = false;
+  return new Response(new ReadableStream<Uint8Array>({
+    start(controller) {
+      signal?.addEventListener("abort", () => {
+        cleanup.aborted += 1;
+        closed = true;
+        controller.error(new DOMException("aborted", "AbortError"));
+      }, { once: true });
+      void (async () => {
+        for (const event of events) {
+          await new Promise(resolve => setTimeout(resolve, event.afterMs));
+          if (closed) return;
+          if (event.line === undefined) { closed = true; controller.close(); return; }
+          controller.enqueue(encoder.encode(`${event.line}\n\n`));
+        }
+      })();
+    },
+    cancel() { cleanup.cancelled += 1; closed = true; },
+  }));
+}
+
+test("流式持续有效内容可超过旧总时限，并在完成后释放读取器", async () => {
+  const text = JSON.stringify(themedAnswer);
+  const pieces = Array.from({ length: 8 }, (_, index) => text.slice(index * Math.ceil(text.length / 8), (index + 1) * Math.ceil(text.length / 8)));
+  const cleanup = { aborted: 0, cancelled: 0 };
+  const generator = new DesignContractGenerator(new OpenAISettings(validKey), {
+    timeoutMs: 25,
+    streamIdleTimeoutMs: 25,
+    maxAttempts: 1,
+    fetchImpl: async (_url, init) => scheduledSseResponse([
+      ...pieces.map(content => ({ afterMs: 12, line: `data: ${JSON.stringify({ choices: [{ delta: { content } }] })}` })),
+      { afterMs: 1, line: "data: [DONE]" },
+      { afterMs: 0 },
+    ], init?.signal, cleanup),
+  });
+  let validating = 0;
+  const result = await generator.generate({ idea: snakeIdea }, snakeAnalysis, [], () => {}, undefined, undefined, { onValidating: () => { validating += 1; } });
+  assert.equal(result?.genre, themedAnswer.genre);
+  assert.equal(validating, 1);
+  assert.equal(cleanup.aborted, 0);
+  assert.ok(cleanup.cancelled >= 1);
+});
+
+test("流式首段有效内容超时；空协议事件不会续期", async () => {
+  const firstCleanup = { aborted: 0, cancelled: 0 };
+  const first = new DesignContractGenerator(new OpenAISettings(validKey), {
+    timeoutMs: 20, maxAttempts: 1,
+    fetchImpl: async (_url, init) => scheduledSseResponse([], init?.signal, firstCleanup),
+  });
+  let validating = 0;
+  assert.equal(await first.generate({ idea: snakeIdea }, snakeAnalysis, [], () => {}, undefined, undefined, { onValidating: () => { validating += 1; } }), null);
+  assert.equal(firstCleanup.aborted, 1);
+  assert.equal(validating, 0);
+
+  const heartbeatCleanup = { aborted: 0, cancelled: 0 };
+  const heartbeat = new DesignContractGenerator(new OpenAISettings(validKey), {
+    timeoutMs: 20, maxAttempts: 1,
+    fetchImpl: async (_url, init) => scheduledSseResponse([
+      { afterMs: 5, line: `data: ${JSON.stringify({ choices: [{ delta: {} }] })}` },
+    ], init?.signal, heartbeatCleanup),
+  });
+  assert.equal(await heartbeat.generate({ idea: snakeIdea }, snakeAnalysis, [], () => {}), null);
+  assert.equal(heartbeatCleanup.aborted, 1);
+});
+
+test("流式在有效内容停止后按空闲超时中止", async () => {
+  const cleanup = { aborted: 0, cancelled: 0 };
+  const generator = new DesignContractGenerator(new OpenAISettings(validKey), {
+    timeoutMs: 20, streamIdleTimeoutMs: 20, maxAttempts: 1,
+    fetchImpl: async (_url, init) => scheduledSseResponse([
+      { afterMs: 5, line: `data: ${JSON.stringify({ choices: [{ delta: { content: "{" } }] })}` },
+    ], init?.signal, cleanup),
+  });
+  assert.equal(await generator.generate({ idea: snakeIdea }, snakeAnalysis, [], () => {}), null);
+  assert.equal(cleanup.aborted, 1);
+});
+
+test("流式收到 DONE 但以 length/content_filter 结束时拒绝截断方案", async () => {
+  for (const finishReason of ["length", "content_filter"]) {
+    const cleanup = { aborted: 0, cancelled: 0 };
+    const generator = new DesignContractGenerator(new OpenAISettings(validKey), {
+      timeoutMs: 50, maxAttempts: 1,
+      fetchImpl: async (_url, init) => scheduledSseResponse([
+        { afterMs: 1, line: `data: ${JSON.stringify({ choices: [{ delta: { content: JSON.stringify(themedAnswer) }, finish_reason: finishReason }] })}` },
+        { afterMs: 1, line: "data: [DONE]" },
+        { afterMs: 0 },
+      ], init?.signal, cleanup),
+    });
+    assert.equal(await generator.generate({ idea: snakeIdea }, snakeAnalysis, [], () => {}), null);
+  }
+});
+
+test("外部取消流式生成会立即退出且不重试", async () => {
+  const cancellation = new AbortController();
+  const cleanup = { aborted: 0, cancelled: 0 };
+  let calls = 0;
+  const generator = new DesignContractGenerator(new OpenAISettings(validKey), {
+    timeoutMs: 100, maxAttempts: 2,
+    fetchImpl: async (_url, init) => {
+      calls += 1;
+      const response = scheduledSseResponse([{ afterMs: 5, line: `data: ${JSON.stringify({ choices: [{ delta: { content: "{" } }] })}` }], init?.signal, cleanup);
+      setTimeout(() => cancellation.abort(), 12);
+      return response;
+    },
+  });
+  await assert.rejects(generator.generate({ idea: snakeIdea }, snakeAnalysis, [], () => {}, undefined, cancellation.signal), { name: "AbortError" });
+  assert.equal(calls, 1);
+  assert.equal(cleanup.aborted, 1);
+});
 
 test("没有密钥时返回 null 且不发起网络请求", async () => {
   let calls = 0;
@@ -191,8 +331,15 @@ test("意见落实审计:逐条返回判定并保留原意见文本;失败时返
       { direction: "加入实时联机对战", addressed: false, evidence: "与模板规则基线冲突,平台当前不支持实时多人" },
     ],
   };
-  const generator = new DesignContractGenerator(new OpenAISettings(validKey), {
-    fetchImpl: async () => llmResponse(auditAnswer),
+  const routedSettings = new OpenAISettings(null);
+  await routedSettings.save({ apiKey: validKey }, (async () => new Response(JSON.stringify({ data: [
+    { id: "gpt-6-astra", created: 3 }, { id: "gpt-5.6-sol", created: 2 }, { id: "gpt-image-2", created: 1 },
+  ] }))) as typeof fetch);
+  const generator = new DesignContractGenerator(routedSettings, {
+    fetchImpl: async (_url, init) => {
+      assert.equal(JSON.parse(String(init?.body)).model, "gpt-6-astra");
+      return llmResponse(auditAnswer);
+    },
   });
   const profile = createDesignProfile("snake", "standard");
   const verdicts = await generator.auditDirections(profile, ["把桂花糕换成莲子", "加入实时联机对战"]);
@@ -225,8 +372,15 @@ test("规则正确性审计:规则清单=核心循环+胜负,逐条判定并保�
       { rule: `失败条件:${profile.failCondition}`, implemented: false, evidence: "撞自身判定缺失,只有边界碰撞" },
     ],
   };
-  const generator = new DesignContractGenerator(new OpenAISettings(validKey), {
-    fetchImpl: async () => llmResponse(auditAnswer),
+  const routedSettings = new OpenAISettings(null);
+  await routedSettings.save({ apiKey: validKey }, (async () => new Response(JSON.stringify({ data: [
+    { id: "gpt-6-astra", created: 3 }, { id: "gpt-5.6-sol", created: 2 }, { id: "gpt-image-2", created: 1 },
+  ] }))) as typeof fetch);
+  const generator = new DesignContractGenerator(routedSettings, {
+    fetchImpl: async (_url, init) => {
+      assert.equal(JSON.parse(String(init?.body)).model, "gpt-6-astra");
+      return llmResponse(auditAnswer);
+    },
   });
   const verdicts = await generator.auditRuleFidelity(profile, "<html>...code...</html>");
   assert.ok(verdicts);

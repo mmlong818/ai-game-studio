@@ -217,17 +217,21 @@ interface GameCodeGeneratorOptions {
   fetchImpl?: typeof fetch;
   endpoint?: string;
   timeoutMs?: number;
+  /** Maximum silence after the first non-empty streamed content delta. */
+  streamIdleTimeoutMs?: number;
 }
 
 export class GameCodeGenerator {
   private readonly fetchImpl: typeof fetch;
   private readonly endpoint: string;
   private readonly timeoutMs: number;
+  private readonly streamIdleTimeoutMs: number;
 
   constructor(private readonly settings: OpenAISettings, options: GameCodeGeneratorOptions = {}) {
     this.fetchImpl = options.fetchImpl ?? fetch;
     this.endpoint = options.endpoint ?? DEFAULT_ENDPOINT;
     this.timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+    this.streamIdleTimeoutMs = options.streamIdleTimeoutMs ?? this.timeoutMs;
   }
 
   /**
@@ -262,7 +266,13 @@ export class GameCodeGenerator {
     let lastError: unknown = null;
     for (let attempt = 1; attempt <= MAX_NETWORK_ATTEMPTS; attempt += 1) {
       const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), this.timeoutMs);
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      let receivedContent = false;
+      const armTimeout = (delay: number) => {
+        if (timer) clearTimeout(timer);
+        timer = setTimeout(() => controller.abort(), delay);
+      };
+      armTimeout(this.timeoutMs);
       try {
         const response = await this.fetchImpl(this.endpoint, {
           method: "POST",
@@ -272,7 +282,7 @@ export class GameCodeGenerator {
           },
           signal: controller.signal,
           body: JSON.stringify({
-            model: this.settings.status().models.text,
+            ...this.settings.textRequestOptions("executor"),
             stream: true,
             messages: [
               { role: "system", content: buildSystemPrompt(project, previous !== null) },
@@ -310,6 +320,10 @@ export class GameCodeGenerator {
             if (choice?.finish_reason && choice.finish_reason !== "stop") throw new Error(`代码输出未完整结束（${choice.finish_reason}），未自动重试。`);
             if (typeof choice?.delta?.content === "string") {
               content += choice.delta.content;
+              if (choice.delta.content.length > 0) {
+                receivedContent = true;
+                armTimeout(this.streamIdleTimeoutMs);
+              }
               if (Date.now() - lastReport >= 1500) { await onProgress(content.length, describeGenerationProgress(content)); lastReport = Date.now(); }
             }
           }
@@ -326,7 +340,9 @@ export class GameCodeGenerator {
         return answerSchema.parse(JSON.parse(message.content));
       } catch (error) {
         if (error instanceof Error && error.name === "AbortError") {
-          lastError = new Error(`模型接口在 ${this.timeoutMs}ms 内没有响应。`);
+          lastError = receivedContent
+            ? new Error(`模型代码流连续 ${this.streamIdleTimeoutMs}ms 没有返回有效内容。`)
+            : new Error(`模型接口在 ${this.timeoutMs}ms 内没有返回首段有效内容。`);
           if (attempt < MAX_NETWORK_ATTEMPTS) continue;
           throw lastError;
         }
@@ -336,7 +352,7 @@ export class GameCodeGenerator {
         }
         throw error;
       } finally {
-        clearTimeout(timer);
+        if (timer) clearTimeout(timer);
       }
     }
     throw lastError instanceof Error ? lastError : new Error("模型接口调用失败。");

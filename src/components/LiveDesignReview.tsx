@@ -6,6 +6,7 @@ import { gameTemplateSchema, type GameDesignProfile } from "../shared/contracts"
 import { getDesignPreview } from "../domain/designPreviewCache";
 import { WaitingActivity } from "./WaitingActivity";
 import { streamingDesignText } from "../domain/streamingDesignText";
+import type { DesignPreviewPhase } from "../web/api";
 
 export function LiveDesignReview({ draft, onBack, onConfirm }: { draft: StudioDraft; onBack: () => void; onConfirm: (text: string, profile: GameDesignProfile, originalIdea: string) => void }) {
   const template = draft.creationMode === "template-remix" ? getTemplate(draft.templateId) : undefined;
@@ -19,6 +20,7 @@ export function LiveDesignReview({ draft, onBack, onConfirm }: { draft: StudioDr
   const [failure, setFailure] = useState<{ key: string; message: string } | null>(null);
   const [attempt, setAttempt] = useState(0);
   const [partial, setPartial] = useState({ key: "", text: "" });
+  const [phase, setPhase] = useState<{ key: string; value: DesignPreviewPhase; startedAt: string | null }>({ key: "", value: "submitted", startedAt: null });
   const key = JSON.stringify([request, templateId, attempt]);
   const profile = result?.key === key ? result.profile : null;
   const error = failure?.key === key ? failure.message : "";
@@ -26,7 +28,11 @@ export function LiveDesignReview({ draft, onBack, onConfirm }: { draft: StudioDr
     let active = true;
     const timer = window.setTimeout(async () => {
       try {
-        const value = await getDesignPreview({ idea: request, template: templateId }, attempt > 0, text => { if (active) setPartial({ key, text }); });
+        const value = await getDesignPreview(
+          { idea: request, template: templateId }, attempt > 0,
+          text => { if (active) setPartial({ key, text }); },
+          (value, startedAt) => { if (active) setPhase({ key, value, startedAt }); },
+        );
         if (active) setResult({ key, profile: value });
       } catch (reason) {
         if (active) setFailure({ key, message: reason instanceof Error ? reason.message : "实时分析失败，请重试。" });
@@ -49,7 +55,7 @@ export function LiveDesignReview({ draft, onBack, onConfirm }: { draft: StudioDr
   ].filter(([, value]) => value) : [];
   return <section className="review-screen live-design-review" id="live-game-design" aria-label="游戏方案">
     <header className="review-heading"><div><span className="eyebrow">实时 AI 策划</span><h1>{template ? (draft.sourceGame?.title ?? template.name) + "改造方案" : "新游戏机制方案"}</h1><p>根据当前描述实时生成，不是预先写好的灵感方案。分析会使用文字模型额度；此时不生成图片或制作游戏。</p></div></header>
-    {!profile && !error && <WaitingActivity key={key} label="正在根据你的想法设计玩法，请稍候。" />}
+    {!profile && !error && <WaitingActivity key={key} startedAt={phase.key === key ? phase.startedAt : null} elapsedLabel="本次方案已等待" label={phase.key !== key || phase.value === "submitted" ? "请求已提交，等待方案内容。" : phase.value === "receiving" ? "正在接收方案内容。" : "正在检查方案。"} />}
     {!profile && partial.key === key && partial.text && <section aria-label="正在生成的方案"><p>以下是模型正在生成的内容，尚未完成检查。</p><div className="streaming-design-text">{streamingDesignText(partial.text)}</div></section>}
     {error && <p role="alert">{error}</p>}
     {profile && <><span className="ready-stamp">方案草案 · 待制作验证</span><dl className="fact-list">{sections.filter(([title]) => ["玩家体验", "玩法取舍", "每局时长", "具体怎么玩", "怎样获胜", "关卡安排"].includes(title)).map(([title, text]) => <div key={title}><dt>{title}</dt><dd style={{ whiteSpace: "pre-line" }}>{text}</dd></div>)}</dl>

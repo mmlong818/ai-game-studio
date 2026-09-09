@@ -12,6 +12,7 @@ coverage/
 /data/logs/
 /data/artifacts/
 /data/artifacts-v1.1/
+/public/generated/
 *.tsbuildinfo
 .env
 .env.*

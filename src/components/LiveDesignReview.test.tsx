@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { act, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, expect, it, vi } from "vitest";
 import { LiveDesignReview } from "./LiveDesignReview";
@@ -23,7 +23,7 @@ it("显示模型结果并提交同一方案，修改描述立即禁用旧方案"
   expect(confirm.mock.calls[0][1]).toEqual(profile);
   expect(confirm.mock.calls[0][2]).toBe(draft.newGameBrief);
   // 第四个参数是预览被服务端撤回时清空半截文本的回调。
-  expect(generateDesignPreview).toHaveBeenCalledWith(expect.objectContaining({ idea: draft.newGameBrief, template: "generated" }), expect.any(AbortSignal), expect.any(Function), expect.any(Function));
+  expect(generateDesignPreview).toHaveBeenCalledWith(expect.objectContaining({ idea: draft.newGameBrief, template: "generated" }), expect.any(AbortSignal), expect.any(Function), expect.any(Function), expect.any(Function));
   view.rerender(<LiveDesignReview draft={{ ...draft, newGameBrief: "在水下探索珊瑚城，收集珍珠并躲避鲨鱼" }} onBack={vi.fn()} onConfirm={confirm} />);
   expect(screen.getByRole("button", { name: "确认方案，开始制作" })).toBeDisabled();
   expect(screen.queryByText(profile.playerFantasy)).not.toBeInTheDocument();
@@ -72,4 +72,30 @@ it("生成过程中返回再进入，复用未完成的请求", async () => {
   resolve(profile);
   await screen.findByText(profile.playerFantasy);
   expect(generateDesignPreview).toHaveBeenCalledTimes(1);
+});
+
+it("首段方案到达前显示真实等待时长，并随流式阶段更新诚实状态", async () => {
+  vi.useFakeTimers();
+  let finish!: (value: typeof profile) => void;
+  let report!: (phase: "submitted" | "receiving" | "checking") => void;
+  vi.mocked(generateDesignPreview).mockImplementation((_input, _signal, onDelta, _onReset, onStatus) => new Promise(done => {
+    finish = done;
+    report = onStatus!;
+    onStatus?.("submitted");
+    window.setTimeout(() => onStatus?.("receiving"), 1500);
+    window.setTimeout(() => onDelta?.('{"genre":"太空收集"}'), 1600);
+  }));
+  render(<LiveDesignReview draft={draft} onBack={vi.fn()} onConfirm={vi.fn()} />);
+  await vi.advanceTimersByTimeAsync(250);
+  expect(screen.getByRole("status", { name: "" })).toHaveTextContent("请求已提交");
+  await vi.advanceTimersByTimeAsync(1500);
+  expect(screen.getByText("正在接收方案内容。")).toBeInTheDocument();
+  await vi.advanceTimersByTimeAsync(250);
+  expect(screen.getByText(/本次方案已等待 0 分 1 秒/)).toBeInTheDocument();
+  await act(async () => report("checking"));
+  expect(screen.getByText("正在检查方案。")).toBeInTheDocument();
+  expect(screen.getByLabelText("正在生成的方案")).toHaveTextContent("太空收集");
+  finish(profile);
+  await vi.runAllTimersAsync();
+  vi.useRealTimers();
 });

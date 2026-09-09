@@ -18,6 +18,13 @@ export const openAISettingsStatusSchema = z.object({
   }),
   /** 文本模型改由本机 Claude Code CLI 订阅额度承载时出现；图片仍走 OpenAI Key。 */
   textProvider: z.object({ kind: z.literal("claude-cli"), model: z.string().min(1) }).optional(),
+  textRouting: z.object({
+    planner: z.string().min(1),
+    executor: z.string().min(1),
+    reviewer: z.string().min(1),
+    mode: z.enum(["split", "same-model"]),
+    reason: z.enum(["catalog-route", "catalog-unavailable", "no-qualified-executor", "planner-unavailable", "provider-fixed"]),
+  }).optional(),
 });
 
 export type OpenAISettingsStatus = z.infer<typeof openAISettingsStatusSchema>;

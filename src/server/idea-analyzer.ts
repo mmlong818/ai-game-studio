@@ -109,7 +109,7 @@ export class IdeaAnalyzer {
           },
           signal: controller.signal,
           body: JSON.stringify({
-            model: this.settings.status().models.text,
+            ...this.settings.textRequestOptions("planner"),
             messages: [
               { role: "system", content: buildSystemPrompt() },
               { role: "user", content: `玩法描述：${idea}` },
