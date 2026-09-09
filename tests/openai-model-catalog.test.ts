@@ -29,10 +29,89 @@ test("直接保存推荐 GPT-6；手动选择 GPT-5.6 后再次读取列表不�
   const settings = new OpenAISettings(null);
   const fetcher = (async () => new Response(JSON.stringify(namedPayload))) as typeof fetch;
   assert.equal((await settings.save({ apiKey: key }, fetcher)).models.text, "gpt-6-astra");
+  assert.deepEqual(settings.status().textRouting, {
+    planner: "gpt-6-astra", executor: "gpt-5.6-sol", reviewer: "gpt-6-astra", mode: "split", reason: "catalog-route",
+  });
+  assert.equal(settings.textRequestOptions("planner").model, "gpt-6-astra");
+  assert.equal(settings.textRequestOptions("executor").model, "gpt-5.6-sol");
+  assert.equal(settings.textRequestOptions("reviewer").model, "gpt-6-astra");
   for (const text of ["gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna", "gpt-6-astra"]) {
     await settings.save({ models: { text, image: "gpt-image-2" } }, fetcher);
     await settings.listModels({}, fetcher);
     assert.equal(settings.status().models.text, text);
+  }
+});
+
+test("执行模型只来自当前密钥已发现目录；目录缺失、换Key和未知规划模型均保守同模型", async () => {
+  const settings = new OpenAISettings(null);
+  assert.equal(settings.status().textRouting?.reason, "catalog-unavailable");
+  await settings.save({ apiKey: key, models: { text: "gpt-5.6-sol", image: "gpt-image-2" } }, (async () => new Response(JSON.stringify(namedPayload))) as typeof fetch);
+  assert.deepEqual(settings.textRequestOptions("executor"), { model: "gpt-5.6-terra", reasoning_effort: "low" });
+  settings.set({ apiKey: `${key}changed` });
+  assert.equal(settings.status().textRouting?.reason, "catalog-unavailable");
+  assert.equal(settings.textRequestOptions("executor").model, "gpt-5.6-sol");
+
+  const unknown = new OpenAISettings(null);
+  await unknown.save({ apiKey: key, models: { text: "gpt-5.5", image: "gpt-image-2" } }, (async () => new Response(JSON.stringify(namedPayload))) as typeof fetch);
+  assert.deepEqual(unknown.status().textRouting, {
+    planner: "gpt-5.5", executor: "gpt-5.5", reviewer: "gpt-5.5", mode: "same-model", reason: "no-qualified-executor",
+  });
+});
+
+test("目录网络缓存到期不会在长制作中悄悄改变已确认的执行模型", async () => {
+  const originalNow = Date.now;
+  let now = 1_000;
+  Date.now = () => now;
+  try {
+    const settings = new OpenAISettings(null);
+    await settings.save({ apiKey: key }, (async () => new Response(JSON.stringify(namedPayload))) as typeof fetch);
+    assert.equal(settings.textRequestOptions("executor").model, "gpt-5.6-sol");
+    now += 120_000;
+    assert.equal(settings.textRequestOptions("executor").model, "gpt-5.6-sol");
+    assert.equal(settings.status().textRouting?.mode, "split");
+  } finally {
+    Date.now = originalNow;
+  }
+});
+
+test("同一Key成功刷新目录后才更新角色快照", async () => {
+  const originalNow = Date.now;
+  let now = 1_000;
+  Date.now = () => now;
+  try {
+    const settings = new OpenAISettings(null);
+    const initial = (async () => new Response(JSON.stringify(namedPayload))) as typeof fetch;
+    await settings.save({ apiKey: key }, initial);
+    assert.equal(settings.textRequestOptions("executor").model, "gpt-5.6-sol");
+    now += 120_000;
+    const refreshed = (async () => new Response(JSON.stringify({ data: [
+      { id: "gpt-6-astra", created: 3 }, { id: "gpt-image-2", created: 1 },
+    ] }))) as typeof fetch;
+    await settings.listModels({}, refreshed);
+    assert.equal(settings.status().textRouting?.reason, "no-qualified-executor");
+    assert.equal(settings.textRequestOptions("executor").model, "gpt-6-astra");
+  } finally {
+    Date.now = originalNow;
+  }
+});
+
+test("成功刷新确认规划模型消失后阻止新文本请求，不猜测替换模型", async () => {
+  const originalNow = Date.now;
+  let now = 1_000;
+  Date.now = () => now;
+  try {
+    const settings = new OpenAISettings(null);
+    await settings.save({ apiKey: key }, (async () => new Response(JSON.stringify(namedPayload))) as typeof fetch);
+    now += 120_000;
+    await settings.listModels({}, (async () => new Response(JSON.stringify({ data: [
+      { id: "gpt-5.6-sol", created: 2 }, { id: "gpt-5.6-terra", created: 1 }, { id: "gpt-image-2", created: 1 },
+    ] }))) as typeof fetch);
+    assert.equal(settings.status().textRouting?.reason, "planner-unavailable");
+    assert.throws(() => settings.textRequestOptions("planner"), /已不在此 API Key/);
+    assert.throws(() => settings.textRequestOptions("executor"), /重新选择并保存/);
+    assert.throws(() => settings.textRequestOptions("reviewer"), /重新选择并保存/);
+  } finally {
+    Date.now = originalNow;
   }
 });
 

@@ -52,3 +52,35 @@ it("换 Key 后忽略旧请求的迟到响应", async()=>{
   finishOld({...catalog,text:[{id:"gpt-5.8",created:0}],recommended:{...catalog.recommended,text:"gpt-5.8"}});
   await waitFor(()=>expect(screen.getByLabelText("文本 / 游戏设计")).toHaveValue("gpt-5.10"));
 });
+
+it("只展示服务器确认的模型分工，未保存选择不预告生效", async()=>{
+  const configured = {...status, configured:true, source:"session" as const, models:{text:"gpt-5.9",image:"gpt-image-3"}, textRouting:{
+    planner:"gpt-5.9", executor:"gpt-5.9", reviewer:"gpt-5.9", mode:"same-model" as const, reason:"catalog-unavailable" as const,
+  }};
+  vi.mocked(getOpenAISettings).mockResolvedValue(configured);
+  vi.mocked(saveOpenAIKey).mockResolvedValue({...configured, models:{text:"gpt-5.10",image:"gpt-image-3"}, textRouting:{
+    planner:"gpt-5.10", executor:"gpt-5.9", reviewer:"gpt-5.10", mode:"split", reason:"catalog-route",
+  }});
+  await open();
+  expect(screen.getByLabelText("当前文本模型分工")).toHaveTextContent("规划与验收：gpt-5.9；代码生成：gpt-5.9");
+  expect(screen.getByLabelText("当前文本模型分工")).toHaveTextContent("尚无当前密钥的已验证模型目录，暂用同一模型");
+  await waitFor(()=>expect(screen.getByLabelText("文本 / 游戏设计")).toHaveValue("gpt-5.9"));
+  fireEvent.change(screen.getByLabelText("文本 / 游戏设计"),{target:{value:"gpt-5.10"}});
+  expect(screen.getByLabelText("当前文本模型分工")).toHaveTextContent("规划与验收：gpt-5.9；代码生成：gpt-5.9");
+  fireEvent.click(screen.getByRole("button",{name:"models.save"}));
+  await waitFor(()=>expect(screen.getByLabelText("当前文本模型分工")).toHaveTextContent("规划与验收：gpt-5.10；代码生成：gpt-5.9"));
+  expect(screen.getByLabelText("当前文本模型分工")).toHaveTextContent("已按模型能力分工");
+});
+
+it("刷新目录后读取服务器最新路由，并提示已选规划模型失效", async()=>{
+  const initial = {...status, configured:true, source:"session" as const, models:{text:"gpt-5.9",image:"gpt-image-3"}, textRouting:{
+    planner:"gpt-5.9", executor:"gpt-5.9", reviewer:"gpt-5.9", mode:"same-model" as const, reason:"catalog-unavailable" as const,
+  }};
+  const refreshed = {...initial, textRouting:{...initial.textRouting, reason:"planner-unavailable" as const}};
+  vi.mocked(getOpenAISettings).mockResolvedValueOnce(initial).mockResolvedValue(refreshed);
+  await open();
+  expect(screen.getByLabelText("当前文本模型分工")).toHaveTextContent("尚无当前密钥的已验证模型目录");
+  await waitFor(()=>expect(screen.getByLabelText("当前文本模型分工")).toHaveTextContent("所选规划模型已不可用，请重新选择并保存"));
+  expect(getOpenAIModels).toHaveBeenCalledTimes(1);
+  expect(getOpenAISettings).toHaveBeenCalledTimes(2);
+});

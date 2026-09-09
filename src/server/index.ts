@@ -15,6 +15,7 @@ import { BuildOrchestrator, DEFAULT_REPAIR_ROUNDS } from "./build-orchestrator.j
 import { ProductionJobs } from "./production-jobs.js";
 import { resolveCreationDesign } from "./creation-design.js";
 import { DesignContractGenerator } from "./design-contract.js";
+import { serveDesignPreview } from "./design-preview-http.js";
 import { readJson, sendError, sendJson } from "./http.js";
 import { IdeaAnalyzer } from "./idea-analyzer.js";
 import { GameCodeGenerator } from "./game-generator.js";
@@ -403,23 +404,7 @@ async function handleApi(request: IncomingMessage, response: ServerResponse, pat
   }
   if (request.method === "POST" && pathname === "/api/design-preview") {
     const input = projectInputSchema.parse(await readJson(request));
-    const streaming = request.headers.accept?.includes("application/x-ndjson");
-    const emit = (event: unknown) => { if (!response.destroyed) response.write(JSON.stringify(event) + "\n"); };
-    if (streaming) {
-      response.writeHead(200, { "Content-Type": "application/x-ndjson; charset=utf-8", "Cache-Control": "no-store", "X-Accel-Buffering": "no" });
-      response.flushHeaders();
-      emit({ type: "status", message: "模型请求已提交" });
-    }
-    const profile = await previewDesignContracts.generate(input, null, [
-      "这是用户确认前的实时游戏策划。根据本次描述设计具体玩法，不要返回通用套话。使用普通人能懂的中文，说明实际操作、目标、新手引导、递进与成功反馈。用户未明确的细节给出合理且操作简单的建议。灵感仅是输入，不是固定方案。",
-    ], streaming ? text => emit({ type: "delta", text }) : undefined, streaming ? () => emit({ type: "reset" }) : undefined);
-    if (streaming) {
-      emit(profile ? { type: "done", profile, source: "llm" } : { type: "error", error: "模型输出未完成或未通过检查，请检查模型设置后重试；当前片段不能用于制作。" });
-      response.end();
-      return true;
-    }
-    if (!profile) { sendJson(response, 503, { error: "实时方案生成失败，请检查模型设置或稍后重试。没有使用固定方案替代。" }); return true; }
-    sendJson(response, 200, { profile, source: "llm" });
+    await serveDesignPreview(request, response, input, previewDesignContracts);
     return true;
   }
   if (request.method === "POST" && pathname === "/api/projects") {

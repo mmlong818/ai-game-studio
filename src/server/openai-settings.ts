@@ -8,6 +8,28 @@ import type { OpenAISettingsStatus } from "../shared/contracts.js";
 export const OPENAI_TEXT_MODEL = "gpt-5.6" as const;
 export const OPENAI_IMAGE_MODEL = "gpt-image-2" as const;
 
+const LOW_REASONING_TEXT_MODELS = new Set([
+  "gpt-5.2",
+  "gpt-5.4",
+  "gpt-5.4-mini",
+  "gpt-5.5",
+  "gpt-5.6",
+  "gpt-5.6-sol",
+  "gpt-5.6-terra",
+  "gpt-5.6-luna",
+  "gpt-6-astra",
+]);
+
+export function supportsLowReasoningEffort(model: string): boolean {
+  return LOW_REASONING_TEXT_MODELS.has(model);
+}
+
+export type OpenAITextRequestOptions = {
+  model: string;
+  reasoning_effort?: "low";
+};
+export type TextRole = "planner" | "executor" | "reviewer";
+
 const openAIKeyPattern = /^sk-[A-Za-z0-9_-]+$/;
 
 const openAIKeyInputSchema = z.object({
@@ -52,6 +74,32 @@ export class OpenAISettings {
   /** 文本调用改走本机 Claude CLI；文本模型选择被固定，图片模型与 Key 逻辑不变。 */
   useClaudeCliText(model: string) {
     this.textProvider = { kind: "claude-cli", model };
+    this.catalogCache = null;
+  }
+
+  private textRouting(): NonNullable<OpenAISettingsStatus["textRouting"]> {
+    const planner = this.textProvider ? `claude-cli:${this.textProvider.model}` : this.models.text;
+    if (this.textProvider) return { planner, executor: planner, reviewer: planner, mode: "same-model", reason: "provider-fixed" };
+    const key = this.getApiKey();
+    const fingerprint = key ? createHash("sha256").update(key).digest("hex") : null;
+    // `expires` only controls when /models may be refreshed. The successfully
+    // discovered role snapshot must stay stable throughout a long production;
+    // it is invalidated by a key/provider change or replaced by a successful refresh.
+    if (!fingerprint || this.catalogCache?.fingerprint !== fingerprint) {
+      return { planner, executor: planner, reviewer: planner, mode: "same-model", reason: "catalog-unavailable" };
+    }
+    const available = new Set(this.catalogCache.catalog.text.map(model => model.id));
+    if (!available.has(planner)) {
+      return { planner, executor: planner, reviewer: planner, mode: "same-model", reason: "planner-unavailable" };
+    }
+    const candidates = planner === "gpt-6-astra"
+      ? ["gpt-5.6-sol", "gpt-5.6", "gpt-5.6-terra"]
+      : planner === "gpt-5.6" || planner === "gpt-5.6-sol"
+        ? ["gpt-5.6-terra"]
+        : [];
+    const executor = candidates.find(model => available.has(model));
+    if (!executor) return { planner, executor: planner, reviewer: planner, mode: "same-model", reason: "no-qualified-executor" };
+    return { planner, executor, reviewer: planner, mode: "split", reason: "catalog-route" };
   }
 
   status(): OpenAISettingsStatus {
@@ -61,11 +109,14 @@ export class OpenAISettings {
       source: this.sessionKey ? "session" : this.fileKey ? "file" : this.environmentKey ? "environment" : null,
       models: { ...this.models, ...(this.textProvider ? { text: `claude-cli:${this.textProvider.model}` } : {}) },
       ...(this.textProvider ? { textProvider: { ...this.textProvider } } : {}),
+      textRouting: this.textRouting(),
     };
   }
 
   set(input: unknown): OpenAISettingsStatus {
-    this.sessionKey = openAIKeyInputSchema.parse(input).apiKey;
+    const nextKey = openAIKeyInputSchema.parse(input).apiKey;
+    if (nextKey !== this.getApiKey()) this.catalogCache = null;
+    this.sessionKey = nextKey;
     return this.status();
   }
 
@@ -78,6 +129,17 @@ export class OpenAISettings {
 
   getApiKey(): string | null {
     return this.sessionKey ?? this.fileKey ?? this.environmentKey;
+  }
+
+  /** Provider-aware options shared by native OpenAI text requests. */
+  textRequestOptions(role: TextRole = "planner"): OpenAITextRequestOptions {
+    const routing = this.textRouting();
+    if (routing.reason === "planner-unavailable") {
+      throw new Error(`当前已选文本模型 ${routing.planner} 已不在此 API Key 的最新模型目录中，请重新选择并保存模型。`);
+    }
+    const model = routing[role];
+    if (this.textProvider) return { model };
+    return supportsLowReasoningEffort(model) ? { model, reasoning_effort: "low" } : { model };
   }
 
   async listModels(input: unknown = {}, fetcher?: typeof fetch): Promise<OpenAIModelCatalog> {

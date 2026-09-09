@@ -265,6 +265,10 @@ export function contractRules(profile: GameDesignProfile): string[] {
 interface DesignContractOptions {
   fetchImpl?: typeof fetch;
   endpoint?: string;
+  /** Streaming waits this long for its first content delta. Defaults to timeoutMs. */
+  streamFirstContentTimeoutMs?: number;
+  /** Streaming waits this long between later content deltas. Defaults to timeoutMs. */
+  streamIdleTimeoutMs?: number;
   timeoutMs?: number;
   maxAttempts?: number;
 }
@@ -274,27 +278,33 @@ export class DesignContractGenerator {
   private readonly fetchImpl: typeof fetch;
   private readonly endpoint: string;
   private readonly timeoutMs: number;
+  private readonly streamFirstContentTimeoutMs: number;
+  private readonly streamIdleTimeoutMs: number;
 
   constructor(private readonly settings: OpenAISettings, options: DesignContractOptions = {}) {
     this.maxAttempts = options.maxAttempts ?? MAX_ATTEMPTS;
     this.fetchImpl = options.fetchImpl ?? fetch;
     this.endpoint = options.endpoint ?? DEFAULT_ENDPOINT;
     this.timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+    this.streamFirstContentTimeoutMs = options.streamFirstContentTimeoutMs ?? this.timeoutMs;
+    this.streamIdleTimeoutMs = options.streamIdleTimeoutMs ?? this.timeoutMs;
   }
 
   /**
    * 返回 LLM 定制的设计合同;没有密钥或调用失败时返回 null,调用方回退到模板静态设计。
    * directions 传入创作者在制作对话中的历史修改意见(时间顺序),用于重建时修订设计合同。
    */
-  async generate(rawInput: ProjectInput, analysis: IdeaAnalysis | null = null, directions: string[] = [], onDelta?: (text: string) => void, onReset?: () => void): Promise<GameDesignProfile | null> {
+  async generate(rawInput: ProjectInput, analysis: IdeaAnalysis | null = null, directions: string[] = [], onDelta?: (text: string) => void, onReset?: () => void, signal?: AbortSignal, callbacks: { onValidating?: () => void } = {}): Promise<GameDesignProfile | null> {
+    signal?.throwIfAborted();
     const input = projectInputSchema.parse(rawInput);
     const apiKey = this.settings.getApiKey();
     if (!apiKey) return null;
     const template = resolveGameTemplate(input, analysis);
     const baseline = input.confirmedDesignProfile ?? createDesignProfile(template, input.difficulty);
     try {
-      return await this.requestDesign(input.idea, template, baseline, input.difficulty, analysis, directions.slice(-10), apiKey, onDelta, onReset);
+      return await this.requestDesign(input.idea, template, baseline, input.difficulty, analysis, directions.slice(-10), apiKey, onDelta, onReset, signal, callbacks.onValidating);
     } catch (error) {
+      signal?.throwIfAborted();
       const reason = error instanceof Error ? error.message : "LLM 设计合同生成失败。";
       console.warn(`设计合同 LLM 生成失败，未返回可确认的方案：${reason}`);
       return null;
@@ -324,7 +334,7 @@ export class DesignContractGenerator {
       },
     ];
     try {
-      const content = await this.requestContent(messages, "direction_audit", auditJsonSchema, apiKey);
+      const content = await this.requestContent(messages, "direction_audit", auditJsonSchema, apiKey, undefined, undefined, undefined, "reviewer");
       const parsed = auditAnswerSchema.parse(JSON.parse(content));
       return parsed.verdicts.slice(0, directions.length).map((verdict, index) => ({
         direction: directions[index] ?? verdict.direction,
@@ -362,7 +372,7 @@ export class DesignContractGenerator {
       },
     ];
     try {
-      const content = await this.requestContent(messages, "rule_fidelity", ruleAuditJsonSchema, apiKey);
+      const content = await this.requestContent(messages, "rule_fidelity", ruleAuditJsonSchema, apiKey, undefined, undefined, undefined, "reviewer");
       const parsed = ruleAuditAnswerSchema.parse(JSON.parse(content));
       if (parsed.verdicts.length !== rules.length) throw new Error(`规则审核不完整：要求${rules.length}条，实际${parsed.verdicts.length}条。`);
       return parsed.verdicts.slice(0, rules.length).map((verdict, index) => ({
@@ -387,6 +397,8 @@ export class DesignContractGenerator {
     apiKey: string,
     onDelta?: (text: string) => void,
     onReset?: () => void,
+    signal?: AbortSignal,
+    onValidating?: () => void,
   ): Promise<GameDesignProfile> {
     const messages = [
       { role: "system", content: buildSystemPrompt(template, baseline, difficulty) },
@@ -395,7 +407,11 @@ export class DesignContractGenerator {
         ...(template === "generated" ? [blueprintPlanningPrompt(idea)] : []),
       ].join("\n") },
     ];
-    const content = await this.requestContent(messages, "design_contract", responseJsonSchema, apiKey, onDelta, onReset);
+    const content = await this.requestContent(messages, "design_contract", responseJsonSchema, apiKey, onDelta, onReset, signal, "planner");
+    // This marks a real boundary: the provider has delivered a complete response,
+    // but the local contract schema has not yet accepted it. Failures before this
+    // point (including cancellation and timeouts) must never look like validation.
+    onValidating?.();
     return this.parseDesign(content, baseline, template);
   }
 
@@ -406,12 +422,25 @@ export class DesignContractGenerator {
     apiKey: string,
     onDelta?: (text: string) => void,
     onReset?: () => void,
+    signal?: AbortSignal,
+    role: import("./openai-settings.js").TextRole = "planner",
   ): Promise<string> {
     let lastError: unknown = null;
     const attempts = onDelta ? 1 : this.maxAttempts;
     for (let attempt = 1; attempt <= attempts; attempt += 1) {
+      signal?.throwIfAborted();
       const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), this.timeoutMs);
+      const streaming = Boolean(onDelta);
+      let timeoutKind: "response" | "first-content" | "idle" = streaming ? "first-content" : "response";
+      let timer: ReturnType<typeof setTimeout> | null = null;
+      const armTimeout = (milliseconds: number) => {
+        if (timer) clearTimeout(timer);
+        timer = setTimeout(() => controller.abort(), milliseconds);
+      };
+      // A stream has no fixed total deadline: a complex, valid structured answer can
+      // take longer than timeoutMs while still making visible progress. Before the
+      // first meaningful delta and between later deltas it remains bounded instead.
+      armTimeout(streaming ? this.streamFirstContentTimeoutMs : this.timeoutMs);
       try {
         const response = await this.fetchImpl(this.endpoint, {
           method: "POST",
@@ -419,9 +448,9 @@ export class DesignContractGenerator {
             "Content-Type": "application/json",
             Authorization: `Bearer ${apiKey}`,
           },
-          signal: controller.signal,
+          signal: signal ? AbortSignal.any([controller.signal, signal]) : controller.signal,
           body: JSON.stringify({
-            model: this.settings.status().models.text,
+            ...this.settings.textRequestOptions(role),
             messages,
             ...(onDelta ? { stream: true } : {}),
             response_format: {
@@ -442,7 +471,7 @@ export class DesignContractGenerator {
         }
         if (onDelta) {
           if (!response.body) throw new Error("模型未提供输出流。");
-          let text = "", complete = false;
+          let text = "", complete = false, finishReason: string | null = null;
           for await (const line of streamLines(response.body)) {
             if (!line.startsWith("data:")) continue;
             const data = line.slice(5).trim();
@@ -452,20 +481,41 @@ export class DesignContractGenerator {
             // 提供方撤回了此前的增量（例如结构化输出被校验拒绝后重写），从头累积。
             if (event.reset) { text = ""; onReset?.(); continue; }
             const delta = event.choices?.[0]?.delta;
+            const candidateFinishReason = event.choices?.[0]?.finish_reason;
+            if (typeof candidateFinishReason === "string") finishReason = candidateFinishReason;
             if (delta?.refusal) throw new Error("模型拒绝了该请求。");
-            if (typeof delta?.content === "string") { text += delta.content; onDelta(delta.content); }
+            if (typeof delta?.content === "string") {
+              text += delta.content;
+              // Empty deltas and protocol heartbeats do not prove the model is
+              // progressing, so only visible content extends the idle deadline.
+              if (delta.content.length > 0) {
+                timeoutKind = "idle";
+                armTimeout(this.streamIdleTimeoutMs);
+              }
+              onDelta(delta.content);
+            }
           }
           if (!complete) throw new Error("模型输出连接中断，方案尚未完成。");
+          if (finishReason && finishReason !== "stop") throw new Error(`模型流式输出因 ${finishReason} 截断，方案不能使用。`);
+          signal?.throwIfAborted();
           return text;
         }
-        const body = (await response.json()) as { choices?: Array<{ message?: { content?: string | null; refusal?: string | null } }> };
+        const body = (await response.json()) as { choices?: Array<{ message?: { content?: string | null; refusal?: string | null }; finish_reason?: string | null }> };
         const message = body.choices?.[0]?.message;
+        const finishReason = body.choices?.[0]?.finish_reason;
         if (message?.refusal) throw new Error(`模型拒绝了该请求：${message.refusal.slice(0, 120)}`);
+        if (finishReason && finishReason !== "stop") throw new Error(`模型输出因 ${finishReason} 截断，方案不能使用。`);
         if (!message?.content) throw new Error("模型没有返回可解析的内容。");
+        signal?.throwIfAborted();
         return message.content;
       } catch (error) {
-        if (error instanceof Error && error.name === "AbortError") {
-          lastError = new Error(`模型接口在 ${this.timeoutMs}ms 内没有响应。`);
+        signal?.throwIfAborted();
+        if (controller.signal.aborted) {
+          lastError = new Error(timeoutKind === "idle"
+            ? `模型流式输出连续 ${this.streamIdleTimeoutMs}ms 未产生有效内容。`
+            : timeoutKind === "first-content"
+              ? `模型流式输出在 ${this.streamFirstContentTimeoutMs}ms 内未收到首段有效内容。`
+              : `模型接口在 ${this.timeoutMs}ms 内没有响应。`);
           if (attempt < attempts) continue;
           throw lastError;
         }
@@ -475,7 +525,7 @@ export class DesignContractGenerator {
         }
         throw error;
       } finally {
-        clearTimeout(timer);
+        if (timer) clearTimeout(timer);
       }
     }
     throw lastError instanceof Error ? lastError : new Error("模型接口调用失败。");

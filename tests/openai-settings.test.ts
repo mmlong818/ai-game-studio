@@ -3,7 +3,7 @@ import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import { OpenAISettings, OPENAI_IMAGE_MODEL, OPENAI_TEXT_MODEL } from "../src/server/openai-settings";
+import { OpenAISettings, OPENAI_IMAGE_MODEL, OPENAI_TEXT_MODEL, supportsLowReasoningEffort } from "../src/server/openai-settings";
 
 const validKey = "sk-test_1234567890abcdef";
 
@@ -14,9 +14,27 @@ test("模型设置只公开 GPT-5.6 与 GPT Image 2", () => {
     configured: false,
     source: null,
     models: { text: OPENAI_TEXT_MODEL, image: OPENAI_IMAGE_MODEL },
+    textRouting: { planner: "gpt-5.6", executor: "gpt-5.6", reviewer: "gpt-5.6", mode: "same-model", reason: "catalog-unavailable" },
   });
   assert.equal(OPENAI_TEXT_MODEL, "gpt-5.6");
   assert.equal(OPENAI_IMAGE_MODEL, "gpt-image-2");
+  assert.deepEqual(settings.textRequestOptions(), { model: "gpt-5.6", reasoning_effort: "low" });
+});
+
+test("Claude CLI 文本设置显式省略 OpenAI 推理参数", () => {
+  const settings = new OpenAISettings(validKey);
+  settings.useClaudeCliText("opus");
+  assert.deepEqual(settings.textRequestOptions(), { model: "claude-cli:opus" });
+  assert.deepEqual(settings.status().textRouting, { planner: "claude-cli:opus", executor: "claude-cli:opus", reviewer: "claude-cli:opus", mode: "same-model", reason: "provider-fixed" });
+});
+
+test("低推理强度仅对明确核验的稳定模型启用", () => {
+  for (const model of ["gpt-5.2", "gpt-5.4", "gpt-5.4-mini", "gpt-5.5", "gpt-5.6", "gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna", "gpt-6-astra"]) {
+    assert.equal(supportsLowReasoningEffort(model), true, model);
+  }
+  for (const model of ["gpt-4.1", "gpt-5.4-nano", "gpt-6-astra-2026-09-01", "claude-cli:opus"]) {
+    assert.equal(supportsLowReasoningEffort(model), false, model);
+  }
 });
 
 test("会话密钥不会出现在返回状态中，并可安全清除", () => {
@@ -31,6 +49,7 @@ test("会话密钥不会出现在返回状态中，并可安全清除", () => {
     configured: false,
     source: null,
     models: { text: "gpt-5.6", image: "gpt-image-2" },
+    textRouting: { planner: "gpt-5.6", executor: "gpt-5.6", reviewer: "gpt-5.6", mode: "same-model", reason: "catalog-unavailable" },
   });
 });
 
