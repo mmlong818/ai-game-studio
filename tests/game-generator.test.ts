@@ -300,11 +300,15 @@ test("产物写入+静态探针:拆分为外链三件套(生产 CSP 禁内联),�
     const appScript = readFileSync(join(root, "app.js"), "utf8");
     assert.ok(appScript.includes("/api/play-events"), "遥测脚本必须注入 app.js");
     assert.ok(appScript.includes("window.__FORGE_ONBOARDING__"), "教学平台运行时必须注入 app.js");
+    assert.ok(appScript.includes("forgeVisibleGameDialog"), "平台教学必须识别游戏已有的可见教学对话框");
+    assert.ok(appScript.includes("forgeSyncOnboardingVisibility"), "平台教学必须随对话框与游戏终态协调可见性");
+    assert.ok(appScript.includes('forgeOnboardingHost.inert = hidden'), "隐藏教学不能留下可聚焦控件");
     assert.ok(appScript.includes("window.__FORGE_DESIGN__"), "失败辅助平台运行时必须注入 app.js");
     assert.ok(appScript.indexOf("const safeStorage") < appScript.indexOf("setState"), "存档垫片必须先于游戏脚本定义");
     const stripped = stripPlatformSegments(appScript);
     assert.ok(!stripped.includes("/api/play-events"), "剥离后不应残留平台脚本");
     assert.match(readFileSync(join(root, "styles.css"), "utf8"), /min-width:\s*88px/, "样式必须落入 styles.css");
+    assert.match(readFileSync(join(root, "styles.css"), "utf8"), /data-game-state="won"[\s\S]*\.forge-onboarding/, "生成游戏结算终态必须隐藏平台教学 dock");
     const manifest = JSON.parse(readFileSync(join(root, "game-manifest.json"), "utf8")) as { experimental: boolean; template: string; levelProgression: { levelCount: number }; onboardingPlan: { steps: Array<{ successSignal: string }> }; assistancePlan: { hiddenAdaptation: boolean } };
     assert.equal(manifest.experimental, true);
     assert.equal(manifest.template, "generated");

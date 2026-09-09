@@ -395,7 +395,7 @@ function declaresElementId(source: string, id: string) {
 }
 
 const generatedOnboardingStyles = `
-.forge-onboarding{position:fixed;z-index:2147483000;right:16px;bottom:16px;display:grid;width:min(360px,calc(100vw - 32px));gap:7px;padding:14px 15px;border:1px solid rgba(255,255,255,.24);border-radius:14px;background:rgba(16,20,28,.94);color:#fff;box-shadow:0 18px 54px rgba(0,0,0,.42);font:13px/1.45 system-ui,"Microsoft YaHei",sans-serif;backdrop-filter:blur(12px)}.forge-onboarding[hidden]{display:none!important}.forge-onboarding strong{font-size:12px}.forge-onboarding p,.forge-onboarding small{margin:0}.forge-onboarding small{color:#c8cfda}.forge-onboarding__actions{display:flex;justify-content:flex-end;gap:7px}.forge-onboarding button{min-width:68px;min-height:40px;padding:0 12px;border:1px solid rgba(255,255,255,.28);border-radius:9px;background:#222a38;color:#fff;font:700 12px/1 system-ui,"Microsoft YaHei",sans-serif;cursor:pointer}.forge-onboarding[data-status="completed"],.forge-onboarding[data-status="skipped"]{width:auto;grid-template-columns:auto auto;align-items:center;padding:9px 11px}.forge-onboarding[data-status="completed"] p,.forge-onboarding[data-status="completed"] small,.forge-onboarding[data-status="skipped"] p,.forge-onboarding[data-status="skipped"] small,.forge-onboarding[data-status="completed"] [data-forge-skip],.forge-onboarding[data-status="skipped"] [data-forge-skip]{display:none}@media(max-width:520px){.forge-onboarding{right:8px;bottom:8px;width:calc(100vw - 16px);padding:12px}}
+.forge-onboarding{position:fixed;z-index:2147483000;right:16px;bottom:16px;display:grid;width:min(360px,calc(100vw - 32px));gap:7px;padding:14px 15px;border:1px solid rgba(255,255,255,.24);border-radius:14px;background:rgba(16,20,28,.94);color:#fff;box-shadow:0 18px 54px rgba(0,0,0,.42);font:13px/1.45 system-ui,"Microsoft YaHei",sans-serif;backdrop-filter:blur(12px)}.forge-onboarding[hidden],.forge-onboarding[data-suppressed="true"],body:is([data-game-state="won"],[data-game-state="stage-complete"],[data-game-state="lost"]) .forge-onboarding{display:none!important}.forge-onboarding strong{font-size:12px}.forge-onboarding p,.forge-onboarding small{margin:0}.forge-onboarding small{color:#c8cfda}.forge-onboarding__actions{display:flex;justify-content:flex-end;gap:7px}.forge-onboarding button{min-width:68px;min-height:40px;padding:0 12px;border:1px solid rgba(255,255,255,.28);border-radius:9px;background:#222a38;color:#fff;font:700 12px/1 system-ui,"Microsoft YaHei",sans-serif;cursor:pointer}.forge-onboarding[data-status="completed"],.forge-onboarding[data-status="skipped"]{width:auto;grid-template-columns:auto auto;align-items:center;padding:9px 11px}.forge-onboarding[data-status="completed"] p,.forge-onboarding[data-status="completed"] small,.forge-onboarding[data-status="skipped"] p,.forge-onboarding[data-status="skipped"] small,.forge-onboarding[data-status="completed"] [data-forge-skip],.forge-onboarding[data-status="skipped"] [data-forge-skip]{display:none}@media(max-width:520px){.forge-onboarding{right:8px;bottom:8px;width:calc(100vw - 16px);padding:12px}}
 `;
 
 const generatedDesignStyles = `
@@ -488,10 +488,33 @@ function forgeLoadOnboarding() {
     forgeOnboardingState = { ...forgeOnboardingState, status: completedStepIds.length === forgeOnboardingPlan.steps.length ? "completed" : skippedStepIds.length ? "skipped" : "not-started", completedStepIds, skippedStepIds };
   } catch {}
 }
+function forgeVisibleGameDialog() {
+  const selector = 'dialog,[role="dialog"],[aria-modal="true"],[data-tutorial-dialog],[data-tutorial-modal],[data-onboarding-dialog],[data-onboarding-modal]';
+  return [...document.querySelectorAll(selector)].find((node) => {
+    if (!(node instanceof HTMLElement) || node === forgeOnboardingHost || forgeOnboardingHost.contains(node) || node.hidden || node.getAttribute("aria-hidden") === "true") return false;
+    if (node instanceof HTMLDialogElement && !node.open) return false;
+    const style = getComputedStyle(node); const rect = node.getBoundingClientRect();
+    return style.display !== "none" && style.visibility !== "hidden" && Number(style.opacity || 1) > 0 && rect.width > 0 && rect.height > 0;
+  }) || null;
+}
+function forgeSyncOnboardingVisibility() {
+  const baseHidden = forgeOnboardingState.status === "not-started";
+  const terminal = ["won", "stage-complete", "lost"].includes(document.body.dataset.gameState || "");
+  const dialog = forgeVisibleGameDialog();
+  const suppressed = terminal || Boolean(dialog);
+  const hidden = baseHidden || suppressed;
+  if (forgeOnboardingHost.hidden !== hidden) forgeOnboardingHost.hidden = hidden;
+  forgeOnboardingHost.inert = hidden;
+  if (suppressed) forgeOnboardingHost.dataset.suppressed = "true"; else delete forgeOnboardingHost.dataset.suppressed;
+  if (hidden) forgeOnboardingHost.setAttribute("aria-hidden", "true"); else forgeOnboardingHost.removeAttribute("aria-hidden");
+  if (dialog && forgeOnboardingHost.contains(document.activeElement)) {
+    const target = dialog.querySelector('button,[href],input,select,textarea,[tabindex]:not([tabindex="-1"])');
+    if (target instanceof HTMLElement) target.focus();
+  }
+}
 function forgeRenderOnboarding() {
   const step = forgeActiveStep();
   const terminal = forgeOnboardingState.status === "completed" || forgeOnboardingState.status === "skipped";
-  forgeOnboardingHost.hidden = forgeOnboardingState.status === "not-started";
   forgeOnboardingHost.dataset.status = forgeOnboardingState.status;
   forgeOnboardingHost.querySelector("[data-forge-title]").textContent = step ? "新手教学 " + (forgeOnboardingPlan.steps.indexOf(step) + 1) + " / " + forgeOnboardingPlan.steps.length : forgeOnboardingState.status === "completed" ? "教学已完成" : "已跳过教学";
   forgeOnboardingHost.querySelector("[data-forge-instruction]").textContent = step?.instruction || "需要时可以重新学习。";
@@ -501,6 +524,7 @@ function forgeRenderOnboarding() {
   forgeOnboardingHost.querySelector("[data-forge-skip]").hidden = !step?.skippable;
   forgeOnboardingHost.querySelector("[data-forge-replay]").textContent = terminal ? "重看" : "重新开始";
   document.body.dataset.onboardingStatus = forgeOnboardingState.status;
+  forgeSyncOnboardingVisibility();
   forgeReserveOnboardingSpace();
   dispatchEvent(new CustomEvent("forge:onboarding-change", { detail: { state: structuredClone(forgeOnboardingState) } }));
 }
@@ -538,7 +562,12 @@ function forgeReplayOnboarding() {
 window.__FORGE_ONBOARDING__ = Object.freeze({ plan: forgeOnboardingPlan, start: forgeStartOnboarding, signal: forgeSignalOnboarding, isActive: () => forgeOnboardingState.status === "active", getState: () => structuredClone(forgeOnboardingState), skip: forgeSkipOnboarding, replay: forgeReplayOnboarding });
 forgeOnboardingHost.querySelector("[data-forge-skip]").addEventListener("click", forgeSkipOnboarding);
 forgeOnboardingHost.querySelector("[data-forge-replay]").addEventListener("click", forgeReplayOnboarding);
-addEventListener("game:state-change", (event) => { if (event.detail?.state === "playing") forgeStartOnboarding(); });
+const forgeOnboardingObserver = new MutationObserver((changes) => {
+  if (changes.every((change) => forgeOnboardingHost.contains(change.target))) return;
+  queueMicrotask(forgeSyncOnboardingVisibility);
+});
+forgeOnboardingObserver.observe(document.body, { subtree: true, childList: true, attributes: true, attributeFilter: ["class", "style", "hidden", "open", "role", "aria-hidden", "aria-modal", "data-game-state", "data-tutorial-dialog", "data-tutorial-modal", "data-onboarding-dialog", "data-onboarding-modal"] });
+addEventListener("game:state-change", (event) => queueMicrotask(() => { if (event.detail?.state === "playing") forgeStartOnboarding(); forgeSyncOnboardingVisibility(); }));
 forgeLoadOnboarding(); forgeRenderOnboarding();
 `;
 }

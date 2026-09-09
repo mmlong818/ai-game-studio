@@ -2328,9 +2328,46 @@ export async function inspectGeneratedGameInBrowser(root: string, options: { exp
   const screenshotPaths: string[] = [];
   const failures: string[] = [];
   const evidence: string[] = [];
+  type GeneratedCheckId = "GEN-BROWSER-CONTRACT" | "GEN-BROWSER-LAYOUT" | "GEN-BROWSER-ERRORS" | "GEN-BROWSER-ONBOARDING" | "PROGRESSION-RUNTIME" | "CONTENT-VARIATION-REHEARSAL" | "ASSISTANCE-RUNTIME";
+  type GeneratedCheckStatus = "passed" | "failed" | "not-run";
+  const generatedCheckIds: GeneratedCheckId[] = ["GEN-BROWSER-CONTRACT", "GEN-BROWSER-LAYOUT", "GEN-BROWSER-ERRORS", "GEN-BROWSER-ONBOARDING", "PROGRESSION-RUNTIME", "CONTENT-VARIATION-REHEARSAL", "ASSISTANCE-RUNTIME"];
+  const generatedCheckState = new Map<GeneratedCheckId, { started: boolean; completed: boolean; failures: string[] }>(generatedCheckIds.map((id) => [id, { started: false, completed: false, failures: [] }]));
+  let activeGeneratedCheck: GeneratedCheckId = "GEN-BROWSER-CONTRACT";
+  let generatedBlockingFailure: string | null = null;
+  const beginGeneratedCheck = (id: GeneratedCheckId) => {
+    activeGeneratedCheck = id;
+    generatedCheckState.get(id)!.started = true;
+  };
+  const completeGeneratedCheck = (id: GeneratedCheckId) => {
+    generatedCheckState.get(id)!.completed = true;
+  };
+  const recordGeneratedFailure = (message: string, id = activeGeneratedCheck) => {
+    failures.push(message);
+    generatedCheckState.get(id)!.failures.push(message);
+    generatedBlockingFailure ??= message;
+  };
+  const generatedReportStatus = (id: GeneratedCheckId): GeneratedCheckStatus => {
+    const state = generatedCheckState.get(id)!;
+    return state.failures.length ? "failed" : state.completed ? "passed" : "not-run";
+  };
+  const generatedReportEvidence = (id: GeneratedCheckId, passedEvidence: string) => {
+    const state = generatedCheckState.get(id)!;
+    if (state.failures.length) return state.failures.join(" ");
+    if (state.completed) return passedEvidence;
+    const blocker = generatedBlockingFailure ? `被 ${generatedBlockingFailure} 阻断` : "没有到达该检查的执行阶段";
+    return state.started ? `未完整执行：${blocker}。` : `未执行：${blocker}。`;
+  };
+  const recordUnclassifiedGeneratedFailures = () => {
+    const classified = new Set([...generatedCheckState.values()].flatMap((state) => state.failures));
+    for (const failure of failures) {
+      if (!classified.has(failure)) generatedCheckState.get("GEN-BROWSER-CONTRACT")!.failures.push(failure);
+    }
+  };
   let progressionReport: Record<string, unknown> | null = null;
   let variationReport: Record<string, unknown> | null = null;
   let assistanceReport: Record<string, unknown> | null = null;
+  let completedLayoutViewports = 0;
+  let completedErrorViewports = 0;
   const memoryMatch = requiresMemoryMatchNaturalCheck(root);
   let memoryFailure: string | null = null;
   const generatedViewports = [
@@ -2375,11 +2412,16 @@ export async function inspectGeneratedGameInBrowser(root: string, options: { exp
         if (message.type() === "error" && !message.text().includes("Failed to load resource")) runtimeErrors.push(`console: ${message.text()}`);
       });
       page.on("pageerror", (error) => runtimeErrors.push(`pageerror: ${error.message}`));
+      let pageLoaded = false;
       try {
-        await page.goto(probeUrl(url), { waitUntil: "domcontentloaded", timeout: 10_000 });
+        beginGeneratedCheck("GEN-BROWSER-CONTRACT");
+        const response = await page.goto(probeUrl(url), { waitUntil: "domcontentloaded", timeout: 10_000 });
+        if (!response?.ok()) throw new Error(`试玩文档加载失败：HTTP ${response?.status() ?? "unknown"}。`);
+        pageLoaded = true;
+        beginGeneratedCheck("GEN-BROWSER-LAYOUT");
         await page.waitForTimeout(400);
         const initialState = await page.locator("body").getAttribute("data-game-state");
-        if (initialState !== "idle") failures.push(`${viewport.name} 初始状态不是 idle，而是 ${initialState ?? "空"}。`);
+        if (initialState !== "idle") recordGeneratedFailure(`${viewport.name} 初始状态不是 idle，而是 ${initialState ?? "空"}。`, "GEN-BROWSER-CONTRACT");
         const layout = await page.evaluate(() => {
           const root = document.documentElement;
           const start = document.querySelector<HTMLElement>("#start");
@@ -2389,10 +2431,12 @@ export async function inspectGeneratedGameInBrowser(root: string, options: { exp
             startVisible: Boolean(startRect && startRect.width >= 44 && startRect.height >= 44 && startRect.top >= 0 && startRect.bottom <= innerHeight),
           };
         });
-        if (layout.overflow > 1) failures.push(`${viewport.name} 横向溢出 ${layout.overflow}px。`);
-        if (!layout.startVisible) failures.push(`${viewport.name} 开始按钮 #start 不在首屏或小于 44px。`);
+        if (layout.overflow > 1) recordGeneratedFailure(`${viewport.name} 横向溢出 ${layout.overflow}px。`, "GEN-BROWSER-LAYOUT");
+        if (!layout.startVisible) recordGeneratedFailure(`${viewport.name} 开始按钮 #start 不在首屏或小于 44px。`, "GEN-BROWSER-LAYOUT");
+        completedLayoutViewports += 1;
         await takeScreenshot(page, join(qualityRoot, `${viewport.name}-idle.png`), screenshotPaths);
         if (viewport.name === "phone-standard") {
+          beginGeneratedCheck("GEN-BROWSER-CONTRACT");
           await page.locator("#start").click({ timeout: 3_000 });
           await page.waitForFunction(() => document.body.dataset.gameState === "playing", undefined, { timeout: 5_000 });
           const onboardingWaiting = await page.evaluate(() => {
@@ -2403,10 +2447,10 @@ export async function inspectGeneratedGameInBrowser(root: string, options: { exp
           await page.waitForTimeout(600);
           const pressureAfterWait = await page.evaluate(() => (window as any).__GAME_DEBUG__?.getState?.()?.pressureClock);
           if (onboardingWaiting.onboarding?.status !== "active" || !onboardingWaiting.visible || !Array.isArray(onboardingWaiting.plan?.steps)) {
-            failures.push("开始后没有进入可见的合同教学状态。");
+            recordGeneratedFailure("开始后没有进入可见的合同教学状态。", "GEN-BROWSER-ONBOARDING");
           }
           if (!Number.isFinite(onboardingWaiting.game?.pressureClock) || pressureAfterWait !== onboardingWaiting.game?.pressureClock) {
-            failures.push(`教学等待期自动压力仍在推进：${String(onboardingWaiting.game?.pressureClock)} → ${String(pressureAfterWait)}。`);
+            recordGeneratedFailure(`教学等待期自动压力仍在推进：${String(onboardingWaiting.game?.pressureClock)} → ${String(pressureAfterWait)}。`, "GEN-BROWSER-ONBOARDING");
           }
           await takeScreenshot(page, join(qualityRoot, `${viewport.name}-playing.png`), screenshotPaths);
           const hooks = await page.evaluate(() => {
@@ -2414,13 +2458,14 @@ export async function inspectGeneratedGameInBrowser(root: string, options: { exp
             return { hasState: Boolean(debug?.getState), hasWin: Boolean(debug?.forceWin), hasLose: Boolean(debug?.forceLose), hasOnboardingProbe: Boolean(debug?.performOnboardingStep) };
           });
           if (!hooks.hasState || (!endless && !hooks.hasWin) || (failureAllowed && !hooks.hasLose) || !hooks.hasOnboardingProbe) {
-            failures.push(`probe 模式缺少 getState/performOnboardingStep${endless ? "" : "/forceWin"}${failureAllowed ? "/forceLose" : ""} 钩子。`);
+            recordGeneratedFailure(`probe 模式缺少 getState/performOnboardingStep${endless ? "" : "/forceWin"}${failureAllowed ? "/forceLose" : ""} 钩子。`, "GEN-BROWSER-CONTRACT");
           } else {
+            beginGeneratedCheck("GEN-BROWSER-ONBOARDING");
             const stepCount = onboardingWaiting.plan?.steps?.length ?? 0;
             for (let index = 0; index < stepCount; index += 1) {
               await page.evaluate(() => (window as any).__GAME_DEBUG__.performOnboardingStep());
               await page.waitForFunction((completed) => (window as any).__FORGE_ONBOARDING__?.getState?.()?.completedStepIds?.length > completed, index, { timeout: 3_000 })
-                .catch(() => failures.push(`第 ${index + 1} 个教学探针没有通过正常玩法处理器完成。`));
+                .catch(() => recordGeneratedFailure(`第 ${index + 1} 个教学探针没有通过正常玩法处理器完成。`, "GEN-BROWSER-ONBOARDING"));
             }
             const completedOnboarding = await page.evaluate(() => {
               const api = (window as any).__FORGE_ONBOARDING__;
@@ -2428,21 +2473,23 @@ export async function inspectGeneratedGameInBrowser(root: string, options: { exp
             });
             const actualSignals = completedOnboarding.state?.acceptedSignals?.map(({ signal }: { signal: string }) => signal) ?? [];
             if (completedOnboarding.state?.status !== "completed" || JSON.stringify(actualSignals) !== JSON.stringify(completedOnboarding.expectedSignals)) {
-              failures.push(`教学没有按合同信号顺序完成：${JSON.stringify({ expected: completedOnboarding.expectedSignals, actual: actualSignals })}。`);
+              recordGeneratedFailure(`教学没有按合同信号顺序完成：${JSON.stringify({ expected: completedOnboarding.expectedSignals, actual: actualSignals })}。`, "GEN-BROWSER-ONBOARDING");
             }
             await page.reload({ waitUntil: "domcontentloaded", timeout: 10_000 });
             await page.waitForFunction(() => Boolean((window as any).__FORGE_ONBOARDING__ && (window as any).__GAME_DEBUG__), undefined, { timeout: 5_000 });
             const restoredOnboarding = await page.evaluate(() => (window as any).__FORGE_ONBOARDING__.getState());
-            if (restoredOnboarding.status !== "completed" || restoredOnboarding.completedStepIds.length !== stepCount) failures.push("教学完成状态刷新后没有恢复。");
+            if (restoredOnboarding.status !== "completed" || restoredOnboarding.completedStepIds.length !== stepCount) recordGeneratedFailure("教学完成状态刷新后没有恢复。", "GEN-BROWSER-ONBOARDING");
             const replaySkip = await page.evaluate(() => {
               const api = (window as any).__FORGE_ONBOARDING__;
               api.replay(); const replayed = api.getState(); api.skip(); const skipped = api.getState();
               return { replayed, skipped };
             });
-            if (replaySkip.replayed.status !== "active" || replaySkip.skipped.status !== "skipped" || replaySkip.skipped.skippedStepIds.length !== stepCount) failures.push("教学重看或跳过不可用。");
+            if (replaySkip.replayed.status !== "active" || replaySkip.skipped.status !== "skipped" || replaySkip.skipped.skippedStepIds.length !== stepCount) recordGeneratedFailure("教学重看或跳过不可用。", "GEN-BROWSER-ONBOARDING");
+            completeGeneratedCheck("GEN-BROWSER-ONBOARDING");
             await page.locator("#start").click({ timeout: 3_000 });
             await page.waitForFunction(() => document.body.dataset.gameState === "playing", undefined, { timeout: 5_000 });
             if (!endless) {
+            beginGeneratedCheck("PROGRESSION-RUNTIME");
             const levelStates: Array<{ level: number; difficulty: Record<string, number>; contentVariant: string; runtimeSignature: string; mechanicsActive: string[] }> = [];
             for (let level = 1; level <= campaign.levelCount; level += 1) {
               const state = await page.evaluate((targetLevel) => {
@@ -2450,13 +2497,13 @@ export async function inspectGeneratedGameInBrowser(root: string, options: { exp
                 debug.setLevel(targetLevel); debug.restart();
                 return { ...debug.getState(), __gameState: document.body.dataset.gameState };
               }, level);
-              if (state?.level !== level || state?.__gameState !== "playing") failures.push(`第 ${level} 关没有通过 setLevel/restart 真实进入 playing。`);
+              if (state?.level !== level || state?.__gameState !== "playing") recordGeneratedFailure(`第 ${level} 关没有通过 setLevel/restart 真实进入 playing。`, "PROGRESSION-RUNTIME");
               // Accept named rule parameters at the top level as well as in the
               // documented difficulty object; neither representation is proof of
               // gameplay on its own, and both still undergo the same checks.
               const difficulty = state?.difficulty && typeof state.difficulty === "object" ? state.difficulty : state;
-              if (!campaign.difficultyKeys.every(key => Number.isFinite(difficulty?.[key]) && difficulty[key] >= 0)) failures.push(`第 ${level} 关缺少合同要求的真实难度数值：${campaign.difficultyKeys.join("、")}。`);
-              if (!state?.contentVariant || !state?.runtimeSignature || !Array.isArray(state?.mechanicsActive) || state.mechanicsActive.length === 0) failures.push(`第 ${level} 关缺少结构变化证据。`);
+              if (!campaign.difficultyKeys.every(key => Number.isFinite(difficulty?.[key]) && difficulty[key] >= 0)) recordGeneratedFailure(`第 ${level} 关缺少合同要求的真实难度数值：${campaign.difficultyKeys.join("、")}。`, "PROGRESSION-RUNTIME");
+              if (!state?.contentVariant || !state?.runtimeSignature || !Array.isArray(state?.mechanicsActive) || state.mechanicsActive.length === 0) recordGeneratedFailure(`第 ${level} 关缺少结构变化证据。`, "PROGRESSION-RUNTIME");
               levelStates.push({ level, difficulty, contentVariant: state?.contentVariant, runtimeSignature: state?.runtimeSignature, mechanicsActive: state?.mechanicsActive });
             }
             let maximumMultiplierStep = 0;
@@ -2465,7 +2512,7 @@ export async function inspectGeneratedGameInBrowser(root: string, options: { exp
                 const debug = (window as any).__GAME_DEBUG__;
                 debug.setLevel(level); debug.restart(); return debug.getState()?.level;
               }, campaign.levelCount + 1);
-              if (beyond !== campaign.levelCount) failures.push(`确认仅 ${campaign.levelCount} 关，越界选择却进入第 ${String(beyond)} 关。`);
+              if (beyond !== campaign.levelCount) recordGeneratedFailure(`确认仅 ${campaign.levelCount} 关，越界选择却进入第 ${String(beyond)} 关。`, "PROGRESSION-RUNTIME");
             }
             // 确认方案里的难度维度可以随关递增（配额）也可以递减（半径、间隔）；验收只要求同一维度
             // 全程朝一个方向单调变化，不把“数值下降”本身当成违规，否则会迫使游戏偏离已确认的设计。
@@ -2473,17 +2520,19 @@ export async function inspectGeneratedGameInBrowser(root: string, options: { exp
               const steps = levelStates.slice(1).map((state, index) => Number((Number(state.difficulty?.[key]) - Number(levelStates[index].difficulty?.[key])).toFixed(3)));
               steps.forEach((step, index) => {
                 maximumMultiplierStep = Math.max(maximumMultiplierStep, Math.abs(step));
-                if (campaign.legacy && (step < 0 || step > .12)) failures.push(`第 ${index + 1}→${index + 2} 关 ${key} 变化 ${step} 不符合确认的递进规则。`);
+                if (campaign.legacy && (step < 0 || step > .12)) recordGeneratedFailure(`第 ${index + 1}→${index + 2} 关 ${key} 变化 ${step} 不符合确认的递进规则。`, "PROGRESSION-RUNTIME");
               });
               // 0 表示该规则在这些关尚未启用（例如第 3 关才引入退潮）；方向一致性只看规则启用后的各关。
               const active = levelStates.map(state => Number(state.difficulty?.[key])).filter(value => Number.isFinite(value) && value !== 0);
               const activeSteps = active.slice(1).map((value, index) => Number((value - active[index]).toFixed(3)));
-              if (!campaign.legacy && activeSteps.some(step => step > 0) && activeSteps.some(step => step < 0)) failures.push(`${key} 在启用后的各关之间既上升又下降（${active.join("→")}），不是确认方案中方向一致的难度递进。`);
+              if (!campaign.legacy && activeSteps.some(step => step > 0) && activeSteps.some(step => step < 0)) recordGeneratedFailure(`${key} 在启用后的各关之间既上升又下降（${active.join("→")}），不是确认方案中方向一致的难度递进。`, "PROGRESSION-RUNTIME");
             }
             const milestoneStates = campaign.milestones.map((level) => levelStates[level - 1]);
-            if (new Set(milestoneStates.map(({ contentVariant }) => contentVariant)).size !== campaign.milestones.length || new Set(milestoneStates.map(({ runtimeSignature }) => runtimeSignature)).size !== campaign.milestones.length) failures.push(`第 ${campaign.milestones.join("/")} 关没有形成合同要求的不同运行结构。`);
+            if (new Set(milestoneStates.map(({ contentVariant }) => contentVariant)).size !== campaign.milestones.length || new Set(milestoneStates.map(({ runtimeSignature }) => runtimeSignature)).size !== campaign.milestones.length) recordGeneratedFailure(`第 ${campaign.milestones.join("/")} 关没有形成合同要求的不同运行结构。`, "PROGRESSION-RUNTIME");
             progressionReport = { checkedAt: new Date().toISOString(), campaign, levelsChecked: levelStates.length, maximumMultiplierStep, milestones: milestoneStates };
+            completeGeneratedCheck("PROGRESSION-RUNTIME");
 
+            beginGeneratedCheck("CONTENT-VARIATION-REHEARSAL");
             const expectedVariationSignals = onboardingWaiting.plan.steps.map((step: any) => step.successSignal);
             await page.evaluate(`window.__forgeObservedSignals=[];window.__forgeSignalListener=function(event){window.__forgeObservedSignals.push(event.detail&&event.detail.signal)};addEventListener("forge:mechanic-signal",window.__forgeSignalListener);`);
             await page.evaluate(level => { const debug = (window as any).__GAME_DEBUG__; debug.setLevel(level); debug.restart(); }, rehearsalLevel);
@@ -2494,15 +2543,16 @@ export async function inspectGeneratedGameInBrowser(root: string, options: { exp
             for (let index = 0; index < expectedVariationSignals.length; index += 1) {
               await page.evaluate(() => (window as any).__GAME_DEBUG__.performOnboardingStep());
               await page.waitForFunction((completed) => (window as any).__FORGE_ONBOARDING__?.getState?.()?.completedStepIds?.length > completed, index, { timeout: 3000 })
-                .catch(() => failures.push(`第 ${rehearsalLevel} 关第 ${index + 1} 个复演动作未完成。`));
+                .catch(() => recordGeneratedFailure(`第 ${rehearsalLevel} 关第 ${index + 1} 个复演动作未完成。`, "CONTENT-VARIATION-REHEARSAL"));
             }
             const variation = await page.evaluate(() => {
               const forgeWindow = window as any;
               removeEventListener("forge:mechanic-signal", forgeWindow.__forgeSignalListener);
               return { state: forgeWindow.__GAME_DEBUG__.getState(), observed: [...forgeWindow.__forgeObservedSignals] };
             });
-            if (!expectedVariationSignals.every((signal: string) => variation.observed.includes(signal)) || variation.state?.level !== rehearsalLevel) failures.push(`第 ${rehearsalLevel} 关没有通过正常玩法处理器复演全部教学机制：${JSON.stringify({ expected: expectedVariationSignals, observed: variation.observed })}。`);
+            if (!expectedVariationSignals.every((signal: string) => variation.observed.includes(signal)) || variation.state?.level !== rehearsalLevel) recordGeneratedFailure(`第 ${rehearsalLevel} 关没有通过正常玩法处理器复演全部教学机制：${JSON.stringify({ expected: expectedVariationSignals, observed: variation.observed })}。`, "CONTENT-VARIATION-REHEARSAL");
             variationReport = { checkedAt: new Date().toISOString(), sourceLevel: 1, rehearsalLevel, expectedSignals: expectedVariationSignals, observedSignals: variation.observed, contentVariant: variation.state?.contentVariant, runtimeSignature: variation.state?.runtimeSignature };
+            completeGeneratedCheck("CONTENT-VARIATION-REHEARSAL");
             // A taught action can legitimately open help. Finish that real user
             // interaction before testing controls behind the modal.
             const helpDialog = page.getByRole("dialog").filter({ visible: true });
@@ -2512,7 +2562,7 @@ export async function inspectGeneratedGameInBrowser(root: string, options: { exp
             }
             } else {
               const mode = await page.evaluate(() => (window as any).__GAME_DEBUG__.getState()?.mode);
-              if (mode !== "endless") failures.push("无限玩法没有返回真实模式endless。");
+              if (mode !== "endless") recordGeneratedFailure("无限玩法没有返回真实模式endless。", "PROGRESSION-RUNTIME");
               await page.evaluate(() => (window as any).__GAME_DEBUG__.restart());
               await page.waitForFunction(() => document.body.dataset.gameState === "playing", undefined, { timeout: 3000 });
               progressionReport = { checkedAt: new Date().toISOString(), status: "not-applicable", reason: "确认无限玩法，没有有限关卡。" };
@@ -2520,29 +2570,53 @@ export async function inspectGeneratedGameInBrowser(root: string, options: { exp
             }
 
             if (failureAllowed) {
+            beginGeneratedCheck("ASSISTANCE-RUNTIME");
             const assistanceActions: string[] = [];
             await page.evaluate(infinite => { const debug = (window as any).__GAME_DEBUG__; if (!infinite) debug.setLevel(1); debug.restart(); }, endless);
             for (let failureCount = 1; failureCount <= 4; failureCount += 1) {
               const cause = `生成玩法验收失败原因 ${failureCount}`;
               await page.evaluate((value) => (window as any).__GAME_DEBUG__.forceLose(value), cause);
-              await page.waitForFunction(() => document.body.dataset.gameState === "lost" && Boolean((window as any).__FORGE_DESIGN__?.getAssistance?.()?.active), undefined, { timeout: 3_000 });
+              const assistanceVisible = await page.waitForFunction(() => document.body.dataset.gameState === "lost" && Boolean((window as any).__FORGE_DESIGN__?.getAssistance?.()?.active), undefined, { timeout: 3_000 })
+                .then(() => true)
+                .catch(async () => {
+                  const actual = await page.evaluate(() => {
+                    const gameState = String(document.body.dataset.gameState ?? "");
+                    const assistance = (window as any).__FORGE_DESIGN__?.getAssistance?.();
+                    const active = assistance?.active;
+                    const action = typeof active?.action === "string" && ["explain-cause", "highlight-rule", "directional-hint", "show-step", "checkpoint", "lower-one-dimension"].includes(active.action)
+                      ? active.action
+                      : "unknown";
+                    return {
+                      gameState: ["idle", "playing", "won", "lost", "paused", "stage-complete"].includes(gameState) ? gameState : "unknown",
+                      assistanceActive: Boolean(active),
+                      assistanceAction: active ? action : null,
+                      assistanceFailureCount: Number.isSafeInteger(active?.failureCount) ? active.failureCount : null,
+                    };
+                  });
+                  recordGeneratedFailure(`ASSISTANCE-RUNTIME 等待失败：期待 gameState=lost 且 assistance.active=true；实际 ${JSON.stringify(actual)}。`, "ASSISTANCE-RUNTIME");
+                  return false;
+                });
+              // Continuing would turn this actionable condition into arbitrary
+              // follow-on hook errors. The remaining assistance steps were not run.
+              if (!assistanceVisible) break;
               const shown = await page.evaluate(() => ({ assistance: (window as any).__FORGE_DESIGN__.getAssistance(), visible: Boolean(document.querySelector<HTMLElement>(".forge-assistance:not([hidden])")?.getBoundingClientRect().height), message: document.querySelector("[data-forge-assistance-message]")?.textContent ?? "" }));
               const expected = [...(await page.evaluate(() => (window as any).__FORGE_DESIGN__.assistancePlan.steps))].filter((step: any) => step.afterFailures <= failureCount).at(-1) as any;
-              if (shown.assistance.active?.failureCount !== failureCount || shown.assistance.active?.action !== expected.action || !shown.visible || !shown.message.includes(cause) || !shown.message.includes(expected.message)) failures.push(`第 ${failureCount} 次失败没有显式呈现真实原因和 ${expected.action} 合同帮助。`);
+              if (shown.assistance.active?.failureCount !== failureCount || shown.assistance.active?.action !== expected.action || !shown.visible || !shown.message.includes(cause) || !shown.message.includes(expected.message)) recordGeneratedFailure(`第 ${failureCount} 次失败没有显式呈现真实原因和 ${expected.action} 合同帮助。`, "ASSISTANCE-RUNTIME");
               assistanceActions.push(String(shown.assistance.active?.action));
               if (failureCount < 4) await page.evaluate(() => (window as any).__GAME_DEBUG__.restart());
             }
             await page.reload({ waitUntil: "domcontentloaded", timeout: 10_000 });
             await page.waitForFunction(() => Boolean((window as any).__FORGE_DESIGN__ && (window as any).__GAME_DEBUG__), undefined, { timeout: 5_000 });
             const restoredAssistance = await page.evaluate(() => (window as any).__FORGE_DESIGN__.getAssistance());
-            if (restoredAssistance.active?.failureCount !== 4) failures.push("刷新后没有恢复第 4 次失败帮助。");
+            if (restoredAssistance.active?.failureCount !== 4) recordGeneratedFailure("刷新后没有恢复第 4 次失败帮助。", "ASSISTANCE-RUNTIME");
             await page.locator("#start").click({ timeout: 3_000 });
             if (!endless) {
             await page.evaluate(() => (window as any).__GAME_DEBUG__.forceWin());
             await page.waitForTimeout(30);
             const resetAssistance = await page.evaluate(() => (window as any).__FORGE_DESIGN__.getAssistance());
-            if (resetAssistance.active !== null || Object.keys(resetAssistance.consecutiveFailuresByLevel ?? {}).length !== 0) failures.push("成功后没有清除连续失败帮助状态。");
+            if (resetAssistance.active !== null || Object.keys(resetAssistance.consecutiveFailuresByLevel ?? {}).length !== 0) recordGeneratedFailure("成功后没有清除连续失败帮助状态。", "ASSISTANCE-RUNTIME");
             assistanceReport = { checkedAt: new Date().toISOString(), observedActions: assistanceActions, persistedFailureCount: restoredAssistance.active?.failureCount, resetAfterWin: resetAssistance.active === null, hiddenAdaptation: false };
+            completeGeneratedCheck("ASSISTANCE-RUNTIME");
             } else {
               assistanceReport = { checkedAt: new Date().toISOString(), observedActions: assistanceActions, persistedFailureCount: restoredAssistance.active?.failureCount, resetAfterWin: "not-applicable", reason: "无限玩法没有胜利事件，不能伪造胜利来清零帮助。" };
             }
@@ -2551,9 +2625,9 @@ export async function inspectGeneratedGameInBrowser(root: string, options: { exp
             }
             // 被结算遮罩盖住的 #restart 是合同违规，必须变成可修正的判定，而不是让整轮验收异常中断。
             await page.locator("#restart").click({ timeout: 3_000 })
-              .catch(async () => failures.push(`游戏中 #restart 无法点击:${await clickObstructionDiagnosis(page, "#restart")}。`));
+              .catch(async () => recordGeneratedFailure(`游戏中 #restart 无法点击:${await clickObstructionDiagnosis(page, "#restart")}。`, "GEN-BROWSER-CONTRACT"));
             if (await page.locator("body").getAttribute("data-game-state") === "idle") await page.locator("#start").click({ timeout: 3_000 })
-              .catch(async () => failures.push(`回到 idle 后 #start 无法点击:${await clickObstructionDiagnosis(page, "#start")}。`));
+              .catch(async () => recordGeneratedFailure(`回到 idle 后 #start 无法点击:${await clickObstructionDiagnosis(page, "#start")}。`, "GEN-BROWSER-CONTRACT"));
             await page.waitForFunction(() => document.body.dataset.gameState === "playing", undefined, { timeout: 5_000 });
             if (!endless) {
             if (memoryMatch && !campaign.legacy) {
@@ -2562,37 +2636,43 @@ export async function inspectGeneratedGameInBrowser(root: string, options: { exp
             }
             await page.evaluate(() => (window as Window & { __GAME_DEBUG__?: { forceWin?: () => void } }).__GAME_DEBUG__?.forceWin?.());
             await page.waitForFunction(() => document.body.dataset.gameState === "won", undefined, { timeout: 3_000 })
-              .catch(() => failures.push("forceWin 后状态没有进入 won。"));
+              .catch(() => recordGeneratedFailure("forceWin 后状态没有进入 won。", "GEN-BROWSER-CONTRACT"));
             if (memoryMatch) await assertMemoryResultNotClipped(page);
             await takeScreenshot(page, join(qualityRoot, `${viewport.name}-result.png`), screenshotPaths);
             await page.locator("#restart").click({ timeout: 3_000 })
-              .catch(async () => failures.push(`结算后 #restart 无法点击:${await clickObstructionDiagnosis(page, "#restart")}。`));
+              .catch(async () => recordGeneratedFailure(`结算后 #restart 无法点击:${await clickObstructionDiagnosis(page, "#restart")}。`, "GEN-BROWSER-CONTRACT"));
             await page.waitForFunction(() => ["idle", "playing"].includes(document.body.dataset.gameState ?? ""), undefined, { timeout: 3_000 })
-              .catch(() => failures.push("重开后状态没有回到 idle/playing。"));
+              .catch(() => recordGeneratedFailure("重开后状态没有回到 idle/playing。", "GEN-BROWSER-CONTRACT"));
             const stateAfterRestart = await page.locator("body").getAttribute("data-game-state");
             if (stateAfterRestart === "idle") {
               await page.locator("#start").click({ timeout: 3_000 })
-                .catch(async () => failures.push(`重开回到 idle 后 #start 无法点击:${await clickObstructionDiagnosis(page, "#start")}。`));
+                .catch(async () => recordGeneratedFailure(`重开回到 idle 后 #start 无法点击:${await clickObstructionDiagnosis(page, "#start")}。`, "GEN-BROWSER-CONTRACT"));
               await page.waitForFunction(() => document.body.dataset.gameState === "playing", undefined, { timeout: 5_000 })
-                .catch(() => failures.push("重开后无法再次进入 playing。"));
+                .catch(() => recordGeneratedFailure("重开后无法再次进入 playing。", "GEN-BROWSER-CONTRACT"));
             }
             } else {
               await page.waitForTimeout(1000);
-              if (await page.locator("body").getAttribute("data-game-state") !== "playing") failures.push("无限模式重开后的观察期未保持可玩状态。");
+              if (await page.locator("body").getAttribute("data-game-state") !== "playing") recordGeneratedFailure("无限模式重开后的观察期未保持可玩状态。", "GEN-BROWSER-CONTRACT");
               await takeScreenshot(page, join(qualityRoot, `${viewport.name}-endless.png`), screenshotPaths);
             }
             if (failureAllowed) {
             await page.evaluate(() => (window as Window & { __GAME_DEBUG__?: { forceLose?: () => void } }).__GAME_DEBUG__?.forceLose?.());
             await page.waitForFunction(() => document.body.dataset.gameState === "lost", undefined, { timeout: 3_000 })
-              .catch(() => failures.push("forceLose 后状态没有进入 lost。"));
+              .catch(() => recordGeneratedFailure("forceLose 后状态没有进入 lost。", "GEN-BROWSER-CONTRACT"));
             }
+            completeGeneratedCheck("GEN-BROWSER-CONTRACT");
           }
           evidence.push(`390×844 执行教学安全等待、动作探针、刷新恢复、重看/跳过，以及 ${endless ? "无限模式声明与重开短期观察，不代表无限时长运行证明" : "idle→playing→won→重开"}${failureAllowed ? "；验证失败结算" : "；按确认方案不测试失败结算"}。`);
         }
-        if (runtimeErrors.length) failures.push(`${viewport.name} 浏览器错误：${runtimeErrors.join(" | ")}`);
+        beginGeneratedCheck("GEN-BROWSER-ERRORS");
+        if (runtimeErrors.length) recordGeneratedFailure(`${viewport.name} 浏览器错误：${runtimeErrors.join(" | ")}`, "GEN-BROWSER-ERRORS");
+        completedErrorViewports += 1;
         evidence.push(`${viewport.width}×${viewport.height}: 无横向溢出，首屏可开局。`);
       } catch (error) {
-        failures.push(`${viewport.name} 验收中断：${error instanceof Error ? error.message : String(error)}`);
+        recordGeneratedFailure(`${viewport.name} 验收中断：${error instanceof Error ? error.message : String(error)}`);
+        // A document that never loads cannot yield a meaningful result in a
+        // different viewport. Preserve the remaining checks as not-run.
+        if (!pageLoaded) break;
       } finally {
         await page.close();
       }
@@ -2601,23 +2681,33 @@ export async function inspectGeneratedGameInBrowser(root: string, options: { exp
     await browser?.close();
     await closeServer(server);
   }
+  // Failures from auxiliary natural-input probes have no generated-check id.
+  // Keep the public gate conservative and make that blocker visible in the
+  // generated report instead of allowing every generated check to look passed.
+  recordUnclassifiedGeneratedFailures();
+  if (completedLayoutViewports === generatedViewports.length) completeGeneratedCheck("GEN-BROWSER-LAYOUT");
+  if (completedErrorViewports === generatedViewports.length) completeGeneratedCheck("GEN-BROWSER-ERRORS");
   const checks: QualityCheck[] = [
     ...(memoryMatch && !endless && !campaign.legacy ? [{ id: "MEMORY-MATCH-COMPLETION", label: "通过正常点击完成首关", status: memoryFailure ? "failed" as const : "passed" as const, evidence: "读取可观察牌面身份作为解法，以真实鼠标逐对完成剩余卡牌并等待自然won状态；未调用forceWin。仅证明首关，两条输入路径。" }] : []),
     ...(memoryMatch ? [{ id: "MEMORY-MATCH-NATURAL", label: "记忆翻牌教学期正常点击、乱序动作、自动回盖与继续操作", status: memoryFailure ? "failed" as const : "passed" as const, evidence: memoryFailure ?? "无probe：配对再错配及先错→对→错两条自然路径，教学期2秒内自动回盖、输入解锁且教学按平台进度推进。" }] : []),
-    { id: "GEN-BROWSER-CONTRACT", label: "生成游戏运行时契约（状态机、开始、胜负、重开）", status: failures.length ? "failed" : "passed", evidence: evidence.join(" ") },
-    { id: "GEN-BROWSER-LAYOUT", label: "三档画幅布局与触控可达", status: failures.length ? "failed" : "passed", evidence: "360/390/1366 宽度均无横向溢出且可开局。" },
-    { id: "GEN-BROWSER-ERRORS", label: "浏览器错误监听", status: failures.length ? "failed" : "passed", evidence: "已监听控制台错误与未处理异常。" },
-    { id: "GEN-BROWSER-ONBOARDING", label: "生成游戏合同教学（安全状态、真实信号、恢复、重看与跳过）", status: failures.length ? "failed" : "passed", evidence: "已核对 pressureClock 停止、逐步动作探针、合同信号顺序与持久化状态。" },
+    { id: "GEN-BROWSER-CONTRACT", label: "生成游戏运行时契约（状态机、开始、胜负、重开）", status: generatedReportStatus("GEN-BROWSER-CONTRACT") === "passed" ? "passed" : "failed", evidence: generatedReportEvidence("GEN-BROWSER-CONTRACT", evidence.join(" ")) },
+    { id: "GEN-BROWSER-LAYOUT", label: "三档画幅布局与触控可达", status: generatedReportStatus("GEN-BROWSER-LAYOUT") === "passed" ? "passed" : "failed", evidence: generatedReportEvidence("GEN-BROWSER-LAYOUT", "360/390/1366 宽度均无横向溢出且可开局。") },
+    { id: "GEN-BROWSER-ERRORS", label: "浏览器错误监听", status: generatedReportStatus("GEN-BROWSER-ERRORS") === "passed" ? "passed" : "failed", evidence: generatedReportEvidence("GEN-BROWSER-ERRORS", "已监听控制台错误与未处理异常。") },
+    { id: "GEN-BROWSER-ONBOARDING", label: "生成游戏合同教学（安全状态、真实信号、恢复、重看与跳过）", status: generatedReportStatus("GEN-BROWSER-ONBOARDING") === "passed" ? "passed" : "failed", evidence: generatedReportEvidence("GEN-BROWSER-ONBOARDING", "已核对 pressureClock 停止、逐步动作探针、合同信号顺序与持久化状态。") },
     ...(!endless ? [
-      { id: "PROGRESSION-RUNTIME", label: `生成游戏确认的 ${campaign.levelCount} 关递进与结构变化`, status: failures.length ? "failed" as const : "passed" as const, evidence: `逐关检查 setLevel/restart，数值维度 ${campaign.difficultyKeys.join("、")}，结构变化关 ${campaign.milestones.join("/")}。探针数据不等同于自然操作玩通。` },
-      { id: "CONTENT-VARIATION-REHEARSAL", label: `生成游戏在第 ${rehearsalLevel} 关复演教学机制`, status: failures.length ? "failed" as const : "passed" as const, evidence: `第 ${rehearsalLevel} 关通过玩法处理器探针重新产生合同教学信号。` },
+      { id: "PROGRESSION-RUNTIME", label: `生成游戏确认的 ${campaign.levelCount} 关递进与结构变化`, status: generatedReportStatus("PROGRESSION-RUNTIME") === "passed" ? "passed" as const : "failed" as const, evidence: generatedReportEvidence("PROGRESSION-RUNTIME", `逐关检查 setLevel/restart，数值维度 ${campaign.difficultyKeys.join("、")}，结构变化关 ${campaign.milestones.join("/")}。探针数据不等同于自然操作玩通。`) },
+      { id: "CONTENT-VARIATION-REHEARSAL", label: `生成游戏在第 ${rehearsalLevel} 关复演教学机制`, status: generatedReportStatus("CONTENT-VARIATION-REHEARSAL") === "passed" ? "passed" as const : "failed" as const, evidence: generatedReportEvidence("CONTENT-VARIATION-REHEARSAL", `第 ${rehearsalLevel} 关通过玩法处理器探针重新产生合同教学信号。`) },
     ] : [{ id: "ENDLESS-SAMPLED", label: "无限模式声明、重开及禁止胜利状态抽样", status: failures.length ? "failed" as const : "passed" as const, evidence: "有限关卡检查不适用；短期观察不证明内容持续供给或长期性能。" }]),
-    ...(failureAllowed ? [{ id: "ASSISTANCE-RUNTIME", label: "生成游戏连续失败显式分层帮助", status: failures.length ? "failed" as const : "passed" as const, evidence: `已验证第1–4次失败探针、合同帮助与刷新恢复。${endless ? "无限模式没有胜利清零检查。" : "有限模式另检查成功清零。"}` }] : [{ id: "NO-FAILURE-SAMPLED", label: "无失败方案的已测操作未进入失败状态", status: failures.length ? "failed" as const : "passed" as const, evidence: "仅覆盖本报告的状态切换及教学操作，不代表穷尽游戏路径；失败帮助不适用且不计为通过项。" }]),
+    ...(failureAllowed ? [{ id: "ASSISTANCE-RUNTIME", label: "生成游戏连续失败显式分层帮助", status: generatedReportStatus("ASSISTANCE-RUNTIME") === "passed" ? "passed" as const : "failed" as const, evidence: generatedReportEvidence("ASSISTANCE-RUNTIME", `已验证第1–4次失败探针、合同帮助与刷新恢复。${endless ? "无限模式没有胜利清零检查。" : "有限模式另检查成功清零。"}`) }] : [{ id: "NO-FAILURE-SAMPLED", label: "无失败方案的已测操作未进入失败状态", status: failures.length ? "failed" as const : "passed" as const, evidence: "仅覆盖本报告的状态切换及教学操作，不代表穷尽游戏路径；失败帮助不适用且不计为通过项。" }]),
   ];
   if (progressionReport) writeFileSync(join(root, "_studio", "DIFFICULTY_QUALITY_REPORT.json"), `${JSON.stringify(progressionReport, null, 2)}\n`, "utf8");
   if (variationReport) writeFileSync(join(root, "_studio", "VARIATION_QUALITY_REPORT.json"), `${JSON.stringify(variationReport, null, 2)}\n`, "utf8");
   if (assistanceReport) writeFileSync(join(root, "_studio", "ASSISTANCE_QUALITY_REPORT.json"), `${JSON.stringify(assistanceReport, null, 2)}\n`, "utf8");
-  const report = { checkedAt: new Date().toISOString(), executablePath, experimental: true, checks, failures, screenshots: screenshotPaths.map((path) => relative(root, path).replaceAll("\\", "/")) };
+  const reportChecks = checks.map((check) => {
+    const id = generatedCheckIds.find((candidate) => candidate === check.id);
+    return id ? { ...check, status: generatedReportStatus(id), notRunReason: generatedReportStatus(id) === "not-run" ? generatedReportEvidence(id, check.evidence) : undefined } : check;
+  });
+  const report = { checkedAt: new Date().toISOString(), executablePath, experimental: true, checks: reportChecks, failures, screenshots: screenshotPaths.map((path) => relative(root, path).replaceAll("\\", "/")) };
   writeFileSync(join(root, "_studio", "BROWSER_QUALITY_REPORT.json"), `${JSON.stringify(report, null, 2)}\n`, "utf8");
   if (failures.length) throw new ArtifactValidationFailure(`生成游戏浏览器验收失败：${failures.join(" ")}`);
   return { checks, screenshotPaths };
