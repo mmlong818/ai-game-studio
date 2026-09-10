@@ -5,6 +5,7 @@ import type {
   AssetRole,
   SceneNode,
 } from "./platformTypes";
+import { assertAssetDeliveryMatchesRole, type AssetDeliverySpec } from "./assetDelivery";
 
 const RASTER_MIME_TYPES = new Set(["image/png", "image/jpeg", "image/webp"]);
 
@@ -20,6 +21,7 @@ export interface GeneratedAssetInput {
   localPath: string;
   processing?: string[];
   generatedAt?: string;
+  delivery?: AssetDeliverySpec;
 }
 
 const isLocalAssetPath = (path: string): boolean =>
@@ -40,6 +42,7 @@ export async function createGeneratedAsset(
   }
   if (!input.prompt.trim()) throw new Error("AI 资源必须保留生成提示词。");
   if (input.width <= 0 || input.height <= 0) throw new Error("资源尺寸无效。");
+  if (input.delivery) assertAssetDeliveryMatchesRole(input.role, input.delivery);
 
   const version =
     Math.max(
@@ -55,6 +58,7 @@ export async function createGeneratedAsset(
     provider: input.provider,
     size: [input.width, input.height],
     localPath: input.localPath,
+    delivery: input.delivery ?? null,
     version,
   });
 
@@ -76,6 +80,7 @@ export async function createGeneratedAsset(
     status: "candidate",
     processing: input.processing ?? [],
     provenance: "ai-generated",
+    ...(input.delivery ? { delivery: input.delivery } : {}),
   };
 }
 
@@ -129,6 +134,10 @@ export function validateAssetManifest(
     if (!RASTER_MIME_TYPES.has(asset.mimeType)) errors.push(`${asset.label} 不是允许的位图格式`);
     if (!isLocalAssetPath(asset.localPath)) errors.push(`${asset.label} 不是项目内本地资源`);
     if (asset.provenance !== "ai-generated") errors.push(`${asset.label} 缺少 AI 生成来源`);
+    if (asset.delivery) {
+      try { assertAssetDeliveryMatchesRole(asset.role, asset.delivery); }
+      catch { errors.push(`${asset.label} 的显示适配与资源角色不一致`); }
+    }
   }
   for (const binding of bindings) {
     const asset = assets.find((item) => item.id === binding.assetId);

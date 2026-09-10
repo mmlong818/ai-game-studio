@@ -2049,3 +2049,120 @@
 .production-retry .primary-action { min-height: 44px; }
 .production-retry p { margin: 10px 0 0; font-size: 12px; line-height: 1.7; color: var(--workbench-muted); }
 .production-retry a { display: inline-block; margin-top: 10px; font-size: 13px; color: var(--workbench-accent-strong); }
+.revision-scope-picker {
+  min-width: 0;
+  margin: 0 0 20px;
+  padding: 0;
+  border: 0;
+}
+
+.revision-scope-picker legend {
+  padding: 0;
+  color: var(--workbench-text, #17231d);
+  font-size: 17px;
+  font-weight: 650;
+}
+
+.revision-scope-picker > p {
+  margin: 6px 0 12px;
+}
+
+.revision-scope-picker > div {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.revision-composer .revision-scope-picker > div {
+  grid-template-columns: 1fr;
+}
+
+.revision-scope-picker label {
+  display: flex;
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid var(--workbench-border, #d9d5ca);
+  border-radius: 10px;
+  background: var(--workbench-panel, #fff);
+  cursor: pointer;
+  transition: border-color 180ms ease, background-color 180ms ease, transform 180ms ease;
+}
+
+.revision-scope-picker label:hover {
+  transform: translateY(-1px);
+  border-color: #b84a27;
+}
+
+.revision-scope-picker label.is-selected {
+  border-color: #b84a27;
+  background: color-mix(in srgb, #b84a27 8%, var(--workbench-panel, #fff));
+  box-shadow: inset 0 0 0 1px #b84a27;
+}
+
+.revision-scope-picker input {
+  flex: 0 0 auto;
+  margin: 4px 9px 0 0;
+  accent-color: #b84a27;
+}
+
+.revision-scope-picker input:focus-visible {
+  outline: 2px solid #b84a27;
+  outline-offset: 3px;
+}
+
+.revision-scope-picker span,
+.revision-scope-picker small,
+.revision-scope-picker em {
+  display: block;
+}
+
+.revision-scope-picker strong {
+  font-size: 14px;
+}
+
+.revision-scope-picker small,
+.revision-scope-picker em {
+  margin-top: 5px;
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.revision-scope-picker small {
+  color: var(--workbench-muted, #627069);
+}
+
+.revision-scope-picker em {
+  color: #9a4429;
+  font-style: normal;
+}
+
+.revision-scope-summary {
+  margin: 0 0 8px;
+  color: #9a4429 !important;
+  font-weight: 650;
+}
+
+.describe-panel .revision-scope-picker {
+  margin-top: 4px;
+}
+
+.describe-panel .revision-scope-picker > p {
+  margin: 6px 0 12px;
+  color: var(--muted, #627069);
+  font-size: 13px;
+}
+
+.describe-panel .revision-scope-picker > div {
+  margin-bottom: 6px;
+}
+
+.remix-preservation-note {
+  margin: 10px 0 0;
+  color: var(--muted, #627069);
+  font-size: 13px;
+  line-height: 1.65;
+}
+
+@media (max-width: 760px) {
+  .revision-scope-picker > div { grid-template-columns: 1fr; }
+}

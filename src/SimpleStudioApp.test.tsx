@@ -1,6 +1,9 @@
 import { render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import App from "./App";
+import { createProject } from "./domain/project";
+import { saveProject } from "./domain/projectStorage";
+import { INITIAL_DRAFT } from "./domain/storage";
 
 vi.mock("./web/api", () => ({
   getProject: async (id: string) => ({
@@ -57,6 +60,21 @@ describe("player-first creation flow", () => {
     expect(entry).toHaveAttribute("href", "/create?game=game-a");
     // 游戏内不再有独立的意见面板：修改统一走创作页的“改一个现有游戏”步骤。
     expect(screen.queryByRole("heading", { name: "哪里不满意？" })).not.toBeInTheDocument();
+  });
+
+  it("生成中的试玩把回大厅放在独立导航行，运行时留在剩余 iframe 视口", async () => {
+    const project = createProject({ ...INITIAL_DRAFT, selectedSuggestionIds: ["merge-2048-world"] });
+    saveProject(project);
+    localStorage.setItem("ai-game-studio:simple-flow:v2:game-a", JSON.stringify({
+      phase: "testing", projectId: project.id, revision: 1, activityId: 1,
+    }));
+
+    render(<App />);
+    const frame = await screen.findByTitle("数织矩阵游戏画面");
+    expect(screen.getByRole("navigation", { name: "游戏导航" })).toHaveTextContent("回大厅");
+    expect(screen.getByRole("link", { name: "← 回大厅" })).toHaveAttribute("href", "/games");
+    expect(frame).toHaveAttribute("srcdoc");
+    expect(frame.closest("main")).toHaveClass("player-first-app--generated-preview");
   });
 
   it("没有选择游戏时不再展示固定示例", async () => {

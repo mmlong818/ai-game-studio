@@ -7,6 +7,23 @@ import type { QualityCheck } from "../shared/contracts.js";
 import { gameContentSecurityPolicy } from "./static-files.js";
 import { ArtifactValidationFailure } from "./generation-budget.js";
 import { verifyGeneratedCampaign } from "../shared/generated-campaign.js";
+import type { GeneratedBlueprint } from "../shared/generated-blueprint.js";
+import { cancellationSignal, throwIfCancellationRequested } from "./cancellation.js";
+
+async function launchBrowser(options: Parameters<typeof chromium.launch>[0]): Promise<Browser> {
+  throwIfCancellationRequested();
+  const browser = await chromium.launch(options);
+  const signal = cancellationSignal();
+  if (!signal) return browser;
+  const abort = () => { void browser.close().catch(() => {}); };
+  if (signal.aborted) {
+    await browser.close().catch(() => {});
+    signal.throwIfAborted();
+  }
+  signal.addEventListener("abort", abort, { once: true });
+  browser.once("disconnected", () => signal.removeEventListener("abort", abort));
+  return browser;
+}
 
 const viewports = [
   { name: "phone-small", width: 320, height: 568 },
@@ -244,6 +261,128 @@ export function closeServer(server: Server) {
   return new Promise<void>((resolveClose) => server.close(() => resolveClose()));
 }
 
+export type ImageRenderingViolation = { kind: "canvas-draw" | "canvas-css" | "dom-image" | "css-background" | "text-clip"; detail: string };
+
+/** Install before navigation so generated scripts cannot draw a stretched bitmap before the audit observes it. */
+export async function installImageRenderingProbe(page: Page) {
+  await page.addInitScript({ content: `
+    (() => {
+      const records = [];
+      const sheetRecords = [];
+      const seen = new Set();
+      const original = CanvasRenderingContext2D.prototype.drawImage;
+      const sizeOf = source => {
+        const width = Number(source?.naturalWidth || source?.videoWidth || source?.width || 0);
+        const height = Number(source?.naturalHeight || source?.videoHeight || source?.height || 0);
+        return { width, height };
+      };
+      CanvasRenderingContext2D.prototype.drawImage = function(source, ...args) {
+        try {
+          const natural = sizeOf(source);
+          let sourceWidth = natural.width, sourceHeight = natural.height, targetWidth = natural.width, targetHeight = natural.height;
+          if (args.length === 4) { targetWidth = Number(args[2]); targetHeight = Number(args[3]); }
+          if (args.length === 8) {
+            sourceWidth = Number(args[2]); sourceHeight = Number(args[3]);
+            targetWidth = Number(args[6]); targetHeight = Number(args[7]);
+            const sourceX = Number(args[0]), sourceY = Number(args[1]);
+            const sourceUrl = String(source?.currentSrc || source?.src || "");
+            const sheetKey = [sourceUrl, sourceX, sourceY, sourceWidth, sourceHeight].join("|");
+            if (sourceWidth > 2 && sourceHeight > 2 && !seen.has("sheet:" + sheetKey) && sheetRecords.length < 200) {
+              seen.add("sheet:" + sheetKey);
+              sheetRecords.push({ sourceUrl, sourceX, sourceY, sourceWidth, sourceHeight });
+            }
+          }
+          const sourceRatio = Math.abs(sourceWidth / sourceHeight);
+          const targetRatio = Math.abs(targetWidth / targetHeight);
+          // 1px/2px procedural textures and nine-slice borders are intentionally scalable.
+          if (sourceWidth > 2 && sourceHeight > 2 && targetWidth > 0 && targetHeight > 0 && Number.isFinite(sourceRatio) && Number.isFinite(targetRatio)) {
+            const distortion = Math.abs(Math.log(sourceRatio / targetRatio));
+            if (distortion > 0.04) {
+              const key = [sourceWidth, sourceHeight, targetWidth, targetHeight].map(value => Math.round(value * 10) / 10).join("x");
+              if (!seen.has(key) && records.length < 100) {
+                seen.add(key);
+                records.push({ sourceWidth, sourceHeight, targetWidth, targetHeight, distortion });
+              }
+            }
+          }
+        } catch {}
+        return original.call(this, source, ...args);
+      };
+      Object.defineProperty(window, "__FORGE_IMAGE_RENDERING__", { value: { records, sheetRecords }, configurable: false });
+    })();
+  ` });
+}
+
+export async function collectSpriteSheetRuntimeFailures(page: Page, blueprint?: GeneratedBlueprint | null): Promise<string[]> {
+  const animated = blueprint?.sprites.filter(sprite => sprite.animation) ?? [];
+  if (!animated.length) return [];
+  const records = await page.evaluate(() => (window as Window & { __FORGE_IMAGE_RENDERING__?: { sheetRecords?: Array<{ sourceUrl: string; sourceX: number; sourceY: number; sourceWidth: number; sourceHeight: number }> } }).__FORGE_IMAGE_RENDERING__?.sheetRecords ?? []);
+  const failures: string[] = [];
+  for (const sprite of animated) {
+    const animation = sprite.animation!;
+    const matching = records.filter(record => decodeURIComponent(record.sourceUrl).includes(sprite.file));
+    if (!matching.length) { failures.push(`${sprite.role} 没有通过九参数 drawImage 绘制 Sprite Sheet`); continue; }
+    const invalid = matching.find(record => record.sourceWidth !== animation.frameWidth || record.sourceHeight !== animation.frameHeight
+      || record.sourceX % animation.frameWidth !== 0 || record.sourceY % animation.frameHeight !== 0
+      || record.sourceX < 0 || record.sourceY < 0 || record.sourceX + record.sourceWidth > animation.frameWidth * animation.columns || record.sourceY + record.sourceHeight > animation.frameHeight * animation.rows);
+    if (invalid) failures.push(`${sprite.role} 的 Sprite Sheet source rect 不符合 ${animation.frameWidth}×${animation.frameHeight} row-major 协议`);
+    if (new Set(matching.map(record => `${record.sourceX},${record.sourceY}`)).size < 2) failures.push(`${sprite.role} 只绘制了单帧，动画时钟没有产生可观察帧推进`);
+  }
+  return failures;
+}
+
+/** Read both Canvas and CSS rendering evidence. cover/contain are explicitly accepted; fill-like distortion is rejected. */
+export async function collectImageRenderingViolations(page: Page): Promise<ImageRenderingViolation[]> {
+  return page.evaluate(async () => {
+    const violations: ImageRenderingViolation[] = [];
+    const state = (window as Window & { __FORGE_IMAGE_RENDERING__?: { records?: Array<{ sourceWidth: number; sourceHeight: number; targetWidth: number; targetHeight: number }> } }).__FORGE_IMAGE_RENDERING__;
+    for (const record of state?.records ?? []) {
+      violations.push({ kind: "canvas-draw", detail: `Canvas drawImage 将 ${Math.round(record.sourceWidth * 10) / 10}×${Math.round(record.sourceHeight * 10) / 10} 非等比绘制为 ${Math.round(record.targetWidth * 10) / 10}×${Math.round(record.targetHeight * 10) / 10}` });
+    }
+    for (const canvas of document.querySelectorAll("canvas")) {
+      const rect = canvas.getBoundingClientRect();
+      if (rect.width > 4 && rect.height > 4 && Math.abs(Math.log((canvas.width / canvas.height) / (rect.width / rect.height))) > .04) {
+        violations.push({ kind: "canvas-css", detail: `Canvas 像素画布 ${canvas.width}×${canvas.height} 被 CSS 显示为 ${Math.round(rect.width * 10) / 10}×${Math.round(rect.height * 10) / 10}` });
+      }
+    }
+    for (const image of document.querySelectorAll("img")) {
+      const rect = image.getBoundingClientRect();
+      const fit = getComputedStyle(image).objectFit;
+      if (image.naturalWidth > 2 && image.naturalHeight > 2 && rect.width > 4 && rect.height > 4 && fit === "fill" && Math.abs(Math.log((image.naturalWidth / image.naturalHeight) / (rect.width / rect.height))) > .04) {
+        violations.push({ kind: "dom-image", detail: `图片 ${image.currentSrc || image.src} 以 object-fit:fill 从 ${image.naturalWidth}×${image.naturalHeight} 拉伸为 ${Math.round(rect.width * 10) / 10}×${Math.round(rect.height * 10) / 10}` });
+      }
+    }
+    for (const element of document.querySelectorAll<HTMLElement>("body *")) {
+      const style = getComputedStyle(element);
+      if (style.backgroundImage === "none" || style.backgroundRepeat !== "no-repeat") continue;
+      const images = [...style.backgroundImage.matchAll(/url\(["']?([^"')]+)["']?\)/g)];
+      const sizes = style.backgroundSize.split(",").map(value => value.trim());
+      const rect = element.getBoundingClientRect();
+      for (let index = 0; index < images.length; index += 1) {
+        if (sizes[index] !== "100% 100%" || rect.width <= 4 || rect.height <= 4) continue;
+        const natural = await new Promise<{ width: number; height: number } | null>(resolveSize => {
+          const image = new Image();
+          image.onload = () => resolveSize({ width: image.naturalWidth, height: image.naturalHeight });
+          image.onerror = () => resolveSize(null);
+          image.src = images[index][1];
+        });
+        if (natural && natural.width > 2 && natural.height > 2 && Math.abs(Math.log((natural.width / natural.height) / (rect.width / rect.height))) > .04) {
+          violations.push({ kind: "css-background", detail: `背景 ${images[index][1]} 以 100% 100% 从 ${natural.width}×${natural.height} 拉伸为 ${Math.round(rect.width * 10) / 10}×${Math.round(rect.height * 10) / 10}` });
+        }
+      }
+    }
+    for (const element of document.querySelectorAll<HTMLElement>("h1,h2,h3,p,button,[role=status],[aria-live]")) {
+      const style = getComputedStyle(element);
+      const rect = element.getBoundingClientRect();
+      if (rect.width <= 0 || rect.height <= 0 || style.visibility === "hidden" || style.display === "none") continue;
+      const clipsX = element.scrollWidth > element.clientWidth + 2 && ["hidden", "clip"].includes(style.overflowX);
+      const clipsY = element.scrollHeight > element.clientHeight + 2 && ["hidden", "clip"].includes(style.overflowY);
+      if (clipsX || clipsY) violations.push({ kind: "text-clip", detail: `${element.tagName.toLowerCase()}${element.id ? `#${element.id}` : ""} 的文字被容器裁切` });
+    }
+    return violations;
+  });
+}
+
 // 生成物的调试探针（window.__GAME_DEBUG__）只在带 `probe` 查询参数时挂载，
 // 避免真实玩家打开控制台就能一键作弊。自动验收在这里统一追加该参数。
 export function probeUrl(target: string) {
@@ -257,7 +396,7 @@ export async function inspectMergeOnboardingInBrowser(root: string): Promise<Onb
   const { server, url } = await startArtifactServer(root);
   let browser: Browser | null = null;
   try {
-    browser = await chromium.launch({ executablePath, headless: true, args: ["--enable-unsafe-swiftshader", "--use-angle=swiftshader"] });
+    browser = await launchBrowser({ executablePath, headless: true, args: ["--enable-unsafe-swiftshader", "--use-angle=swiftshader"] });
     const page = await browser.newPage({ viewport: { width: 390, height: 844 } });
     const runtimeErrors: string[] = [];
     page.on("pageerror", (error) => runtimeErrors.push(`pageerror: ${error.message}`));
@@ -331,7 +470,7 @@ export async function inspectTemplateOnboardingInBrowser(
   const { server, url } = await startArtifactServer(root);
   let browser: Browser | null = null;
   try {
-    browser = await chromium.launch({ executablePath, headless: true, args: ["--enable-unsafe-swiftshader", "--use-angle=swiftshader"] });
+    browser = await launchBrowser({ executablePath, headless: true, args: ["--enable-unsafe-swiftshader", "--use-angle=swiftshader"] });
     const page = await browser.newPage({ viewport: { width: 390, height: 844 } });
     const runtimeErrors: string[] = [];
     page.on("pageerror", (error) => runtimeErrors.push(`pageerror: ${error.message}`));
@@ -393,7 +532,7 @@ export async function inspectNonRealtimeOnboardingInBrowser(
   const { server, url } = await startArtifactServer(root);
   let browser: Browser | null = null;
   try {
-    browser = await chromium.launch({ executablePath, headless: true, args: ["--enable-unsafe-swiftshader", "--use-angle=swiftshader"] });
+    browser = await launchBrowser({ executablePath, headless: true, args: ["--enable-unsafe-swiftshader", "--use-angle=swiftshader"] });
     const page = await browser.newPage({ viewport: { width: 390, height: 844 } });
     const runtimeErrors: string[] = [];
     page.on("pageerror", (error) => runtimeErrors.push(`pageerror: ${error.message}`));
@@ -462,7 +601,7 @@ export async function inspectVariationRehearsalInBrowser(root: string, template:
   const { server, url } = await startArtifactServer(root);
   let browser: Browser | null = null;
   try {
-    browser = await chromium.launch({ executablePath, headless: true, args: ["--enable-unsafe-swiftshader", "--use-angle=swiftshader"] });
+    browser = await launchBrowser({ executablePath, headless: true, args: ["--enable-unsafe-swiftshader", "--use-angle=swiftshader"] });
     const page = await browser.newPage({ viewport: { width: 390, height: 844 } });
     const runtimeErrors: string[] = [];
     page.on("pageerror", (error) => runtimeErrors.push(`pageerror: ${error.message}`));
@@ -553,7 +692,7 @@ export async function inspectFailureAssistanceInBrowser(root: string, template: 
   const { server, url } = await startArtifactServer(root);
   let browser: Browser | null = null;
   try {
-    browser = await chromium.launch({ executablePath, headless: true, args: ["--enable-unsafe-swiftshader", "--use-angle=swiftshader"] });
+    browser = await launchBrowser({ executablePath, headless: true, args: ["--enable-unsafe-swiftshader", "--use-angle=swiftshader"] });
     const page = await browser.newPage({ viewport: { width: 390, height: 844 } });
     const runtimeErrors: string[] = [];
     page.on("pageerror", (error) => runtimeErrors.push(`pageerror: ${error.message}`));
@@ -647,7 +786,7 @@ export async function inspectDifficultyProgressionInBrowser(root: string, templa
   const { server, url } = await startArtifactServer(root);
   let browser: Browser | null = null;
   try {
-    browser = await chromium.launch({ executablePath, headless: true, args: ["--enable-unsafe-swiftshader", "--use-angle=swiftshader"] });
+    browser = await launchBrowser({ executablePath, headless: true, args: ["--enable-unsafe-swiftshader", "--use-angle=swiftshader"] });
     const page = await browser.newPage({ viewport: { width: 390, height: 844 } });
     const runtimeErrors: string[] = [];
     page.on("pageerror", (error) => runtimeErrors.push(`pageerror: ${error.message}`));
@@ -698,7 +837,7 @@ export async function inspectSignalHuntOnboardingInBrowser(root: string): Promis
   const { server, url } = await startArtifactServer(root);
   let browser: Browser | null = null;
   try {
-    browser = await chromium.launch({ executablePath, headless: true, args: ["--enable-unsafe-swiftshader", "--use-angle=swiftshader"] });
+    browser = await launchBrowser({ executablePath, headless: true, args: ["--enable-unsafe-swiftshader", "--use-angle=swiftshader"] });
     const page = await browser.newPage({ viewport: { width: 390, height: 844 } });
     const runtimeErrors: string[] = [];
     page.on("pageerror", (error) => runtimeErrors.push(`pageerror: ${error.message}`));
@@ -890,7 +1029,7 @@ export async function inspectCampaignInBrowser(
   const { server, url } = await startArtifactServer(root);
   let browser: Browser | null = null;
   try {
-    browser = await chromium.launch({ executablePath, headless: true, args: ["--enable-unsafe-swiftshader", "--use-angle=swiftshader"] });
+    browser = await launchBrowser({ executablePath, headless: true, args: ["--enable-unsafe-swiftshader", "--use-angle=swiftshader"] });
     const page = await browser.newPage({ viewport: { width: 390, height: 844 } });
     const runtimeErrors: string[] = [];
     page.on("pageerror", (error) => runtimeErrors.push(`pageerror: ${error.message}`));
@@ -1006,7 +1145,7 @@ export async function inspectStageEInBrowser(root: string, template: StageETempl
   let browser: Browser | null = null;
   const runtimeErrors: string[] = [];
   try {
-    browser = await chromium.launch({ executablePath, headless: true, args: ["--enable-unsafe-swiftshader", "--use-angle=swiftshader"] });
+    browser = await launchBrowser({ executablePath, headless: true, args: ["--enable-unsafe-swiftshader", "--use-angle=swiftshader"] });
     const page = await browser.newPage({ viewport: { width: 390, height: 844 } });
     page.on("pageerror", (error) => runtimeErrors.push(error.message));
     page.on("console", (message) => { if (message.type() === "error" && !message.text().includes("Failed to load resource")) runtimeErrors.push(message.text()); });
@@ -1163,7 +1302,7 @@ export async function inspectStarDreamStageEInBrowser(root: string): Promise<Sta
   let browser: Browser | null = null;
   const runtimeErrors: string[] = [];
   try {
-    browser = await chromium.launch({ executablePath, headless: true, args: ["--enable-unsafe-swiftshader", "--use-angle=swiftshader"] });
+    browser = await launchBrowser({ executablePath, headless: true, args: ["--enable-unsafe-swiftshader", "--use-angle=swiftshader"] });
     const page = await browser.newPage({ viewport: { width: 1280, height: 720 } });
     page.on("pageerror", (error) => runtimeErrors.push(error.message));
     page.on("response", (response) => {
@@ -1293,7 +1432,7 @@ export async function inspectStageDClassicInBrowser(root: string, template: Stag
   const checks: string[] = [];
   const evidence: Record<string, unknown> = {};
   try {
-    browser = await chromium.launch({ executablePath, headless: true, args: ["--enable-unsafe-swiftshader", "--use-angle=swiftshader"] });
+    browser = await launchBrowser({ executablePath, headless: true, args: ["--enable-unsafe-swiftshader", "--use-angle=swiftshader"] });
     const page = await browser.newPage({ viewport: { width: 390, height: 844 } });
     const runtimeErrors: string[] = [];
     page.on("pageerror", (error) => runtimeErrors.push(`pageerror: ${error.message}`));
@@ -1633,7 +1772,7 @@ export async function inspectStageCRealtimeInBrowser(root: string, template: Sta
   const checks: string[] = [];
   const evidence: Record<string, unknown> = {};
   try {
-    browser = await chromium.launch({ executablePath, headless: true, args: ["--enable-unsafe-swiftshader", "--use-angle=swiftshader"] });
+    browser = await launchBrowser({ executablePath, headless: true, args: ["--enable-unsafe-swiftshader", "--use-angle=swiftshader"] });
     const page = await browser.newPage({ viewport: { width: 390, height: 844 } });
     const runtimeErrors: string[] = [];
     page.on("pageerror", (error) => runtimeErrors.push(`pageerror: ${error.message}`));
@@ -1879,7 +2018,7 @@ export async function inspectShooterContinuousInput(
   const { server, url } = await startArtifactServer(root);
   let browser: Browser | null = null;
   try {
-    browser = await chromium.launch({ executablePath, headless: true, args: ["--enable-unsafe-swiftshader", "--use-angle=swiftshader"] });
+    browser = await launchBrowser({ executablePath, headless: true, args: ["--enable-unsafe-swiftshader", "--use-angle=swiftshader"] });
     const page = await browser.newPage({ viewport: { width: 390, height: 844 } });
     const runtimeErrors: string[] = [];
     page.on("pageerror", (error) => runtimeErrors.push(`pageerror: ${error.message}`));
@@ -1941,7 +2080,7 @@ export async function inspectThreeOnboardingInBrowser(root: string, mode: StageF
   const { server, url } = await startArtifactServer(root);
   let browser: Browser | null = null;
   try {
-    browser = await chromium.launch({ executablePath, headless: true, args: ["--enable-unsafe-swiftshader", "--use-angle=swiftshader"] });
+    browser = await launchBrowser({ executablePath, headless: true, args: ["--enable-unsafe-swiftshader", "--use-angle=swiftshader"] });
     const page = await browser.newPage({ viewport: { width: 390, height: 844 } });
     const errors: string[] = [];
     page.on("pageerror", (error) => errors.push(error.message));
@@ -2015,7 +2154,7 @@ export async function inspectStageF3DInBrowser(root: string, expectedMode: Stage
   let arenaUpgradeVerified = false;
   mkdirSync(join(root, "_studio"), { recursive: true });
   try {
-    browser = await chromium.launch({ executablePath, headless: true, args: ["--enable-unsafe-swiftshader", "--use-angle=swiftshader"] });
+    browser = await launchBrowser({ executablePath, headless: true, args: ["--enable-unsafe-swiftshader", "--use-angle=swiftshader"] });
     for (const viewport of [{ name: "phone", width: 390, height: 844 }, { name: "desktop", width: 1280, height: 720 }]) {
       const page = await browser.newPage({ viewport: { width: viewport.width, height: viewport.height } });
       const errors: string[] = [];
@@ -2316,7 +2455,7 @@ async function monitorForbiddenLoss(page: Page, failures: string[], forbidden: "
   ` });
 }
 
-export async function inspectGeneratedGameInBrowser(root: string, options: { expectedCampaign?: unknown; onProgress?: (message: string) => void | Promise<void> } = {}): Promise<BrowserQualityResult> {
+export async function inspectGeneratedGameInBrowser(root: string, options: { expectedCampaign?: unknown; expectedBlueprint?: GeneratedBlueprint | null; onProgress?: (message: string) => void | Promise<void> } = {}): Promise<BrowserQualityResult> {
   const manifest = JSON.parse(readFileSync(join(root, "game-manifest.json"), "utf8"));
   const campaign = verifyGeneratedCampaign(manifest.generatedCampaign, options.expectedCampaign);
   const rehearsalLevel = Math.min(9, campaign.levelCount);
@@ -2328,9 +2467,9 @@ export async function inspectGeneratedGameInBrowser(root: string, options: { exp
   const screenshotPaths: string[] = [];
   const failures: string[] = [];
   const evidence: string[] = [];
-  type GeneratedCheckId = "GEN-BROWSER-CONTRACT" | "GEN-BROWSER-LAYOUT" | "GEN-BROWSER-ERRORS" | "GEN-BROWSER-ONBOARDING" | "PROGRESSION-RUNTIME" | "CONTENT-VARIATION-REHEARSAL" | "ASSISTANCE-RUNTIME";
+  type GeneratedCheckId = "GEN-BROWSER-CONTRACT" | "GEN-BROWSER-LAYOUT" | "GEN-BROWSER-VISUAL" | "GEN-BROWSER-ERRORS" | "GEN-BROWSER-ONBOARDING" | "PROGRESSION-RUNTIME" | "CONTENT-VARIATION-REHEARSAL" | "ASSISTANCE-RUNTIME";
   type GeneratedCheckStatus = "passed" | "failed" | "not-run";
-  const generatedCheckIds: GeneratedCheckId[] = ["GEN-BROWSER-CONTRACT", "GEN-BROWSER-LAYOUT", "GEN-BROWSER-ERRORS", "GEN-BROWSER-ONBOARDING", "PROGRESSION-RUNTIME", "CONTENT-VARIATION-REHEARSAL", "ASSISTANCE-RUNTIME"];
+  const generatedCheckIds: GeneratedCheckId[] = ["GEN-BROWSER-CONTRACT", "GEN-BROWSER-LAYOUT", "GEN-BROWSER-VISUAL", "GEN-BROWSER-ERRORS", "GEN-BROWSER-ONBOARDING", "PROGRESSION-RUNTIME", "CONTENT-VARIATION-REHEARSAL", "ASSISTANCE-RUNTIME"];
   const generatedCheckState = new Map<GeneratedCheckId, { started: boolean; completed: boolean; failures: string[] }>(generatedCheckIds.map((id) => [id, { started: false, completed: false, failures: [] }]));
   let activeGeneratedCheck: GeneratedCheckId = "GEN-BROWSER-CONTRACT";
   let generatedBlockingFailure: string | null = null;
@@ -2378,7 +2517,7 @@ export async function inspectGeneratedGameInBrowser(root: string, options: { exp
   const { server, url } = await startArtifactServer(root);
   let browser: Browser | null = null;
   try {
-    browser = await chromium.launch({ executablePath, headless: true, args: ["--enable-unsafe-swiftshader", "--use-angle=swiftshader"] });
+    browser = await launchBrowser({ executablePath, headless: true, args: ["--enable-unsafe-swiftshader", "--use-angle=swiftshader"] });
     if (memoryMatch) {
       for (const outOfOrder of [false, true]) {
       const naturalPage = await browser.newPage({ viewport: outOfOrder ? { width: 1366, height: 900 } : { width: 390, height: 844 } });
@@ -2406,6 +2545,7 @@ export async function inspectGeneratedGameInBrowser(root: string, options: { exp
       void Promise.resolve(options.onProgress?.(`正在真实浏览器中检查第 ${viewportIndex}/${generatedViewports.length} 种画幅 ${viewport.name}（${viewport.width}×${viewport.height}）：加载、开局、教学、关卡、结算与重开`)).catch(() => {});
       const page = await browser.newPage({ viewport: { width: viewport.width, height: viewport.height } });
       const runtimeErrors: string[] = [];
+      await installImageRenderingProbe(page);
       if (!failureAllowed) await monitorForbiddenLoss(page, runtimeErrors);
       if (endless) await monitorForbiddenLoss(page, runtimeErrors, "won");
       page.on("console", (message) => {
@@ -2667,6 +2807,12 @@ export async function inspectGeneratedGameInBrowser(root: string, options: { exp
         beginGeneratedCheck("GEN-BROWSER-ERRORS");
         if (runtimeErrors.length) recordGeneratedFailure(`${viewport.name} 浏览器错误：${runtimeErrors.join(" | ")}`, "GEN-BROWSER-ERRORS");
         completedErrorViewports += 1;
+        beginGeneratedCheck("GEN-BROWSER-VISUAL");
+        const renderingViolations = await collectImageRenderingViolations(page);
+        for (const violation of renderingViolations) recordGeneratedFailure(`${viewport.name} ${violation.detail}。`, "GEN-BROWSER-VISUAL");
+        const spriteFailures = await collectSpriteSheetRuntimeFailures(page, options.expectedBlueprint);
+        for (const failure of spriteFailures) recordGeneratedFailure(`${viewport.name} ${failure}。`, "GEN-BROWSER-VISUAL");
+        completeGeneratedCheck("GEN-BROWSER-VISUAL");
         evidence.push(`${viewport.width}×${viewport.height}: 无横向溢出，首屏可开局。`);
       } catch (error) {
         recordGeneratedFailure(`${viewport.name} 验收中断：${error instanceof Error ? error.message : String(error)}`);
@@ -2692,6 +2838,7 @@ export async function inspectGeneratedGameInBrowser(root: string, options: { exp
     ...(memoryMatch ? [{ id: "MEMORY-MATCH-NATURAL", label: "记忆翻牌教学期正常点击、乱序动作、自动回盖与继续操作", status: memoryFailure ? "failed" as const : "passed" as const, evidence: memoryFailure ?? "无probe：配对再错配及先错→对→错两条自然路径，教学期2秒内自动回盖、输入解锁且教学按平台进度推进。" }] : []),
     { id: "GEN-BROWSER-CONTRACT", label: "生成游戏运行时契约（状态机、开始、胜负、重开）", status: generatedReportStatus("GEN-BROWSER-CONTRACT") === "passed" ? "passed" : "failed", evidence: generatedReportEvidence("GEN-BROWSER-CONTRACT", evidence.join(" ")) },
     { id: "GEN-BROWSER-LAYOUT", label: "三档画幅布局与触控可达", status: generatedReportStatus("GEN-BROWSER-LAYOUT") === "passed" ? "passed" : "failed", evidence: generatedReportEvidence("GEN-BROWSER-LAYOUT", "360/390/1366 宽度均无横向溢出且可开局。") },
+    { id: "GEN-BROWSER-VISUAL", label: "位图等比显示与关键文字完整", status: generatedReportStatus("GEN-BROWSER-VISUAL") === "passed" ? "passed" : "failed", evidence: generatedReportEvidence("GEN-BROWSER-VISUAL", "已核对 Canvas 源矩形/目标矩形、Canvas 像素画布/CSS 尺寸、DOM 图片 object-fit、CSS 背景和关键文字裁切；cover/contain 与等比 DPR 缩放保留。") },
     { id: "GEN-BROWSER-ERRORS", label: "浏览器错误监听", status: generatedReportStatus("GEN-BROWSER-ERRORS") === "passed" ? "passed" : "failed", evidence: generatedReportEvidence("GEN-BROWSER-ERRORS", "已监听控制台错误与未处理异常。") },
     { id: "GEN-BROWSER-ONBOARDING", label: "生成游戏合同教学（安全状态、真实信号、恢复、重看与跳过）", status: generatedReportStatus("GEN-BROWSER-ONBOARDING") === "passed" ? "passed" : "failed", evidence: generatedReportEvidence("GEN-BROWSER-ONBOARDING", "已核对 pressureClock 停止、逐步动作探针、合同信号顺序与持久化状态。") },
     ...(!endless ? [
@@ -2735,7 +2882,7 @@ export async function inspectGameInBrowser(root: string): Promise<BrowserQuality
   const { server, url } = await startArtifactServer(root);
   let browser: Browser | null = null;
   try {
-    browser = await chromium.launch({
+    browser = await launchBrowser({
       executablePath,
       headless: true,
       args: ["--enable-unsafe-swiftshader", "--use-angle=swiftshader"],

@@ -36,18 +36,20 @@ describe("creation workbench", () => {
     render(<App />);
 
     await chooseRemixOf(user, /滑动合成/);
-    expect(screen.getByRole("heading", { name: "想怎么改「滑动合成」？" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "个性化「滑动合成」" })).toBeInTheDocument();
+    expect(screen.getByRole("radio", { name: /改一个玩点/ })).toBeChecked();
     expect(screen.getAllByRole("textbox")).toHaveLength(1);
     expect(screen.queryByRole("button", { name: /换一个世界观/ })).not.toBeInTheDocument();
 
     const start = screen.getByRole("button", { name: /开始制作/ });
     expect(start).toBeDisabled();
-    await user.type(screen.getByLabelText("你想怎么改？"), "换成海底世界的画风");
+    await user.click(screen.getByRole("radio", { name: /改变美术风格/ }));
+    await user.type(screen.getByLabelText("具体想调整什么？"), "换成海底世界的画风");
     expect(screen.getByText("可以直接开始。")).toBeInTheDocument();
     expect(start).toBeEnabled();
 
     await user.click(start);
-    expect(screen.getByRole("heading", { name: "滑动合成改造方案" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "滑动合成个性化方案" })).toBeInTheDocument();
     expect(screen.getByText("实时 AI 策划")).toBeInTheDocument();
     expect(screen.queryByText(/R[0-3]/)).not.toBeInTheDocument();
   });
@@ -57,7 +59,7 @@ describe("creation workbench", () => {
     render(<App />);
 
     await chooseRemixOf(user, /滑动合成/);
-    await user.type(screen.getByLabelText("你想怎么改？"), "我想改成多人联机开放世界");
+    await user.type(screen.getByLabelText("具体想调整什么？"), "我想改成多人联机开放世界");
 
     expect(screen.getByText("这已经是一款新游戏了")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /^开始制作/ })).not.toBeInTheDocument();
@@ -67,7 +69,7 @@ describe("creation workbench", () => {
     expect(screen.getByLabelText("说说你想做的游戏")).toHaveValue("以「滑动合成」为灵感，我想改成多人联机开放世界");
     await user.click(screen.getByRole("button", { name: /开始制作/ }));
     expect(screen.getByRole("heading", { name: "新游戏机制方案" })).toBeInTheDocument();
-    expect(screen.queryByText("滑动合成改造方案")).not.toBeInTheDocument();
+    expect(screen.queryByText("滑动合成个性化方案")).not.toBeInTheDocument();
   });
 
   it("新游戏：只需要一段描述，机制由系统推断", async () => {
@@ -85,6 +87,18 @@ describe("creation workbench", () => {
     expect(screen.getByRole("heading", { name: "新游戏机制方案" })).toBeInTheDocument();
     expect(await screen.findByText("方案草案 · 待制作验证", {}, { timeout: 3000 })).toBeInTheDocument();
     expect(screen.queryByText("通过")).not.toBeInTheDocument();
+  });
+
+  it("新游戏可选择静态资源，并在方案阶段透传动画偏好", async () => {
+    const user = userEvent.setup();
+    render(<App />);
+    await user.click(screen.getByRole("radio", { name: /这次使用静态图片/ }));
+    expect(screen.queryByLabelText("Sprite Sheet 播放预览")).not.toBeInTheDocument();
+    await user.type(screen.getByRole("textbox", { name: "你想做一个什么游戏？" }), "在雨林里驾驶小船收集萤火虫，避开漩涡后抵达营地");
+    await user.click(screen.getByRole("button", { name: /看看游戏方案/ }));
+    expect(await screen.findByText("方案草案 · 待制作验证", {}, { timeout: 3000 })).toBeInTheDocument();
+    const { generateDesignPreview } = await import("./web/api");
+    expect(vi.mocked(generateDesignPreview)).toHaveBeenCalledWith(expect.objectContaining({ spriteAnimation: "none" }), expect.anything(), expect.anything(), expect.anything(), expect.anything());
   });
 
   it("灵感不会静默覆盖用户描述，确认后可一步进入方案", async () => {
@@ -138,7 +152,8 @@ describe("creation workbench", () => {
     render(<App />);
 
     await chooseRemixOf(user, /滑动合成/);
-    await user.type(screen.getByLabelText("你想怎么改？"), "换成海底世界的画风");
+    await user.click(screen.getByRole("radio", { name: /改变美术风格/ }));
+    await user.type(screen.getByLabelText("具体想调整什么？"), "换成海底世界的画风");
     await user.click(screen.getByRole("button", { name: /开始制作/ }));
     await waitFor(() => expect(screen.getByRole("button", { name: "确认方案，开始制作" })).toBeEnabled(), { timeout: 3000 });
     await user.click(screen.getByRole("button", { name: "确认方案，开始制作" }));

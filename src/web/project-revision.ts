@@ -1,10 +1,14 @@
 import { projectRevisionInputSchema } from "../shared/contracts";
+import type { RenovationScope } from "../shared/contracts";
+import type { SpriteAnimationClipId } from "../shared/generated-blueprint";
 import { getProjectRevision, submitProjectRevision } from "./api";
 
 const key = (projectId: string) => `studio-pending-revision:${projectId}`;
 export function pendingRevision(projectId: string) {
   const saved = localStorage.getItem(key(projectId));
-  return saved ? projectRevisionInputSchema.parse(JSON.parse(saved)) : null;
+  if (!saved) return null;
+  const input = JSON.parse(saved) as { revisionScope?: RenovationScope };
+  return projectRevisionInputSchema.parse({ ...input, revisionScope: input.revisionScope ?? "gameplay" });
 }
 function acknowledge(projectId: string, requestId: string) {
   if (pendingRevision(projectId)?.requestId === requestId) localStorage.removeItem(key(projectId));
@@ -16,10 +20,10 @@ export async function recoverPendingRevision(projectId: string) {
   if (build) acknowledge(projectId, receipt.requestId);
   return build;
 }
-export async function confirmProjectRevision(projectId: string, content: string) {
+export async function confirmProjectRevision(projectId: string, content: string, revisionScope: RenovationScope, assetTarget?: { clipId: SpriteAnimationClipId }) {
   const previous = pendingRevision(projectId);
-  if (previous && previous.content !== content.trim()) throw new Error("上次修改的接收状态尚未确认，请先刷新恢复原任务，不要改写待确认的请求。");
-  const receipt = previous ?? projectRevisionInputSchema.parse({ requestId: crypto.randomUUID(), content });
+  if (previous && (previous.content !== content.trim() || previous.revisionScope !== revisionScope || previous.assetTarget?.clipId !== assetTarget?.clipId)) throw new Error("上次修改的接收状态尚未确认，请先刷新恢复原任务，不要改写待确认的请求。");
+  const receipt = previous ?? projectRevisionInputSchema.parse({ requestId: crypto.randomUUID(), content, revisionScope, ...(assetTarget ? { assetTarget } : {}) });
   // Failure to persist stops before any network write. Reconnection only reads;
   // explicit confirmation may resend this same id, which is atomic server-side.
   localStorage.setItem(key(projectId), JSON.stringify(receipt));

@@ -26,7 +26,7 @@ const tables: TableCopy[] = [
     ],
   },
   { name: "publications", columns: ["id", "project_id", "version_id", "status", "stable_path", "version_path", "published_at"] },
-  { name: "builds", columns: ["id", "project_id", "status", "runtime_target", "created_at", "started_at", "completed_at", "version_id", "error_message"] },
+  { name: "builds", columns: ["id", "project_id", "status", "runtime_target", "created_at", "started_at", "completed_at", "version_id", "error_message", "revision_scope", "asset_clip_id"] },
   { name: "build_steps", columns: ["id", "build_id", "sequence", "kind", "title", "detail", "status", "output_text", "started_at", "completed_at"] },
   { name: "project_messages", columns: ["id", "project_id", "role", "content", "created_at"] },
   { name: "play_events", columns: ["id", "project_id", "version_id", "player_id", "event_type", "input_mode", "viewport", "level_number", "best_score", "average_fps", "created_at"] },

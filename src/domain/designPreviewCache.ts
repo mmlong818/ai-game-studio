@@ -5,13 +5,23 @@ import { generateDesignPreview, type DesignPreviewPhase } from "../web/api";
 // Keep in-flight work across the back/edit/return flow as well.
 const storageKey = "studio-design-previews-v1";
 type PreviewListener = { onText?: (text: string) => void; onStatus?: (phase: DesignPreviewPhase, startedAt: string) => void };
-const entries = new Map<string, { pending: Promise<GameDesignProfile>; text: string; phase: DesignPreviewPhase; startedAt: string; settled: boolean; listeners: Set<PreviewListener> }>();
+const entries = new Map<string, { pending: Promise<GameDesignProfile>; controller: AbortController; text: string; phase: DesignPreviewPhase; startedAt: string; settled: boolean; listeners: Set<PreviewListener> }>();
 function saved(): Record<string, GameDesignProfile> {
   try { return JSON.parse(sessionStorage.getItem(storageKey) ?? "{}"); } catch { return {}; }
 }
 export function clearDesignPreviewCache(clearSaved = true) {
   entries.clear();
   if (clearSaved) { try { sessionStorage.removeItem(storageKey); } catch { /* Storage can be unavailable. */ } }
+}
+/** Stops the in-flight design request itself and removes it from reuse. */
+export function cancelDesignPreview(input: ProjectInput) {
+  const key = JSON.stringify(input);
+  const entry = entries.get(key);
+  if (!entry || entry.settled) return false;
+  entries.delete(key);
+  entry.listeners.clear();
+  entry.controller.abort();
+  return true;
 }
 export function getDesignPreview(input: ProjectInput, regenerate = false, onText?: (text: string) => void, onStatus?: (phase: DesignPreviewPhase, startedAt: string) => void) {
   const key = JSON.stringify(input);
@@ -30,8 +40,9 @@ export function getDesignPreview(input: ProjectInput, regenerate = false, onText
   }
   const listeners = new Set<PreviewListener>();
   if (onText || onStatus) listeners.add({ onText, onStatus });
-  const entry = { pending: null! as Promise<GameDesignProfile>, text: "", phase: "submitted" as DesignPreviewPhase, startedAt: new Date().toISOString(), settled: false, listeners };
-  const pending = generateDesignPreview(input, new AbortController().signal, delta => {
+  const controller = new AbortController();
+  const entry = { pending: null! as Promise<GameDesignProfile>, controller, text: "", phase: "submitted" as DesignPreviewPhase, startedAt: new Date().toISOString(), settled: false, listeners };
+  const pending = generateDesignPreview(input, controller.signal, delta => {
     entry.text += delta;
     for (const listener of listeners) listener.onText?.(entry.text);
   }, () => {

@@ -1,5 +1,5 @@
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { generateGameSpec, projectInputSchema, projectRevisionInputSchema } from "../shared/contracts.js";
 import { PLATFORM_VERSION_INFO } from "../shared/platform-version.js";
@@ -13,7 +13,7 @@ import { openDatabase } from "./database.js";
 import { acquireRuntimeOwnership } from "./runtime-ownership.js";
 import { BuildOrchestrator, DEFAULT_REPAIR_ROUNDS } from "./build-orchestrator.js";
 import { ProductionJobs } from "./production-jobs.js";
-import { resolveCreationDesign } from "./creation-design.js";
+import { prepareRenovationInput, resolveCreationDesign } from "./creation-design.js";
 import { DesignContractGenerator } from "./design-contract.js";
 import { serveDesignPreview } from "./design-preview-http.js";
 import { readJson, sendError, sendJson } from "./http.js";
@@ -24,11 +24,12 @@ import { OpenAISettings } from "./openai-settings.js";
 import { createClaudeCliFetch, DEFAULT_CLAUDE_CLI_MODEL } from "./claude-cli-text-provider.js";
 import { ProjectLifecycle } from "./project-lifecycle.js";
 import { importLegacySqliteIfEmpty } from "./sqlite-migration.js";
-import { sendStaticFile, workbenchContentSecurityPolicy } from "./static-files.js";
+import { gameContentSecurityPolicy, sendStaticFile, workbenchContentSecurityPolicy } from "./static-files.js";
 import { StudioRepository } from "./studio-repository.js";
 import { ResearchPrototypeService } from "./research-prototype.js";
 import { loadCuratedResourceLibrary } from "./resource-library.js";
 import { ensureV11FixtureArtifact } from "./v11-build-metadata.js";
+import { renderGameLobbyShell, resolveGameLobbyOrigin } from "./game-lobby-navigation.js";
 
 const port = Number.parseInt(process.env.PORT ?? "4312", 10);
 const gamePort = Number.parseInt(process.env.GAME_PORT ?? "4313", 10);
@@ -146,10 +147,11 @@ function projectActionIdFrom(pathname: string, action: "archive" | "restore" | "
   return pathname.match(new RegExp(`^/api/projects/([^/]+)/${action}$`))?.[1] ?? null;
 }
 
-async function createAnalyzedProject(rawInput: ReturnType<typeof projectInputSchema.parse>, report: (title: string) => Promise<void> = async () => {}) {
-    const { input, analysis, designProfile } = await resolveCreationDesign(rawInput, {
-      analyze: input => ideaAnalyzer.analyze(input),
-      generate: (input, analysis) => designContracts.generate(input, analysis),
+async function createAnalyzedProject(rawInput: ReturnType<typeof projectInputSchema.parse>, report: (title: string) => Promise<void> = async () => {}, signal?: AbortSignal) {
+    const preparedInput = await prepareRenovationInput(rawInput, id => repository.get(id));
+    const { input, analysis, designProfile } = await resolveCreationDesign(preparedInput, {
+      analyze: input => ideaAnalyzer.analyze(input, signal),
+      generate: (input, analysis) => designContracts.generate(input, analysis, [], undefined, undefined, signal),
     }, report);
     await report("正在准备机制与资源计划");
     // 影子策划评估只写入规格供比较和审计；当前生产模板选择仍由 IdeaAnalyzer 决定。
@@ -159,13 +161,14 @@ async function createAnalyzedProject(rawInput: ReturnType<typeof projectInputSch
     return repository.create(input, analysis, designProfile, designKnowledge, resourcePlanning);
 }
 
-const productionJobs = new ProductionJobs(database, async (input, report) => {
+const productionJobs = new ProductionJobs(database, async (input, report, signal) => {
   const parsed = projectInputSchema.parse(input);
   let project = parsed.requestId ? await repository.get(parsed.requestId) : null;
   if (project && project.idea !== parsed.idea) throw new Error("制作请求与已有项目不一致。");
-  project ??= await createAnalyzedProject(parsed, report);
+  project ??= await createAnalyzedProject(parsed, report, signal);
+  signal.throwIfAborted();
   await report("正在启动资源生成与游戏构建");
-  await orchestrator.start(project.id);
+  await orchestrator.start(project.id, undefined, signal);
 });
 await productionJobs.initialize();
 await orchestrator.resumeQueuedBuilds();
@@ -173,6 +176,17 @@ await orchestrator.resumeQueuedBuilds();
 async function handleApi(request: IncomingMessage, response: ServerResponse, pathname: string) {
   if (request.method === "POST" && pathname === "/api/production-jobs") {
     sendJson(response, 202, { job: await productionJobs.submit(projectInputSchema.parse(await readJson(request))) });
+    return true;
+  }
+  const cancelJobId = pathname.match(/^\/api\/production-jobs\/([^/]+)\/cancel$/)?.[1];
+  if (request.method === "POST" && cancelJobId) {
+    const id = decodeURIComponent(cancelJobId);
+    const job = await productionJobs.cancel(id, async () => {
+      const build = await repository.latestBuild(id);
+      if (!build) return null;
+      return (await orchestrator.cancel(build.id)).status as "cancelled" | "succeeded" | "failed";
+    });
+    sendJson(response, 200, { job });
     return true;
   }
   const retryJobId = pathname.match(/^\/api\/production-jobs\/([^/]+)\/retry$/)?.[1];
@@ -197,7 +211,8 @@ async function handleApi(request: IncomingMessage, response: ServerResponse, pat
         if (closed) break;
         if (snapshot !== previous) { response.write(snapshot + "\n"); previous = snapshot; lastSentAt = Date.now(); }
         else if (Date.now() - lastSentAt >= 15_000) { response.write(JSON.stringify({ type: "heartbeat" }) + "\n"); lastSentAt = Date.now(); }
-        if (!job || job.status === "failed" || build?.status === "succeeded" || build?.status === "failed") break;
+        if (build?.status === "succeeded" || build?.status === "failed") await productionJobs.settle(id, build.status);
+        if (!job || job.status === "failed" || job.status === "cancelled" || build?.status === "succeeded" || build?.status === "failed" || build?.status === "cancelled") break;
         await new Promise(resolve => setTimeout(resolve, 750));
       }
     } catch { if (!closed) response.write(JSON.stringify({ error: "进度连接暂时中断，任务仍在服务端运行。" }) + "\n"); }
@@ -403,7 +418,7 @@ async function handleApi(request: IncomingMessage, response: ServerResponse, pat
     return true;
   }
   if (request.method === "POST" && pathname === "/api/design-preview") {
-    const input = projectInputSchema.parse(await readJson(request));
+    const input = await prepareRenovationInput(projectInputSchema.parse(await readJson(request)), id => repository.get(id));
     await serveDesignPreview(request, response, input, previewDesignContracts);
     return true;
   }
@@ -433,6 +448,14 @@ async function handleApi(request: IncomingMessage, response: ServerResponse, pat
   }
 
   const buildProjectId = buildProjectIdFrom(pathname);
+  const cancelBuildRoute = pathname.match(/^\/api\/projects\/([^/]+)\/builds\/([^/]+)\/cancel$/);
+  if (request.method === "POST" && cancelBuildRoute) {
+    const projectId = decodeURIComponent(cancelBuildRoute[1]);
+    const build = await repository.buildById(decodeURIComponent(cancelBuildRoute[2]));
+    if (build.projectId !== projectId) { sendJson(response, 404, { error: "该项目没有这条制作任务。" }); return true; }
+    sendJson(response, 200, { build: await orchestrator.cancel(build.id) });
+    return true;
+  }
   const revisionRoute = pathname.match(/^\/api\/projects\/([^/]+)\/revisions(?:\/([^/]+))?$/);
   if (revisionRoute && request.method === "POST" && !revisionRoute[2]) {
     const input = projectRevisionInputSchema.parse(await readJson(request));
@@ -549,7 +572,7 @@ async function ensureVersionArtifact(game: { project_id: string; fixture_kind: s
   return ensureV11FixtureArtifact(source, target, project);
 }
 
-async function handleGame(response: ServerResponse, pathname: string) {
+async function handleGame(response: ServerResponse, pathname: string, raw = false, query = new URLSearchParams()) {
   const request = await gameRequest(pathname);
   if (!request) return false;
   if (!request.relativePath) {
@@ -562,6 +585,25 @@ async function handleGame(response: ServerResponse, pathname: string) {
   // 本机开发时 vite 工作台跑在 4311,一并放行。
   const ancestors = [`'self'`, originWithoutSlash(publicOrigin)];
   if (publicOrigin.includes("127.0.0.1") || publicOrigin.includes("localhost")) ancestors.push("http://127.0.0.1:4311", "http://localhost:4311");
+  if (relativePath === "index.html" && !raw) {
+    const indexPath = join(request.root, relativePath);
+    if (existsSync(indexPath)) {
+      const title = readFileSync(indexPath, "utf8").match(/<title[^>]*>([\s\S]*?)<\/title>/i)?.[1].trim() || "游戏试玩";
+      const rawQuery = new URLSearchParams(query);
+      rawQuery.set("__studio_game_raw", "1");
+      const html = renderGameLobbyShell(`?${rawQuery.toString()}`, resolveGameLobbyOrigin({ publicOrigin, workbenchOrigin: process.env.WORKBENCH_ORIGIN }), title);
+      response.writeHead(200, {
+        "Content-Type": "text/html; charset=utf-8",
+        "Cache-Control": "no-cache",
+        "Content-Security-Policy": gameContentSecurityPolicy(ancestors.join(" ")),
+        "Permissions-Policy": "camera=(), microphone=(), geolocation=()",
+        "Referrer-Policy": "strict-origin-when-cross-origin",
+        "X-Content-Type-Options": "nosniff",
+      });
+      response.end(html);
+      return true;
+    }
+  }
   return sendStaticFile(response, request.root, relativePath, request.immutable, {
     frameAncestors: ancestors.join(" "),
   });
@@ -623,7 +665,7 @@ const server = createServer(async (request, response) => {
       return;
     }
     if (request.method === "GET" && (url.pathname.startsWith("/play/") || url.pathname.startsWith("/version/"))) {
-      if (await handleGame(response, url.pathname)) return;
+      if (await handleGame(response, url.pathname, url.searchParams.get("__studio_game_raw") === "1", url.searchParams)) return;
       sendJson(response, 404, { error: "游戏版本不存在。" });
       return;
     }
@@ -651,7 +693,7 @@ const gameServer = createServer(async (request, response) => {
       return;
     }
     if (request.method === "GET" && (url.pathname.startsWith("/play/") || url.pathname.startsWith("/version/"))) {
-      if (await handleGame(response, url.pathname)) return;
+      if (await handleGame(response, url.pathname, url.searchParams.get("__studio_game_raw") === "1", url.searchParams)) return;
       sendJson(response, 404, { error: "游戏版本不存在。" });
       return;
     }

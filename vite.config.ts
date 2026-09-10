@@ -6,6 +6,9 @@ import { randomUUID } from "node:crypto";
 import { mkdir, readFile, rename, unlink, writeFile } from "node:fs/promises";
 import { homedir, networkInterfaces } from "node:os";
 import { join, resolve } from "node:path";
+import sharp from "sharp";
+import { assertAssetDeliveryMatchesRole, assetDeliverySpecSchema } from "./src/domain/assetDelivery";
+import type { AssetRole } from "./src/domain/platformTypes";
 const allowedRoles = new Set(["player", "background", "obstacle", "collectible", "effect", "interface"]);
 
 const execFileCancelable = (
@@ -237,11 +240,14 @@ function localImageGeneration(apiKey: string | undefined): Plugin {
             prompt?: string;
             role?: string;
             label?: string;
+            delivery?: unknown;
           };
           const prompt = input.prompt?.trim() ?? "";
           const role = input.role ?? "";
           if (prompt.length < 8 || prompt.length > 2000) throw new Error("提示词长度必须为 8–2000 个字符");
           if (!allowedRoles.has(role)) throw new Error("资源角色无效");
+          const delivery = assetDeliverySpecSchema.parse(input.delivery);
+          assertAssetDeliveryMatchesRole(role as AssetRole, delivery);
           if (!apiKey) throw new Error("本地服务没有配置 OPENAI_API_KEY；可以写入不会提交的 .env.local 后重启服务");
 
           const codexRoot = process.env.CODEX_HOME || join(homedir(), ".codex");
@@ -253,10 +259,12 @@ function localImageGeneration(apiKey: string | undefined): Plugin {
           const rawPath = join(outputDir, `${baseName}-raw.png`);
           const finalPath = join(outputDir, `${baseName}.png`);
           const processedPath = join(outputDir, `${baseName}-processed.png`);
-          const isBackground = role === "background";
+          const isBackground = delivery.purpose === "environment";
           const structuredPrompt = [
             "Use case: stylized-concept",
             `Asset type: browser game ${role} raster asset`,
+            `Delivery contract: ${delivery.purpose}; ${delivery.fit}; ${delivery.background} background`,
+            `Safe area: ${delivery.safeArea}`,
             `Primary request: ${prompt}`,
             input.label ? `Subject: ${input.label}` : "",
             isBackground
@@ -304,18 +312,24 @@ function localImageGeneration(apiKey: string | undefined): Plugin {
           ], request, 60_000);
           await unlink(finalPath).catch(() => undefined);
           await rename(processedPath, finalPath);
+          const delivered = await sharp(finalPath).metadata();
+          if (!delivered.width || !delivered.height) throw new Error("处理后的图片缺少有效像素尺寸");
+          if (delivery.background === "transparent") {
+            const alpha = (await sharp(finalPath).stats()).channels[3];
+            if (!alpha || alpha.min >= 255) throw new Error("透明主体处理后没有真实透明像素，已拒绝交付");
+          }
           response.statusCode = 200;
           response.end(JSON.stringify({
             model: "gpt-image-2",
             provider: "openai",
             mimeType: "image/png",
-            width: 1024,
-            height: 1024,
+            width: delivered.width,
+            height: delivered.height,
             localPath: `generated/${baseName}.png`,
             publicUrl: `/generated/${baseName}.png`,
             processing: isBackground
-              ? ["resize-fit", "png-optimize"]
-              : ["chroma-key-alpha-extraction", "spill-cleanup", "transparent-trim", "resize-fit", "png-optimize"],
+              ? [`delivery-${delivery.fit}`, "resize-fit", "png-optimize"]
+              : ["chroma-key-alpha-extraction", "spill-cleanup", "transparent-trim", `delivery-${delivery.fit}`, "resize-fit", "png-optimize"],
           }));
         } catch (error) {
           response.statusCode = 400;

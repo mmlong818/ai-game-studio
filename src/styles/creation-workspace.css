@@ -77,6 +77,7 @@ body:has(.studio-app) .app-header button { color: var(--text); background: var(-
 .studio-app .review-heading h1 { font-size: 30px; line-height: 1.3; }
 .studio-app .review-heading p { font-size: 13px; line-height: 1.8; color: var(--ink-muted); }
 .studio-app .live-design-review { padding: 28px; border: 1px solid var(--border); border-radius: 16px; background: var(--surface-raised, #fff); margin-bottom: 40px; scroll-margin-top: 88px; }
+.studio-app .live-design-review .flow-stopped { margin: 18px 0; padding: 12px 14px; border-radius: 10px; background: var(--surface-soft); color: var(--ink, #202923); line-height: 1.65; }
 .studio-app .ready-stamp { display: inline-block; border-radius: 4px; background: var(--surface); color: var(--ink-muted); margin: 20px 0; font-weight: 500; }
 .studio-app .fact-list > div { grid-template-columns: 112px minmax(0, 1fr); gap: 20px; padding: 20px 0; }
 .studio-app .fact-list dt { font-size: 13px; line-height: 1.8; color: var(--ink-muted); }

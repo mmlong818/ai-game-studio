@@ -10,6 +10,7 @@ import {
 } from "../shared/contracts.js";
 import { mechanicVocabularyLines } from "../shared/design-knowledge.js";
 import { type OpenAISettings } from "./openai-settings.js";
+import { cancellationSignal, withTimeoutSignal } from "./cancellation.js";
 
 const DEFAULT_ENDPOINT = "https://api.openai.com/v1/chat/completions";
 const DEFAULT_TIMEOUT_MS = 20_000;
@@ -81,21 +82,22 @@ export class IdeaAnalyzer {
     this.timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   }
 
-  async analyze(rawInput: ProjectInput): Promise<IdeaAnalysis> {
+  async analyze(rawInput: ProjectInput, signal?: AbortSignal): Promise<IdeaAnalysis> {
     const input = projectInputSchema.parse(rawInput);
     if (input.template !== "auto") return heuristicIdeaAnalysis(input);
     const apiKey = this.settings.getApiKey();
     if (!apiKey) return heuristicIdeaAnalysis(input);
     try {
-      return await this.requestAnalysis(input.idea, apiKey);
+      return await this.requestAnalysis(input.idea, apiKey, signal);
     } catch (error) {
+      if (cancellationSignal(signal)?.aborted) throw error;
       const reason = error instanceof Error ? error.message : "LLM 玩法解析失败。";
       console.warn(`玩法合同 LLM 解析失败，已回退到关键词识别：${reason}`);
       return heuristicIdeaAnalysis(input, reason);
     }
   }
 
-  private async requestAnalysis(idea: string, apiKey: string): Promise<IdeaAnalysis> {
+  private async requestAnalysis(idea: string, apiKey: string, signal?: AbortSignal): Promise<IdeaAnalysis> {
     let lastError: unknown = null;
     for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt += 1) {
       const controller = new AbortController();
@@ -107,7 +109,7 @@ export class IdeaAnalyzer {
             "Content-Type": "application/json",
             Authorization: `Bearer ${apiKey}`,
           },
-          signal: controller.signal,
+          signal: withTimeoutSignal(controller.signal, signal),
           body: JSON.stringify({
             ...this.settings.textRequestOptions("planner"),
             messages: [
@@ -132,6 +134,7 @@ export class IdeaAnalyzer {
         }
         return this.parseAnswer(await response.json());
       } catch (error) {
+        if (cancellationSignal(signal)?.aborted) throw error;
         if (error instanceof Error && error.name === "AbortError") {
           lastError = new Error(`模型接口在 ${this.timeoutMs}ms 内没有响应。`);
           if (attempt < MAX_ATTEMPTS) continue;

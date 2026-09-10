@@ -4,6 +4,7 @@ import { modelCatalog, fetchModelCatalog } from "../src/server/openai-model-cata
 import { OpenAISettings } from "../src/server/openai-settings.js";
 import { CoverArtGenerator } from "../src/server/image-generator.js";
 import { generateGameSpec, type ProjectDetail } from "../src/shared/contracts.js";
+import sharp from "sharp";
 const key = "sk-test_1234567890abcdef";
 const payload = { data: ["gpt-5.9","gpt-5.10","gpt-5.10-mini","gpt-5.10-2026-09-01","gpt-image-2","gpt-image-3","gpt-5.10-audio","text-embedding-3-large"].map((id, i) => ({ id, created: 100+i })) };
 const remote = (async () => new Response(JSON.stringify(payload))) as typeof fetch;
@@ -120,6 +121,29 @@ test("按数字版本而非字符串排序；推荐稳定完整型号，排除�
   assert.deepEqual(result.recommended, { text: "gpt-5.10", image: "gpt-image-3" });
   assert.equal(result.text.length, 4);
 });
+test("目录精确保留 GPT Image 2.5 Sunburst/Flare 及官方快照", async () => {
+  const imageIds = [
+    "gpt-image-2.5-sunburst",
+    "gpt-image-2.5-sunburst-2026-09-08",
+    "gpt-image-2.5-flare",
+    "gpt-image-2.5-flare-2026-09-08",
+  ];
+  const catalog = modelCatalog({ data: [
+    { id: "gpt-5.10", created: 1 },
+    ...imageIds.map((id, index) => ({ id, created: 10 + index })),
+    { id: "gpt-image-2.5-sunburn", created: 99 },
+    { id: "gpt-image-2.5-flare-preview", created: 99 },
+  ] });
+  assert.deepEqual(new Set(catalog.image.map(({ id }) => id)), new Set(imageIds));
+
+  const settings = new OpenAISettings(null);
+  const fetcher = (async () => new Response(JSON.stringify({ data: [
+    { id: "gpt-5.10", created: 1 },
+    ...imageIds.map((id, index) => ({ id, created: 10 + index })),
+  ] }))) as typeof fetch;
+  await settings.save({ apiKey: key, models: { text: "gpt-5.10", image: "gpt-image-2.5-sunburst" } }, fetcher);
+  assert.equal(settings.status().models.image, "gpt-image-2.5-sunburst");
+});
 test("预览不保存 Key；直接保存自动选择最新，之后可调整并保存", async () => {
   const settings = new OpenAISettings(null);
   await settings.listModels({ apiKey: key }, remote);
@@ -150,12 +174,12 @@ test("保存后真实生图请求体使用用户选择的型号", async () => {
   const settings = new OpenAISettings(null);
   await settings.save({ apiKey: key }, remote);
   let used = "";
-  const png = Buffer.concat([Buffer.from([0x89,0x50,0x4e,0x47]),Buffer.alloc(900)]);
+  const png = await sharp({ create: { width: 1536, height: 1024, channels: 3, background: "#3f7f68" } }).png().toBuffer();
   const generator = new CoverArtGenerator(settings, { fetchImpl: async (_url, init) => {
     used = JSON.parse(String(init?.body)).model;
     return new Response(JSON.stringify({data:[{b64_json:png.toString("base64")}]}));
   }});
-  const project = { id: "model-test", title: "测试游戏", spec: generateGameSpec({idea:"一个经典俄罗斯方块小游戏"}) } as ProjectDetail;
+  const project = { id: "model-test", title: "测试游戏", spec: generateGameSpec({ idea: "一个经典俄罗斯方块小游戏", aspectRatio: "16:9" }) } as ProjectDetail;
   assert.ok(await generator.generate(project));
   assert.equal(used, "gpt-image-3");
 });

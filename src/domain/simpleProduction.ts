@@ -7,6 +7,7 @@ import { runGameplayAcceptance } from "./gameplayAcceptance";
 import { generateRuntimeFiles } from "./runtimeGenerator";
 import type { AssetGenerationRecord, AssetRole, StudioProject } from "./platformTypes";
 import type { StudioDraft } from "./types";
+import { assetDeliveryForRole, type AssetDeliverySpec } from "./assetDelivery";
 
 export type SimpleProductionStage = "preparing" | "assets" | "building" | "probing" | "ready" | "failed";
 
@@ -22,7 +23,7 @@ interface GeneratedImage {
 
 export interface SimpleProductionDependencies {
   generateImage: (
-    input: { role: AssetRole; label: string; prompt: string },
+    input: { role: AssetRole; label: string; prompt: string; delivery: AssetDeliverySpec },
     existing: AssetGenerationRecord[],
     signal?: AbortSignal,
   ) => Promise<GeneratedImage>;
@@ -54,12 +55,16 @@ const abortIfNeeded = (signal?: AbortSignal) => {
   if (signal?.aborted) throw new DOMException("制作已中断", "AbortError");
 };
 
-const promptFor = (project: StudioProject, role: AssetRole, goal: string, visualDirection: string): string => [
+export const promptForSimpleAsset = (project: StudioProject, role: AssetRole, goal: string, visualDirection: string, delivery = assetDeliveryForRole(role)): string => [
   `${project.name}的${roleLabels[role]}`,
+  `用途：${delivery.purpose}；显示适配：${delivery.fit}；背景交付：${delivery.background}`,
+  `安全区：${delivery.safeArea}`,
   `玩家体验：${project.spec.intent.vision}`,
   `本轮意见：${goal}`,
   visualDirection ? `视觉方向：${visualDirection}` : "保持清楚、易读的游戏视觉",
-  "用于单人网页小游戏，Q版但轮廓明确，手机小屏也能快速辨认，不含文字、标志、水印或 SVG",
+  role === "background" ? "只生成环境层，不含主角、棋盘、HUD、按钮或说明文字" : "只生成一个点名主体，不增加其他角色、道具或界面元素",
+  "沿用本项目既定玩法和固定运行时层级；图片只承担上述素材槽位，不设计新玩法或新界面",
+  "用于单人网页小游戏，轮廓明确，手机小屏也能快速辨认，不含文字、标志、水印或 SVG",
 ].join("；");
 
 const mergeGameplayResult = (
@@ -106,10 +111,12 @@ export async function buildSimplePlayableRevision(
   for (const role of roles) {
     abortIfNeeded(input.signal);
     const nodes = targetNodes.filter((node) => node.role === role);
+    const delivery = assetDeliveryForRole(role);
     const generated = await dependencies.generateImage({
       role,
       label: roleLabels[role],
-      prompt: promptFor(baseProject, role, input.goal, input.visualDirection),
+      prompt: promptForSimpleAsset(baseProject, role, input.goal, input.visualDirection, delivery),
+      delivery,
     }, assets, input.signal);
     generatedAssetIds.push(generated.asset.id);
     assets = [...assets, generated.asset];
@@ -151,7 +158,7 @@ export async function buildSimplePlayableRevision(
 }
 
 export async function createMockGeneratedImage(
-  input: { role: AssetRole; label: string; prompt: string },
+  input: { role: AssetRole; label: string; prompt: string; delivery: AssetDeliverySpec },
   existing: AssetGenerationRecord[],
 ): Promise<GeneratedImage> {
   const asset = await createGeneratedAsset({

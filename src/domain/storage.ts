@@ -4,6 +4,8 @@ const STORAGE_KEY = "ai-game-studio:m0-draft";
 
 export const INITIAL_DRAFT: StudioDraft = {
   creationMode: "template-remix",
+  revisionScope: "gameplay",
+  spriteAnimation: "auto",
   templateId: "merge-2048",
   sourceGame: null,
   selectedSuggestionIds: [],

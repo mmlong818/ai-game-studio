@@ -9,14 +9,14 @@ it("先持久化请求，再提交一次原子修改", async () => {
     expect(pendingRevision(id)).toEqual(input);
     return { id: input.requestId, status: "queued" } as Build;
   });
-  const build = await confirmProjectRevision("p1", "增加配对反馈");
+  const build = await confirmProjectRevision("p1", "增加配对反馈", "gameplay");
   expect(build.status).toBe("queued");
   expect(pendingRevision("p1")).toBeNull();
   expect(submitProjectRevision).toHaveBeenCalledTimes(1);
 });
 it("响应丢失后只读恢复同一任务，不重复提交", async () => {
   vi.mocked(submitProjectRevision).mockRejectedValue(new Error("response lost"));
-  await expect(confirmProjectRevision("p1", "增加配对反馈")).rejects.toThrow();
+  await expect(confirmProjectRevision("p1", "增加配对反馈", "gameplay")).rejects.toThrow();
   const receipt = pendingRevision("p1")!;
   vi.mocked(getProjectRevision).mockResolvedValue({ id: receipt.requestId, status: "running" } as Build);
   expect((await recoverPendingRevision("p1"))?.id).toBe(receipt.requestId);
@@ -24,12 +24,18 @@ it("响应丢失后只读恢复同一任务，不重复提交", async () => {
 });
 it("服务端尚无回执时不自动提交，明确再次确认复用原编号", async () => {
   vi.mocked(submitProjectRevision).mockRejectedValue(new Error("lost"));
-  await expect(confirmProjectRevision("p1", "增加配对反馈")).rejects.toThrow();
+  await expect(confirmProjectRevision("p1", "增加配对反馈", "visual-style")).rejects.toThrow();
   const receipt = pendingRevision("p1")!;
   expect(await recoverPendingRevision("p1")).toBeNull();
   expect(submitProjectRevision).toHaveBeenCalledTimes(1);
-  await expect(confirmProjectRevision("p1", "增加配对反馈")).rejects.toThrow();
+  await expect(confirmProjectRevision("p1", "增加配对反馈", "visual-style")).rejects.toThrow();
   expect(vi.mocked(submitProjectRevision).mock.calls[1][1].requestId).toBe(receipt.requestId);
-  await expect(confirmProjectRevision("p1", "另一种修改请求")).rejects.toThrow(/上次修改/);
+  await expect(confirmProjectRevision("p1", "另一种修改请求", "visual-style")).rejects.toThrow(/上次修改/);
   expect(submitProjectRevision).toHaveBeenCalledTimes(2);
+});
+it("待确认请求的范围也不可被改写", async () => {
+  vi.mocked(submitProjectRevision).mockRejectedValue(new Error("lost"));
+  await expect(confirmProjectRevision("p1", "只替换主角图片", "assets")).rejects.toThrow();
+  await expect(confirmProjectRevision("p1", "只替换主角图片", "gameplay")).rejects.toThrow(/上次修改/);
+  expect(submitProjectRevision).toHaveBeenCalledTimes(1);
 });

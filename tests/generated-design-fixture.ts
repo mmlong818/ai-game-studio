@@ -1,7 +1,7 @@
 export function generatedDesignHtml(onboardingSignal = "shot-fired") {
   return `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>生成游戏设计验收样例</title><style>
-html,body{margin:0;min-height:100%;overflow-x:hidden;background:#101827;color:white}body{background-image:url("./assets/background.png");background-size:cover}button{min-width:88px;min-height:48px}#game-canvas{display:block;width:min(90vw,720px);height:55vh;background:#17243a}
-</style></head><body><button id="start">开始</button><button id="restart">重新开始</button><canvas id="game-canvas"></canvas><script>
+html,body{margin:0;min-height:100%;overflow-x:hidden;background:#101827;color:white}body{background-image:url("./assets/background.png");background-size:cover}button{min-width:88px;min-height:48px}#game-canvas{display:block;width:min(90vw,720px);height:auto;aspect-ratio:4/3;background:#17243a}
+</style></head><body><button id="start">开始</button><button id="restart">重新开始</button><canvas id="game-canvas" width="720" height="540"></canvas><script>
 let state="idle",pressureClock=0,shots=0,currentLevel=1,failureReason="",currentRules=null;
 const stageNames=["基础瞄准","移动目标","护盾取舍","连锁射击","风暴决战"];
 function rulesFor(level){

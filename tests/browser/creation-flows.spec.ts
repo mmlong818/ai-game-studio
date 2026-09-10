@@ -65,6 +65,6 @@ test("手机输入与现有游戏入口均不横向溢出", async ({ page }) => 
   await page.getByRole("button", { name: /改一个现有游戏/ }).click();
   await expect(page.getByRole("list", { name: "可以改造的游戏" })).toBeVisible();
   await page.getByRole("button", { name: /数织矩阵/ }).click();
-  await expect(page.getByLabel("你想怎么改？")).toBeVisible();
+  await expect(page.getByLabel("具体想调整什么？")).toBeVisible();
   await noOverflow();
 });

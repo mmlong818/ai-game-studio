@@ -23,7 +23,7 @@ it("显示模型结果并提交同一方案，修改描述立即禁用旧方案"
   expect(confirm.mock.calls[0][1]).toEqual(profile);
   expect(confirm.mock.calls[0][2]).toBe(draft.newGameBrief);
   // 第四个参数是预览被服务端撤回时清空半截文本的回调。
-  expect(generateDesignPreview).toHaveBeenCalledWith(expect.objectContaining({ idea: draft.newGameBrief, template: "generated" }), expect.any(AbortSignal), expect.any(Function), expect.any(Function), expect.any(Function));
+  expect(generateDesignPreview).toHaveBeenCalledWith(expect.objectContaining({ idea: draft.newGameBrief, template: "generated", spriteAnimation: "auto" }), expect.any(AbortSignal), expect.any(Function), expect.any(Function), expect.any(Function));
   view.rerender(<LiveDesignReview draft={{ ...draft, newGameBrief: "在水下探索珊瑚城，收集珍珠并躲避鲨鱼" }} onBack={vi.fn()} onConfirm={confirm} />);
   expect(screen.getByRole("button", { name: "确认方案，开始制作" })).toBeDisabled();
   expect(screen.queryByText(profile.playerFantasy)).not.toBeInTheDocument();
@@ -38,6 +38,28 @@ it("确认前直接展示真实关数和无失败规则，并原样提交", asyn
   await userEvent.click(screen.getByRole("button", { name: "确认方案，开始制作" }));
   expect(confirm.mock.calls[0][1]).toEqual(planned);
   expect(confirm.mock.calls[0][0]).toContain("共 7 关；不会失败");
+});
+
+it("已有游戏方案明确限制在所选范围并保留原玩法操作", async () => {
+  vi.mocked(generateDesignPreview).mockResolvedValue(profile);
+  const remix = {
+    ...INITIAL_DRAFT,
+    creationMode: "template-remix" as const,
+    revisionScope: "visual-style" as const,
+    templateId: "merge-2048",
+    sourceGame: { id: "770e8400-e29b-41d4-a716-446655440000", title: "滑动合成", coverUrl: null },
+    freeRequest: "整体改成水彩绘本风格",
+  };
+  render(<LiveDesignReview draft={remix} onBack={vi.fn()} onConfirm={vi.fn()} />);
+  await screen.findByText(profile.playerFantasy);
+  expect(generateDesignPreview).toHaveBeenCalledWith(
+    expect.objectContaining({
+      idea: expect.stringMatching(/改造范围：美术风格[\s\S]*不改变玩法、操作、信息层级或布局[\s\S]*水彩绘本风格/),
+      revisionScope: "visual-style",
+      sourceProjectId: "770e8400-e29b-41d4-a716-446655440000",
+    }),
+    expect.any(AbortSignal), expect.any(Function), expect.any(Function), expect.any(Function),
+  );
 });
 
 it("失败不回退固定方案，用户可以重新生成", async () => {
@@ -72,6 +94,25 @@ it("生成过程中返回再进入，复用未完成的请求", async () => {
   resolve(profile);
   await screen.findByText(profile.playerFantasy);
   expect(generateDesignPreview).toHaveBeenCalledTimes(1);
+});
+
+it("停止方案请求会中止真实流，并忽略停止后的迟到结果", async () => {
+  let resolve!: (value: typeof profile) => void;
+  let signal: AbortSignal | undefined;
+  vi.mocked(generateDesignPreview).mockImplementation((_input, nextSignal) => new Promise(done => {
+    signal = nextSignal;
+    resolve = done;
+  }));
+  render(<LiveDesignReview draft={draft} onBack={vi.fn()} onConfirm={vi.fn()} />);
+  await waitFor(() => expect(generateDesignPreview).toHaveBeenCalledTimes(1));
+  const stop = await screen.findByRole("button", { name: "停止生成方案" });
+  await userEvent.click(stop);
+  await waitFor(() => expect(signal?.aborted).toBe(true));
+  expect(await screen.findByText(/已停止方案生成/)).toBeInTheDocument();
+  resolve(profile);
+  await new Promise(resolveNext => window.setTimeout(resolveNext, 0));
+  expect(screen.queryByText(profile.playerFantasy)).not.toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "确认方案，开始制作" })).toBeDisabled();
 });
 
 it("首段方案到达前显示真实等待时长，并随流式阶段更新诚实状态", async () => {

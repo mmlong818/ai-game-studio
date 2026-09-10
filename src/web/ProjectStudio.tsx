@@ -29,9 +29,11 @@ import {
   UserRound,
   XCircle,
 } from "lucide-react";
-import { visualStyleOptions, type Build, type IdeaAnalysis, type ProjectDetail, type ProjectMessage, type ProjectVersion } from "../shared/contracts";
+import { visualStyleOptions, type Build, type IdeaAnalysis, type ProjectDetail, type ProjectMessage, type ProjectVersion, type RenovationScope } from "../shared/contracts";
+import type { SpriteAnimationClipId } from "../shared/generated-blueprint";
 import {
   archiveProject,
+  cancelBuild,
   getLatestBuild,
   getPlayableBuild,
   getProject,
@@ -52,6 +54,7 @@ const statusLabelKeys = {
   running: "studio.building",
   succeeded: "studio.buildReady",
   failed: "studio.buildFailed",
+  cancelled: "studio.buildCancelled",
 } as const;
 
 const qualityLabelKeys = {
@@ -114,7 +117,7 @@ export function PreviewPane({ project, build }: { project: ProjectDetail; build:
 
   return (
     <section className="workbench-preview" aria-labelledby="preview-heading">
-      {previewUrl && (build?.status === "running" || build?.status === "queued" || build?.status === "failed") && <p className="preview-version-notice" role="status">{build.status === "failed" ? "新版未完成，仍可试玩上一个成功版本。" : "新版正在制作，当前仍可试玩上一个成功版本。"}</p>}
+      {previewUrl && (build?.status === "running" || build?.status === "queued" || build?.status === "failed" || build?.status === "cancelled") && <p className="preview-version-notice" role="status">{build.status === "failed" || build.status === "cancelled" ? "新版未完成，仍可试玩上一个成功版本。" : "新版正在制作，当前仍可试玩上一个成功版本。"}</p>}
       <header className="workbench-preview-toolbar">
         <div className="device-switch" aria-label={t("studio.previewSize")}>
           <button
@@ -462,6 +465,7 @@ function buildConversationText(build: Build | null, t: Translator) {
     return runningStep ? t("studio.runningStep", { title: runningStep.title, detail: runningStep.detail }) : t("studio.runningNext");
   }
   if (build.status === "failed") return t("studio.failedText", { error: build.error ?? t("studio.noError") });
+  if (build.status === "cancelled") return "本轮制作已停止；上一个成功版本仍可试玩。";
   return t("studio.succeededText", { count: build.steps.filter((step) => step.status === "succeeded").length });
 }
 
@@ -522,13 +526,15 @@ type WorkbenchPanelProps = {
   versions: ProjectVersion[];
   busy: boolean;
   canStartBuild: boolean;
-  onSend: (content: string) => Promise<void>;
+  stopping: boolean;
+  onSend: (content: string, revisionScope: RenovationScope, assetTarget?: { clipId: SpriteAnimationClipId }) => Promise<void>;
   onStartBuild: () => void;
   onRetryBuild: () => Promise<void>;
+  onCancelBuild: () => Promise<void>;
   onPublishVersion: (versionId: string) => Promise<void>;
 };
 
-function WorkbenchPanel({ project, build, messages, loading, sending, archived, versions, busy, canStartBuild, onSend, onStartBuild, onRetryBuild, onPublishVersion }: WorkbenchPanelProps) {
+function WorkbenchPanel({ project, build, messages, loading, sending, archived, versions, busy, canStartBuild, stopping, onSend, onStartBuild, onRetryBuild, onCancelBuild, onPublishVersion }: WorkbenchPanelProps) {
   const { t } = usePreferences();
   const streamRef = useRef<HTMLDivElement>(null);
   const completedSteps = build?.steps.filter((step) => step.status === "succeeded" || step.status === "failed").length ?? 0;
@@ -545,12 +551,13 @@ function WorkbenchPanel({ project, build, messages, loading, sending, archived, 
       </header>
 
       <div className="workbench-stream" ref={streamRef} aria-busy={loading}>
-        <section className="workspace-summary" aria-live="polite"><span>当前进展</span><h3>{loading ? "正在读取你的游戏…" : build?.status === "succeeded" ? "游戏已准备好，先玩一局吧。" : build?.status === "failed" ? "本次制作未完成，已有成功版本不会被覆盖。" : build?.status === "running" ? "正在把修改做进游戏。" : build?.status === "queued" ? "修改已收到，等待开始制作。" : "从这份方案继续制作。"}</h3><p>{build?.status === "running" ? build.steps.find(step => step.status === "running")?.detail ?? "服务端正在处理，无需重复提交。" : "先试玩，再告诉我们哪里还可以更好。每次修改都沿用这个作品。"}</p>{build?.status === "running" && build.steps.find(step => step.status === "running")?.excerpt ? <LiveExcerpt text={build.steps.find(step => step.status === "running")!.excerpt!} /> : null}</section>
+        <section className="workspace-summary" aria-live="polite"><span>当前进展</span><h3>{stopping ? "正在停止这轮制作…" : loading ? "正在读取你的游戏…" : build?.status === "succeeded" ? "游戏已准备好，先玩一局吧。" : build?.status === "failed" ? "本次制作未完成，已有成功版本不会被覆盖。" : build?.status === "cancelled" ? "本轮制作已停止，已有成功版本不会被覆盖。" : build?.status === "running" ? "正在把修改做进游戏。" : build?.status === "queued" ? "修改已收到，等待开始制作。" : "从这份方案继续制作。"}</h3><p>{stopping ? "正在等待服务端确认；确认前不会把它显示为已停止。" : build?.status === "cancelled" ? "已停止后续制作；已发出的远程请求已尝试中止，但服务商可能已开始计费。" : build?.status === "running" ? build.steps.find(step => step.status === "running")?.detail ?? "服务端正在处理，无需重复提交。" : "先试玩，再告诉我们哪里还可以更好。每次修改都沿用这个作品。"}</p>{build?.status === "running" && build.steps.find(step => step.status === "running")?.excerpt ? <LiveExcerpt text={build.steps.find(step => step.status === "running")!.excerpt!} /> : null}</section>
         {build?.status === "failed" && !archived && canStartBuild && <div className="production-retry" role="group" aria-label="重新制作">
           <button type="button" className="workbench-button button-primary" disabled={busy} onClick={() => void onRetryBuild()}>{busy ? <LoaderCircle className="spin" size={16} aria-hidden="true" /> : <RotateCcw size={16} aria-hidden="true" />} 重新制作这个游戏</button>
           <p>沿用已确认方案，已生成的图片直接复用不再付费；代码会针对失败原因重新生成并再次检查，会消耗文本模型用量。也可以先在下方写下修改意见再制作。</p>
         </div>}
-        <RevisionComposer key={project.id} projectId={project.id} disabled={archived || busy || sending || loading || !canStartBuild} working={build?.status === "running" || build?.status === "queued"} onConfirm={onSend} />
+        {(build?.status === "queued" || build?.status === "running") && <div className="review-actions"><button type="button" className="workbench-button button-secondary stop-action" disabled={stopping} onClick={() => void onCancelBuild()}>{stopping ? "正在停止…" : "停止制作"}</button></div>}
+        <RevisionComposer key={project.id} projectId={project.id} disabled={archived || busy || sending || loading || stopping || !canStartBuild} working={build?.status === "running" || build?.status === "queued"} animationClipIds={Array.from(new Set(project.spec.designProfile.generatedBlueprint?.sprites.flatMap(sprite => sprite.animation?.clips.map(clip => clip.id) ?? []) ?? []))} onConfirm={onSend} />
         {!!messages.filter(message => message.role === "user").length && <details className="workspace-details"><summary>最近的修改意见</summary><DirectionLog messages={messages.filter(message => message.role === "user").slice(-3)} /></details>}
         <details className="workspace-details"><summary>查看完整方案、制作与审核记录</summary><p>以下为专业制作详情。实际审核仍按原有标准执行，不以展开或关闭记录代替审核。</p>
         <CreatorBrief project={project} />
@@ -599,13 +606,15 @@ export function ProjectStudio({ project, onProjectChange }: ProjectStudioProps) 
   const [messages, setMessages] = useState<ProjectMessage[]>([]);
   const [versions, setVersions] = useState<ProjectVersion[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [stopping, setStopping] = useState(false);
+  const cancellingBuild = useRef<string | null>(null);
 
   useEffect(() => {
     let active = true;
     setLoading(true);
     Promise.all([recoverPendingRevision(project.id).then(recovered => recovered ?? getLatestBuild(project.id)), getProjectMessages(project.id), getProjectVersions(project.id)])
       .then(([nextBuild, nextMessages, nextVersions]) => {
-        if (!active) return;
+        if (!active || cancellingBuild.current === build?.id) return;
         setBuild(nextBuild);
         setMessages(nextMessages);
         setVersions(nextVersions);
@@ -660,6 +669,27 @@ export function ProjectStudio({ project, onProjectChange }: ProjectStudioProps) 
     }
   }
 
+  async function cancelCurrentBuild() {
+    if (!build || stopping) return;
+    cancellingBuild.current = build.id;
+    setStopping(true);
+    setError(null);
+    try {
+      const next = await cancelBuild(project.id, build.id);
+      setBuild(next);
+      if (next.status === "succeeded") {
+        const [nextProject, nextVersions] = await Promise.all([getProject(project.id), getProjectVersions(project.id)]);
+        onProjectChange(nextProject);
+        setVersions(nextVersions);
+      }
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "停止请求没有确认，请重试。");
+    } finally {
+      cancellingBuild.current = null;
+      setStopping(false);
+    }
+  }
+
   async function publish() {
     setBusy(true);
     setError(null);
@@ -705,11 +735,11 @@ export function ProjectStudio({ project, onProjectChange }: ProjectStudioProps) 
     }
   }
 
-  async function sendMessage(content: string) {
+  async function sendMessage(content: string, revisionScope: RenovationScope, assetTarget?: { clipId: SpriteAnimationClipId }) {
     setSending(true);
     setError(null);
     try {
-      setBuild(await confirmProjectRevision(project.id, content));
+      setBuild(await confirmProjectRevision(project.id, content, revisionScope, assetTarget));
       // Failure to refresh discussion after acceptance must never make the
       // confirmed paid request look unaccepted or encourage another submission.
       try { setMessages(await getProjectMessages(project.id)); } catch { /* Build receipt already confirmed. */ }
@@ -721,7 +751,7 @@ export function ProjectStudio({ project, onProjectChange }: ProjectStudioProps) 
     }
   }
 
-  const canBuild = !project.archivedAt && !project.fixtureKind && (!build || build.status === "failed" || build.status === "succeeded");
+  const canBuild = !project.archivedAt && !project.fixtureKind && (!build || build.status === "failed" || build.status === "succeeded" || build.status === "cancelled");
   const canPublish = !project.archivedAt && project.status !== "contract_ready" && build?.status === "succeeded" && project.version.qualityStatus === "passed" && project.version.artReviewStatus === "passed";
 
   return (
@@ -786,9 +816,11 @@ export function ProjectStudio({ project, onProjectChange }: ProjectStudioProps) 
           versions={versions}
           busy={busy}
           canStartBuild={canBuild}
+          stopping={stopping}
           onSend={sendMessage}
           onStartBuild={beginBuild}
           onRetryBuild={retryBuild}
+          onCancelBuild={cancelCurrentBuild}
           onPublishVersion={publishVersion}
         />
       </div>

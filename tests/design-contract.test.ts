@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { randomUUID } from "node:crypto";
 import { createDesignProfile, gameSpecSchema, generateGameSpec, type IdeaAnalysis } from "../src/shared/contracts";
 import { contractRules, DesignContractGenerator } from "../src/server/design-contract";
 import { DESIGN_MODIFIERS, MECHANIC_ATLAS } from "../src/shared/game-design-knowledge/mechanic-atlas";
@@ -58,6 +59,8 @@ test("流式设计逐段输出，完整校验后才返回合同", async () => {
       assert.equal(body.stream, true);
       assert.equal(body.reasoning_effort, "low");
       assert.equal(body.response_format.json_schema.strict, true);
+      assert.match(body.messages[0].content, /证据→适用性→决定→验证/);
+      assert.match(body.messages[0].content, /已有游戏改造只动用户点名范围/);
       const text = JSON.stringify(themedAnswer);
       const wire = [text.slice(0, 90), text.slice(90)].map(content => "data: " + JSON.stringify({ choices: [{ delta: { content } }] }) + "\n\n").join("") + "data: [DONE]\n\n";
       const bytes = new TextEncoder().encode(wire);
@@ -324,6 +327,28 @@ test("对话式重建:创作意见按时间顺序进入提示词,产出的修订
   assert.equal(spec.designSource, "llm");
 });
 
+test("已有游戏资源改造:范围进入模型提示且本地恢复来源玩法合同", async () => {
+  let userPrompt = "";
+  const baseline = createDesignProfile("snake", "standard");
+  const generator = new DesignContractGenerator(new OpenAISettings(validKey), {
+    fetchImpl: async (_url, init) => {
+      const body = JSON.parse(String(init?.body)) as { messages: Array<{ role: string; content: string }> };
+      userPrompt = body.messages.find(message => message.role === "user")?.content ?? "";
+      return llmResponse({ ...themedAnswer, core_loop: themedAnswer.core_loop.map(step => `${step}并加入经营系统`), win_condition: "经营获胜" });
+    },
+  });
+  const profile = await generator.generate({
+    idea: "只把游戏里的桂花糕换成莲子图片，其余保持原样",
+    template: "snake",
+    sourceProjectId: randomUUID(),
+    revisionScope: "assets",
+    confirmedDesignProfile: baseline,
+  }, snakeAnalysis);
+  assert.deepEqual(profile, baseline);
+  assert.match(userPrompt, /改造范围：部分资源替换/);
+  assert.match(userPrompt, /核心规则、胜负条件、操作方式、页面布局/);
+});
+
 test("意见落实审计:逐条返回判定并保留原意见文本;失败时返回 null", async () => {
   const auditAnswer = {
     verdicts: [
@@ -472,6 +497,13 @@ test("生成游戏必须从知识库选机制并写清取舍；库外机制让�
   assert.match(prompts[0], /mechanic_ids 只能从这些 id 中选/, "策划提示必须给出知识库候选菜单");
   assert.match(prompts[0], /纯点选玩法不可接受/);
   assert.ok(contractRules(profile).some(rule => rule.startsWith("玩家取舍:")), "取舍与位图要求必须逐条进入规则审核");
+
+  const animatedBlueprint = { ...blueprint, sprites: [{ ...blueprint.sprites[0], animation: { frameWidth: 128, frameHeight: 128, columns: 4, rows: 1, frameCount: 4, anchor: { x: 64, y: 116 }, clips: [{ id: "idle", startFrame: 0, frameCount: 4, fps: 6, loop: true }] } }, blueprint.sprites[1]] };
+  let noAnimationPrompt = "";
+  const noAnimationGenerator = new DesignContractGenerator(new OpenAISettings(validKey), { fetchImpl: async (_url, init) => { noAnimationPrompt = String(init?.body); return llmResponse({ ...themedAnswer, generated_blueprint: animatedBlueprint }); } });
+  const noAnimation = await noAnimationGenerator.generate({ idea: "海边捡贝壳装满竹篮，五关数量递增，不会失败。", template: "generated", spriteAnimation: "none" }, null);
+  assert.equal(noAnimation?.generatedBlueprint?.sprites[0].animation, undefined, "明确关闭动画时即使模型返回animation也必须由本地去除");
+  assert.match(noAnimationPrompt, /明确关闭 Sprite Sheet/);
 
   const offLibrary = new DesignContractGenerator(new OpenAISettings(validKey), {
     fetchImpl: async () => llmResponse({ ...themedAnswer, generated_blueprint: { ...blueprint, mechanic_ids: ["click-anything"] } }),

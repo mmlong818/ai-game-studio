@@ -202,6 +202,7 @@ const zhCN = {
   "studio.building": "制作中",
   "studio.buildReady": "版本就绪",
   "studio.buildFailed": "构建中断",
+  "studio.buildCancelled": "制作已停止",
   "studio.build": "启动构建",
   "studio.rebuild": "重新构建",
   "studio.newBuild": "构建新版本",

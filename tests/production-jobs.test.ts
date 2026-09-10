@@ -114,3 +114,38 @@ test("创建阶段失败后可用同一份已确认方案重新制作，不重�
     for (let n = 0; n < 100 && (await jobs.get(plain.id))?.status !== "building"; n++) await new Promise(done => setTimeout(done, 5));
   } finally { await db.close(); }
 });
+
+test("取消可先于同 requestId 的创建提交，迟到提交不会启动孤儿任务", async () => {
+  const db = await openTestDatabase();
+  let calls = 0;
+  const jobs = new ProductionJobs(db, async () => { calls += 1; });
+  const id = randomUUID();
+  try {
+    await jobs.initialize();
+    assert.equal((await jobs.cancel(id)).status, "cancelled");
+    assert.equal((await jobs.submit({ requestId: id, idea: "在森林中寻找四枚发光种子的轻松小游戏" })).status, "cancelled");
+    await new Promise(resolve => setTimeout(resolve, 20));
+    assert.equal(calls, 0);
+  } finally { await db.close(); }
+});
+
+test("创建中取消会触发 AbortSignal，且取消后不进入下一阶段", async () => {
+  const db = await openTestDatabase();
+  let laterProviderCalls = 0;
+  let entered!: () => void;
+  const started = new Promise<void>(resolve => { entered = resolve; });
+  const jobs = new ProductionJobs(db, async (_input, _report, signal) => {
+    entered();
+    await new Promise<void>((_resolve, reject) => signal.addEventListener("abort", () => reject(signal.reason), { once: true }));
+    laterProviderCalls += 1;
+  });
+  try {
+    await jobs.initialize();
+    const receipt = await jobs.submit({ requestId: randomUUID(), idea: "经营一间夜间萤火虫花园并收集光点" });
+    await started;
+    assert.equal((await jobs.cancel(receipt.id)).status, "cancelled");
+    for (let n = 0; n < 50 && (await jobs.get(receipt.id))?.status !== "cancelled"; n++) await new Promise(resolve => setTimeout(resolve, 2));
+    assert.equal((await jobs.get(receipt.id))?.status, "cancelled");
+    assert.equal(laterProviderCalls, 0);
+  } finally { await db.close(); }
+});

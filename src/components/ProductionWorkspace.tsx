@@ -5,6 +5,7 @@ import { buildOpenSourceBundle } from "../domain/delivery";
 import { applyExperienceReview, applyViewportEvidence } from "../domain/experience";
 import { runGameplayAcceptance } from "../domain/gameplayAcceptance";
 import { generateProjectImage } from "../domain/imageGenerationClient";
+import { assetDeliveryForRole } from "../domain/assetDelivery";
 import { ImageGenerationQueue } from "../domain/imageQueue";
 import type { AssetRole, StudioProject } from "../domain/platformTypes";
 import { createHostedPreview, type HostedPreview } from "../domain/previewHosting";
@@ -152,8 +153,9 @@ export function ProductionWorkspace({
     try {
       const jobId = `${selectedNode.id}-${Date.now()}`;
       currentImageJobId.current = jobId;
+      const delivery = assetDeliveryForRole(selectedNode.role);
       const job = imageQueue.current.enqueue(jobId, (signal) => generateProjectImage(
-        { role: selectedNode.role, label: selectedNode.label, prompt: assetPrompt }, project.assets, signal,
+        { role: selectedNode.role, label: selectedNode.label, prompt: assetPrompt, delivery }, project.assets, signal,
       ));
       await imageQueue.current.idle();
       if (job.status === "cancelled") throw new DOMException("生成已取消", "AbortError");

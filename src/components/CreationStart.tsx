@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { SpriteAnimationChoice, type SpriteAnimationPreference } from "./SpriteAnimationControl";
 
 const ideas = [
   { name: "星光收集", text: "一只小龙在星空花园里自由移动，吃星星会变长，躲开巡逻障碍，操作简单，关卡难度逐步提升。" },
@@ -6,8 +7,9 @@ const ideas = [
   { name: "三分钟合成", text: "一个单手就能玩的水果合成小游戏，每局三到五分钟，有新手引导、连锁奖励和不限目标的无限玩法。" },
 ];
 
-export function CreationStart({ value, onChange, onContinue, onRemix, errors }: {
+export function CreationStart({ value, onChange, onContinue, onRemix, errors, spriteAnimation, onSpriteAnimationChange }: {
   value: string; onChange: (value: string) => void; onContinue: (explicit?: boolean) => void; onRemix: () => void; errors: string[];
+  spriteAnimation: SpriteAnimationPreference; onSpriteAnimationChange: (value: SpriteAnimationPreference) => void;
 }) {
   const [replacement, setReplacement] = useState<string | null>(null);
   const [edited, setEdited] = useState(false);
@@ -39,6 +41,7 @@ export function CreationStart({ value, onChange, onContinue, onRemix, errors }: 
       <div className="creation-inspiration"><span>没想好？试试一个灵感</span>
         {ideas.map(idea => <button type="button" key={idea.name} onClick={() => useIdea(idea.text)}>{idea.name} ↗</button>)}
       </div>
+      <SpriteAnimationChoice value={spriteAnimation} onChange={onSpriteAnimationChange} />
       {errors.length > 0 && <p role="alert">{errors.join("；")}</p>}
       {replacement && <div className="creation-replace" role="status"><span>要用这个灵感替换当前描述吗？</span><button type="button" onClick={() => { update(replacement); setReplacement(null); }}>替换描述</button><button type="button" onClick={() => setReplacement(null)}>保留原文</button></div>}
     </section>

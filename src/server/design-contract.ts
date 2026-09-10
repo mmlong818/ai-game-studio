@@ -3,6 +3,7 @@ import { generatedCampaignSchema } from "../shared/generated-campaign.js";
 import { blueprintPlanningPrompt, blueprintRules, generatedBlueprintSchema } from "../shared/generated-blueprint.js";
 import { streamLines } from "../shared/stream-lines.js";
 import { gameDesignPrinciplesPrompt } from "../shared/game-presentation-policy.js";
+import { constrainRenovationProfile, renovationScopeInstruction } from "../shared/renovation-scope.js";
 import {
   createDesignProfile,
   gameDesignProfileSchema,
@@ -15,6 +16,7 @@ import {
 } from "../shared/contracts.js";
 import { commonDesignMistakes, designPillars, playerMotivations } from "../shared/design-knowledge.js";
 import { type OpenAISettings } from "./openai-settings.js";
+import { cancellationSignal } from "./cancellation.js";
 
 const DEFAULT_ENDPOINT = "https://api.openai.com/v1/chat/completions";
 // 设计合同是 13 字段的长结构化生成,明显慢于玩法解析;真实测量 25s 会超时。
@@ -29,7 +31,14 @@ const llmBlueprintSchema = z.object({
   core_decision: z.string(),
   tension: z.string(),
   mastery_signal: z.string(),
-  sprites: z.array(z.object({ file: z.string(), role: z.string(), hint: z.string() })),
+  sprites: z.array(z.object({
+    file: z.string(), role: z.string(), hint: z.string(),
+    animation: z.object({
+      frameWidth: z.number(), frameHeight: z.number(), columns: z.number(), rows: z.number(), frameCount: z.number(),
+      anchor: z.object({ x: z.number(), y: z.number() }),
+      clips: z.array(z.object({ id: z.enum(["idle", "run", "hit", "effect"]), startFrame: z.number(), frameCount: z.number(), fps: z.number(), loop: z.boolean() })),
+    }).nullable().optional(),
+  })),
 });
 
 const llmDesignSchema = z.object({
@@ -91,11 +100,21 @@ const responseJsonSchema = {
             type: "array",
             description: "2–5 个玩家直接看到或操作的局内主体，代码生成前会先生成为透明底位图。",
             items: {
-              type: "object", additionalProperties: false, required: ["file", "role", "hint"],
+              type: "object", additionalProperties: false, required: ["file", "role", "hint", "animation"],
               properties: {
                 file: { type: "string", description: "形如 assets/shell-scallop.png 的小写短横线文件名，不含封面与背景。" },
                 role: { type: "string", description: "中文短名，不超过 12 字。" },
                 hint: { type: "string", description: "外形、材质与辨识特征，不超过 60 字。" },
+                animation: { anyOf: [{ type: "null" }, {
+                  type: "object", additionalProperties: false,
+                  required: ["frameWidth", "frameHeight", "columns", "rows", "frameCount", "anchor", "clips"],
+                  properties: {
+                    frameWidth: { type: "integer", minimum: 16, maximum: 1024 }, frameHeight: { type: "integer", minimum: 16, maximum: 1024 },
+                    columns: { type: "integer", minimum: 1, maximum: 8 }, rows: { type: "integer", minimum: 1, maximum: 8 }, frameCount: { type: "integer", minimum: 4, maximum: 32 },
+                    anchor: { type: "object", additionalProperties: false, required: ["x", "y"], properties: { x: { type: "number", minimum: 0 }, y: { type: "number", minimum: 0 } } },
+                    clips: { type: "array", minItems: 1, maxItems: 4, items: { type: "object", additionalProperties: false, required: ["id", "startFrame", "frameCount", "fps", "loop"], properties: { id: { type: "string", enum: ["idle", "run", "hit", "effect"] }, startFrame: { type: "integer", minimum: 0, maximum: 31 }, frameCount: { type: "integer", minimum: 4, maximum: 8 }, fps: { type: "number", minimum: 1, maximum: 24 }, loop: { type: "boolean" } } } },
+                  },
+                }] },
               },
             },
           },
@@ -301,8 +320,12 @@ export class DesignContractGenerator {
     if (!apiKey) return null;
     const template = resolveGameTemplate(input, analysis);
     const baseline = input.confirmedDesignProfile ?? createDesignProfile(template, input.difficulty);
+    const scopedDirections = input.revisionScope
+      ? [renovationScopeInstruction(input.revisionScope, input.idea), ...directions]
+      : directions;
     try {
-      return await this.requestDesign(input.idea, template, baseline, input.difficulty, analysis, directions.slice(-10), apiKey, onDelta, onReset, signal, callbacks.onValidating);
+      const spriteAnimation = input.spriteAnimation === "none" || input.dimensions === "3d" || analysis?.dimensions === "3d" ? "none" : "auto";
+      return await this.requestDesign(input.idea, template, baseline, input.difficulty, analysis, scopedDirections.slice(-10), apiKey, onDelta, onReset, signal, callbacks.onValidating, input.revisionScope, spriteAnimation);
     } catch (error) {
       signal?.throwIfAborted();
       const reason = error instanceof Error ? error.message : "LLM 设计合同生成失败。";
@@ -342,6 +365,7 @@ export class DesignContractGenerator {
         evidence: verdict.evidence.trim().slice(0, 120),
       }));
     } catch (error) {
+      if (cancellationSignal()?.aborted) throw error;
       const reason = error instanceof Error ? error.message : "意见落实审计失败。";
       console.warn(`创作意见落实审计失败，文档将只列意见不给判定：${reason}`);
       return null;
@@ -381,6 +405,7 @@ export class DesignContractGenerator {
         evidence: verdict.evidence.trim().slice(0, 160),
       }));
     } catch (error) {
+      if (cancellationSignal()?.aborted) throw error;
       const reason = error instanceof Error ? error.message : "规则审计失败。";
       console.warn(`生成代码规则审计失败，制作流程必须停止后续生图及交付：${reason}`);
       return null;
@@ -399,12 +424,16 @@ export class DesignContractGenerator {
     onReset?: () => void,
     signal?: AbortSignal,
     onValidating?: () => void,
+    revisionScope?: import("../shared/contracts.js").RenovationScope,
+    spriteAnimation: "auto" | "none" = "auto",
   ): Promise<GameDesignProfile> {
     const messages = [
       { role: "system", content: buildSystemPrompt(template, baseline, difficulty) },
       { role: "user", content: [
         buildUserPrompt(idea, analysis, directions, directions.length ? baseline : undefined),
-        ...(template === "generated" ? [blueprintPlanningPrompt(idea)] : []),
+        ...(template === "generated" ? [blueprintPlanningPrompt(idea), spriteAnimation === "none"
+          ? "本次明确关闭 Sprite Sheet：所有 sprites.animation 必须返回 null，保持静态位图。"
+          : "Sprite Sheet 偏好为自动：只给适合的2D主要角色或短特效填写 animation；背景、静态道具和3D对象保持静态。"] : []),
       ].join("\n") },
     ];
     const content = await this.requestContent(messages, "design_contract", responseJsonSchema, apiKey, onDelta, onReset, signal, "planner");
@@ -412,7 +441,8 @@ export class DesignContractGenerator {
     // but the local contract schema has not yet accepted it. Failures before this
     // point (including cancellation and timeouts) must never look like validation.
     onValidating?.();
-    return this.parseDesign(content, baseline, template);
+    const profile = this.parseDesign(content, baseline, template, spriteAnimation);
+    return revisionScope ? constrainRenovationProfile(profile, baseline, revisionScope) : profile;
   }
 
   private async requestContent(
@@ -425,6 +455,7 @@ export class DesignContractGenerator {
     signal?: AbortSignal,
     role: import("./openai-settings.js").TextRole = "planner",
   ): Promise<string> {
+    signal = cancellationSignal(signal);
     let lastError: unknown = null;
     const attempts = onDelta ? 1 : this.maxAttempts;
     for (let attempt = 1; attempt <= attempts; attempt += 1) {
@@ -531,7 +562,7 @@ export class DesignContractGenerator {
     throw lastError instanceof Error ? lastError : new Error("模型接口调用失败。");
   }
 
-  private parseDesign(content: string, baseline: GameDesignProfile, template: GameTemplate): GameDesignProfile {
+  private parseDesign(content: string, baseline: GameDesignProfile, template: GameTemplate, spriteAnimation: "auto" | "none" = "auto"): GameDesignProfile {
     let raw: unknown;
     try {
       raw = JSON.parse(content);
@@ -567,7 +598,7 @@ export class DesignContractGenerator {
           coreDecision: answer.generated_blueprint.core_decision,
           tension: answer.generated_blueprint.tension,
           masterySignal: answer.generated_blueprint.mastery_signal,
-          sprites: answer.generated_blueprint.sprites.slice(0, 5),
+          sprites: answer.generated_blueprint.sprites.slice(0, 5).map(sprite => ({ file: sprite.file, role: sprite.role, hint: sprite.hint, ...(spriteAnimation === "auto" && sprite.animation ? { animation: sprite.animation } : {}) })),
         }),
       } : {}),
     });

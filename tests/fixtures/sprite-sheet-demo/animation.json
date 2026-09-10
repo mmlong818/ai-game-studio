@@ -1,0 +1,41 @@
+{
+  "frameWidth": 128,
+  "frameHeight": 128,
+  "columns": 4,
+  "rows": 4,
+  "frameCount": 16,
+  "anchor": {
+    "x": 64,
+    "y": 118
+  },
+  "clips": [
+    {
+      "id": "idle",
+      "startFrame": 0,
+      "frameCount": 4,
+      "fps": 5,
+      "loop": true
+    },
+    {
+      "id": "run",
+      "startFrame": 4,
+      "frameCount": 4,
+      "fps": 10,
+      "loop": true
+    },
+    {
+      "id": "hit",
+      "startFrame": 8,
+      "frameCount": 4,
+      "fps": 9,
+      "loop": false
+    },
+    {
+      "id": "effect",
+      "startFrame": 12,
+      "frameCount": 4,
+      "fps": 12,
+      "loop": false
+    }
+  ]
+}

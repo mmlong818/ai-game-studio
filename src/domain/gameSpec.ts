@@ -220,6 +220,8 @@ export function migrateLegacySpec(input: Record<string, unknown>): GameSpecV2 {
   if (input.schemaVersion === "game-spec-v2") return input as unknown as GameSpecV2;
   const draft: StudioDraft = {
     creationMode: input.creationMode === "mechanic-composition" ? "mechanic-composition" : "template-remix",
+        revisionScope: "gameplay",
+        spriteAnimation: "auto",
     templateId: typeof input.templateId === "string" ? input.templateId : "merge-2048",
     selectedSuggestionIds: [],
     freeRequest: typeof input.request === "string" ? input.request : "迁移旧项目内容",

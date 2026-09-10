@@ -1,5 +1,6 @@
 import { createGeneratedAsset } from "./assets";
 import type { AssetGenerationRecord, AssetRole } from "./platformTypes";
+import type { AssetDeliverySpec } from "./assetDelivery";
 
 interface ImageGenerationResponse {
   model: string;
@@ -14,7 +15,7 @@ interface ImageGenerationResponse {
 }
 
 export async function generateProjectImage(
-  input: { role: AssetRole; label: string; prompt: string },
+  input: { role: AssetRole; label: string; prompt: string; delivery: AssetDeliverySpec },
   existing: AssetGenerationRecord[],
   signal?: AbortSignal,
 ): Promise<{ asset: AssetGenerationRecord; publicUrl: string }> {
