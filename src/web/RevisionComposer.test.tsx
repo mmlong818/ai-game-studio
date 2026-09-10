@@ -17,7 +17,30 @@ it("输入和查看确认不提交，返回保持草稿，最终确认只提交�
   await userEvent.click(screen.getByRole("button", { name: "查看修改确认" }));
   await userEvent.click(screen.getByRole("button", { name: "确认修改，制作新版" }));
   await waitFor(() => expect(input).toHaveValue(""));
-  expect(onConfirm).toHaveBeenCalledExactlyOnceWith("配对时增加花瓣动画");
+  expect(onConfirm).toHaveBeenCalledExactlyOnceWith("配对时增加花瓣动画", "gameplay");
+});
+it("先圈定调整范围，示例和确认内容随选择变化", async () => {
+  const onConfirm = vi.fn().mockResolvedValue(undefined);
+  render(<RevisionComposer projectId="p1" disabled={false} working={false} onConfirm={onConfirm} />);
+  expect(screen.getByRole("radio", { name: /改一个玩点/ })).toBeChecked();
+  await userEvent.click(screen.getByRole("radio", { name: /替换部分资源/ }));
+  expect(screen.getByRole("textbox")).toHaveAttribute("placeholder", "例如：只替换背景图，保留其他素材。");
+  await userEvent.type(screen.getByRole("textbox"), "只替换背景图，保留其他素材");
+  await userEvent.click(screen.getByRole("button", { name: "查看修改确认" }));
+  expect(screen.getByText("范围：替换部分资源")).toBeInTheDocument();
+  await userEvent.click(screen.getByRole("button", { name: "确认修改，制作新版" }));
+  await waitFor(() => expect(onConfirm).toHaveBeenCalledWith("只替换背景图，保留其他素材", "assets"));
+});
+it("已有动画图集在资源替换时只提交用户选中的动作", async () => {
+  const onConfirm = vi.fn().mockResolvedValue(undefined);
+  render(<RevisionComposer projectId="p1" disabled={false} working={false} animationClipIds={["idle", "run", "hit"]} onConfirm={onConfirm} />);
+  await userEvent.click(screen.getByRole("radio", { name: /替换部分资源/ }));
+  expect(screen.getByText("这款游戏已有可播放图集。只替换一段动作，其余动作和玩法会保留。")).toBeInTheDocument();
+  await userEvent.click(screen.getByRole("radio", { name: "移动" }));
+  await userEvent.type(screen.getByRole("textbox"), "只把移动动作换成森林小狐狸");
+  await userEvent.click(screen.getByRole("button", { name: "查看修改确认" }));
+  await userEvent.click(screen.getByRole("button", { name: "确认修改，制作新版" }));
+  await waitFor(() => expect(onConfirm).toHaveBeenCalledWith("只把移动动作换成森林小狐狸", "assets", { clipId: "run" }));
 });
 it("提交未返回时双击不能重复，异常保留修改内容", async () => {
   let reject!: (error: Error) => void;

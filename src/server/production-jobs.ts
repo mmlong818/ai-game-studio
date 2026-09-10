@@ -1,12 +1,14 @@
 import { randomUUID } from "node:crypto";
 import { projectInputSchema, type ProjectInput } from "../shared/contracts.js";
 import type { StudioDatabase } from "./database.js";
+import { runWithCancellation } from "./cancellation.js";
 
-export type ProductionJob = { id: string; status: "queued" | "creating" | "building" | "failed"; error: string | null; events?: { title: string; createdAt: string }[] };
+export type ProductionJob = { id: string; status: "queued" | "creating" | "building" | "succeeded" | "failed" | "cancelled"; error: string | null; events?: { title: string; createdAt: string }[] };
 export class ProductionJobs {
   private active = 0;
   private waiting: { id: string; input: ProjectInput }[] = [];
-  constructor(private db: StudioDatabase, private execute: (input: ProjectInput, report: (title: string) => Promise<void>) => Promise<void>) {}
+  private controllers = new Map<string, AbortController>();
+  constructor(private db: StudioDatabase, private execute: (input: ProjectInput, report: (title: string) => Promise<void>, signal: AbortSignal) => Promise<void>) {}
   async initialize() {
     await this.db.query("CREATE TABLE IF NOT EXISTS production_jobs (id TEXT PRIMARY KEY, input_json TEXT NOT NULL, status TEXT NOT NULL, error TEXT)");
     await this.db.query("CREATE TABLE IF NOT EXISTS production_job_events (id TEXT PRIMARY KEY, job_id TEXT NOT NULL, title TEXT NOT NULL, created_at TEXT NOT NULL)");
@@ -37,7 +39,8 @@ export class ProductionJobs {
     const payload = JSON.stringify({ ...input, requestId: id });
     const inserted = await this.db.query("INSERT INTO production_jobs (id, input_json, status) VALUES ($1, $2, 'queued') ON CONFLICT(id) DO NOTHING", [id, payload]);
     if (!inserted.rowCount) {
-      const previous = (await this.db.query<{ input_json: string }>("SELECT input_json FROM production_jobs WHERE id = $1", [id])).rows[0];
+      const previous = (await this.db.query<{ input_json: string; status: string }>("SELECT input_json, status FROM production_jobs WHERE id = $1", [id])).rows[0];
+      if (previous.status === "cancelled") return (await this.get(id))!;
       if (JSON.stringify(projectInputSchema.parse(JSON.parse(previous.input_json))) !== payload) throw new Error("该制作请求已对应另一份方案。");
     } else {
       // The persisted receipt exists before accepting the request. Browser lifetime is irrelevant.
@@ -45,6 +48,30 @@ export class ProductionJobs {
       setTimeout(() => this.drain(), 0);
     }
     return (await this.get(id))!;
+  }
+
+  async cancel(id: string, cancelBuild: () => Promise<"cancelled" | "succeeded" | "failed" | null> = async () => null): Promise<ProductionJob> {
+    let job = await this.get(id);
+    if (!job) {
+      await this.db.query("INSERT INTO production_jobs (id, input_json, status, error) VALUES ($1, $2, 'cancelled', NULL) ON CONFLICT(id) DO NOTHING", [id, JSON.stringify({ requestId: id })]);
+      return (await this.get(id))!;
+    }
+    if (job.status === "building") {
+      const buildStatus = await cancelBuild();
+      if (buildStatus === "succeeded" || buildStatus === "failed") {
+        await this.db.query("UPDATE production_jobs SET status = $2 WHERE id = $1 AND status = 'building'", [id, buildStatus]);
+        return (await this.get(id))!;
+      }
+    }
+    await this.db.query("UPDATE production_jobs SET status = 'cancelled', error = NULL WHERE id = $1 AND status IN ('queued', 'creating', 'building')", [id]);
+    this.controllers.get(id)?.abort(new DOMException("用户已停止制作。", "AbortError"));
+    this.waiting = this.waiting.filter(item => item.id !== id);
+    job = (await this.get(id))!;
+    return job;
+  }
+
+  async settle(id: string, status: "succeeded" | "failed") {
+    await this.db.query("UPDATE production_jobs SET status = $2 WHERE id = $1 AND status = 'building'", [id, status]);
   }
   /**
    * 创建阶段失败（尚未生成项目）时，用同一份已确认方案开一张新回执重新制作，
@@ -68,16 +95,20 @@ export class ProductionJobs {
     }
   }
   private async run(id: string, input: ProjectInput) {
+    const controller = new AbortController();
+    this.controllers.set(id, controller);
     try {
       const claimed = await this.db.query("UPDATE production_jobs SET status = 'creating' WHERE id = $1 AND status = 'queued'", [id]);
       if (claimed.rowCount !== 1) return;
-      await this.execute(input, async title => {
+      await runWithCancellation(controller.signal, () => this.execute(input, async title => {
+        controller.signal.throwIfAborted();
         await this.db.query("INSERT INTO production_job_events (id, job_id, title, created_at) VALUES ($1, $2, $3, $4)", [randomUUID(), id, title, new Date().toISOString()]);
-      });
-      await this.db.query("UPDATE production_jobs SET status = 'building' WHERE id = $1", [id]);
+      }, controller.signal));
+      controller.signal.throwIfAborted();
+      await this.db.query("UPDATE production_jobs SET status = 'building' WHERE id = $1 AND status = 'creating'", [id]);
     } catch (reason) {
       const error = reason instanceof Error ? reason.message : "项目创建失败。";
-      await this.db.query("UPDATE production_jobs SET status = 'failed', error = $2 WHERE id = $1", [id, error]).catch(() => {});
-    }
+      await this.db.query("UPDATE production_jobs SET status = 'failed', error = $2 WHERE id = $1 AND status IN ('queued', 'creating')", [id, error]).catch(() => {});
+    } finally { this.controllers.delete(id); }
   }
 }

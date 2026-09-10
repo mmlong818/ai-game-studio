@@ -15,7 +15,7 @@ import { getTemplate } from "../domain/templates";
 import { resolveTemplateForGame } from "../domain/templateResolution";
 
 type FlowMode = "remix" | "new-game";
-type FlowPhase = "playing" | "input" | "analyzing" | "choices" | "producing" | "validating" | "ready" | "testing" | "published" | "failed";
+type FlowPhase = "playing" | "input" | "analyzing" | "choices" | "producing" | "validating" | "ready" | "testing" | "published" | "failed" | "stopped";
 type SheetView = "request" | "choices";
 
 interface ProcessEvent {
@@ -284,6 +284,7 @@ export function SimpleStudioApp() {
         existingProject: flow.projectId ? loadProject(flow.projectId) : null,
         signal: controller.signal,
         onProgress: ({ stage, message }) => setFlow((current) => {
+          if (controller.signal.aborted || current.activityId !== activityId) return current;
           const eventId = `work-${activityId}-${stage}`;
           if (current.events.some((event) => event.id === eventId)) return current;
           return {
@@ -294,7 +295,7 @@ export function SimpleStudioApp() {
         }),
       }, { generateImage: generateProjectImage });
       if (controller.signal.aborted) return;
-      setFlow((current) => ({
+      setFlow((current) => current.activityId !== activityId ? current : ({
         ...current,
         projectId: result.project.id,
         phase: result.errors.length === 0 ? "ready" : "failed",
@@ -304,7 +305,7 @@ export function SimpleStudioApp() {
     } catch (error) {
       if (controller.signal.aborted) return;
       const message = error instanceof Error ? error.message : "制作失败";
-      setFlow((current) => ({
+      setFlow((current) => current.activityId !== activityId ? current : ({
         ...current,
         phase: "failed",
         lastError: message,
@@ -315,9 +316,21 @@ export function SimpleStudioApp() {
     }
   };
 
+  const stopCurrentWork = () => {
+    productionController.current?.abort();
+    productionController.current = null;
+    setFlow((current) => !["analyzing", "producing", "validating"].includes(current.phase) ? current : ({
+      ...current,
+      phase: "stopped",
+      activityId: current.activityId + 1,
+      events: [...current.events, { id: `stopped-${current.activityId}`, author: "studio", text: "已停止本轮制作。当前可玩版本和已保存成果保持不变。" }],
+    }));
+  };
+
   const startTesting = async () => {
     const project = flow.projectId ? loadProject(flow.projectId) : null;
     if (!project) return;
+    const activityId = flow.activityId;
     setFlow((current) => ({
       ...current,
       phase: "validating",
@@ -325,7 +338,7 @@ export function SimpleStudioApp() {
     }));
     try {
       const result = await verifySimplePlayableRevision(project);
-      setFlow((current) => ({
+      setFlow((current) => current.activityId !== activityId ? current : ({
         ...current,
         phase: result.errors.length === 0 ? "testing" : "failed",
         lastError: result.errors.join("；"),
@@ -337,17 +350,18 @@ export function SimpleStudioApp() {
       }));
     } catch (error) {
       const message = error instanceof Error ? error.message : "多设备检查失败";
-      setFlow((current) => ({ ...current, phase: "failed", lastError: message, events: [...current.events, { id: `audit-failed-${current.activityId}`, author: "studio", text: message }] }));
+      setFlow((current) => current.activityId !== activityId ? current : ({ ...current, phase: "failed", lastError: message, events: [...current.events, { id: `audit-failed-${activityId}`, author: "studio", text: message }] }));
     }
   };
 
   const publishVersion = async () => {
     const project = flow.projectId ? loadProject(flow.projectId) : null;
     if (!project) return;
+    const activityId = flow.activityId;
     setFlow((current) => ({ ...current, phase: "validating", events: [...current.events, { id: `publishing-${current.activityId}`, author: "studio", text: "正在绑定试玩确认并切换稳定玩家网址。" }] }));
     try {
       const result = await publishSimplePlayableRevision(project);
-      setFlow((current) => ({
+      setFlow((current) => current.activityId !== activityId ? current : ({
         ...current,
         phase: "published",
         publishedUrl: result.url,
@@ -355,7 +369,7 @@ export function SimpleStudioApp() {
       }));
     } catch (error) {
       const message = error instanceof Error ? error.message : "发布失败";
-      setFlow((current) => ({ ...current, phase: "failed", lastError: message, events: [...current.events, { id: `publish-failed-${current.activityId}`, author: "studio", text: `发布没有完成：${message}` }] }));
+      setFlow((current) => current.activityId !== activityId ? current : ({ ...current, phase: "failed", lastError: message, events: [...current.events, { id: `publish-failed-${activityId}`, author: "studio", text: `发布没有完成：${message}` }] }));
     }
   };
 
@@ -405,7 +419,8 @@ export function SimpleStudioApp() {
   }
 
   return (
-    <main className="player-first-app">
+    <main className={`player-first-app${showGeneratedRevision ? " player-first-app--generated-preview" : ""}`}>
+      {showGeneratedRevision && <nav className="game-lobby-bar" aria-label="游戏导航"><a href="/games">← 回大厅</a></nav>}
       <section className="game-stage" aria-label="游戏试玩区">
         <iframe
           key={`${sourceGame.id}-${flow.revision}-${flow.phase}`}
@@ -425,21 +440,22 @@ export function SimpleStudioApp() {
         <section className={`process-chat ${processOpen ? "is-open" : "is-collapsed"}`} aria-live="polite">
           <header>
             <span className={["analyzing", "producing", "validating"].includes(flow.phase) ? "status-pulse" : "status-dot"} aria-hidden="true" />
-            <div><strong>开发过程</strong><small>{flow.phase === "analyzing" ? "正在分析你的意见" : flow.phase === "producing" ? "正在生成 AI 位图" : flow.phase === "validating" ? "正在构建并验证" : flow.phase === "published" ? "已完成" : flow.phase === "failed" ? "需要处理" : "有新进展"}</small></div>
+            <div><strong>开发过程</strong><small>{flow.phase === "analyzing" ? "正在分析你的意见" : flow.phase === "producing" ? "正在生成 AI 位图" : flow.phase === "validating" ? "正在构建并验证" : flow.phase === "stopped" ? "本轮已停止" : flow.phase === "published" ? "已完成" : flow.phase === "failed" ? "需要处理" : "有新进展"}</small></div>
             <button type="button" aria-label={processOpen ? "收起开发过程" : "展开开发过程"} onClick={() => setProcessOpen((open) => !open)}>{processOpen ? "收起" : "查看"}</button>
           </header>
           {processOpen && (
             <div className="process-chat-body" ref={processBody}>
               {flow.events.map((event) => <div className={`chat-line ${event.author === "user" ? "is-user" : "is-studio"}`} key={event.id}><span>{event.author === "user" ? "你" : "游造"}</span><p>{event.text}</p></div>)}
               {flow.phase === "analyzing" && <div className="thinking-line"><i /><i /><i /><span>正在分析相似玩法和改造范围</span></div>}
-              {flow.phase === "analyzing" && <div className="chat-notice compact"><span>想到新的要求，可以现在补充，不需要等待。</span><button type="button" className="quiet-action" onClick={() => openRequest(flow.mode)}>补充意见</button></div>}
+              {flow.phase === "analyzing" && <div className="chat-notice compact"><span>想到新的要求，可以现在补充，不需要等待。</span><button type="button" className="quiet-action" onClick={() => openRequest(flow.mode)}>补充意见</button><button type="button" className="quiet-action stop-action" onClick={stopCurrentWork}>停止制作</button></div>}
               {(flow.phase === "producing" || flow.phase === "validating") && <div className="thinking-line"><i /><i /><i /><span>{flow.phase === "producing" ? "正在生成并绑定游戏位图" : "正在执行构建和玩法规则检查"}</span></div>}
-              {(flow.phase === "producing" || flow.phase === "validating") && <div className="chat-notice compact"><span>补充新要求会安全停止本轮制作，当前可玩版本不会被覆盖。</span><button type="button" className="quiet-action" onClick={() => openRequest(flow.mode)}>补充并调整</button></div>}
+              {(flow.phase === "producing" || flow.phase === "validating") && <div className="chat-notice compact"><span>补充新要求会安全停止本轮制作，当前可玩版本不会被覆盖。</span><button type="button" className="quiet-action" onClick={() => openRequest(flow.mode)}>补充并调整</button><button type="button" className="quiet-action stop-action" onClick={stopCurrentWork}>停止制作</button></div>}
               {flow.phase === "choices" && <div className="chat-notice"><strong>有一项需要你决定</strong><span>我准备了少量选项，并标出了推荐方案。</span><div><button type="button" onClick={() => setSheetView("choices")}>查看选项</button><button type="button" className="quiet-action" onClick={() => openRequest(flow.mode)}>补充意见</button></div></div>}
               {flow.phase === "ready" && <div className="chat-notice"><strong>新版本已经做好</strong><span>按你的意见完成了第 {flow.revision} 版，可以直接试玩。</span><div><button type="button" className="quiet-action" onClick={() => openRequest(flow.mode)}>补充意见</button><button type="button" onClick={startTesting}>试玩新版本</button></div></div>}
               {flow.phase === "testing" && <div className="chat-notice"><strong>你正在试玩新版本</strong><span>不满意就继续提意见；确认目标清楚、操作舒适后再发布。</span><div><button type="button" className="quiet-action" onClick={() => openRequest(flow.mode)}>继续提意见</button><button type="button" onClick={publishVersion}>试玩满意，发布版本</button></div></div>}
               {flow.phase === "published" && <div className="chat-notice"><strong>这个版本已发布</strong><span>以后仍然可以从游戏边缘继续改造。</span>{flow.publishedUrl && <a className="published-link" href={flow.publishedUrl} target="_blank" rel="noreferrer">打开玩家网址</a>}<div><button type="button" className="quiet-action" onClick={downloadBundle}>下载开源包</button><button type="button" className="quiet-action" onClick={() => openRequest(flow.mode)}>继续改造</button></div></div>}
               {flow.phase === "failed" && <div className="chat-notice is-error"><strong>这次没有覆盖旧版本</strong><span>{flow.lastError || "制作或验收没有通过。"}</span><button type="button" onClick={() => openRequest(flow.mode)}>调整意见后重试</button></div>}
+              {flow.phase === "stopped" && <div className="chat-notice"><strong>本轮制作已停止</strong><span>已发出的图片请求已尝试中止；服务商可能已开始计费。当前可玩版本和已保存成果保持不变。</span><button type="button" onClick={() => openRequest(flow.mode)}>提出新意见，重新开始</button></div>}
             </div>
           )}
         </section>

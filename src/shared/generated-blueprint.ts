@@ -11,10 +11,51 @@ import { DESIGN_MODIFIERS, MECHANIC_ATLAS } from "./game-design-knowledge/mechan
 const slug = z.string().regex(/^[a-z0-9][a-z0-9-]{0,60}$/);
 const statement = z.string().trim().min(10).max(200);
 
+export const spriteAnimationClipIds = ["idle", "run", "hit", "effect"] as const;
+export const spriteAnimationClipSchema = z.object({
+  id: z.enum(spriteAnimationClipIds),
+  startFrame: z.number().int().min(0).max(31),
+  frameCount: z.number().int().min(4).max(8),
+  fps: z.number().min(1).max(24),
+  loop: z.boolean(),
+});
+
+export const spriteSheetAnimationSchema = z.object({
+  frameWidth: z.number().int().min(16).max(1024),
+  frameHeight: z.number().int().min(16).max(1024),
+  columns: z.number().int().min(1).max(8),
+  rows: z.number().int().min(1).max(8),
+  frameCount: z.number().int().min(4).max(32),
+  anchor: z.object({ x: z.number().min(0), y: z.number().min(0) }),
+  clips: z.array(spriteAnimationClipSchema).min(1).max(4),
+}).superRefine((sheet, ctx) => {
+  if (sheet.frameCount > sheet.columns * sheet.rows) ctx.addIssue({ code: "custom", path: ["frameCount"], message: "动画总帧数不能超过图集网格容量。" });
+  if (sheet.frameWidth * sheet.columns > 4096 || sheet.frameHeight * sheet.rows > 4096) ctx.addIssue({ code: "custom", path: ["columns"], message: "Sprite Sheet 尺寸不能超过 4096×4096。" });
+  if (sheet.anchor.x > sheet.frameWidth || sheet.anchor.y > sheet.frameHeight) ctx.addIssue({ code: "custom", path: ["anchor"], message: "动画锚点必须位于单帧范围内。" });
+  const ids = sheet.clips.map(({ id }) => id);
+  if (new Set(ids).size !== ids.length) ctx.addIssue({ code: "custom", path: ["clips"], message: "动画动作 id 不能重复。" });
+  const occupied = new Set<number>();
+  let finalFrame = 0;
+  for (const [index, clip] of sheet.clips.entries()) {
+    const end = clip.startFrame + clip.frameCount;
+    finalFrame = Math.max(finalFrame, end);
+    if (end > sheet.frameCount) ctx.addIssue({ code: "custom", path: ["clips", index], message: `动作 ${clip.id} 超出动画总帧数。` });
+    for (let frame = clip.startFrame; frame < end; frame += 1) {
+      if (occupied.has(frame)) ctx.addIssue({ code: "custom", path: ["clips", index], message: `动作 ${clip.id} 与其他动作帧区间重叠。` });
+      occupied.add(frame);
+    }
+  }
+  if (finalFrame !== sheet.frameCount) ctx.addIssue({ code: "custom", path: ["frameCount"], message: "动画总帧数必须等于最后一个动作的结束帧。" });
+});
+
+export type SpriteSheetAnimation = z.infer<typeof spriteSheetAnimationSchema>;
+export type SpriteAnimationClipId = (typeof spriteAnimationClipIds)[number];
+
 export const blueprintSpriteSchema = z.object({
   file: z.string().regex(/^assets\/[a-z0-9][a-z0-9-]{1,38}\.png$/, "精灵文件名必须形如 assets/shell-scallop.png"),
   role: z.string().trim().min(2).max(24),
   hint: z.string().trim().min(6).max(160),
+  animation: spriteSheetAnimationSchema.optional(),
 });
 
 export const generatedBlueprintSchema = z.object({
@@ -68,7 +109,8 @@ export function generatedBlueprintPrompt(plan?: GeneratedBlueprint | null): stri
     `熟练度体现：${plan.masterySignal}`,
     ...mechanics,
     ...modifiers,
-    `局内美术：平台已生成 ${plan.sprites.map(({ file, role }) => `${file}（${role}）`).join("、")}，全部必须实际加载并绘制。`,
+    `局内美术：平台已生成 ${plan.sprites.map(({ file, role, animation }) => `${file}（${role}${animation ? `；Sprite Sheet ${animation.columns}×${animation.rows}，单帧 ${animation.frameWidth}×${animation.frameHeight}，锚点 ${animation.anchor.x},${animation.anchor.y}，动作 ${animation.clips.map(clip => `${clip.id}:${clip.startFrame}+${clip.frameCount}@${clip.fps}fps${clip.loop ? "循环" : "单次"}`).join("/")}` : "；静态位图"}）`).join("、")}，全部必须实际加载并绘制。`,
+    ...(plan.sprites.some(({ animation }) => animation) ? ["带 animation 的文件是 row-major Sprite Sheet。必须使用平台 window.__FORGE_SPRITES__.create(image, animation, initialClip) 播放，并在正常玩法状态切换时调用 play(id)；每帧用 player.draw(ctx, anchorX, anchorY, scale, timestamp) 绘制。禁止把整张网格当静态图显示，也禁止另写一套帧索引算法。"] : []),
     "玩家直接看到或操作的主体必须使用这些位图绘制；禁止用 canvas 路径、圆形、多边形或渐变自绘主体充当美术。程序化绘制只允许用于连线、高亮框、进度条一类的界面标记。",
   ].join("\n");
 }
@@ -127,6 +169,8 @@ export function blueprintPlanningPrompt(idea: string): string {
     "局内美术清单(sprites, 2–5 个):",
     "- 列出玩家直接看到或操作的主体，例如可拾取物、角色、容器、障碍。平台会在代码生成之前先把它们生成为透明底位图。",
     "- file 用小写英文短横线命名，形如 assets/shell-scallop.png；role 是中文短名；hint 说明外形、材质与辨识特征。",
+    "- 对玩家控制或持续运动的主要主体，优先增加 animation。第一版动作只能是 idle/run/hit/effect；每个动作 4–8 帧，row-major 单图集多动作，动作区间不可重叠。静态道具可不填 animation。",
+    "- animation 填单帧 frameWidth/frameHeight、网格 columns/rows、总 frameCount、单帧像素锚点 anchor，以及 clips(startFrame/frameCount/fps/loop)。总帧数最多 32，图集不超过 4096×4096。",
     "- 封面与局内背景由平台固定生成，不要列进来。",
   ].join("\n");
 }

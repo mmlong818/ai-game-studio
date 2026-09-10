@@ -1,10 +1,10 @@
 import { StrictMode } from "react";
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, expect, it, vi } from "vitest";
 import { AutomaticProduction } from "./AutomaticProduction";
 import { INITIAL_DRAFT } from "../domain/storage";
 import * as api from "../web/api";
-vi.mock("../web/api", () => ({ submitProduction: vi.fn(), getProductionJob: vi.fn(), watchProductionJob: vi.fn(), getProject: vi.fn(), startBuild: vi.fn(), getLatestBuild: vi.fn(), retryProduction: vi.fn() }));
+vi.mock("../web/api", () => ({ submitProduction: vi.fn(), getProductionJob: vi.fn(), watchProductionJob: vi.fn(), getProject: vi.fn(), startBuild: vi.fn(), getLatestBuild: vi.fn(), retryProduction: vi.fn(), cancelProduction: vi.fn() }));
 const build = { id: "b1", status: "succeeded", steps: [{ id: "s1", title: "准备资源", detail: "制作游戏图片", status: "succeeded" }] } as any;
 
 it("技术校验错误默认说人话，保留详情且不重新提交", async () => {
@@ -44,18 +44,64 @@ it("确认后仅启动一次，展示过程而不是操作入口", async () => {
   expect(screen.queryByRole("textbox")).not.toBeInTheDocument();
   expect(screen.queryByTitle("游戏试玩")).not.toBeInTheDocument();
 });
-it.each(["queued", "running", "succeeded", "failed"])("%s 状态刷新不会发起制作；只有失败后才出现明确的重新制作按钮", async status => {
+it("已有游戏个性化把来源项目和范围传给制作任务", async () => {
+  const remix = { ...INITIAL_DRAFT, creationMode: "template-remix" as const, revisionScope: "assets" as const, sourceGame: { id: "770e8400-e29b-41d4-a716-446655440000", title: "数织矩阵", coverUrl: null } };
+  render(<AutomaticProduction draft={remix} confirmedPlan="保留原玩法，只把主角替换成小狐狸。" />);
+  await screen.findByText("准备资源");
+  expect(api.submitProduction).toHaveBeenCalledWith(expect.objectContaining({
+    sourceProjectId: remix.sourceGame.id,
+    revisionScope: "assets",
+  }));
+});
+
+it("从零创建新游戏不携带已有游戏改造字段", async () => {
+  const fresh = { ...INITIAL_DRAFT, creationMode: "mechanic-composition" as const, sourceGame: null, newGameBrief: "控制小船收集水晶并避开陨石" };
+  render(<AutomaticProduction draft={fresh} confirmedPlan="控制小船收集水晶并避开陨石，收集十颗后完成。" />);
+  await screen.findByText("准备资源");
+  expect(api.submitProduction).toHaveBeenCalledWith(expect.objectContaining({ spriteAnimation: "auto" }));
+  expect(api.submitProduction).toHaveBeenCalledWith(expect.not.objectContaining({ sourceProjectId: expect.anything(), revisionScope: expect.anything() }));
+});
+it.each(["queued", "running", "succeeded", "failed", "cancelled"])("%s 状态刷新不会发起制作；只有失败后才出现明确的重新制作按钮", async status => {
   history.replaceState(null, "", "/create?production=p1");
   vi.mocked(api.getLatestBuild).mockResolvedValue({ ...build, status, error: status === "failed" ? "模型失败" : null });
   render(<AutomaticProduction draft={INITIAL_DRAFT} />);
   await screen.findByText("准备资源");
   if (status === "failed") expect(screen.getByRole("button", { name: "重新制作这个游戏" })).toBeEnabled();
+  else if (status === "queued" || status === "running") expect(screen.getByRole("button", { name: "停止制作" })).toBeEnabled();
   else expect(screen.queryByRole("button")).not.toBeInTheDocument();
   if (status === "succeeded") expect(screen.getByRole("link", { name: "继续完善这个游戏" })).toBeInTheDocument();
   else if (status === "failed") expect(screen.getByRole("link", { name: "查看已保存的项目与问题" })).toHaveAttribute("href", "/projects/p1");
   else expect(screen.queryByRole("link")).not.toBeInTheDocument();
   expect(api.submitProduction).not.toHaveBeenCalled();
   expect(api.startBuild).not.toHaveBeenCalled();
+});
+
+it("停止请求等待服务端确认、终止进度流，并丢弃迟到的完成事件", async () => {
+  history.replaceState(null, "", "/create?production=p1");
+  const queued = { id: "p1", status: "queued" as const, error: null, events: [] };
+  let lateUpdate: ((job: any, build: any) => void) | undefined;
+  let streamSignal: AbortSignal | undefined;
+  vi.mocked(api.getProductionJob).mockResolvedValue(queued);
+  vi.mocked(api.watchProductionJob).mockImplementation(async (_id, signal, update) => {
+    streamSignal = signal;
+    lateUpdate = update;
+    await new Promise<void>(() => {});
+  });
+  let resolveCancel!: (job: any) => void;
+  vi.mocked(api.cancelProduction).mockReturnValue(new Promise(resolve => { resolveCancel = resolve; }));
+  const view = render(<AutomaticProduction draft={INITIAL_DRAFT} />);
+  await waitFor(() => expect(api.watchProductionJob).toHaveBeenCalledTimes(1));
+  const stop = await screen.findByRole("button", { name: "停止制作" });
+  stop.click();
+  expect(await screen.findByText("正在等待服务端确认停止。", { exact: false })).toBeInTheDocument();
+  expect(stop).toBeDisabled();
+  expect(api.cancelProduction).toHaveBeenCalledWith("p1");
+  await waitFor(() => expect(streamSignal?.aborted).toBe(true));
+  resolveCancel({ id: "p1", status: "cancelled", error: null, events: [] });
+  expect(await screen.findByText(/服务商可能已开始计费/)).toBeInTheDocument();
+  lateUpdate?.({ id: "p1", status: "succeeded", error: null }, { ...build, status: "succeeded" });
+  expect(screen.getByText(/服务商可能已开始计费/)).toBeInTheDocument();
+  view.unmount();
 });
 
 it("创建失败保留真实错误，不生成不存在项目的恢复地址", async () => {

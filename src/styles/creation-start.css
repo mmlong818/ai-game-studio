@@ -4,6 +4,8 @@
 .creation-composer { background: var(--surface); color: var(--ink); border-radius: 24px; padding: 28px; box-shadow: var(--shadow-raised); min-width: 0; }
 .creation-composer-heading { display: flex; justify-content: space-between; gap: 12px; color: var(--ink-muted); font-size: 12px; margin-bottom: 28px; }
 .creation-composer label { display: block; font-size: 23px; font-weight: 650; margin-bottom: 16px; }
+.studio-app .creation-composer .sprite-animation-preview label.sprite-animation-speed { display: flex; margin: 10px 0 0; font-size: 12px; font-weight: 400; line-height: 1.4; }
+.studio-app .creation-composer .sprite-animation-preview .sprite-animation-speed select { font-size: 12px; font-weight: 400; }
 .creation-composer textarea { width: 100%; box-sizing: border-box; resize: vertical; min-height: 190px; max-height: 500px; padding: 18px; border: 1px solid var(--line, #abc0c9); border-radius: 12px; background: var(--surface); color: var(--ink); font: inherit; line-height: 1.8; }
 .creation-composer textarea::placeholder { color: var(--ink-muted); opacity: .85; }
 .creation-submit-row { display: flex; flex-wrap: wrap; gap: 16px; align-items: center; justify-content: space-between; margin-top: 20px; }

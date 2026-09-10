@@ -1,5 +1,6 @@
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { extname, resolve, sep } from "node:path";
+import { imageModelPattern } from "./openai-model-catalog.js";
 
 interface AiArtEntry {
   file?: unknown;
@@ -64,7 +65,7 @@ export function inspectRasterAiArt(root: string, source = ""): string[] {
     return failures;
   }
   if (manifest.schemaVersion !== 2) failures.push("AI 生图溯源版本必须为 2");
-  if (typeof manifest.model !== "string" || !/^gpt-image-\d+(?:\.\d+)*(?:-mini)?(?:-\d{4}-\d{2}-\d{2})?$/.test(manifest.model)) failures.push("AI 生图必须记录实际使用的 GPT Image 模型");
+  if (typeof manifest.model !== "string" || !imageModelPattern.test(manifest.model)) failures.push("AI 生图必须记录实际使用的 GPT Image 模型");
   if (typeof manifest.generatedAt !== "string" || Number.isNaN(Date.parse(manifest.generatedAt))) failures.push("AI 生图时间未完整归档");
   if (!Array.isArray(manifest.entries)) {
     failures.push("AI 生图溯源缺少资产条目");

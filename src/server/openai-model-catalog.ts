@@ -4,7 +4,8 @@ import type { OpenAIModelCatalog } from "../shared/contracts.js";
 // Models.list does not return endpoint capabilities. Restrict selection to families
 // compatible with our reasoning/structured Responses and GPT image generation payloads.
 export const textModelPattern = /^gpt-(?:[5-9]|\d{2,})(?:\.\d+)*(?:-(?:astra|sol|terra|luna|mini|nano))?(?:-\d{4}-\d{2}-\d{2})?$/;
-export const imageModelPattern = /^gpt-image-\d+(?:\.\d+)*(?:-mini)?(?:-\d{4}-\d{2}-\d{2})?$/;
+/** Exact public GPT Image families accepted by the Images API selector. */
+export const imageModelPattern = /^gpt-image-(?:\d+(?:\.\d+)*(?:-mini)?|2\.5-(?:sunburst|flare))(?:-\d{4}-\d{2}-\d{2})?$/;
 const responseSchema = z.object({ data: z.array(z.object({ id: z.string(), created: z.number() })) });
 
 export function modelCatalog(payload: unknown): OpenAIModelCatalog {

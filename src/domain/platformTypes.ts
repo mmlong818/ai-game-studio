@@ -135,6 +135,8 @@ export interface AssetGenerationRecord {
   status: "candidate" | "active" | "superseded" | "failed";
   processing: string[];
   provenance: "ai-generated";
+  /** New records persist the display contract; historical records may omit it. */
+  delivery?: import("./assetDelivery").AssetDeliverySpec;
 }
 
 export interface AssetBinding {

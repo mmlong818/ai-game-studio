@@ -15,6 +15,8 @@ import { playerInstruction } from "../shared/player-instruction.js";
 import { ArtifactValidationFailure, GenerationBudget } from "./generation-budget.js";
 import { generatedCampaignPrompt, resolveGeneratedCampaign, verifyGeneratedCampaign } from "../shared/generated-campaign.js";
 import { blueprintSpriteFiles, generatedBlueprintPrompt, type GeneratedBlueprint } from "../shared/generated-blueprint.js";
+import { spriteSheetRuntimeScript } from "../shared/sprite-sheet-runtime/index.js";
+import { cancellationSignal, throwIfCancellationRequested, withTimeoutSignal } from "./cancellation.js";
 
 const DEFAULT_ENDPOINT = "https://api.openai.com/v1/chat/completions";
 const DEFAULT_TIMEOUT_MS = 300_000;
@@ -91,6 +93,8 @@ function runtimeContract(is3d: boolean, campaign?: unknown, blueprint?: Generate
     "4. 输入:键盘与触控/指针都能完成全部操作;触控目标不小于 44x44px;禁止依赖悬停。",
     "5. 布局:必须有 <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">;在 360px 宽的手机与桌面上都不得出现横向滚动;主游戏区域使用 id=\"game-canvas\" 的 <canvas> 或等价交互区。",
     "6. 资源:平台已在代码生成之前完成 ./assets/cover.png 与 ./assets/background.png;游戏必须实际加载 ./assets/background.png 作为主要视觉背景" + (is3d ? "或场景纹理" : "") + ",可配合 CSS/Canvas" + (is3d ? "/程序化几何" : "") + "完成交互层;禁止 SVG、内联 SVG、Emoji 充当游戏美术，禁止外部资源。" + (blueprint ? `局内主体位图也已生成完毕：${blueprint.sprites.map(({ file, role }) => `${file}(${role})`).join("、")}；必须全部实际加载并绘制，禁止用 canvas 路径、圆形或渐变自绘主体。` : ""),
+    "6.1 位图适配:任何位图都不得非等比拉伸。背景是环境层，使用 cover 语义等比放大后裁切，保持中心玩法安全区；角色、道具、图标等主体使用 contain 语义完整显示并保留透明边缘。CSS 分别使用 background-size/object-fit 的 cover 或 contain，禁止 background-size:100% 100% 和 object-fit:fill。Canvas 必须根据 naturalWidth/naturalHeight 计算同一缩放倍率；背景先算 cover 裁切源矩形，主体先算 contain 目标矩形。图集必须用 drawImage 的九参数形式按协议 source rect 切片，再将该切片等比放进目标框，禁止把整张图集或切片直接压成任意宽高。",
+    "6.2 画面分层:AI 背景只承载环境，不把标题、按钮、分数、说明文字烘焙进会被裁切的位图。玩法主体、反馈和 HUD 分层绘制；HUD 放在稳定安全区，使用可读的实色或半透明底与明确文字层级，不让高细节背景穿透文字。沿用已提供位图的视觉方向与色彩气质，界面颜色和形状服务于素材统一，不另加无关装饰或第二套美术语言。",
     "7. 声音:只允许 Web Audio API 程序化合成,且必须在用户首次交互后才创建 AudioContext;禁止音频文件。",
     "8. 存档:如需记录最高分,只使用平台注入的全局 safeStorage(getItem/setItem/removeItem);禁止直接触碰 localStorage。",
     "9. 全部界面文案使用简体中文;不显示任何水印或模型名。",
@@ -188,6 +192,7 @@ function buildUserPrompt(project: ProjectDetail, feedback: string[], previous: P
     `游戏名称:${project.title}`,
     `创意描述:${project.spec.vision}`,
   ];
+  if (project.spec.renovation) lines.push(`本次已有游戏局部改造:${project.spec.renovation.request}；范围=${project.spec.renovation.revisionScope}。必须以提供的上一版代码为修改基础。`);
   if (analysis?.mechanics.length) lines.push(`已识别机制:${analysis.mechanics.join("、")}`);
   if (project.spec.hardConstraints.length) lines.push(`硬性约束:${project.spec.hardConstraints.join(";")}`);
   if (previous) {
@@ -202,6 +207,11 @@ function buildUserPrompt(project: ProjectDetail, feedback: string[], previous: P
   if (feedback.length) {
     lines.push("上一版代码未通过验收,必须修复以下问题后重新输出完整 HTML:");
     lines.push(...feedback.map((item, index) => `${index + 1}. ${item}`));
+    lines.push("修复边界:只修改造成上述客观失败的代码、样式或相关布局；允许为修复遮挡、溢出、比例和可读性调整直接相关容器，但不得借机改变用户未授权的玩法、胜负条件、操作、关卡、导航、其他素材或整体美术方向。修复后仍需重新通过同一组自动验收，不能把提示词或实现说明当作通过证据。");
+    const deliveredAssets = project.spec.hardConstraints.filter((constraint) => constraint.startsWith("实际图片交付槽位:"));
+    if (deliveredAssets.length) {
+      lines.push(`本轮必须继续遵守的实际素材交付合同:${deliveredAssets.join("；")}`);
+    }
   }
   return lines.join("\n");
 }
@@ -240,12 +250,14 @@ export class GameCodeGenerator {
    * 扫描不通过会带违规原因重试,MAX_GENERATION_ROUNDS 轮后仍失败则抛错(构建失败,不静默兜底)。
    */
   async generate(project: ProjectDetail, feedback: string[] = [], previous: PreviousGeneration | null = null, report: (detail: string, excerpt?: string | null) => Promise<void> = async () => {}, budget = new GenerationBudget()): Promise<GeneratedGame> {
+    throwIfCancellationRequested();
     const apiKey = this.settings.getApiKey();
     if (!apiKey) throw new Error("实验通道需要配置 OpenAI 密钥才能生成玩法代码。");
     let pendingFeedback = [...feedback];
     let repairBase = previous;
     let lastViolations: string[] = [];
     for (let round = 1; round <= MAX_GENERATION_ROUNDS; round += 1) {
+      throwIfCancellationRequested();
       const reserved = budget.reserve();
       await report(`本任务代码生成请求额度：${reserved}/${budget.limit}；达到上限后停止自动修复。`);
       await report(`正在生成游戏代码，第 ${round} 轮（最多 ${MAX_GENERATION_ROUNDS} 轮安全修正），等待模型输出`);
@@ -280,7 +292,7 @@ export class GameCodeGenerator {
             "Content-Type": "application/json",
             Authorization: `Bearer ${apiKey}`,
           },
-          signal: controller.signal,
+          signal: withTimeoutSignal(controller.signal),
           body: JSON.stringify({
             ...this.settings.textRequestOptions("executor"),
             stream: true,
@@ -339,6 +351,7 @@ export class GameCodeGenerator {
         await onProgress(message.content.length);
         return answerSchema.parse(JSON.parse(message.content));
       } catch (error) {
+        if (cancellationSignal()?.aborted) throw error;
         if (error instanceof Error && error.name === "AbortError") {
           lastError = receivedContent
             ? new Error(`模型代码流连续 ${this.streamIdleTimeoutMs}ms 没有返回有效内容。`)
@@ -649,6 +662,7 @@ export function writeGeneratedArtifact(root: string, project: ProjectDetail, gen
     : `${markup}\n${scriptTag}`;
   const appScript = [
     platformSegment(safeStorageShim),
+    platformSegment(spriteSheetRuntimeScript),
     platformSegment(generatedOnboardingPlatformScript(onboardingPlan, `forge-onboarding:${project.id}:${project.version.id}`)),
     platformSegment(generatedDesignPlatformScript(assistancePlan, `forge-assistance:${project.id}:${project.version.id}`)),
     scriptBlocks.join("\n;\n"),
@@ -688,6 +702,7 @@ export function writeGeneratedArtifact(root: string, project: ProjectDetail, gen
     inputModes: project.spec.inputModes,
     levelProgression: { ...project.spec.levelProgression, levelCount: resolveGeneratedCampaign(project.spec.designProfile.generatedCampaign).levelCount },
     generatedCampaign: project.spec.designProfile.generatedCampaign,
+    generatedBlueprint: project.spec.designProfile.generatedBlueprint,
     onboardingPlan,
     assistancePlan,
     generatedAt: new Date().toISOString(),
@@ -741,6 +756,7 @@ export function inspectGeneratedArtifact(root: string, options: { requireAiArt?:
   const loadsAiBackground = generatedCode.includes("./assets/background.png");
   // 局内主体位图先于代码生成；代码必须真的引用它们，否则主体又会退回程序化自绘。
   const missingSprites = blueprintSpriteFiles(options.expectedBlueprint).filter(file => !generatedCode.includes(file));
+  const animatedSprites = options.expectedBlueprint?.sprites.filter(sprite => sprite.animation) ?? [];
   const securityFailures = scanGeneratedHtml(generatedCode, { allowThreeModule: is3d });
   const checks: Array<{ label: string; ok: boolean; detail: string }> = [
     { label: "外链交付结构", ok: existsSync(appPath) && existsSync(stylesPath) && !/<script(?![^>]*\bsrc)[^>]*>[\s\S]*?<\/script>/i.test(html) && !/<style/i.test(html), detail: "交付源 CSP 禁内联:index.html 必须外链 styles.css 与 app.js" },
@@ -762,6 +778,7 @@ export function inspectGeneratedArtifact(root: string, options: { requireAiArt?:
     { label: "游戏清单", ok: existsSync(join(root, "game-manifest.json")), detail: "缺少 game-manifest.json" },
     { label: "AI 背景接入", ok: loadsAiBackground, detail: "游戏代码未加载 AI 局内背景 ./assets/background.png" },
     ...(blueprintSpriteFiles(options.expectedBlueprint).length ? [{ label: "局内主体位图接入", ok: missingSprites.length === 0, detail: `游戏代码未加载已生成的局内主体位图：${missingSprites.join("、")}；主体必须绘制这些位图，不得程序化自绘` }] : []),
+    ...(animatedSprites.length ? [{ label: "Sprite Sheet 播放器接入", ok: generatedScript.includes("__FORGE_SPRITES__.create") && generatedScript.includes(".play(") && generatedScript.includes(".draw(") && animatedSprites.every(({ animation }) => animation!.clips.every(({ id }) => generatedScript.includes(`\"${id}\"`) || generatedScript.includes(`'${id}'`))), detail: `带动画的主体必须使用平台 __FORGE_SPRITES__.create/play/draw 播放声明动作：${animatedSprites.flatMap(({ animation }) => animation!.clips.map(({ id }) => id)).join("、")}` }] : []),
     ...(requireAiArt ? [{ label: "AI 生图位图", ok: aiFailures.length === 0, detail: aiFailures.join(";") || "缺少有效的 AI 生图位图" }] : []),
     { label: "禁用 SVG", ok: svgFailures.length === 0, detail: svgFailures.join(";") || "检测到 SVG" },
   ];

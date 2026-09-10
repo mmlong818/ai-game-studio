@@ -216,6 +216,8 @@ type BuildRow = {
   completed_at: DateValue | null;
   version_id: string | null;
   error_message: string | null;
+  revision_scope: import("../shared/contracts.js").RenovationScope | null;
+  asset_clip_id: import("../shared/generated-blueprint.js").SpriteAnimationClipId | null;
 };
 
 type BuildStepRow = {
@@ -532,6 +534,8 @@ function toBuild(row: BuildRow, steps: BuildStepRow[], gameOrigin: string): Buil
     versionId: row.version_id,
     previewUrl: row.version_id ? `${origin}/version/${row.version_id}/` : null,
     error: row.error_message,
+    revisionScope: row.revision_scope ?? null,
+    assetClipId: row.asset_clip_id ?? null,
     steps: steps.map((step) => ({
       id: step.id,
       sequence: step.sequence,
@@ -1701,7 +1705,7 @@ export class StudioRepository {
     return row ? this.buildById(row.id) : null;
   }
 
-  async createBuild(projectId: string, revision?: { requestId: string; content: string }) {
+  async createBuild(projectId: string, revision?: { requestId: string; revisionScope: import("../shared/contracts.js").RenovationScope; assetTarget?: { clipId: import("../shared/generated-blueprint.js").SpriteAnimationClipId }; content: string }) {
     const confirmed = revision ? projectRevisionInputSchema.parse(revision) : null;
     // The "is there already a queued/running build" check and the INSERT that follows must be
     // atomic per project, otherwise two concurrent calls (e.g. a double click) can both see "no
@@ -1715,11 +1719,11 @@ export class StudioRepository {
       )).rows[0];
       if (!lockedProject) throw new Error("项目不存在。");
       if (confirmed) {
-        const existing = (await transaction.query<{ project_id: string; content: string }>(
-          "SELECT b.project_id, m.content FROM builds b LEFT JOIN project_messages m ON m.id = b.id WHERE b.id = $1", [confirmed.requestId],
+        const existing = (await transaction.query<{ project_id: string; content: string; revision_scope: string | null; asset_clip_id: string | null }>(
+          "SELECT b.project_id, b.revision_scope, b.asset_clip_id, m.content FROM builds b LEFT JOIN project_messages m ON m.id = b.id WHERE b.id = $1", [confirmed.requestId],
         )).rows[0];
         if (existing) {
-          if (existing.project_id !== projectId || existing.content !== confirmed.content) throw new Error("修改请求编号已用于其他内容，不能重复使用。");
+          if (existing.project_id !== projectId || existing.content !== confirmed.content || existing.revision_scope !== confirmed.revisionScope || existing.asset_clip_id !== (confirmed.assetTarget?.clipId ?? null)) throw new Error("修改请求编号已用于其他内容或范围，不能重复使用。");
           return confirmed.requestId;
         }
       }
@@ -1742,9 +1746,9 @@ export class StudioRepository {
           [buildId, projectId, confirmed.content, now],
         );
         await transaction.query(
-          `INSERT INTO builds (id, project_id, status, runtime_target, created_at, started_at, completed_at, version_id, error_message)
-           VALUES ($1, $2, 'queued', $3, $4, NULL, NULL, NULL, NULL)`,
-          [buildId, projectId, project.spec.runtimeTarget, now],
+          `INSERT INTO builds (id, project_id, status, runtime_target, created_at, started_at, completed_at, version_id, error_message, revision_scope, asset_clip_id)
+           VALUES ($1, $2, 'queued', $3, $4, NULL, NULL, NULL, NULL, $5, $6)`,
+          [buildId, projectId, project.spec.runtimeTarget, now, confirmed?.revisionScope ?? null, confirmed?.assetTarget?.clipId ?? null],
         );
         for (const [sequence, step] of buildPlan.entries()) {
           await transaction.query(
@@ -1774,10 +1778,11 @@ export class StudioRepository {
   }
 
   async markStepRunning(buildId: string, sequence: number) {
-    await this.database.query(
-      "UPDATE build_steps SET status = 'running', started_at = $1 WHERE build_id = $2 AND sequence = $3",
+    const updated = await this.database.query(
+      "UPDATE build_steps SET status = 'running', started_at = $1 WHERE build_id = $2 AND sequence = $3 AND status = 'pending' AND EXISTS (SELECT 1 FROM builds WHERE id = $2 AND status = 'running')",
       [new Date().toISOString(), buildId, sequence],
     );
+    return updated.rowCount === 1;
   }
 
   /** 更新运行中步骤的进展说明；excerpt 是正在生成的内容片段，不传即清空，避免旧片段挂在新阶段上。 */
@@ -1789,21 +1794,39 @@ export class StudioRepository {
   }
 
   async completeStep(buildId: string, sequence: number, output: string) {
-    await this.database.query(
-      "UPDATE build_steps SET status = 'succeeded', output_text = $1, completed_at = $2 WHERE build_id = $3 AND sequence = $4",
+    const updated = await this.database.query(
+      "UPDATE build_steps SET status = 'succeeded', output_text = $1, completed_at = $2 WHERE build_id = $3 AND sequence = $4 AND status = 'running' AND EXISTS (SELECT 1 FROM builds WHERE id = $3 AND status = 'running')",
       [output, new Date().toISOString(), buildId, sequence],
     );
+    return updated.rowCount === 1;
+  }
+
+  async cancelBuild(buildId: string) {
+    const now = new Date().toISOString();
+    await this.database.transaction(async (transaction) => {
+      const cancelled = await transaction.query(
+        "UPDATE builds SET status = 'cancelled', error_message = NULL, completed_at = $1 WHERE id = $2 AND status IN ('queued', 'running')",
+        [now, buildId],
+      );
+      if (cancelled.rowCount === 1) {
+        await transaction.query(
+          "UPDATE build_steps SET status = 'cancelled', output_text = CASE WHEN status = 'running' THEN '用户已停止制作。' ELSE output_text END, completed_at = $1 WHERE build_id = $2 AND status IN ('pending', 'running')",
+          [now, buildId],
+        );
+      }
+    });
+    return this.buildById(buildId);
   }
 
   async failBuild(buildId: string, sequence: number, message: string) {
     const now = new Date().toISOString();
     await this.database.transaction(async (transaction) => {
       await transaction.query(
-        "UPDATE build_steps SET status = 'failed', output_text = $1, completed_at = $2 WHERE build_id = $3 AND sequence = $4",
+        "UPDATE build_steps SET status = 'failed', output_text = $1, completed_at = $2 WHERE build_id = $3 AND sequence = $4 AND status IN ('pending', 'running') AND EXISTS (SELECT 1 FROM builds WHERE id = $3 AND status IN ('queued', 'running'))",
         [message, now, buildId, sequence],
       );
       await transaction.query(
-        "UPDATE builds SET status = 'failed', error_message = $1, completed_at = $2 WHERE id = $3",
+        "UPDATE builds SET status = 'failed', error_message = $1, completed_at = $2 WHERE id = $3 AND status IN ('queued', 'running')",
         [message, now, buildId],
       );
     });
@@ -1813,6 +1836,7 @@ export class StudioRepository {
     const qualityReport = versionQualityReportSchema.parse(rawQualityReport);
     if (qualityReport.status !== "passed") throw new Error("自动验收未通过，不能生成可发布版本。");
     const build = await this.buildById(buildId);
+    if (build.status !== "running") throw new Error("构建已停止或已进入终态，迟到的验收结果不会生成版本。");
     // "SELECT MAX(number)" followed by an INSERT into versions must be atomic per project,
     // otherwise two builds finishing around the same time can both compute the same next
     // version number and collide on the UNIQUE(project_id, number) constraint. Shares the
@@ -1849,10 +1873,11 @@ export class StudioRepository {
           "UPDATE projects SET status = CASE WHEN EXISTS (SELECT 1 FROM publications WHERE project_id = $1 AND status = 'live') THEN 'published' ELSE 'playable' END WHERE id = $1",
           [project.id],
         );
-        await transaction.query(
-          "UPDATE builds SET status = 'succeeded', version_id = $1, error_message = NULL, completed_at = $2 WHERE id = $1",
+        const completedBuild = await transaction.query(
+          "UPDATE builds SET status = 'succeeded', version_id = $1, error_message = NULL, completed_at = $2 WHERE id = $1 AND status = 'running'",
           [buildId, now],
         );
+        if (completedBuild.rowCount !== 1) throw new Error("构建已停止或已进入终态，迟到的验收结果不会生成版本。");
       });
       const completed = await this.get(project.id);
       if (!completed) throw new Error("构建完成后无法读取项目。");

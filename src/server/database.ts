@@ -95,14 +95,22 @@ const postgresSchema = `
   CREATE TABLE IF NOT EXISTS builds (
     id TEXT PRIMARY KEY,
     project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
-    status TEXT NOT NULL CHECK (status IN ('queued', 'running', 'succeeded', 'failed')),
+    status TEXT NOT NULL CHECK (status IN ('queued', 'running', 'succeeded', 'failed', 'cancelled')),
     runtime_target TEXT NOT NULL CHECK (runtime_target IN ('web-2d', 'web-3d')),
     created_at TIMESTAMPTZ NOT NULL,
     started_at TIMESTAMPTZ,
     completed_at TIMESTAMPTZ,
     version_id TEXT,
-    error_message TEXT
+    error_message TEXT,
+    revision_scope TEXT CHECK (revision_scope IN ('gameplay', 'assets', 'visual-style')),
+    asset_clip_id TEXT CHECK (asset_clip_id IN ('idle', 'run', 'hit', 'effect'))
   );
+
+  ALTER TABLE builds ADD COLUMN IF NOT EXISTS revision_scope TEXT;
+  ALTER TABLE builds ADD COLUMN IF NOT EXISTS asset_clip_id TEXT;
+
+  ALTER TABLE builds DROP CONSTRAINT IF EXISTS builds_status_check;
+  ALTER TABLE builds ADD CONSTRAINT builds_status_check CHECK (status IN ('queued', 'running', 'succeeded', 'failed', 'cancelled'));
 
   CREATE TABLE IF NOT EXISTS build_steps (
     id TEXT PRIMARY KEY,
@@ -111,7 +119,7 @@ const postgresSchema = `
     kind TEXT NOT NULL CHECK (kind IN ('analyze', 'document', 'code', 'asset', 'test', 'delivery')),
     title TEXT NOT NULL,
     detail TEXT NOT NULL,
-    status TEXT NOT NULL CHECK (status IN ('pending', 'running', 'succeeded', 'failed')),
+    status TEXT NOT NULL CHECK (status IN ('pending', 'running', 'succeeded', 'failed', 'cancelled')),
     output_text TEXT,
     started_at TIMESTAMPTZ,
     completed_at TIMESTAMPTZ,
@@ -120,6 +128,9 @@ const postgresSchema = `
 
   -- 运行中的步骤可附带一段正在生成的内容片段，让制作页能流式展示进展。
   ALTER TABLE build_steps ADD COLUMN IF NOT EXISTS live_excerpt TEXT;
+
+  ALTER TABLE build_steps DROP CONSTRAINT IF EXISTS build_steps_status_check;
+  ALTER TABLE build_steps ADD CONSTRAINT build_steps_status_check CHECK (status IN ('pending', 'running', 'succeeded', 'failed', 'cancelled'));
 
   CREATE TABLE IF NOT EXISTS project_messages (
     id TEXT PRIMARY KEY,
@@ -319,7 +330,7 @@ const sqliteSchema = `
   CREATE TABLE builds (
     id TEXT PRIMARY KEY, project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
     status TEXT NOT NULL, runtime_target TEXT NOT NULL, created_at TEXT NOT NULL, started_at TEXT,
-    completed_at TEXT, version_id TEXT, error_message TEXT
+    completed_at TEXT, version_id TEXT, error_message TEXT, revision_scope TEXT, asset_clip_id TEXT
   );
   CREATE TABLE build_steps (
     id TEXT PRIMARY KEY, build_id TEXT NOT NULL REFERENCES builds(id) ON DELETE CASCADE,

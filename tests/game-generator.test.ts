@@ -63,6 +63,13 @@ test("确认关卡计划同时进入生成指令与交付清单", async () => {
       assert.equal(body.response_format.json_schema.strict, true);
       const prompt = body.messages[0].content;
       assert.match(prompt, /7 个可选择关卡/);
+      assert.match(prompt, /任何位图都不得非等比拉伸/);
+      assert.match(prompt, /背景是环境层，使用 cover/);
+      assert.match(prompt, /角色、道具、图标等主体使用 contain/);
+      assert.match(prompt, /图集必须用 drawImage 的九参数形式/);
+      assert.match(prompt, /玩法主体、反馈和 HUD 分层绘制/);
+      assert.match(prompt, /证据→适用性→决定→验证/);
+      assert.match(prompt, /Canvas\/WebGL 的构图、层级、节奏、素材协调和整体设计感必须用真实画面人工评审/);
       assert.doesNotMatch(prompt, /必须是 20 关|必须实现 20|setLevel\(1\.\.20\)|第 9 关/);
       return llmResponse({ html: contractHtml, design_notes: "合同传递测试" });
     },
@@ -267,11 +274,20 @@ test("迭代模式:带上一版代码与意见,系统提示声明增量修改;�
   await generator.generate(fakeProject(), [], { html: previousHtml, directions: [] });
   assert.match(captured[1]!.user, /小幅校准/);
 
+  const repairProject = fakeProject();
+  repairProject.spec.hardConstraints.push("实际图片交付槽位:assets/background.png(局内背景,1536×1024,cover)；assets/player.png(玩家,512×512,contain)。代码必须按各槽位角色和 fit 等比显示，以运行时 naturalWidth/naturalHeight 为准。");
+  await generator.generate(repairProject, ["背景发生非等比拉伸"], { html: previousHtml, directions: [] });
+  assert.match(captured[2]!.user, /只修改造成上述客观失败/);
+  assert.match(captured[2]!.user, /允许为修复遮挡、溢出、比例和可读性调整直接相关容器/);
+  assert.match(captured[2]!.user, /1536×1024,cover/);
+  assert.match(captured[2]!.user, /512×512,contain/);
+  assert.match(captured[2]!.user, /重新通过同一组自动验收/);
+
   await generator.generate(fakeProject());
-  assert.ok(!captured[2]!.system.includes("迭代模式"), "无上一版时不应进入迭代模式");
-  assert.match(captured[2]!.system, /可执行教学计划/);
-  assert.match(captured[2]!.system, /shot-fired/);
-  assert.match(captured[2]!.system, /performOnboardingStep/);
+  assert.ok(!captured[3]!.system.includes("迭代模式"), "无上一版时不应进入迭代模式");
+  assert.match(captured[3]!.system, /可执行教学计划/);
+  assert.match(captured[3]!.system, /shot-fired/);
+  assert.match(captured[3]!.system, /performOnboardingStep/);
 });
 
 test("产物写入+静态探针:拆分为外链三件套(生产 CSP 禁内联),注入遥测与存档垫片", () => {

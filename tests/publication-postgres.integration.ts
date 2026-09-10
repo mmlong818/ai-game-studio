@@ -91,11 +91,11 @@ test("PostgreSQL 独立连接：发布复核锁、制作回执去重与执行权
     const history = await repo.listVersionArtReviews(project.id, newVersion);
     assert.deepEqual(history.map(row => [row.sequence, row.status]), [[2, "failed"], [1, "passed"]]);
 
-    const revision = { requestId: randomUUID(), content: "增加花朵配对成功后的轻柔反馈" };
+    const revision = { requestId: randomUUID(), revisionScope: "gameplay" as const, content: "增加花朵配对成功后的轻柔反馈" };
     const simultaneous = await Promise.all([repo.createBuild(project.id, revision), publisher.createBuild(project.id, revision)]);
     assert.deepEqual(simultaneous.map(build => build.id), [revision.requestId, revision.requestId]);
     assert.equal((await repo.listMessages(project.id)).filter(message => message.role === "user").length, 1);
-    await assert.rejects(publisher.createBuild(project.id, { requestId: randomUUID(), content: "同时提出另一条修改意见" }), /仍在制作/);
+    await assert.rejects(publisher.createBuild(project.id, { requestId: randomUUID(), revisionScope: "gameplay", content: "同时提出另一条修改意见" }), /仍在制作/);
     const claims = await Promise.all([repo.markBuildRunning(revision.requestId), publisher.markBuildRunning(revision.requestId)]);
     assert.deepEqual(claims.sort(), [false, true], "同一回执只允许一个连接获得执行权");
     await first.query("UPDATE builds SET status = 'failed' WHERE id = $1", [revision.requestId]);

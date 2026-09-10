@@ -28,6 +28,22 @@ describe("生成式游戏知识蓝图", () => {
     expect(blueprintSpriteFiles(null)).toEqual([]);
   });
 
+  it("接受row-major多动作图集并拒绝越界、重叠和短动作", () => {
+    const animation = {
+      frameWidth: 128, frameHeight: 96, columns: 4, rows: 3, frameCount: 12,
+      anchor: { x: 64, y: 88 },
+      clips: [
+        { id: "idle", startFrame: 0, frameCount: 4, fps: 6, loop: true },
+        { id: "run", startFrame: 4, frameCount: 4, fps: 12, loop: true },
+        { id: "hit", startFrame: 8, frameCount: 4, fps: 10, loop: false },
+      ],
+    } as const;
+    const plan = generatedBlueprintSchema.parse({ ...valid, sprites: [{ ...valid.sprites[0], animation }, valid.sprites[1]] });
+    expect(plan.sprites[0].animation?.clips).toHaveLength(3);
+    expect(() => generatedBlueprintSchema.parse({ ...valid, sprites: [{ ...valid.sprites[0], animation: { ...animation, clips: [{ id: "idle", startFrame: 0, frameCount: 4, fps: 6, loop: true }, { id: "run", startFrame: 3, frameCount: 4, fps: 12, loop: true }] } }, valid.sprites[1]] })).toThrow(/重叠|最后一个动作/);
+    expect(() => generatedBlueprintSchema.parse({ ...valid, sprites: [{ ...valid.sprites[0], animation: { ...animation, clips: [{ id: "idle", startFrame: 0, frameCount: 3, fps: 6, loop: true }] } }, valid.sprites[1]] })).toThrow();
+  });
+
   it("机制或修饰器不在知识库中时整份蓝图作废", () => {
     expect(() => generatedBlueprintSchema.parse({ ...valid, mechanicIds: ["click-anything"] })).toThrow(/机制必须取自机制图谱/);
     expect(() => generatedBlueprintSchema.parse({ ...valid, modifierIds: ["vibes"] })).toThrow(/设计修饰器必须取自知识库/);

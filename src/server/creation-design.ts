@@ -1,9 +1,33 @@
-import { heuristicIdeaAnalysis, ideaAnalysisSchema, projectInputSchema, type GameDesignProfile, type IdeaAnalysis, type ProjectInput } from "../shared/contracts.js";
+import { heuristicIdeaAnalysis, ideaAnalysisSchema, projectInputSchema, type GameDesignProfile, type IdeaAnalysis, type ProjectDetail, type ProjectInput } from "../shared/contracts.js";
+import { constrainRenovationProfile } from "../shared/renovation-scope.js";
 
 type Dependencies = {
   analyze: (input: ProjectInput) => Promise<IdeaAnalysis>;
   generate: (input: ProjectInput, analysis: IdeaAnalysis) => Promise<GameDesignProfile | null>;
 };
+
+export async function prepareRenovationInput(rawInput: ProjectInput, findProject: (id: string) => Promise<ProjectDetail | null>) {
+  const input = projectInputSchema.parse(rawInput);
+  if (!input.sourceProjectId || !input.revisionScope) return input;
+  const source = await findProject(input.sourceProjectId);
+  if (!source) throw new Error("找不到要改造的来源游戏，已停止制作；没有按新游戏继续生成。");
+  return projectInputSchema.parse({
+    ...input,
+    template: source.spec.template,
+    dimensions: source.dimensions,
+    artStyle: source.spec.artStyle,
+    visualStyle: source.spec.visualStyle,
+    difficulty: source.spec.difficulty,
+    aspectRatio: source.spec.aspectRatio,
+    cameraMode: source.spec.cameraMode,
+    inputModes: source.spec.inputModes,
+    puzzlePieceCount: source.spec.puzzleRules?.pieceCount,
+    customImageDataUrl: source.spec.customImageDataUrl ?? undefined,
+    confirmedDesignProfile: input.confirmedDesignProfile
+      ? constrainRenovationProfile(input.confirmedDesignProfile, source.spec.designProfile, input.revisionScope)
+      : source.spec.designProfile,
+  });
+}
 
 /** Confirmed profiles are production contracts, not prompts to rewrite again. */
 export async function resolveCreationDesign(rawInput: ProjectInput, dependencies: Dependencies, report: (title: string) => Promise<void> = async () => {}) {

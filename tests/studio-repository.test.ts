@@ -620,6 +620,14 @@ test("并行完成两个构建时版本号不会冲突", async () => {
     const secondBuild = await repository.createBuild(project.id);
     assert.notEqual(secondBuild.id, firstBuild.id);
 
+    // completeBuild only accepts work that is still running. Put both rows in that
+    // valid precondition directly so this fixture keeps testing the per-project
+    // version lock rather than relying on the former terminal-build resurrection.
+    await database.query(
+      "UPDATE builds SET status = 'running', error_message = NULL, completed_at = NULL WHERE id IN ($1, $2)",
+      [firstBuild.id, secondBuild.id],
+    );
+
     const [firstCompleted, secondCompleted] = await Promise.all([
       repository.completeBuild(firstBuild.id, undefined, passingQualityReport()),
       repository.completeBuild(secondBuild.id, undefined, passingQualityReport()),
@@ -628,7 +636,7 @@ test("并行完成两个构建时版本号不会冲突", async () => {
     assert.ok(secondCompleted);
     const recoveredBuild = await repository.buildById(firstBuild.id);
     assert.equal(recoveredBuild.status, "succeeded");
-    assert.equal(recoveredBuild.error, null, "恢复成功的构建不应继续携带旧失败原因");
+    assert.equal(recoveredBuild.error, null);
 
     const versions = await repository.listVersions(project.id);
     assert.equal(versions.length, 3);

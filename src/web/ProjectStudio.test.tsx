@@ -2,8 +2,13 @@ import { render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ProjectDetail } from "../shared/contracts.js";
 import { merge2048DesignSample } from "../shared/game-design-contract/samples.js";
-import { DesignDecisionCards } from "./ProjectStudio.js";
+import { DesignDecisionCards, ProjectStudio } from "./ProjectStudio.js";
 import { PreferencesProvider } from "./preferences.js";
+import * as api from "./api.js";
+
+vi.mock("./api.js", () => ({
+  archiveProject: vi.fn(), cancelBuild: vi.fn(), getArtReviewHistory: vi.fn(), getLatestBuild: vi.fn(), getPlayableBuild: vi.fn(), getProject: vi.fn(), getProjectMessages: vi.fn(), getProjectRevision: vi.fn(), getProjectVersions: vi.fn(), publishProject: vi.fn(), publishProjectVersion: vi.fn(), restoreProject: vi.fn(), startBuild: vi.fn(), submitProjectRevision: vi.fn(),
+}));
 
 describe("完整游戏设计确认卡", () => {
   beforeEach(() => {
@@ -22,5 +27,42 @@ describe("完整游戏设计确认卡", () => {
     expect(screen.getByText("每阶段有什么变化")).toBeInTheDocument();
     expect(screen.getByText(/向唯一有效方向滑动/)).toBeInTheDocument();
     expect(screen.queryByText("MECHANIC-SLIDE")).not.toBeInTheDocument();
+  });
+});
+
+describe("制作停止", () => {
+  const project = {
+    id: "project-1", title: "测试作品", createdAt: "2026-01-01T00:00:00.000Z", archivedAt: null, fixtureKind: null, status: "building",
+    version: { number: 2, qualityStatus: "passed", artReviewStatus: "passed" },
+    spec: { aspectRatio: "16:9", dimensions: "2d", visualStyle: "classic", controls: [], hardConstraints: [], acceptanceCriteria: [], designContract: null, designProfile: { genre: "解谜", sessionLength: "3 分钟", winCondition: "完成目标", coreLoop: [], difficultyCurve: [], generatedBlueprint: null } },
+    publication: { stableUrl: "https://example.test/play" },
+  } as unknown as ProjectDetail;
+  const queuedBuild = {
+    id: "build-1", projectId: project.id, status: "queued", runtimeTarget: "browser", createdAt: "2026-01-01T00:00:00.000Z", startedAt: null, completedAt: null, versionId: null, previewUrl: null, error: null, revisionScope: null, assetClipId: null,
+    steps: [{ id: "step-1", sequence: 0, kind: "code", title: "生成代码", detail: "正在制作", status: "running", output: null, startedAt: null, completedAt: null }],
+  } as any;
+
+  beforeEach(() => {
+    vi.resetAllMocks();
+    vi.stubGlobal("matchMedia", vi.fn(() => ({ matches: false, addEventListener: vi.fn(), removeEventListener: vi.fn() })));
+    window.localStorage.clear();
+    vi.mocked(api.getLatestBuild).mockResolvedValue(queuedBuild);
+    vi.mocked(api.getPlayableBuild).mockResolvedValue(null);
+    vi.mocked(api.getProjectMessages).mockResolvedValue([]);
+    vi.mocked(api.getProjectVersions).mockResolvedValue([]);
+  });
+
+  it("停止构建时等待服务端确认，并以取消终态隔离迟到完成结果", async () => {
+    let resolveCancel!: (value: any) => void;
+    vi.mocked(api.cancelBuild).mockReturnValue(new Promise(resolve => { resolveCancel = resolve; }));
+    render(<PreferencesProvider><ProjectStudio project={project} onProjectChange={vi.fn()} /></PreferencesProvider>);
+    const stop = await screen.findByRole("button", { name: "停止制作" });
+    stop.click();
+    expect(await screen.findByText("正在停止这轮制作…")).toBeInTheDocument();
+    expect(stop).toBeDisabled();
+    expect(api.cancelBuild).toHaveBeenCalledWith(project.id, queuedBuild.id);
+    resolveCancel({ ...queuedBuild, status: "cancelled", steps: [{ ...queuedBuild.steps[0], status: "cancelled" }] });
+    expect(await screen.findByText(/已停止后续制作/)).toBeInTheDocument();
+    expect(screen.queryByText("游戏已准备好，先玩一局吧。")).not.toBeInTheDocument();
   });
 });

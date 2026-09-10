@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { generatedCampaignSchema } from "./generated-campaign.js";
-import { generatedBlueprintSchema } from "./generated-blueprint.js";
+import { generatedBlueprintSchema, spriteAnimationClipIds } from "./generated-blueprint.js";
 import { getOpenSourceTemplateReference } from "./open-source-templates.js";
 import { defaultLevelProgression } from "./level-progression.js";
 import { OFFICIAL_SERVER_TEMPLATE_IDS } from "./official-games/index.js";
@@ -84,8 +84,13 @@ export const puzzlePieceCountSchema = z.union([
   z.literal(30), z.literal(36), z.literal(42), z.literal(48), z.literal(50),
 ]);
 
+export const renovationScopeSchema = z.enum(["gameplay", "assets", "visual-style"]);
+
 export const projectInputSchema = z.object({
   requestId: z.string().uuid().optional(),
+  sourceProjectId: z.string().uuid().optional(),
+  revisionScope: renovationScopeSchema.optional(),
+  spriteAnimation: z.enum(["auto", "none"]).default("auto"),
   confirmedDesignProfile: z.lazy(() => gameDesignProfileSchema).optional(),
   idea: z
     .string()
@@ -107,6 +112,10 @@ export const projectInputSchema = z.object({
     .max(220_000, "自定义拼图图片处理后不能超过 220 KB。")
     .regex(/^data:image\/jpeg;base64,[A-Za-z0-9+/=]+$/, "自定义拼图图片格式不正确。")
     .optional(),
+}).superRefine((input, context) => {
+  if (Boolean(input.sourceProjectId) !== Boolean(input.revisionScope)) {
+    context.addIssue({ code: "custom", path: [input.sourceProjectId ? "revisionScope" : "sourceProjectId"], message: "已有游戏改造必须同时提供来源游戏和改造范围。" });
+  }
 });
 
 export const acceptanceCriterionSchema = z.object({
@@ -238,6 +247,18 @@ export const gameSpecSchema = z.object({
   designKnowledge: designKnowledgeShadowSchema.nullable().default(null),
   designContract: gameDesignContractV1Schema.nullable().default(null),
   resourcePlanning: resourcePlanningShadowSchema.nullable().default(null),
+  spriteAnimation: z.enum(["auto", "none"]).default("auto"),
+  renovation: z.object({
+    sourceProjectId: z.string().uuid(),
+    revisionScope: renovationScopeSchema,
+    request: z.string().trim().min(2).max(2_000),
+    assetTarget: z.object({
+      kind: z.enum(["single", "set"]),
+      files: z.array(z.string().min(1)).min(1),
+      label: z.string().min(1),
+      clipId: z.enum(spriteAnimationClipIds).optional(),
+    }).nullable().default(null),
+  }).nullable().default(null),
 }).superRefine((spec, ctx) => {
   const campaign = spec.template === "generated" ? spec.designProfile.generatedCampaign : undefined;
   if (campaign ? spec.levelProgression.levelCount !== campaign.levelCount : spec.levelProgression.levelCount < 20) {
@@ -382,7 +403,7 @@ export const buildStepSchema = z.object({
   detail: z.string(),
   /** 运行中步骤正在生成的内容片段（如代码尾部），仅供页面流式展示，不是产物。 */
   excerpt: z.string().nullable().optional(),
-  status: z.enum(["pending", "running", "succeeded", "failed"]),
+  status: z.enum(["pending", "running", "succeeded", "failed", "cancelled"]),
   output: z.string().nullable(),
   startedAt: z.string().nullable(),
   completedAt: z.string().nullable(),
@@ -391,7 +412,7 @@ export const buildStepSchema = z.object({
 export const buildSchema = z.object({
   id: z.string(),
   projectId: z.string(),
-  status: z.enum(["queued", "running", "succeeded", "failed"]),
+  status: z.enum(["queued", "running", "succeeded", "failed", "cancelled"]),
   runtimeTarget: runtimeTargetSchema,
   createdAt: z.string(),
   startedAt: z.string().nullable(),
@@ -399,6 +420,8 @@ export const buildSchema = z.object({
   versionId: z.string().nullable(),
   previewUrl: z.string().url().nullable(),
   error: z.string().nullable(),
+  revisionScope: renovationScopeSchema.nullable().default(null),
+  assetClipId: z.enum(spriteAnimationClipIds).nullable().default(null),
   steps: z.array(buildStepSchema),
 });
 
@@ -423,10 +446,15 @@ export const projectMessagesResponseSchema = z.object({
 
 export const projectRevisionInputSchema = z.object({
   requestId: z.string().uuid(),
+  revisionScope: renovationScopeSchema,
+  assetTarget: z.object({ clipId: z.enum(spriteAnimationClipIds) }).optional(),
   content: projectMessageInputSchema.shape.content,
+}).superRefine((input, context) => {
+  if (input.assetTarget && input.revisionScope !== "assets") context.addIssue({ code: "custom", path: ["assetTarget"], message: "只有资源替换可以选择动画动作。" });
 });
 
 export type ProjectInput = z.input<typeof projectInputSchema>;
+export type RenovationScope = z.infer<typeof renovationScopeSchema>;
 type ParsedProjectInput = z.output<typeof projectInputSchema>;
 export type GameTemplate = z.infer<typeof gameTemplateSchema>;
 export type GameDesignProfile = z.infer<typeof gameDesignProfileSchema>;
@@ -942,6 +970,13 @@ export function generateGameSpec(
     designKnowledge,
     designContract: null,
     resourcePlanning,
+    spriteAnimation: input.spriteAnimation,
+    renovation: input.sourceProjectId && input.revisionScope ? {
+      sourceProjectId: input.sourceProjectId,
+      revisionScope: input.revisionScope,
+      request: input.idea,
+      assetTarget: null,
+    } : null,
   };
   return gameSpecSchema.parse(spec);
 }

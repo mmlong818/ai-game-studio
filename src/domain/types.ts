@@ -1,3 +1,5 @@
+import type { RenovationScope } from "../shared/contracts";
+
 export type ChangeLevel = "R0" | "R1" | "R2" | "R3";
 
 export type CreationMode = "template-remix" | "mechanic-composition";
@@ -83,6 +85,9 @@ export interface SourceGame {
 
 export interface StudioDraft {
   creationMode: CreationMode;
+  revisionScope: RenovationScope;
+  /** New-game preference only; existing games may only replace an advertised clip. */
+  spriteAnimation: "auto" | "none";
   templateId: string | null;
   sourceGame?: SourceGame | null;
   selectedSuggestionIds: string[];

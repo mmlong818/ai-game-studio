@@ -13,6 +13,9 @@ import { DOMAIN_TEMPLATE_ART, resolveTemplateForGame } from "./domain/templateRe
 import { validateDraft } from "./domain/validation";
 import { getPublishedGames } from "./web/api";
 import type { GameDesignProfile } from "./shared/contracts";
+import type { RenovationScope } from "./shared/contracts";
+import { RevisionScopePicker, revisionScopeOptions } from "./web/RevisionScopePicker";
+import { SpriteAnimationChoice, type SpriteAnimationPreference } from "./components/SpriteAnimationControl";
 
 type Stage = "compose" | "review" | "produce";
 type ComposeStep = "choose" | "pick-game" | "describe";
@@ -148,6 +151,8 @@ function RemixDescribeStep({
   validation,
   onContinue,
   onConvert,
+  revisionScope,
+  onScopeChange,
 }: {
   template: GameTemplate;
   sourceGame: SourceGame | null;
@@ -159,6 +164,8 @@ function RemixDescribeStep({
   validation: ValidationResult;
   onContinue: (explicit?: boolean) => void;
   onConvert: () => void;
+  revisionScope: RenovationScope;
+  onScopeChange: (value: RenovationScope) => void;
 }) {
   const hasText = value.trim().length > 0;
   const explain = uncertain ? UNCERTAIN_EXPLAIN : LEVEL_EXPLAIN[level];
@@ -176,14 +183,15 @@ function RemixDescribeStep({
         </span>
         <button type="button" className="text-link" onClick={onChangeGame}>换一个游戏</button>
       </div>
-      <label htmlFor="remix-request">你想怎么改？</label>
+      <RevisionScopePicker value={revisionScope} onChange={onScopeChange} />
+      <label htmlFor="remix-request">具体想调整什么？</label>
       <textarea
         id="remix-request"
         {...automatic}
         value={value}
         onChange={(event) => onChange(event.target.value)}
         rows={6}
-        placeholder={"用自己的话说就行。比如：\n换成海底世界的画风\n关卡多一些，难度低一点\n加一种会动的障碍\n把它和贪吃蛇合成一个游戏"}
+        placeholder={revisionScopeOptions.find(option => option.id === revisionScope)?.example}
       />
       {hasText && (
         <div className={`assessment tone-${explain.tone}`} role="status">
@@ -191,6 +199,7 @@ function RemixDescribeStep({
           <span>{explain.detail}</span>
         </div>
       )}
+      <p className="remix-preservation-note">本次制作要求沿用当前游戏，只调整上面圈定的范围，并保留原有核心玩法和操作。</p>
       {blocked ? (
         <button type="button" className="primary-action" onClick={onConvert}>
           按新游戏继续 <span aria-hidden="true">→</span>
@@ -208,11 +217,15 @@ function RemixDescribeStep({
 function NewGameDescribeStep({
   value,
   onChange,
+  spriteAnimation,
+  onSpriteAnimationChange,
   validation,
   onContinue,
 }: {
   value: string;
   onChange: (value: string) => void;
+  spriteAnimation: SpriteAnimationPreference;
+  onSpriteAnimationChange: (value: SpriteAnimationPreference) => void;
   validation: ValidationResult;
   onContinue: (explicit?: boolean) => void;
 }) {
@@ -236,6 +249,7 @@ function NewGameDescribeStep({
           <span>{mechanics.map((item) => item.name).join("、")}</span>
         </div>
       )}
+      <SpriteAnimationChoice value={spriteAnimation} onChange={onSpriteAnimationChange} />
       <button type="button" className="primary-action" onClick={() => onContinue(true)} disabled={!validation.valid}>
         开始制作 <span aria-hidden="true">→</span>
       </button>
@@ -276,6 +290,7 @@ export function AdvancedStudioApp() {
     setDraft((current) => ({
       ...current,
       creationMode: "template-remix",
+      revisionScope: "gameplay",
       templateId: game.templateId,
       sourceGame: game.sourceGame,
       selectedSuggestionIds: [],
@@ -316,13 +331,14 @@ export function AdvancedStudioApp() {
   const scrollTop = () => window.scrollTo({ top: 0, behavior: "smooth" });
 
   const choose = (creationMode: CreationMode) => {
-    updateDraft({ creationMode, referenceDossier: null, changeLevel: creationMode === "template-remix" ? "R0" : "R3" });
+    updateDraft({ creationMode, revisionScope: "gameplay", referenceDossier: null, changeLevel: creationMode === "template-remix" ? "R0" : "R3" });
     setStep(creationMode === "template-remix" ? "pick-game" : "describe");
   };
 
   const pickGame = (game: PickableGame) => {
     if (!game.templateId) return;
     updateDraft({
+      revisionScope: "gameplay",
       templateId: game.templateId,
       sourceGame: game.sourceGame,
       selectedSuggestionIds: [],
@@ -362,7 +378,7 @@ export function AdvancedStudioApp() {
     : step === "pick-game"
       ? { title: "你想改哪一个？", lead: "点一个游戏。" }
       : isRemix
-        ? { title: `想怎么改「${remixTitle}」？`, lead: "换画风、调难度、加关卡，或者把玩法改掉，都可以。" }
+        ? { title: `个性化「${remixTitle}」`, lead: "圈定一类局部调整，再说清最想改变的一件事。本次制作要求保留原玩法和操作。" }
         : { title: "你想做一个什么游戏？", lead: "可以说一个你玩过的游戏，也可以说一个从没见过的点子。" };
   const backStep: ComposeStep | null = step === "choose" ? null : step === "describe" && isRemix ? "pick-game" : "choose";
 
@@ -394,7 +410,7 @@ export function AdvancedStudioApp() {
               if (!check.valid) return;
               setDraft(next); setStage("review");
               if (explicit) setReviewScrollRequest(value => value + 1);
-            }} onRemix={() => choose("template-remix")} />}
+            }} onRemix={() => choose("template-remix")} spriteAnimation={draft.spriteAnimation} onSpriteAnimationChange={spriteAnimation => updateDraft({ spriteAnimation })} />}
           {step === "pick-game" && <PickGameStep games={games} onPick={pickGame} />}
           {step === "describe" && isRemix && template && (
             <RemixDescribeStep
@@ -408,12 +424,16 @@ export function AdvancedStudioApp() {
               validation={validation}
               onContinue={startReview}
               onConvert={convertToNewGame}
+              revisionScope={draft.revisionScope}
+              onScopeChange={(revisionScope) => updateDraft({ revisionScope })}
             />
           )}
           {step === "describe" && !isRemix && (
             <NewGameDescribeStep
               value={draft.newGameBrief}
               onChange={(newGameBrief) => updateDraft({ newGameBrief })}
+              spriteAnimation={draft.spriteAnimation}
+              onSpriteAnimationChange={(spriteAnimation) => updateDraft({ spriteAnimation })}
               validation={validation}
               onContinue={startReview}
             />

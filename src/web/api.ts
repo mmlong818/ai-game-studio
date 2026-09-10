@@ -17,7 +17,9 @@ import {
   type ProjectSummary,
   type ProjectVersion,
   type PlayActivity,
+  type RenovationScope,
 } from "../shared/contracts";
+import type { SpriteAnimationClipId } from "../shared/generated-blueprint";
 import { streamLines } from "../shared/stream-lines";
 import type { DesignKnowledgeReviewReport } from "../server/design-knowledge-review";
 import type { GameplayRadarView, GameplaySignal } from "../shared/game-design-knowledge/gameplay-radar";
@@ -161,7 +163,7 @@ export async function createProject(input: ProjectInput): Promise<ProjectDetail>
   return projectDetailSchema.parse(payload.project);
 }
 
-export type ProductionJob = { id: string; status: "queued" | "creating" | "building" | "failed"; error: string | null; events?: { title: string; createdAt: string }[] };
+export type ProductionJob = { id: string; status: "queued" | "creating" | "building" | "succeeded" | "failed" | "cancelled"; error: string | null; events?: { title: string; createdAt: string }[] };
 export async function submitProduction(input: ProjectInput): Promise<ProductionJob> {
   const payload = await apiRequest("/api/production-jobs", { method: "POST", body: JSON.stringify(input) });
   return payload.job as ProductionJob;
@@ -174,6 +176,11 @@ export async function retryProduction(id: string): Promise<ProductionJob> {
 export async function getProductionJob(id: string): Promise<ProductionJob | null> {
   const payload = await apiRequest("/api/production-jobs/" + encodeURIComponent(id));
   return payload.job as ProductionJob | null;
+}
+/** Persistently stop this request. The returned terminal state resolves a completion race. */
+export async function cancelProduction(id: string): Promise<ProductionJob> {
+  const payload = await apiRequest("/api/production-jobs/" + encodeURIComponent(id) + "/cancel", { method: "POST" });
+  return payload.job as ProductionJob;
 }
 
 export async function watchProductionJob(id: string, signal: AbortSignal, onUpdate: (job: ProductionJob, build: Build | null) => void) {
@@ -190,7 +197,7 @@ export async function watchProductionJob(id: string, signal: AbortSignal, onUpda
     if (event.error || !event.job) throw new Error(event.error ?? "任务不存在。");
     const build = event.build ? buildSchema.parse(event.build) : null;
     onUpdate(event.job, build);
-    terminal = event.job.status === "failed" || build?.status === "succeeded" || build?.status === "failed";
+    terminal = event.job.status === "succeeded" || event.job.status === "failed" || event.job.status === "cancelled" || build?.status === "succeeded" || build?.status === "failed" || build?.status === "cancelled";
   }
   if (!terminal) throw new Error("进度连接已断开，正在重新连接；不会重新制作。");
 }
@@ -244,7 +251,13 @@ export async function startBuild(projectId: string): Promise<Build> {
   return buildSchema.parse(payload.build);
 }
 
-export async function submitProjectRevision(projectId: string, input: { requestId: string; content: string }): Promise<Build> {
+/** Persistently stop exactly this build; a terminal return is authoritative in a finish/cancel race. */
+export async function cancelBuild(projectId: string, buildId: string): Promise<Build> {
+  const payload = await apiRequest(`/api/projects/${encodeURIComponent(projectId)}/builds/${encodeURIComponent(buildId)}/cancel`, { method: "POST" }) as { build: unknown };
+  return buildSchema.parse(payload.build);
+}
+
+export async function submitProjectRevision(projectId: string, input: { requestId: string; content: string; revisionScope: RenovationScope; assetTarget?: { clipId: SpriteAnimationClipId } }): Promise<Build> {
   const payload = await apiRequest(`/api/projects/${encodeURIComponent(projectId)}/revisions`, { method: "POST", body: JSON.stringify(input) });
   return buildSchema.parse(payload.build);
 }
