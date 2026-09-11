@@ -114,7 +114,7 @@ async function redSubjectBounds(bytes: Buffer) {
   return { width: maxX - minX + 1, height: maxY - minY + 1, minX, minY, maxX, maxY, imageWidth: info.width, imageHeight: info.height };
 }
 
-test("没有密钥时返回 null 且不发起网络请求", async () => {
+test("没有密钥时保留配置失败详情且不发起网络请求", async () => {
   let calls = 0;
   const generator = new CoverArtGenerator(new OpenAISettings(null), {
     fetchImpl: async () => {
@@ -122,7 +122,13 @@ test("没有密钥时返回 null 且不发起网络请求", async () => {
       throw new Error("不应该发起请求");
     },
   });
-  assert.equal(await generator.generate(fakeProject()), null);
+  await assert.rejects(generator.generate(fakeProject()), (error: unknown) => {
+    const failure = error as { message?: string; details?: Array<{ category?: string; resource?: { file?: string } }> };
+    assert.match(failure.message ?? "", /图像服务未配置/);
+    assert.equal(failure.details?.[0]?.category, "configuration");
+    assert.equal(failure.details?.[0]?.resource?.file, "assets/cover.png");
+    return true;
+  });
   assert.equal(calls, 0);
 });
 
@@ -183,17 +189,16 @@ test("透明角色接口拒绝实际不透明的 PNG，不能把 alpha 通道当
   const generator = new CoverArtGenerator(new OpenAISettings(validKey), {
     fetchImpl: async () => imageResponse(opaquePng),
   });
-  const entries = await generator.generateDynamicArt(assetRenovation(fakeProject(), "只替换食物"), ["assets/stage-c/snake-food-v2.png"], {}, {
+  await assert.rejects(generator.generateDynamicArt(assetRenovation(fakeProject(), "只替换食物"), ["assets/stage-c/snake-food-v2.png"], {}, {
     "assets/stage-c/snake-food-v2.png": transparentProviderFixtures.get("1024x1024")!,
-  });
-  assert.deepEqual(entries, []);
+  }), /未生成|未完整/);
 });
 
-test("返回内容不是 PNG 时判为失败并返回 null", async () => {
+test("返回内容不是 PNG 时保留安全失败原因", async () => {
   const generator = new CoverArtGenerator(new OpenAISettings(validKey), {
     fetchImpl: async () => imageResponse(Buffer.from("not a png at all, ".repeat(60))),
   });
-  assert.equal(await generator.generate(fakeProject()), null);
+  await assert.rejects(generator.generate(fakeProject()), /未生成可用图片/);
 });
 
 test("动态美术:snake 并行生成局内背景与食物/障碍角色位图,角色请求透明底", async () => {
@@ -299,10 +304,9 @@ test("部分资源替换缺少来源或 edits 失败时不退回 generations 重
   });
   await assert.rejects(generator.generateDynamicArt(project, ["assets/background.png"]), /缺少已校验的来源图片.*不会退回无参考重画/);
   assert.equal(calls, 0);
-  const entries = await generator.generateDynamicArt(project, ["assets/background.png"], {}, {
+  await assert.rejects(generator.generateDynamicArt(project, ["assets/background.png"], {}, {
     "assets/background.png": providerFixtures.get("1536x1024")!,
-  });
-  assert.deepEqual(entries, []);
+  }), /未生成|未完整/);
   assert.deepEqual(urls, ["https://api.openai.com/v1/images/edits"]);
 });
 
@@ -325,7 +329,7 @@ test("部分角色替换按来源槽位尺寸交付，并保留透明底和主�
   assert.ok(subject.minX > 30 && subject.maxX < 130, "宽槽位两侧应使用透明留白");
 });
 
-test("动态美术:单张失败只跳过该张,其余照常返回", async () => {
+test("动态美术:单张失败保留安全失败原因", async () => {
   let calls = 0;
   const generator = new CoverArtGenerator(new OpenAISettings(validKey), {
     fetchImpl: async (_url, init) => {
@@ -335,13 +339,11 @@ test("动态美术:单张失败只跳过该张,其余照常返回", async () => 
       return imageResponse(providerPng(init));
     },
   });
-  const entries = await generator.generateDynamicArt(fakeProject());
-  assert.equal(entries.length, 2);
-  assert.ok(!entries.some((entry) => entry.file.includes("obstacle")));
+  await assert.rejects(generator.generateDynamicArt(fakeProject()), /未生成|未完整/);
   assert.ok(calls >= 3);
 });
 
-test("动态美术:没有密钥时返回空数组且不发请求", async () => {
+test("动态美术:没有密钥时保留每个必需资源的配置失败且不发请求", async () => {
   let calls = 0;
   const generator = new CoverArtGenerator(new OpenAISettings(null), {
     fetchImpl: async () => {
@@ -349,7 +351,13 @@ test("动态美术:没有密钥时返回空数组且不发请求", async () => {
       throw new Error("不应该发起请求");
     },
   });
-  assert.deepEqual(await generator.generateDynamicArt(fakeProject()), []);
+  await assert.rejects(generator.generateDynamicArt(fakeProject()), (error: unknown) => {
+    const failure = error as { details?: Array<{ category?: string; resource?: { file?: string } }> };
+    assert.ok((failure.details?.length ?? 0) >= 2);
+    assert.ok(failure.details?.every((detail) => detail.category === "configuration"));
+    assert.ok(failure.details?.some((detail) => detail.resource?.file === "assets/background.png"));
+    return true;
+  });
   assert.equal(calls, 0);
 });
 
@@ -379,7 +387,7 @@ test("成套块面:2048 六张块面共享风格锚点整套生成,并与背景�
   for (const prompt of tilePrompts) assert.match(prompt, /不能出现数字或文字/);
 });
 
-test("成套块面:任何一张失败则整套弃用,背景等单张不受影响", async () => {
+test("成套块面:失败保留安全失败原因", async () => {
   const generator = new CoverArtGenerator(new OpenAISettings(validKey), {
     fetchImpl: async (_url, init) => {
       const prompt = String((JSON.parse(String(init?.body)) as { prompt: string }).prompt);
@@ -387,9 +395,26 @@ test("成套块面:任何一张失败则整套弃用,背景等单张不受影响
       return imageResponse(providerPng(init));
     },
   });
-  const entries = await generator.generateDynamicArt(fakeMergeProject());
-  assert.ok(entries.every((entry) => !entry.file.startsWith("assets/sprites/sprite-0")), "整套块面应当弃用");
-  assert.ok(entries.some((entry) => entry.file === "assets/background.png"), "背景不应受整套弃用影响");
+  await assert.rejects(generator.generateDynamicArt(fakeMergeProject()), /未生成|未完整/);
+});
+
+test("并行资源组失败时汇总每个已启动的必需资源原因", async () => {
+  const generator = new CoverArtGenerator(new OpenAISettings(validKey), {
+    fetchImpl: async (_url, init) => {
+      const prompt = String((JSON.parse(String(init?.body)) as { prompt: string }).prompt);
+      if (prompt.includes("场景背景图") || prompt.includes("第 4 级")) return new Response("failed", { status: 400 });
+      return imageResponse(providerPng(init));
+    },
+  });
+  await assert.rejects(generator.generateDynamicArt(fakeMergeProject()), (error: unknown) => {
+    const failure = error as { details?: Array<{ category?: string; resource?: { file?: string } }> };
+    assert.equal(failure.details?.length, 2);
+    assert.ok(failure.details?.every((detail) => detail.category === "http"));
+    assert.deepEqual(failure.details?.map((detail) => detail.resource?.file).sort(), [
+      "assets/background.png", "assets/sprites/sprite-05.png",
+    ]);
+    return true;
+  });
 });
 
 test("成套块面目标会解析为完整原子组，选择其中一张会在图片调用前拒绝", async () => {
@@ -405,7 +430,7 @@ test("成套块面目标会解析为完整原子组，选择其中一张会在�
   assert.equal(calls, 0);
 });
 
-test("接口持续 5xx 时重试一次后返回 null", async () => {
+test("接口持续 5xx 时重试一次后保留安全失败原因", async () => {
   let calls = 0;
   const generator = new CoverArtGenerator(new OpenAISettings(validKey), {
     fetchImpl: async () => {
@@ -413,7 +438,7 @@ test("接口持续 5xx 时重试一次后返回 null", async () => {
       return new Response("upstream error", { status: 500 });
     },
   });
-  assert.equal(await generator.generate(fakeProject()), null);
+  await assert.rejects(generator.generate(fakeProject()), /未生成可用图片/);
   assert.equal(calls, 2);
 });
 

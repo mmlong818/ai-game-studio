@@ -45,6 +45,7 @@ import {
 } from "./api";
 import { ModelSettingsButton } from "./ModelSettingsButton";
 import { RevisionComposer } from "./RevisionComposer";
+import { FailureDetails } from "../components/FailureDetails";
 import { confirmProjectRevision, recoverPendingRevision } from "./project-revision";
 import { localizedTemplateNames, PreferenceControls, usePreferences, type ResolvedLocale } from "./preferences";
 
@@ -376,7 +377,7 @@ function BuildSteps({ build, project, busy, canConfirm, onConfirm }: {
         <output>{t("studio.stageCount", { completed, total: build.steps.length })}</output>
       </header>
       <BuildStageList steps={build.steps} evidenceLabel={t("studio.stageEvidence")} />
-      {build.error ? <div className="workbench-build-error"><strong>{t("studio.rawError")}</strong><p>{build.error}</p></div> : null}
+      {build.status === "failed" ? <div className="workbench-build-error"><strong>失败原因</strong><p>{build.failureDetails?.length ? "请查看上方的受影响资源和下一步。" : "这份历史构建记录没有保存详细原因。"}</p></div> : null}
     </section>
   );
 }
@@ -463,7 +464,7 @@ function buildConversationText(build: Build | null, t: Translator) {
     const runningStep = build.steps.find((step) => step.status === "running");
     return runningStep ? t("studio.runningStep", { title: runningStep.title, detail: runningStep.detail }) : t("studio.runningNext");
   }
-  if (build.status === "failed") return t("studio.failedText", { error: build.error ?? t("studio.noError") });
+  if (build.status === "failed") return build.failureDetails?.length ? "制作未完成；请按已列出的下一步处理后再明确提交。" : "制作未完成；这份历史记录没有保存详细原因。";
   if (build.status === "cancelled") return "本轮制作已停止；上一个成功版本仍可试玩。";
   return t("studio.succeededText", { count: build.steps.filter((step) => step.status === "succeeded").length });
 }
@@ -539,6 +540,7 @@ function WorkbenchPanel({ project, build, messages, loading, sending, archived, 
   const completedSteps = build?.steps.filter((step) => step.status === "succeeded" || step.status === "failed").length ?? 0;
   const totalSteps = build?.steps.length ?? 0;
   const progress = totalSteps ? Math.round((completedSteps / totalSteps) * 100) : 0;
+  const canRetryFailure = Boolean(build?.failureDetails?.length && build.failureDetails.every(detail => detail.retryable));
 
   return (
     <aside className="workbench-panel" aria-labelledby="workbench-panel-heading">
@@ -551,10 +553,11 @@ function WorkbenchPanel({ project, build, messages, loading, sending, archived, 
 
       <div className="workbench-stream" ref={streamRef} aria-busy={loading}>
         <section className="workspace-summary" aria-live="polite"><span>当前进展</span><h3>{stopping ? "正在停止这轮制作…" : loading ? "正在读取你的游戏…" : build?.status === "succeeded" ? "游戏已准备好，先玩一局吧。" : build?.status === "failed" ? "本次制作未完成，已有成功版本不会被覆盖。" : build?.status === "cancelled" ? "本轮制作已停止，已有成功版本不会被覆盖。" : build?.status === "running" ? "正在把修改做进游戏。" : build?.status === "queued" ? "修改已收到，等待开始制作。" : "从这份方案继续制作。"}</h3><p>{stopping ? "正在等待服务端确认；确认前不会把它显示为已停止。" : build?.status === "cancelled" ? "已停止后续制作；已发出的远程请求已尝试中止，但服务商可能已开始计费。" : build?.status === "running" ? build.steps.find(step => step.status === "running")?.detail ?? "服务端正在处理，无需重复提交。" : "先试玩，再告诉我们哪里还可以更好。每次修改都沿用这个作品。"}</p>{build?.status === "running" && build.steps.find(step => step.status === "running")?.excerpt ? <LiveExcerpt text={build.steps.find(step => step.status === "running")!.excerpt!} /> : null}</section>
-        {build?.status === "failed" && !archived && canStartBuild && <div className="production-retry" role="group" aria-label="重新制作">
-          <button type="button" className="workbench-button button-primary" disabled={busy} onClick={() => void onRetryBuild()}>{busy ? <LoaderCircle className="spin" size={16} aria-hidden="true" /> : <RotateCcw size={16} aria-hidden="true" />} 重新制作这个游戏</button>
-          <p>沿用已确认方案，已生成的图片直接复用不再付费；代码会针对失败原因重新生成并再次检查，会消耗文本模型用量。也可以先在下方写下修改意见再制作。</p>
-        </div>}
+        {build?.status === "failed" && <FailureDetails error={build.failureDetails?.length ? build.error : undefined} details={build.failureDetails} fallback="这份历史构建记录没有保存详细原因。请检查已保存的版本与修改计划后再决定下一步。" />}
+        {build?.status === "failed" && !archived && canStartBuild && canRetryFailure ? <div className="production-retry" role="group" aria-label="重新制作">
+          <button type="button" className="workbench-button button-primary" disabled={busy} onClick={() => void onRetryBuild()}>{busy ? <LoaderCircle className="spin" size={16} aria-hidden="true" /> : <RotateCcw size={16} aria-hidden="true" />} 手动重新制作</button>
+          <p>只在上方原因明确可重试时提供此操作；会开始一轮新的制作并使用模型用量。</p>
+        </div> : null}
         {(build?.status === "queued" || build?.status === "running") && <div className="review-actions"><button type="button" className="workbench-button button-secondary stop-action" disabled={stopping} onClick={() => void onCancelBuild()}>{stopping ? "正在停止…" : "停止制作"}</button></div>}
         <RevisionComposer key={project.id} projectId={project.id} disabled={archived || busy || sending || loading || stopping || !canStartBuild} working={build?.status === "running" || build?.status === "queued"} onConfirm={onSend} />
         {!!messages.filter(message => message.role === "user").length && <details className="workspace-details"><summary>最近的修改意见</summary><DirectionLog messages={messages.filter(message => message.role === "user").slice(-3)} /></details>}
@@ -604,7 +607,7 @@ export function ProjectStudio({ project, onProjectChange }: ProjectStudioProps) 
   const [sending, setSending] = useState(false);
   const [messages, setMessages] = useState<ProjectMessage[]>([]);
   const [versions, setVersions] = useState<ProjectVersion[]>([]);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<unknown>(null);
   const [stopping, setStopping] = useState(false);
   const cancellingBuild = useRef<string | null>(null);
 
@@ -619,7 +622,7 @@ export function ProjectStudio({ project, onProjectChange }: ProjectStudioProps) 
         setVersions(nextVersions);
       })
       .catch((caught) => {
-        if (active) setError(caught instanceof Error ? caught.message : "制作记录读取失败。");
+        if (active) setError(caught);
       })
       .finally(() => {
         if (active) setLoading(false);
@@ -642,7 +645,7 @@ export function ProjectStudio({ project, onProjectChange }: ProjectStudioProps) 
           setVersions(nextVersions);
         }
       } catch (caught) {
-        if (active) setError(caught instanceof Error ? caught.message : "构建状态更新失败。");
+        if (active) setError(caught);
       }
     }, 450);
     return () => {
@@ -662,7 +665,7 @@ export function ProjectStudio({ project, onProjectChange }: ProjectStudioProps) 
     try {
       setBuild(await startBuild(project.id));
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "重新制作没有开始，原记录保留。");
+      setError(caught);
     } finally {
       setBusy(false);
     }
@@ -682,7 +685,7 @@ export function ProjectStudio({ project, onProjectChange }: ProjectStudioProps) 
         setVersions(nextVersions);
       }
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "停止请求没有确认，请重试。");
+      setError(caught);
     } finally {
       cancellingBuild.current = null;
       setStopping(false);
@@ -697,7 +700,7 @@ export function ProjectStudio({ project, onProjectChange }: ProjectStudioProps) 
       onProjectChange(nextProject);
       setVersions(await getProjectVersions(project.id));
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "发布没有完成。");
+      setError(caught);
     } finally {
       setBusy(false);
     }
@@ -711,7 +714,7 @@ export function ProjectStudio({ project, onProjectChange }: ProjectStudioProps) 
       onProjectChange(nextProject);
       setVersions(await getProjectVersions(project.id));
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : t("studio.publishFailed"));
+      setError(caught);
     } finally {
       setBusy(false);
     }
@@ -728,7 +731,7 @@ export function ProjectStudio({ project, onProjectChange }: ProjectStudioProps) 
         window.location.assign("/projects#archive");
       }
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : t("projects.archiveFailed"));
+      setError(caught);
     } finally {
       setBusy(false);
     }
@@ -743,7 +746,7 @@ export function ProjectStudio({ project, onProjectChange }: ProjectStudioProps) 
       // confirmed paid request look unaccepted or encourage another submission.
       try { setMessages(await getProjectMessages(project.id)); } catch { /* Build receipt already confirmed. */ }
     } catch (caught) {
-      setError("修改接收状态尚未确认。请保留当前内容并刷新恢复记录，系统不会自动重复提交。");
+      setError(caught);
       throw caught;
     } finally {
       setSending(false);
@@ -799,8 +802,8 @@ export function ProjectStudio({ project, onProjectChange }: ProjectStudioProps) 
         </div>
       </header>
 
-      <div className={`workbench-error-slot ${error ? "has-error" : project.archivedAt ? "has-archive" : ""}`} role={error ? "alert" : project.archivedAt ? "status" : undefined}>
-        {error ? <><XCircle size={17} aria-hidden="true" />{error}</> : project.archivedAt ? <><Archive size={16} aria-hidden="true" />{t("studio.archivedNotice")}</> : null}
+      <div className={`workbench-error-slot ${error ? "has-error" : project.archivedAt ? "has-archive" : ""}`}>
+        {Boolean(error) ? <><XCircle size={17} aria-hidden="true" /><FailureDetails error={error} fallback="本次操作没有被确认。当前记录保持不变；请按错误提示决定是否手动重试。" /></> : project.archivedAt ? <><Archive size={16} aria-hidden="true" />{t("studio.archivedNotice")}</> : null}
       </div>
 
       <div className="workbench-body">

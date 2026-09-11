@@ -5,6 +5,7 @@ import { packAnimationSpriteSheet, replaceAnimationSpriteClip, splitSpriteSheetD
 import { createHash } from "node:crypto";
 import sharp from "sharp";
 import { cancellationSignal, withTimeoutSignal } from "./cancellation.js";
+import { BuildFailure, safeFailure } from "./build-failure.js";
 
 const DEFAULT_ENDPOINT = "https://api.openai.com/v1/images/generations";
 const DEFAULT_EDIT_ENDPOINT = "https://api.openai.com/v1/images/edits";
@@ -396,6 +397,7 @@ export class CoverArtGenerator {
       prompt: coverPrompt(project),
       size: providerSizeFor(output),
       output,
+      resource: { file: "assets/cover.png", label: "封面" },
       ...(sourceImage ? { sourceImage } : {}),
     });
   }
@@ -407,6 +409,7 @@ export class CoverArtGenerator {
       prompt: backgroundPrompt(project),
       size: providerSizeFor(output),
       output,
+      resource: { file: "assets/background.png", label: "局内背景" },
       ...(sourceImage ? { sourceImage } : {}),
     });
   }
@@ -419,6 +422,7 @@ export class CoverArtGenerator {
       size: providerSizeFor(output),
       transparent: true,
       output: { ...output, fit: "contain" },
+      resource: { file: spec.file, label: spec.role },
       ...(sourceImage ? { sourceImage } : {}),
     });
   }
@@ -435,7 +439,7 @@ export class CoverArtGenerator {
     options: { sourceSheet?: Buffer; clipId?: SpriteAnimationClipId } = {},
   ): Promise<DynamicArtEntry | null> {
     const apiKey = this.settings.getApiKey();
-    if (!apiKey) return null;
+    if (!apiKey) throw this.missingImageConfiguration([{ file: spec.file, label: spec.role }], "sprite-sheet-edit");
     if (!options.sourceSheet && options.clipId) throw new Error("替换单个动画动作时必须同时提供来源 Sprite Sheet 与 clipId。");
     const selectedClip = options.clipId ? spec.animation.clips.find(({ id }) => id === options.clipId) : undefined;
     if (options.clipId && !selectedClip) throw new Error(`Sprite Sheet 不包含动作 ${options.clipId}。`);
@@ -467,21 +471,25 @@ export class CoverArtGenerator {
       return { file: spec.file, role: spec.role, bytes: packed.bytes, prompt, image };
     } catch (error) {
       if (cancellationSignal()?.aborted) throw error;
-      const reason = error instanceof Error ? error.message : "生成失败。";
-      console.warn(`角色动画(${spec.role}) ${this.model} 生成失败：${reason}`);
-      return null;
+      throw new BuildFailure(`角色动画“${spec.role}”未生成可用图集。`, [safeFailure("asset", error, {
+        resource: { file: spec.file, label: spec.role }, operation: "sprite-sheet-edit",
+      })]);
     }
   }
 
   /** 成套块面:并行生成整套;任何一张失败返回空数组(整套弃用,保持模板套装完整)。 */
   async generateSpriteSet(project: ProjectDetail, outputs: Readonly<Record<string, ImageOutputConstraint>> = {}, sourceImages: Readonly<Record<string, Buffer>> = {}): Promise<DynamicArtEntry[]> {
-    if (!this.settings.getApiKey()) return [];
     const plan = spriteSetPlanFor(project.spec.template);
     if (!plan) return [];
-    const results = await Promise.all(plan.entries.map(async (spec) => {
+    if (!this.settings.getApiKey()) throw this.missingImageConfiguration(plan.entries.map(({ file, role }) => ({ file, label: role })), "image-generation");
+    const settled = await Promise.allSettled(plan.entries.map(async (spec) => {
       const bytes = await this.generateRoleBitmap(project, spec, plan.anchor, outputs[spec.file], sourceImages[spec.file]);
       return bytes ? { file: spec.file, role: spec.role, bytes, prompt: roleBitmapPrompt(project, spec, plan.anchor), image: generatedImageDelivery(bytes) ?? undefined } : null;
     }));
+    if (cancellationSignal()?.aborted) throw cancellationSignal()!.reason;
+    const failures = settled.flatMap(result => result.status === "rejected" ? result.reason instanceof BuildFailure ? result.reason.details : [safeFailure("asset", result.reason, { operation: "sprite-set-generation" })] : []);
+    if (failures.length) throw new BuildFailure("成套资源未完整生成，已停止制作并保留来源版本。", failures);
+    const results = settled.map(result => result.status === "fulfilled" ? result.value : null);
     if (results.some((entry) => entry === null)) {
       console.warn(`成套块面生成不完整(${results.filter(Boolean).length}/${plan.entries.length}),整套弃用以保持风格一致。`);
       return [];
@@ -508,7 +516,10 @@ export class CoverArtGenerator {
         if (missingReferences.length) throw new Error(`部分资源替换缺少已校验的来源图片：${missingReferences.join("、")}；已停止制作，不会退回无参考重画。`);
       }
     }
-    if (!this.settings.getApiKey()) return [];
+    if (!this.settings.getApiKey()) {
+      const planned = completePlan.filter(({ file }) => !selectedFiles || selectedFiles.has(file));
+      throw this.missingImageConfiguration(planned.map(({ file, role }) => ({ file, label: role })), "image-generation");
+    }
     const selected = (file: string) => !selectedFiles || selectedFiles.has(file);
     const jobs: Array<Promise<DynamicArtEntry | null>> = [
       ...(selected("assets/background.png") ? [this.generateBackground(project, outputs["assets/background.png"], sourceImages["assets/background.png"]).then((bytes) => bytes
@@ -521,19 +532,41 @@ export class CoverArtGenerator {
     ];
     // 蓝图声明的局内主体必须真的生成；只进入计划而不生成会让每一次生成游戏的资源步骤必定中断。
     const blueprintSet = blueprintSpriteSet(project);
-    const [singles, spriteSet, blueprintSprites] = await Promise.all([
-      Promise.all(jobs),
+    const groups = await Promise.allSettled([
+      Promise.allSettled(jobs).then(results => {
+        if (cancellationSignal()?.aborted) throw cancellationSignal()!.reason;
+        const failures = results.flatMap(result => result.status === "rejected" ? result.reason instanceof BuildFailure ? result.reason.details : [safeFailure("asset", result.reason, { operation: "asset-generation" })] : []);
+        if (failures.length) throw new BuildFailure("部分必需局内资源未生成，已停止制作并保留来源版本。", failures);
+        return results.map(result => result.status === "fulfilled" ? result.value : null);
+      }),
       spriteSetPlanFor(project.spec.template)?.entries.some(({ file }) => selected(file))
         ? this.generateSpriteSet(project, outputs, sourceImages)
         : Promise.resolve([]),
       blueprintSet
-        ? Promise.all(blueprintSet.entries.filter(({ file }) => selected(file)).map(async (spec) => {
+        ? Promise.allSettled(blueprintSet.entries.filter(({ file }) => selected(file)).map(async (spec) => {
             if (spec.animation) return this.generateAnimationSpriteSheet(project, spec as RoleArtSpec & { animation: SpriteSheetAnimation }, sourceImages[spec.file] ? { sourceSheet: sourceImages[spec.file] } : {});
             const bytes = await this.generateRoleBitmap(project, spec, blueprintSet.anchor, outputs[spec.file], sourceImages[spec.file]);
             return bytes ? { file: spec.file, role: spec.role, bytes, prompt: roleBitmapPrompt(project, spec, blueprintSet.anchor), image: generatedImageDelivery(bytes) ?? undefined } : null;
-          }))
+          })).then(results => {
+            if (cancellationSignal()?.aborted) throw cancellationSignal()!.reason;
+            const failures = results.flatMap(result => result.status === "rejected"
+              ? result.reason instanceof BuildFailure ? result.reason.details : [safeFailure("asset", result.reason, { operation: "asset-generation" })]
+              : []);
+            if (failures.length) throw new BuildFailure("部分必需局内资源未生成，已停止制作并保留来源版本。", failures);
+            return results.map(result => result.status === "fulfilled" ? result.value : null);
+          })
         : Promise.resolve([]),
     ]);
+    // All concurrently-started groups must settle so their independent required
+    // resource failures remain available to the build record. Cancellation wins.
+    if (cancellationSignal()?.aborted) throw cancellationSignal()!.reason;
+    const failures = groups.flatMap(result => result.status === "rejected"
+      ? result.reason instanceof BuildFailure
+        ? result.reason.details
+        : [safeFailure("asset", result.reason, { operation: "asset-generation" })]
+      : []);
+    if (failures.length) throw new BuildFailure("部分必需局内资源未生成，已停止制作并保留来源版本。", failures);
+    const [singles, spriteSet, blueprintSprites] = groups.map(result => result.status === "fulfilled" ? result.value : []) as [Array<DynamicArtEntry | null>, DynamicArtEntry[], Array<DynamicArtEntry | null>];
     // 顺序必须与 dynamicArtPlan 一致：图像检查点按下标比对计划与产物。
     return [
       ...singles.filter((entry): entry is DynamicArtEntry => entry !== null),
@@ -548,9 +581,9 @@ export class CoverArtGenerator {
     }
   }
 
-  private async tryImage(label: string, request: { prompt: string; size: ImageSize; transparent?: boolean; output: ImageOutputConstraint; sourceImage?: Buffer }): Promise<Buffer | null> {
+  private async tryImage(label: string, request: { prompt: string; size: ImageSize; transparent?: boolean; output: ImageOutputConstraint; sourceImage?: Buffer; resource: { file: string; label: string } }): Promise<Buffer | null> {
     const apiKey = this.settings.getApiKey();
-    if (!apiKey) return null;
+    if (!apiKey) throw this.missingImageConfiguration([request.resource], request.sourceImage ? "image-edit" : "image-generation");
     try {
       const providerBytes = await this.requestImage(request, apiKey);
       const adapted = await adaptGeneratedPng(providerBytes, request.output);
@@ -560,10 +593,12 @@ export class CoverArtGenerator {
       return adapted.bytes;
     } catch (error) {
       if (cancellationSignal()?.aborted) throw error;
-      const reason = error instanceof Error ? error.message : "生成失败。";
-      console.warn(`${label} ${this.model} 生成失败：${reason}`);
-      return null;
+      throw new BuildFailure(`${label}未生成可用图片。`, [safeFailure("asset", error, { resource: request.resource, operation: request.sourceImage ? "image-edit" : "image-generation" })]);
     }
+  }
+
+  private missingImageConfiguration(resources: Array<{ file: string; label: string }>, operation: string): BuildFailure {
+    return new BuildFailure("图像服务未配置，未发起生成请求。", resources.map((resource) => safeFailure("asset", new Error("图像服务未配置。"), { resource, operation })));
   }
 
   private async requestImage(request: { prompt: string; size: ImageSize; transparent?: boolean; sourceImage?: Buffer }, apiKey: string): Promise<Buffer> {
@@ -608,9 +643,14 @@ export class CoverArtGenerator {
           body,
         });
         if (!response.ok) {
-          const retryable = response.status === 429 || response.status >= 500;
-          const detail = (await response.text().catch(() => "")).slice(0, 200);
-          const error = new Error(`生图接口返回 ${response.status}。${detail}`);
+          // Inspect the provider body only to distinguish quota from temporary rate limiting;
+          // it may contain request data, so never copy it into an Error, build, or response.
+          const body = (await response.text().catch(() => "")).toLowerCase();
+          const quota = response.status === 429 && /insufficient_quota|quota|余额|额度不足/.test(body);
+          const error = Object.assign(new Error(quota ? "图像服务额度不足，未自动重试。" : `生图接口返回 ${response.status}。`), {
+            failureMeta: { attempt, httpStatus: response.status, requestId: response.headers.get("x-request-id") ?? response.headers.get("openai-request-id") ?? undefined },
+          });
+          const retryable = !quota && (response.status === 429 || response.status >= 500);
           if (retryable && attempt < MAX_ATTEMPTS) {
             lastError = error;
             continue;
@@ -621,7 +661,7 @@ export class CoverArtGenerator {
       } catch (error) {
         if (cancellationSignal()?.aborted) throw error;
         if (error instanceof Error && error.name === "AbortError") {
-          lastError = new Error(`生图接口在 ${this.timeoutMs}ms 内没有响应。`);
+          lastError = Object.assign(new Error(`生图接口在 ${this.timeoutMs}ms 内没有响应。`), { failureMeta: { attempt } });
           if (attempt < MAX_ATTEMPTS) continue;
           throw lastError;
         }

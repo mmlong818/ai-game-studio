@@ -3,6 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { beforeEach, expect, it, vi } from "vitest";
 import { RevisionComposer } from "./RevisionComposer";
 import { planProjectRevision } from "./api";
+import { StudioApiError } from "./failure";
 
 vi.mock("./project-revision", () => ({ pendingRevision: () => null }));
 vi.mock("./api", () => ({ planProjectRevision: vi.fn() }));
@@ -102,8 +103,9 @@ it("确认尚未返回时双击只发一次，失败后保留已选计划和文�
   await screen.findByText("已识别的修改项");
   await user.dblClick(screen.getByRole("button", { name: "确认修改，制作新版" }));
   expect(onConfirm).toHaveBeenCalledTimes(1);
-  reject(new Error("lost response"));
-  expect(await screen.findByRole("alert")).toHaveTextContent("lost response");
+  reject(new StudioApiError("修改请求连接中断。", [{ stage: "planning", category: "network", code: "REVISION_NETWORK", message: "修改请求连接中断。", nextStep: "确认连接恢复后，保留当前选择并再次明确提交。", retryable: true }]));
+  expect(await screen.findByRole("alert")).toHaveTextContent("修改请求连接中断");
+  expect(screen.getByRole("alert")).toHaveTextContent("保留当前选择并再次明确提交");
   expect(screen.getByRole("textbox")).toHaveValue(plannedRevision.revisionPlan.content);
 });
 

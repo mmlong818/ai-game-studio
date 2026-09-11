@@ -7,25 +7,25 @@ import { OpenAISettings, OPENAI_IMAGE_MODEL, OPENAI_TEXT_MODEL, supportsLowReaso
 
 const validKey = "sk-test_1234567890abcdef";
 
-test("模型设置只公开 GPT-5.6 与 GPT Image 2", () => {
+test("模型设置只公开固定的 Terra 与 GPT Image 2.5 Sunburst", () => {
   const settings = new OpenAISettings(null);
   assert.deepEqual(settings.status(), {
     provider: "openai",
     configured: false,
     source: null,
     models: { text: OPENAI_TEXT_MODEL, image: OPENAI_IMAGE_MODEL },
-    textRouting: { planner: "gpt-5.6", executor: "gpt-5.6", reviewer: "gpt-5.6", mode: "same-model", reason: "catalog-unavailable" },
+    textRouting: { planner: "gpt-5.6-terra", executor: "gpt-5.6-terra", reviewer: "gpt-5.6-terra", mode: "same-model", reason: "provider-fixed" },
   });
-  assert.equal(OPENAI_TEXT_MODEL, "gpt-5.6");
-  assert.equal(OPENAI_IMAGE_MODEL, "gpt-image-2");
-  assert.deepEqual(settings.textRequestOptions(), { model: "gpt-5.6", reasoning_effort: "low" });
+  assert.equal(OPENAI_TEXT_MODEL, "gpt-5.6-terra");
+  assert.equal(OPENAI_IMAGE_MODEL, "gpt-image-2.5-sunburst");
+  assert.deepEqual(settings.textRequestOptions(), { model: "gpt-5.6-terra", reasoning_effort: "low" });
 });
 
-test("Claude CLI 文本设置显式省略 OpenAI 推理参数", () => {
+test("已退役的客户端模型选择不能覆盖固定生产模型", async () => {
   const settings = new OpenAISettings(validKey);
-  settings.useClaudeCliText("opus");
-  assert.deepEqual(settings.textRequestOptions(), { model: "claude-cli:opus" });
-  assert.deepEqual(settings.status().textRouting, { planner: "claude-cli:opus", executor: "claude-cli:opus", reviewer: "claude-cli:opus", mode: "same-model", reason: "provider-fixed" });
+  await settings.save({ models: { text: "gpt-6-astra", image: "gpt-image-3" } });
+  assert.deepEqual(settings.status().models, { text: "gpt-5.6-terra", image: "gpt-image-2.5-sunburst" });
+  for (const role of ["planner", "executor", "reviewer"] as const) assert.deepEqual(settings.textRequestOptions(role), { model: "gpt-5.6-terra", reasoning_effort: "low" });
 });
 
 test("低推理强度仅对明确核验的稳定模型启用", () => {
@@ -48,8 +48,8 @@ test("会话密钥不会出现在返回状态中，并可安全清除", () => {
     provider: "openai",
     configured: false,
     source: null,
-    models: { text: "gpt-5.6", image: "gpt-image-2" },
-    textRouting: { planner: "gpt-5.6", executor: "gpt-5.6", reviewer: "gpt-5.6", mode: "same-model", reason: "catalog-unavailable" },
+    models: { text: "gpt-5.6-terra", image: "gpt-image-2.5-sunburst" },
+    textRouting: { planner: "gpt-5.6-terra", executor: "gpt-5.6-terra", reviewer: "gpt-5.6-terra", mode: "same-model", reason: "provider-fixed" },
   });
 });
 

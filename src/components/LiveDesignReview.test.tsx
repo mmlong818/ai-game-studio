@@ -6,6 +6,7 @@ import { INITIAL_DRAFT } from "../domain/storage";
 import { createDesignProfile } from "../shared/contracts";
 import { generateDesignPreview } from "../web/api";
 import { clearDesignPreviewCache } from "../domain/designPreviewCache";
+import { StudioApiError } from "../web/failure";
 vi.mock("../web/api", () => ({ generateDesignPreview: vi.fn() }));
 const draft = { ...INITIAL_DRAFT, creationMode: "mechanic-composition" as const, newGameBrief: "太空里驾驶小船收集水晶并躲避陨石" };
 const profile = { ...createDesignProfile("puzzle", "standard"), playerFantasy: "驾驶小船穿越水晶星带" };
@@ -62,10 +63,11 @@ it("已有游戏方案明确限制在所选范围并保留原玩法操作", asyn
   );
 });
 
-it("失败不回退固定方案，用户可以重新生成", async () => {
-  vi.mocked(generateDesignPreview).mockRejectedValueOnce(new Error("实时服务不可用")).mockResolvedValue(profile);
+it("失败不回退固定方案，显示安全原因后用户可以重新生成", async () => {
+  vi.mocked(generateDesignPreview).mockRejectedValueOnce(new StudioApiError("方案服务连接超时。", [{ stage: "design", category: "timeout", code: "DESIGN_TIMEOUT", message: "方案服务连接超时。", nextStep: "确认服务恢复后，手动重新生成方案。", retryable: true }])).mockResolvedValue(profile);
   render(<LiveDesignReview draft={draft} onBack={vi.fn()} onConfirm={vi.fn()} />);
-  expect(await screen.findByRole("alert", {}, { timeout: 3000 })).toHaveTextContent("实时服务不可用");
+  expect(await screen.findByRole("alert", {}, { timeout: 3000 })).toHaveTextContent("方案服务连接超时");
+  expect(screen.getByRole("alert")).toHaveTextContent("确认服务恢复后，手动重新生成方案");
   expect(screen.getByRole("button", { name: "确认方案，开始制作" })).toBeDisabled();
   await userEvent.click(screen.getByRole("button", { name: "重新生成方案" }));
   await waitFor(() => expect(screen.getByRole("button", { name: "确认方案，开始制作" })).toBeEnabled(), { timeout: 3000 });

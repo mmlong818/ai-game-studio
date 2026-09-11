@@ -59,7 +59,7 @@ test("确认关卡计划同时进入生成指令与交付清单", async () => {
     fetchImpl: async (_url, init) => {
       const body = JSON.parse(String(init?.body));
       assert.equal(body.reasoning_effort, "low");
-      assert.equal(body.model, "gpt-5.6-sol");
+      assert.equal(body.model, "gpt-5.6-terra");
       assert.equal(body.response_format.json_schema.strict, true);
       const prompt = body.messages[0].content;
       assert.match(prompt, /7 个可选择关卡/);

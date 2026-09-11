@@ -31,6 +31,7 @@ import { readReusableGeneratedArt } from "./generated-art-reuse.js";
 import { blueprintSpriteFiles, spriteSheetAnimationSchema, type SpriteSheetAnimation } from "../shared/generated-blueprint.js";
 import { readReusableRuleAudit, safeContractRules, sha256, writeRuleFidelity } from "./rule-audit-checkpoint.js";
 import { runWithCancellation, throwIfCancellationRequested } from "./cancellation.js";
+import { BuildFailure, safeFailure } from "./build-failure.js";
 
 const variationRehearsalTemplates: readonly VariationRehearsalTemplate[] = ["signal-hunt", "tetris", "breakout", "snake", "space-shooter", "merge-2048", "klotski", "puzzle", "block-place", "polyomino-fit", "region-logic", "mahjong-roguelite"];
 const failureAssistanceTemplates: readonly FailureAssistanceTemplate[] = ["tetris", "breakout", "snake", "space-shooter", ...variationRehearsalTemplates];
@@ -675,12 +676,14 @@ export class BuildOrchestrator {
         checks: qualityChecks,
       });
     } catch (error) {
-      const message = error instanceof Error ? error.message : "构建任务失败。";
       if (signal.aborted || (error instanceof Error && error.name === "AbortError")) {
         await this.repository.cancelBuild(buildId).catch(() => {});
       } else {
         console.error(`构建 ${buildId} 失败：`, error);
-        await this.repository.failBuild(buildId, Math.min(sequence, 5), message);
+        const stage = (['planning', 'design', 'asset', 'code', 'validation', 'browser'][Math.min(sequence, 5)] ?? 'unknown') as Parameters<typeof safeFailure>[0];
+        const details = error instanceof BuildFailure ? error.details : [safeFailure(stage, error)];
+        const message = error instanceof BuildFailure ? error.message : details[0]!.message;
+        await this.repository.failBuild(buildId, Math.min(sequence, 5), message, details);
       }
     }
   }

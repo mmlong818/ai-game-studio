@@ -186,6 +186,8 @@ test("Orchestrator 从已复制来源读取目标 PNG 并只把该字节传给�
     }
     assert.equal(failed.status, "failed");
     assert.match(failed.error ?? "", /参考编辑未完整返回目标/);
+    assert.equal(failed.failureDetails?.[0]?.stage, "asset");
+    assert.equal(failed.failureDetails?.[0]?.retryable, false);
     assert.equal((await repository.listVersions(project.id)).length, versionsBeforeFailure, "失败 edit 不得发布新版本");
   } finally {
     rmSync(artifactRoot, { recursive: true, force: true });

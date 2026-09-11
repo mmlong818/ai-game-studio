@@ -218,6 +218,7 @@ type BuildRow = {
   completed_at: DateValue | null;
   version_id: string | null;
   error_message: string | null;
+  failure_details_json: string | Build["failureDetails"] | null;
   revision_scope: import("../shared/contracts.js").RenovationScope | null;
   revision_plan_json: string | RevisionPlan | null;
   asset_clip_id: import("../shared/generated-blueprint.js").SpriteAnimationClipId | null;
@@ -537,6 +538,7 @@ function toBuild(row: BuildRow, steps: BuildStepRow[], gameOrigin: string): Buil
     versionId: row.version_id,
     previewUrl: row.version_id ? `${origin}/version/${row.version_id}/` : null,
     error: row.error_message,
+    failureDetails: row.failure_details_json ? (typeof row.failure_details_json === "string" ? JSON.parse(row.failure_details_json) : row.failure_details_json) : null,
     revisionScope: row.revision_scope ?? null,
     revisionPlan: row.revision_plan_json ? (typeof row.revision_plan_json === "string" ? JSON.parse(row.revision_plan_json) : row.revision_plan_json) : null,
     assetClipId: row.asset_clip_id ?? null,
@@ -776,8 +778,8 @@ export class StudioRepository {
           [message, now, id],
         );
         await transaction.query(
-          "UPDATE builds SET status = 'failed', error_message = $1, completed_at = $2 WHERE id = $3",
-          [message, now, id],
+          "UPDATE builds SET status = 'failed', error_message = $1, failure_details_json = $2, completed_at = $3 WHERE id = $4",
+          [message, JSON.stringify([{ stage: "unknown", category: "unknown", code: "SERVICE_RESTART", message, nextStep: "确认服务已恢复后，再由你明确重新制作。", retryable: true }]), now, id],
         );
       }
     });
@@ -1821,7 +1823,7 @@ export class StudioRepository {
     const now = new Date().toISOString();
     await this.database.transaction(async (transaction) => {
       const cancelled = await transaction.query(
-        "UPDATE builds SET status = 'cancelled', error_message = NULL, completed_at = $1 WHERE id = $2 AND status IN ('queued', 'running')",
+        "UPDATE builds SET status = 'cancelled', error_message = NULL, failure_details_json = NULL, completed_at = $1 WHERE id = $2 AND status IN ('queued', 'running')",
         [now, buildId],
       );
       if (cancelled.rowCount === 1) {
@@ -1834,7 +1836,7 @@ export class StudioRepository {
     return this.buildById(buildId);
   }
 
-  async failBuild(buildId: string, sequence: number, message: string) {
+  async failBuild(buildId: string, sequence: number, message: string, failureDetails: Build["failureDetails"] = null) {
     const now = new Date().toISOString();
     await this.database.transaction(async (transaction) => {
       await transaction.query(
@@ -1842,8 +1844,8 @@ export class StudioRepository {
         [message, now, buildId, sequence],
       );
       await transaction.query(
-        "UPDATE builds SET status = 'failed', error_message = $1, completed_at = $2 WHERE id = $3 AND status IN ('queued', 'running')",
-        [message, now, buildId],
+        "UPDATE builds SET status = 'failed', error_message = $1, failure_details_json = $2, completed_at = $3 WHERE id = $4 AND status IN ('queued', 'running')",
+        [message, failureDetails ? JSON.stringify(failureDetails) : null, now, buildId],
       );
     });
   }
@@ -1890,7 +1892,7 @@ export class StudioRepository {
           [project.id],
         );
         const completedBuild = await transaction.query(
-          "UPDATE builds SET status = 'succeeded', version_id = $1, error_message = NULL, completed_at = $2 WHERE id = $1 AND status = 'running'",
+          "UPDATE builds SET status = 'succeeded', version_id = $1, error_message = NULL, failure_details_json = NULL, completed_at = $2 WHERE id = $1 AND status = 'running'",
           [buildId, now],
         );
         if (completedBuild.rowCount !== 1) throw new Error("构建已停止或已进入终态，迟到的验收结果不会生成版本。");

@@ -96,7 +96,7 @@ const snakeIdea = "小青蛇在苏州园林里吃桂花糕越长越长，撞到�
 
 const snakeAnalysis: IdeaAnalysis = {
   source: "llm",
-  model: "gpt-5.6",
+  model: "gpt-5.6-terra",
   template: "snake",
   confidence: 0.93,
   dimensions: "2d",
@@ -362,7 +362,7 @@ test("意见落实审计:逐条返回判定并保留原意见文本;失败时返
   ] }))) as typeof fetch);
   const generator = new DesignContractGenerator(routedSettings, {
     fetchImpl: async (_url, init) => {
-      assert.equal(JSON.parse(String(init?.body)).model, "gpt-6-astra");
+      assert.equal(JSON.parse(String(init?.body)).model, "gpt-5.6-terra");
       return llmResponse(auditAnswer);
     },
   });
@@ -403,7 +403,7 @@ test("规则正确性审计:规则清单=核心循环+胜负,逐条判定并保�
   ] }))) as typeof fetch);
   const generator = new DesignContractGenerator(routedSettings, {
     fetchImpl: async (_url, init) => {
-      assert.equal(JSON.parse(String(init?.body)).model, "gpt-6-astra");
+      assert.equal(JSON.parse(String(init?.body)).model, "gpt-5.6-terra");
       return llmResponse(auditAnswer);
     },
   });

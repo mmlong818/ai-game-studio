@@ -5,8 +5,9 @@ import { fetchModelCatalog } from "./openai-model-catalog.js";
 import type { OpenAIModelCatalog } from "../shared/contracts.js";
 import type { OpenAISettingsStatus } from "../shared/contracts.js";
 
-export const OPENAI_TEXT_MODEL = "gpt-5.6" as const;
-export const OPENAI_IMAGE_MODEL = "gpt-image-2" as const;
+/** Platform production models are deliberately fixed; user sessions may only change the Key. */
+export const OPENAI_TEXT_MODEL = "gpt-5.6-terra" as const;
+export const OPENAI_IMAGE_MODEL = "gpt-image-2.5-sunburst" as const;
 
 const LOW_REASONING_TEXT_MODELS = new Set([
   "gpt-5.2",
@@ -58,7 +59,6 @@ function readKeyFile(keyFilePath: string): string | null {
 }
 
 export class OpenAISettings {
-  private models = { text: String(OPENAI_TEXT_MODEL), image: String(OPENAI_IMAGE_MODEL) };
   private catalogCache: { fingerprint: string; expires: number; catalog: OpenAIModelCatalog } | null = null;
   private sessionKey: string | null = null;
   private readonly fileKey: string | null;
@@ -69,37 +69,8 @@ export class OpenAISettings {
     this.fileKey = keyFilePath ? readKeyFile(keyFilePath) : null;
   }
 
-  private textProvider: { kind: "claude-cli"; model: string } | null = null;
-
-  /** 文本调用改走本机 Claude CLI；文本模型选择被固定，图片模型与 Key 逻辑不变。 */
-  useClaudeCliText(model: string) {
-    this.textProvider = { kind: "claude-cli", model };
-    this.catalogCache = null;
-  }
-
   private textRouting(): NonNullable<OpenAISettingsStatus["textRouting"]> {
-    const planner = this.textProvider ? `claude-cli:${this.textProvider.model}` : this.models.text;
-    if (this.textProvider) return { planner, executor: planner, reviewer: planner, mode: "same-model", reason: "provider-fixed" };
-    const key = this.getApiKey();
-    const fingerprint = key ? createHash("sha256").update(key).digest("hex") : null;
-    // `expires` only controls when /models may be refreshed. The successfully
-    // discovered role snapshot must stay stable throughout a long production;
-    // it is invalidated by a key/provider change or replaced by a successful refresh.
-    if (!fingerprint || this.catalogCache?.fingerprint !== fingerprint) {
-      return { planner, executor: planner, reviewer: planner, mode: "same-model", reason: "catalog-unavailable" };
-    }
-    const available = new Set(this.catalogCache.catalog.text.map(model => model.id));
-    if (!available.has(planner)) {
-      return { planner, executor: planner, reviewer: planner, mode: "same-model", reason: "planner-unavailable" };
-    }
-    const candidates = planner === "gpt-6-astra"
-      ? ["gpt-5.6-sol", "gpt-5.6", "gpt-5.6-terra"]
-      : planner === "gpt-5.6" || planner === "gpt-5.6-sol"
-        ? ["gpt-5.6-terra"]
-        : [];
-    const executor = candidates.find(model => available.has(model));
-    if (!executor) return { planner, executor: planner, reviewer: planner, mode: "same-model", reason: "no-qualified-executor" };
-    return { planner, executor, reviewer: planner, mode: "split", reason: "catalog-route" };
+    return { planner: OPENAI_TEXT_MODEL, executor: OPENAI_TEXT_MODEL, reviewer: OPENAI_TEXT_MODEL, mode: "same-model", reason: "provider-fixed" };
   }
 
   status(): OpenAISettingsStatus {
@@ -107,8 +78,7 @@ export class OpenAISettings {
       provider: "openai",
       configured: Boolean(this.sessionKey ?? this.fileKey ?? this.environmentKey),
       source: this.sessionKey ? "session" : this.fileKey ? "file" : this.environmentKey ? "environment" : null,
-      models: { ...this.models, ...(this.textProvider ? { text: `claude-cli:${this.textProvider.model}` } : {}) },
-      ...(this.textProvider ? { textProvider: { ...this.textProvider } } : {}),
+      models: { text: OPENAI_TEXT_MODEL, image: OPENAI_IMAGE_MODEL },
       textRouting: this.textRouting(),
     };
   }
@@ -122,7 +92,6 @@ export class OpenAISettings {
 
   clearSessionKey(): OpenAISettingsStatus {
     this.sessionKey = null;
-    this.models = { text: OPENAI_TEXT_MODEL, image: OPENAI_IMAGE_MODEL };
     this.catalogCache = null;
     return this.status();
   }
@@ -132,14 +101,8 @@ export class OpenAISettings {
   }
 
   /** Provider-aware options shared by native OpenAI text requests. */
-  textRequestOptions(role: TextRole = "planner"): OpenAITextRequestOptions {
-    const routing = this.textRouting();
-    if (routing.reason === "planner-unavailable") {
-      throw new Error(`当前已选文本模型 ${routing.planner} 已不在此 API Key 的最新模型目录中，请重新选择并保存模型。`);
-    }
-    const model = routing[role];
-    if (this.textProvider) return { model };
-    return supportsLowReasoningEffort(model) ? { model, reasoning_effort: "low" } : { model };
+  textRequestOptions(_role: TextRole = "planner"): OpenAITextRequestOptions {
+    return { model: OPENAI_TEXT_MODEL, reasoning_effort: "low" };
   }
 
   async listModels(input: unknown = {}, fetcher?: typeof fetch): Promise<OpenAIModelCatalog> {
@@ -154,14 +117,12 @@ export class OpenAISettings {
   }
 
   async save(input: unknown, fetcher?: typeof fetch): Promise<OpenAISettingsStatus> {
+    // Accept the retired `models` member for old clients, but never apply it.
     const draft = z.object({ apiKey: z.string().optional(), models: z.object({ text: z.string(), image: z.string() }).optional() }).parse(input);
-    const catalog = await this.listModels(draft, fetcher);
-    const selected = draft.models ?? catalog.recommended;
-    if (!this.textProvider && (!selected.text || !catalog.text.some(m => m.id === selected.text))) throw new Error("没有可用的文本模型，请重新获取列表。");
-    if (!selected.image || !catalog.image.some(m => m.id === selected.image)) throw new Error("没有可用的图像模型，请检查账号权限。");
-    // Commit only after both roles are validated; preview never changes active settings.
+    // The connection form saves only a Key. Model catalog data and retired client
+    // selections cannot change the fixed production pair.
+    void fetcher;
     if (draft.apiKey?.trim()) this.sessionKey = openAIKeyInputSchema.parse(draft).apiKey;
-    this.models = { text: this.textProvider ? this.models.text : selected.text ?? this.models.text, image: selected.image };
     return this.status();
   }
 }

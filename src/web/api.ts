@@ -22,6 +22,7 @@ import {
 } from "../shared/contracts";
 import type { SpriteAnimationClipId } from "../shared/generated-blueprint";
 import { streamLines } from "../shared/stream-lines";
+import { StudioApiError, apiFailureFallback, type FailureDetail } from "./failure";
 import type { DesignKnowledgeReviewReport } from "../server/design-knowledge-review";
 import type { GameplayRadarView, GameplaySignal } from "../shared/game-design-knowledge/gameplay-radar";
 import type { MECHANIC_ATLAS_SUMMARY, searchMechanicAtlas } from "../shared/game-design-knowledge/mechanic-atlas";
@@ -64,6 +65,24 @@ function accessToken(): string | null {
   }
 }
 
+function safeFailureDetails(payload: unknown): FailureDetail[] {
+  if (!payload || typeof payload !== "object") return [];
+  const record = payload as { failure?: unknown; failureDetails?: unknown };
+  const candidates = [record.failure, ...(Array.isArray(record.failureDetails) ? record.failureDetails : [])];
+  return candidates.filter((value): value is FailureDetail => value != null && typeof value === "object"
+    && typeof (value as FailureDetail).stage === "string" && typeof (value as FailureDetail).category === "string"
+    && typeof (value as FailureDetail).code === "string" && typeof (value as FailureDetail).message === "string"
+    && typeof (value as FailureDetail).nextStep === "string" && typeof (value as FailureDetail).retryable === "boolean");
+}
+
+function serviceConnectionFailure(stage: FailureDetail["stage"] = "unknown") {
+  const detail: FailureDetail = {
+    stage, category: "network", code: "LOCAL_SERVICE_UNREACHABLE",
+    message: "无法连接本机制作服务。", nextStep: "确认本机制作服务已启动且网络可用后，手动重试。", retryable: true,
+  };
+  return new StudioApiError(detail.message, [detail]);
+}
+
 async function apiRequest(path: string, init?: RequestInit) {
   const token = accessToken();
   let response: Response;
@@ -77,20 +96,20 @@ async function apiRequest(path: string, init?: RequestInit) {
       },
     });
   } catch {
-    throw new Error("无法连接本地制作服务，请确认服务已经启动。");
+    throw serviceConnectionFailure();
   }
   const raw = await response.text();
-  let payload: { error?: string; issues?: Array<{ message: string }>; [key: string]: unknown } = {};
+  let payload: { failure?: unknown; failureDetails?: unknown; [key: string]: unknown } = {};
   if (raw) {
     try { payload = JSON.parse(raw) as typeof payload; }
     catch {
-      if (!response.ok) throw new Error("本地制作服务暂时不可用，请稍后重试。");
+      if (!response.ok) throw new StudioApiError(apiFailureFallback(response.status));
       throw new Error("本地制作服务返回了无法识别的数据。");
     }
   }
   if (!response.ok) {
-    const issue = payload.issues?.[0]?.message;
-    throw new Error(issue ?? payload.error ?? (response.status >= 500 ? "本地制作服务暂时不可用，请稍后重试。" : "请求没有完成，请稍后重试。"));
+    const details = safeFailureDetails(payload);
+    throw new StudioApiError(details[0]?.message ?? apiFailureFallback(response.status), details);
   }
   return payload;
 }
@@ -164,7 +183,7 @@ export async function createProject(input: ProjectInput): Promise<ProjectDetail>
   return projectDetailSchema.parse(payload.project);
 }
 
-export type ProductionJob = { id: string; status: "queued" | "creating" | "building" | "succeeded" | "failed" | "cancelled"; error: string | null; events?: { title: string; createdAt: string }[] };
+export type ProductionJob = { id: string; status: "queued" | "creating" | "building" | "succeeded" | "failed" | "cancelled"; error: string | null; failureDetails?: Build["failureDetails"]; events?: { title: string; createdAt: string }[] };
 export async function submitProduction(input: ProjectInput): Promise<ProductionJob> {
   const payload = await apiRequest("/api/production-jobs", { method: "POST", body: JSON.stringify(input) });
   return payload.job as ProductionJob;
@@ -186,16 +205,26 @@ export async function cancelProduction(id: string): Promise<ProductionJob> {
 
 export async function watchProductionJob(id: string, signal: AbortSignal, onUpdate: (job: ProductionJob, build: Build | null) => void) {
   const token = accessToken();
-  const response = await fetch("/api/production-jobs/" + encodeURIComponent(id) + "/stream", {
-    signal, headers: token ? { Authorization: "Bearer " + token } : {},
-  });
-  if (!response.ok || !response.body) throw new Error("无法连接制作进度流。");
+  let response: Response;
+  try {
+    response = await fetch("/api/production-jobs/" + encodeURIComponent(id) + "/stream", {
+      signal, headers: token ? { Authorization: "Bearer " + token } : {},
+    });
+  } catch (error) {
+    if (signal.aborted) throw error;
+    throw serviceConnectionFailure();
+  }
+  if (!response.ok || !response.body) throw new StudioApiError(apiFailureFallback(response.status));
   let terminal = false;
   for await (const line of streamLines(response.body)) {
     if (!line.trim()) continue;
     const event = JSON.parse(line);
     if (event.type === "heartbeat") continue;
-    if (event.error || !event.job) throw new Error(event.error ?? "任务不存在。");
+    if (event.error || !event.job) {
+      const details = Array.isArray(event.failureDetails) ? event.failureDetails : event.failure ? [event.failure] : [];
+      const safe = details.filter((value: unknown): value is FailureDetail => value != null && typeof value === "object" && typeof (value as FailureDetail).message === "string" && typeof (value as FailureDetail).nextStep === "string" && typeof (value as FailureDetail).retryable === "boolean");
+      throw new StudioApiError(safe[0]?.message ?? "制作进度流未返回可用状态。", safe);
+    }
     const build = event.build ? buildSchema.parse(event.build) : null;
     onUpdate(event.job, build);
     terminal = event.job.status === "succeeded" || event.job.status === "failed" || event.job.status === "cancelled" || build?.status === "succeeded" || build?.status === "failed" || build?.status === "cancelled";
@@ -215,13 +244,20 @@ export type DesignPreviewPhase = "submitted" | "receiving" | "checking";
 export async function generateDesignPreview(input: ProjectInput, signal?: AbortSignal, onDelta?: (text: string) => void, onReset?: () => void, onStatus?: (phase: DesignPreviewPhase) => void) {
   if (onDelta) {
     const token = accessToken();
-    const response = await fetch("/api/design-preview", {
-      method: "POST", signal, body: JSON.stringify(input),
-      headers: { "Content-Type": "application/json", Accept: "application/x-ndjson", ...(token ? { Authorization: "Bearer " + token } : {}) },
-    });
+    let response: Response;
+    try {
+      response = await fetch("/api/design-preview", {
+        method: "POST", signal, body: JSON.stringify(input),
+        headers: { "Content-Type": "application/json", Accept: "application/x-ndjson", ...(token ? { Authorization: "Bearer " + token } : {}) },
+      });
+    } catch (error) {
+      if (signal?.aborted) throw error;
+      throw serviceConnectionFailure("design");
+    }
     if (!response.ok) {
       const failure = await response.json().catch(() => ({}));
-      throw new Error(failure.error ?? "无法开始流式方案生成。");
+      const details = safeFailureDetails(failure);
+      throw new StudioApiError(details[0]?.message ?? apiFailureFallback(response.status), details);
     }
     if (!response.body) throw new Error("服务端未返回输出流。");
     for await (const line of streamLines(response.body)) {
@@ -230,13 +266,16 @@ export async function generateDesignPreview(input: ProjectInput, signal?: AbortS
       if (event.type === "status" && (event.phase === "submitted" || event.phase === "receiving" || event.phase === "checking")) onStatus?.(event.phase);
       if (event.type === "delta" && typeof event.text === "string") onDelta(event.text);
       if (event.type === "reset") onReset?.();
-      if (event.type === "error") throw new Error(event.error);
+      if (event.type === "error") {
+        const details = safeFailureDetails(event);
+        throw new StudioApiError(details[0]?.message ?? "方案生成中断，未收到可用结果。", details);
+      }
       if (event.type === "done") return gameDesignProfileSchema.parse(event.profile);
     }
-    throw new Error("输出连接中断，方案尚未完成。");
+    throw new StudioApiError("输出连接中断，方案尚未完成。");
   }
   const result = await apiRequest("/api/design-preview", { method: "POST", body: JSON.stringify(input), signal });
-  if (result.source !== "llm") throw new Error("未获得实时模型方案。");
+  if (result.source !== "llm") throw new StudioApiError("未获得实时模型方案。");
   return gameDesignProfileSchema.parse(result.profile);
 }
 
