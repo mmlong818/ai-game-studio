@@ -113,6 +113,9 @@ export const revisionAssetCandidateSchema = revisionAssetTargetSchema.omit({ ani
   kind: z.enum(["role", "background", "cover", "other"]),
   recommended: z.boolean(),
   supportsAnimation: z.boolean(),
+  // Present only when this source asset is intentionally listed for disambiguation
+  // but lacks the runtime contract needed to play a Sprite Sheet.
+  animationUnavailableReason: z.string().trim().min(1).max(300).optional(),
 });
 export const revisionPlanResponseSchema = z.object({
   status: z.enum(["ready", "selection-required"]),

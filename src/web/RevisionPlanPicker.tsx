@@ -19,8 +19,13 @@ function assetTarget(candidate: RevisionAssetCandidate, animate: boolean): Revis
   };
 }
 
+function isSelectableCandidate(candidate: RevisionAssetCandidate | undefined, animationRequested: boolean): candidate is RevisionAssetCandidate {
+  return candidate !== undefined && (!animationRequested || candidate.supportsAnimation);
+}
+
 function planWithSelections(response: PlannedRevision, selectedOperationIds: Set<string>, selectedFiles: Set<string>): RevisionPlan | null {
   const hasAnimatedAssetOperation = response.revisionPlan.operations.some(operation => operation.scope === "assets" && operation.targets.some(target => target.animation === "sprite-sheet"));
+  const animationRequested = /精灵|动画|动图|sprite/i.test(response.revisionPlan.content);
   const candidates = new Map(response.candidates.map(candidate => [candidate.file, candidate]));
   const selectedOperations: RevisionOperation[] = [];
   response.revisionPlan.operations.forEach((operation, index) => {
@@ -28,7 +33,7 @@ function planWithSelections(response: PlannedRevision, selectedOperationIds: Set
     if (operation.scope !== "assets") { selectedOperations.push(operation); return; }
     const targets = [...selectedFiles]
       .map(file => candidates.get(file))
-      .filter((candidate): candidate is RevisionAssetCandidate => Boolean(candidate))
+      .filter(candidate => isSelectableCandidate(candidate, animationRequested))
       .map(candidate => assetTarget(candidate, hasAnimatedAssetOperation));
     if (targets.length) selectedOperations.push({ ...operation, targets });
   });
@@ -37,8 +42,8 @@ function planWithSelections(response: PlannedRevision, selectedOperationIds: Set
   if (response.status === "selection-required" && selectedFiles.size) {
     const targets = [...selectedFiles]
       .map(file => candidates.get(file))
-      .filter((candidate): candidate is RevisionAssetCandidate => Boolean(candidate))
-      .map(candidate => assetTarget(candidate, /精灵|动画|动图|sprite/i.test(response.revisionPlan.content)));
+      .filter(candidate => isSelectableCandidate(candidate, animationRequested))
+      .map(candidate => assetTarget(candidate, animationRequested));
     if (targets.length) selectedOperations.push({ scope: "assets", content: response.revisionPlan.content, targets });
   }
   return selectedOperations.length ? { ...response.revisionPlan, operations: selectedOperations } : null;
@@ -102,6 +107,9 @@ export function RevisionPlanPicker({
   };
   const plan = response ? planWithSelections(response, selectedOperationIds, selectedFiles) : null;
   const hasAssets = response?.revisionPlan.operations.some(operation => operation.scope === "assets") || response?.status === "selection-required";
+  const animationRequested = response ? /精灵|动画|动图|sprite/i.test(response.revisionPlan.content) : false;
+  const compatibleAnimationCandidates = response?.candidates.filter(candidate => isSelectableCandidate(candidate, animationRequested)) ?? [];
+  const noCompatibleAnimationTarget = response?.status === "selection-required" && animationRequested && compatibleAnimationCandidates.length === 0;
 
   return <section className="revision-plan-picker" aria-label="修改计划">
     <label htmlFor={inputId}>{inputLabel}</label>
@@ -111,7 +119,7 @@ export function RevisionPlanPicker({
       <button type="button" className="revision-primary primary-action" disabled={disabled || planning || content.trim().length < 2} onClick={() => void analyse()}>{planning ? "正在分析修改内容…" : "分析修改内容"}</button>
     </> : <>
       <section className="revision-plan-summary" aria-live="polite">
-        <header><strong>{response.status === "selection-required" ? "请选择要替换的资源" : "已识别的修改项"}</strong><button type="button" className="secondary-action" onClick={() => setResponse(null)} disabled={confirming}>返回修改文字</button></header>
+        <header><strong>{noCompatibleAnimationTarget ? "该资源不能升级为精灵动图" : response.status === "selection-required" ? "请选择要替换的资源" : "已识别的修改项"}</strong><button type="button" className="secondary-action" onClick={() => setResponse(null)} disabled={confirming}>返回修改文字</button></header>
         <p>选择需要保留的修改项。未选中的改动和资源不会进入本次制作。</p>
         <div className="revision-operation-list">
           {response.revisionPlan.operations.map((operation, index) => {
@@ -124,10 +132,13 @@ export function RevisionPlanPicker({
       </section>
       {(hasAssets || response.status === "selection-required") && <fieldset className="revision-resource-list" disabled={confirming}>
         <legend>这次替换哪些资源？</legend>
-        <p>已推荐全部角色；背景、封面和其他未推荐资源不会自动选择。</p>
-        {response.candidates.map(candidate => <label key={candidate.file}><input type="checkbox" checked={selectedFiles.has(candidate.file)} onChange={event => { const checked = event.currentTarget.checked; setSelectedFiles(current => { const next = new Set(current); if (checked) next.add(candidate.file); else next.delete(candidate.file); return next; }); }} /><span><strong>{candidate.label}{candidate.recommended ? "（推荐）" : ""}</strong><small>{candidate.kind === "role" ? candidate.supportsAnimation ? "角色 · 支持图集动画" : "角色" : candidate.kind === "background" ? "背景" : candidate.kind === "cover" ? "封面" : "其他资源"}</small></span></label>)}
+        <p>{animationRequested ? "这次请求可播放的精灵动图；只有已声明图集动画播放器的资源可以选择。" : "已推荐全部角色；背景、封面和其他未推荐资源不会自动选择。"}</p>
+        {response.candidates.map(candidate => {
+          const cannotSatisfyAnimation = animationRequested && !candidate.supportsAnimation;
+          return <label key={candidate.file}><input type="checkbox" checked={selectedFiles.has(candidate.file)} disabled={confirming || cannotSatisfyAnimation} onChange={event => { const checked = event.currentTarget.checked; setSelectedFiles(current => { const next = new Set(current); if (checked) next.add(candidate.file); else next.delete(candidate.file); return next; }); }} /><span><strong>{candidate.label}{candidate.recommended ? "（推荐）" : ""}</strong><small>{candidate.kind === "role" ? candidate.supportsAnimation ? "角色 · 支持图集动画" : "角色" : candidate.kind === "background" ? "背景" : candidate.kind === "cover" ? "封面" : "其他资源"}{cannotSatisfyAnimation && candidate.animationUnavailableReason ? ` · ${candidate.animationUnavailableReason}` : ""}</small></span></label>;
+        })}
       </fieldset>}
-      {response.status === "selection-required" && <p role="status">需要你明确选择资源后才能继续；不会自动选择背景或封面。</p>}
+      {response.status === "selection-required" && <p role="status">{noCompatibleAnimationTarget ? "当前作品没有可升级为精灵动图的资源。请返回修改文字，选择支持播放动画的角色，或改为静态卡面修改。" : "需要你明确选择资源后才能继续；不会自动选择背景或封面。"}</p>}
       <p className="revision-plan-confirmation">本次将提交 {plan?.operations.length ?? 0} 项修改，确认后才会制作一个新版本并使用模型用量。</p>
       <button type="button" className="revision-primary primary-action" disabled={disabled || confirming || !plan} onClick={() => void confirm()}>{confirming ? "正在提交…" : submitLabel}</button>
     </>}
