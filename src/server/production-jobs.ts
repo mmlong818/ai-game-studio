@@ -1,16 +1,18 @@
 import { randomUUID } from "node:crypto";
-import { projectInputSchema, type ProjectInput } from "../shared/contracts.js";
+import { projectInputSchema, type Build, type ProjectInput } from "../shared/contracts.js";
 import type { StudioDatabase } from "./database.js";
 import { runWithCancellation } from "./cancellation.js";
+import { safeFailure } from "./build-failure.js";
 
-export type ProductionJob = { id: string; status: "queued" | "creating" | "building" | "succeeded" | "failed" | "cancelled"; error: string | null; events?: { title: string; createdAt: string }[] };
+export type ProductionJob = { id: string; status: "queued" | "creating" | "building" | "succeeded" | "failed" | "cancelled"; error: string | null; failureDetails?: Build["failureDetails"]; events?: { title: string; createdAt: string }[] };
 export class ProductionJobs {
   private active = 0;
   private waiting: { id: string; input: ProjectInput }[] = [];
   private controllers = new Map<string, AbortController>();
   constructor(private db: StudioDatabase, private execute: (input: ProjectInput, report: (title: string) => Promise<void>, signal: AbortSignal) => Promise<void>) {}
   async initialize() {
-    await this.db.query("CREATE TABLE IF NOT EXISTS production_jobs (id TEXT PRIMARY KEY, input_json TEXT NOT NULL, status TEXT NOT NULL, error TEXT)");
+    await this.db.query("CREATE TABLE IF NOT EXISTS production_jobs (id TEXT PRIMARY KEY, input_json TEXT NOT NULL, status TEXT NOT NULL, error TEXT, failure_details_json TEXT)");
+    if (this.db.provider === "postgresql") await this.db.query("ALTER TABLE production_jobs ADD COLUMN IF NOT EXISTS failure_details_json TEXT");
     await this.db.query("CREATE TABLE IF NOT EXISTS production_job_events (id TEXT PRIMARY KEY, job_id TEXT NOT NULL, title TEXT NOT NULL, created_at TEXT NOT NULL)");
     // The API owns the database runtime lease before calling initialize. Only
     // queued receipts are safe to resume: creating may already have incurred cost.
@@ -28,10 +30,10 @@ export class ProductionJobs {
     if (this.waiting.length) setTimeout(() => this.drain(), 0);
   }
   async get(id: string): Promise<ProductionJob | null> {
-    const job = (await this.db.query<ProductionJob>("SELECT id, status, error FROM production_jobs WHERE id = $1", [id])).rows[0];
+    const job = (await this.db.query<ProductionJob & { failure_details_json?: string | null }>("SELECT id, status, error, failure_details_json FROM production_jobs WHERE id = $1", [id])).rows[0];
     if (!job) return null;
     const events = (await this.db.query<{ title: string; created_at: string }>("SELECT title, created_at FROM production_job_events WHERE job_id = $1 ORDER BY created_at, id", [id])).rows;
-    return { ...job, events: events.map(event => ({ title: event.title, createdAt: event.created_at })) };
+    return { id: job.id, status: job.status, error: job.error, failureDetails: job.failure_details_json ? JSON.parse(job.failure_details_json) : null, events: events.map(event => ({ title: event.title, createdAt: event.created_at })) };
   }
   async submit(raw: ProjectInput): Promise<ProductionJob> {
     const input = projectInputSchema.parse(raw);
@@ -63,7 +65,7 @@ export class ProductionJobs {
         return (await this.get(id))!;
       }
     }
-    await this.db.query("UPDATE production_jobs SET status = 'cancelled', error = NULL WHERE id = $1 AND status IN ('queued', 'creating', 'building')", [id]);
+    await this.db.query("UPDATE production_jobs SET status = 'cancelled', error = NULL, failure_details_json = NULL WHERE id = $1 AND status IN ('queued', 'creating', 'building')", [id]);
     this.controllers.get(id)?.abort(new DOMException("用户已停止制作。", "AbortError"));
     this.waiting = this.waiting.filter(item => item.id !== id);
     job = (await this.get(id))!;
@@ -107,8 +109,8 @@ export class ProductionJobs {
       controller.signal.throwIfAborted();
       await this.db.query("UPDATE production_jobs SET status = 'building' WHERE id = $1 AND status = 'creating'", [id]);
     } catch (reason) {
-      const error = reason instanceof Error ? reason.message : "项目创建失败。";
-      await this.db.query("UPDATE production_jobs SET status = 'failed', error = $2 WHERE id = $1 AND status IN ('queued', 'creating')", [id, error]).catch(() => {});
+      const detail = safeFailure("planning", reason);
+      await this.db.query("UPDATE production_jobs SET status = 'failed', error = $2, failure_details_json = $3 WHERE id = $1 AND status IN ('queued', 'creating')", [id, detail.message, JSON.stringify([detail])]).catch(() => {});
     } finally { this.controllers.delete(id); }
   }
 }

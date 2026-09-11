@@ -1,6 +1,7 @@
 import { useState } from "react";
 import type { RevisionAssetCandidate, RevisionAssetTarget, RevisionOperation, RevisionPlan } from "../shared/contracts";
 import { planProjectRevision } from "./api";
+import { FailureDetails } from "../components/FailureDetails";
 
 type PlannedRevision = Awaited<ReturnType<typeof planProjectRevision>>;
 
@@ -69,17 +70,17 @@ export function RevisionPlanPicker({
   const [selectedFiles, setSelectedFiles] = useState<Set<string>>(new Set());
   const [planning, setPlanning] = useState(false);
   const [confirming, setConfirming] = useState(false);
-  const [error, setError] = useState("");
+  const [error, setError] = useState<unknown>(null);
   const updateContent = (value: string) => {
     onContentChange(value);
     setResponse(null);
     setSelectedOperationIds(new Set());
     setSelectedFiles(new Set());
-    setError("");
+    setError(null);
   };
   const analyse = async () => {
     if (disabled || planning || content.trim().length < 2) return;
-    setPlanning(true); setError("");
+    setPlanning(true); setError(null);
     try {
       const next = await planProjectRevision(projectId, content.trim());
       setResponse(next);
@@ -87,16 +88,16 @@ export function RevisionPlanPicker({
       const recommended = next.recommendedTargetFiles.length ? next.recommendedTargetFiles : next.candidates.filter(candidate => candidate.recommended).map(candidate => candidate.file);
       setSelectedFiles(new Set(recommended));
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : "未能检查这次修改，请重试。");
+      setError(reason);
     } finally { setPlanning(false); }
   };
   const confirm = async () => {
     if (!response || confirming || disabled) return;
     const plan = planWithSelections(response, selectedOperationIds, selectedFiles);
     if (!plan) { setError("请至少保留一项要修改的内容，并为资源替换选择资源。"); return; }
-    setConfirming(true); setError("");
+    setConfirming(true); setError(null);
     try { await onConfirm(plan); }
-    catch (reason) { setError(reason instanceof Error ? reason.message : "修改请求尚未确认，请保留内容后重试。"); }
+    catch (reason) { setError(reason); }
     finally { setConfirming(false); }
   };
   const plan = response ? planWithSelections(response, selectedOperationIds, selectedFiles) : null;
@@ -130,6 +131,6 @@ export function RevisionPlanPicker({
       <p className="revision-plan-confirmation">本次将提交 {plan?.operations.length ?? 0} 项修改，确认后才会制作一个新版本并使用模型用量。</p>
       <button type="button" className="revision-primary primary-action" disabled={disabled || confirming || !plan} onClick={() => void confirm()}>{confirming ? "正在提交…" : submitLabel}</button>
     </>}
-    {error ? <p role="alert">{error}</p> : null}
+    {error ? <FailureDetails error={error} fallback="本次修改没有被确认。请保留当前文字和所选资源，按提示处理后再明确提交。" /> : null}
   </section>;
 }

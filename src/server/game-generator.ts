@@ -278,6 +278,7 @@ export class GameCodeGenerator {
     let lastError: unknown = null;
     for (let attempt = 1; attempt <= MAX_NETWORK_ATTEMPTS; attempt += 1) {
       const controller = new AbortController();
+      let failureMeta: { attempt: number; httpStatus?: number; requestId?: string } = { attempt };
       let timer: ReturnType<typeof setTimeout> | undefined;
       let receivedContent = false;
       const armTimeout = (delay: number) => {
@@ -306,10 +307,16 @@ export class GameCodeGenerator {
             },
           }),
         });
+        failureMeta = {
+          attempt,
+          httpStatus: response.status,
+          requestId: response.headers.get("x-request-id") ?? response.headers.get("openai-request-id") ?? undefined,
+        };
         if (!response.ok) {
-          const retryable = response.status === 429 || response.status >= 500;
-          const detail = (await response.text().catch(() => "")).slice(0, 200);
-          const error = new Error(`模型接口返回 ${response.status}。${detail}`);
+          const body = (await response.text().catch(() => "")).toLowerCase();
+          const quota = response.status === 429 && /insufficient_quota|quota|余额|额度不足/.test(body);
+          const retryable = !quota && (response.status === 429 || response.status >= 500);
+          const error = new Error(quota ? "文本模型额度不足，未自动重试。" : `模型接口返回 ${response.status}。`);
           if (retryable && attempt < MAX_NETWORK_ATTEMPTS) {
             lastError = error;
             continue;
@@ -352,18 +359,19 @@ export class GameCodeGenerator {
         return answerSchema.parse(JSON.parse(message.content));
       } catch (error) {
         if (cancellationSignal()?.aborted) throw error;
+        const annotated = error instanceof Error ? Object.assign(error, { failureMeta }) : error;
         if (error instanceof Error && error.name === "AbortError") {
           lastError = receivedContent
-            ? new Error(`模型代码流连续 ${this.streamIdleTimeoutMs}ms 没有返回有效内容。`)
-            : new Error(`模型接口在 ${this.timeoutMs}ms 内没有返回首段有效内容。`);
+            ? Object.assign(new Error(`模型代码流连续 ${this.streamIdleTimeoutMs}ms 没有返回有效内容。`), { failureMeta })
+            : Object.assign(new Error(`模型接口在 ${this.timeoutMs}ms 内没有返回首段有效内容。`), { failureMeta });
           if (attempt < MAX_NETWORK_ATTEMPTS) continue;
           throw lastError;
         }
-        if (attempt < MAX_NETWORK_ATTEMPTS && error instanceof TypeError) {
-          lastError = error;
+        if (attempt < MAX_NETWORK_ATTEMPTS && annotated instanceof TypeError) {
+          lastError = annotated;
           continue;
         }
-        throw error;
+        throw annotated;
       } finally {
         if (timer) clearTimeout(timer);
       }

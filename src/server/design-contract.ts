@@ -461,6 +461,7 @@ export class DesignContractGenerator {
     for (let attempt = 1; attempt <= attempts; attempt += 1) {
       signal?.throwIfAborted();
       const controller = new AbortController();
+      let failureMeta: { attempt: number; httpStatus?: number; requestId?: string } = { attempt };
       const streaming = Boolean(onDelta);
       let timeoutKind: "response" | "first-content" | "idle" = streaming ? "first-content" : "response";
       let timer: ReturnType<typeof setTimeout> | null = null;
@@ -490,10 +491,16 @@ export class DesignContractGenerator {
             },
           }),
         });
+        failureMeta = {
+          attempt,
+          httpStatus: response.status,
+          requestId: response.headers.get("x-request-id") ?? response.headers.get("openai-request-id") ?? undefined,
+        };
         if (!response.ok) {
-          const retryable = response.status === 429 || response.status >= 500;
-          const detail = (await response.text().catch(() => "")).slice(0, 200);
-          const error = new Error(`模型接口返回 ${response.status}。${detail}`);
+          const body = (await response.text().catch(() => "")).toLowerCase();
+          const quota = response.status === 429 && /insufficient_quota|quota|余额|额度不足/.test(body);
+          const retryable = !quota && (response.status === 429 || response.status >= 500);
+          const error = new Error(quota ? "文本模型额度不足，未自动重试。" : `模型接口返回 ${response.status}。`);
           if (retryable && attempt < attempts) {
             lastError = error;
             continue;
@@ -541,20 +548,21 @@ export class DesignContractGenerator {
         return message.content;
       } catch (error) {
         signal?.throwIfAborted();
+        const annotated = error instanceof Error ? Object.assign(error, { failureMeta }) : error;
         if (controller.signal.aborted) {
-          lastError = new Error(timeoutKind === "idle"
+          lastError = Object.assign(new Error(timeoutKind === "idle"
             ? `模型流式输出连续 ${this.streamIdleTimeoutMs}ms 未产生有效内容。`
             : timeoutKind === "first-content"
               ? `模型流式输出在 ${this.streamFirstContentTimeoutMs}ms 内未收到首段有效内容。`
-              : `模型接口在 ${this.timeoutMs}ms 内没有响应。`);
+              : `模型接口在 ${this.timeoutMs}ms 内没有响应。`), { failureMeta });
           if (attempt < attempts) continue;
           throw lastError;
         }
-        if (attempt < attempts && error instanceof TypeError) {
-          lastError = error;
+        if (attempt < attempts && annotated instanceof TypeError) {
+          lastError = annotated;
           continue;
         }
-        throw error;
+        throw annotated;
       } finally {
         if (timer) clearTimeout(timer);
       }

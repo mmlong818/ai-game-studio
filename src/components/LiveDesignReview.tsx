@@ -8,6 +8,7 @@ import { WaitingActivity } from "./WaitingActivity";
 import { streamingDesignText } from "../domain/streamingDesignText";
 import type { DesignPreviewPhase } from "../web/api";
 import { renovationScopeInstruction } from "../shared/renovation-scope";
+import { FailureDetails } from "./FailureDetails";
 
 export function LiveDesignReview({ draft, revisionPlan, onBack, onConfirm }: { draft: StudioDraft; revisionPlan?: RevisionPlan; onBack: () => void; onConfirm: (text: string, profile: GameDesignProfile, originalIdea: string) => void }) {
   const template = draft.creationMode === "template-remix" ? getTemplate(draft.templateId) : undefined;
@@ -25,7 +26,7 @@ export function LiveDesignReview({ draft, revisionPlan, onBack, onConfirm }: { d
     ...(template && draft.sourceGame ? revisionPlan ? { sourceProjectId: draft.sourceGame.id, revisionPlan } : { sourceProjectId: draft.sourceGame.id, revisionScope: draft.revisionScope } : {}),
   };
   const [result, setResult] = useState<{ key: string; profile: GameDesignProfile } | null>(null);
-  const [failure, setFailure] = useState<{ key: string; message: string } | null>(null);
+  const [failure, setFailure] = useState<{ key: string; reason: unknown } | null>(null);
   const [attempt, setAttempt] = useState(0);
   const [partial, setPartial] = useState({ key: "", text: "" });
   const [phase, setPhase] = useState<{ key: string; value: DesignPreviewPhase; startedAt: string | null }>({ key: "", value: "submitted", startedAt: null });
@@ -33,7 +34,7 @@ export function LiveDesignReview({ draft, revisionPlan, onBack, onConfirm }: { d
   const [stoppingKey, setStoppingKey] = useState<string | null>(null);
   const key = JSON.stringify([previewInput, attempt]);
   const profile = result?.key === key ? result.profile : null;
-  const error = failure?.key === key ? failure.message : "";
+  const error = failure?.key === key ? failure.reason : null;
   const stopped = stoppedKey === key;
   const stopping = stoppingKey === key;
   useEffect(() => {
@@ -49,7 +50,7 @@ export function LiveDesignReview({ draft, revisionPlan, onBack, onConfirm }: { d
         if (active) setResult({ key, profile: value });
       } catch (reason) {
         if (reason instanceof DOMException && reason.name === "AbortError") return;
-        if (active) setFailure({ key, message: reason instanceof Error ? reason.message : "实时分析失败，请重试。" });
+        if (active) setFailure({ key, reason });
       }
     }, 250);
     return () => { active = false; window.clearTimeout(timer); };
@@ -83,7 +84,7 @@ export function LiveDesignReview({ draft, revisionPlan, onBack, onConfirm }: { d
     {!profile && partial.key === key && partial.text && <section aria-label="正在生成的方案"><p>以下是模型正在生成的内容，尚未完成检查。</p><div className="streaming-design-text">{streamingDesignText(partial.text)}</div></section>}
     {stopping && <p className="flow-stopped" role="status">正在停止方案生成…</p>}
     {stopped && <p className="flow-stopped" role="status">已停止方案生成；不会继续接收或使用这次未完成的结果。</p>}
-    {error && <p role="alert">{error}</p>}
+    {Boolean(error) && <FailureDetails error={error} fallback="方案生成没有完成。请按上面的下一步处理后再手动重新生成；这次没有开始制作游戏。" />}
     {profile && <><span className="ready-stamp">方案草案 · 待制作验证</span><dl className="fact-list">{sections.filter(([title]) => ["玩家体验", "玩法取舍", "每局时长", "具体怎么玩", "怎样获胜", "关卡安排"].includes(title)).map(([title, text]) => <div key={title}><dt>{title}</dt><dd style={{ whiteSpace: "pre-line" }}>{text}</dd></div>)}</dl>
       <details><summary>查看完整玩法、教学与制作要求</summary><dl className="fact-list">{sections.filter(([title]) => !["玩家体验", "玩法取舍", "每局时长", "具体怎么玩", "怎样获胜", "关卡安排"].includes(title)).map(([title, text]) => <div key={title}><dt>{title}</dt><dd style={{ whiteSpace: "pre-line" }}>{text}</dd></div>)}</dl></details>
       <p>确认后将调用已配置的模型制作游戏代码和图片，并执行检查与有界修正，会产生额外模型用量。已有可复用资源会保留；本次不会自动发布。</p></>}

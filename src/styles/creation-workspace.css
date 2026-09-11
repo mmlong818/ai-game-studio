@@ -86,6 +86,15 @@ body:has(.studio-app) .app-header button { color: var(--text); background: var(-
 .studio-app .fact-list dd { font-size: 14px; font-weight: 400; line-height: 1.85; overflow-wrap: anywhere; }
 .studio-app .review-actions { border-color: var(--border); display: flex; flex-wrap: wrap; gap: 12px; padding-top: 24px; }
 .studio-app .review-actions .primary-action { margin-left: auto; width: auto; flex: 0 0 auto; }
+.failure-details { margin: 14px 0; padding: 13px 14px; border: 1px solid #bd563a; border-radius: 9px; background: color-mix(in srgb, #bd563a 8%, var(--surface, #fff)); color: var(--ink, #241810); }
+.failure-details > strong { display: block; margin-bottom: 8px; }
+.failure-details p { margin: 5px 0; }
+.failure-detail-list { display: grid; gap: 9px; }
+.failure-detail-list article { padding: 10px; border-radius: 7px; background: color-mix(in srgb, #fff 85%, #bd563a 15%); }
+.failure-detail-list header { display: flex; justify-content: space-between; gap: 8px; align-items: baseline; }
+.failure-detail-list header span { color: #8b341d; font-size: 13px; font-weight: 650; }
+.failure-object, .failure-detail-list small, .failure-legacy { color: var(--ink-muted, #665a52); font-size: 13px; }
+.failure-next { font-weight: 600; }
 .studio-app [role="alert"] { color: var(--danger); background: var(--danger-bg, #f9e7e4); padding: 16px; border-radius: 8px; line-height: 1.7; }
 .studio-app .review-main { margin-top: 24px; border: 1px solid var(--border); background: var(--surface-raised, #fff); box-shadow: none; }
 .studio-app .review-main p, .studio-app .review-main li { line-height: 1.8; overflow-wrap: anywhere; }

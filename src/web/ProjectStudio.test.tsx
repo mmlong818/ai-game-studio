@@ -65,4 +65,32 @@ describe("制作停止", () => {
     expect(await screen.findByText(/已停止后续制作/)).toBeInTheDocument();
     expect(screen.queryByText("游戏已准备好，先玩一局吧。")).not.toBeInTheDocument();
   });
+
+  it("恢复失败构建时明确历史详情缺失；混合可重试和不可重试原因不会提供直接重试", async () => {
+    vi.mocked(api.getLatestBuild).mockResolvedValue({
+      ...queuedBuild,
+      status: "failed",
+      error: "旧记录中的原始错误不应展示",
+      failureDetails: [
+        { stage: "asset", category: "network", code: "ASSET_NETWORK", message: "资源服务连接中断。", nextStep: "确认网络恢复后重新提交。", retryable: true },
+        { stage: "asset", category: "authentication", code: "IMAGE_AUTH", message: "图像服务没有接受当前凭据。", nextStep: "确认模型设置后重新分析。", retryable: false, resource: { file: "assets/hero.png", label: "主角" } },
+      ],
+    });
+    render(<PreferencesProvider><ProjectStudio project={project} onProjectChange={vi.fn()} /></PreferencesProvider>);
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent("资源服务连接中断");
+    expect(alert).toHaveTextContent("图像服务没有接受当前凭据");
+    expect(alert).toHaveTextContent("受影响资源：主角（assets/hero.png）");
+    expect(screen.queryByRole("button", { name: "手动重新制作" })).not.toBeInTheDocument();
+    expect(screen.queryByText("旧记录中的原始错误不应展示")).not.toBeInTheDocument();
+  });
+
+  it("旧失败记录没有详情时明确说明未记录，且不展示旧错误文本", async () => {
+    vi.mocked(api.getLatestBuild).mockResolvedValue({ ...queuedBuild, status: "failed", error: "untrusted legacy provider response", failureDetails: null });
+    render(<PreferencesProvider><ProjectStudio project={project} onProjectChange={vi.fn()} /></PreferencesProvider>);
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent("这份历史构建记录没有保存详细原因");
+    expect(alert).not.toHaveTextContent("untrusted legacy provider response");
+    expect(screen.queryByRole("button", { name: "手动重新制作" })).not.toBeInTheDocument();
+  });
 });

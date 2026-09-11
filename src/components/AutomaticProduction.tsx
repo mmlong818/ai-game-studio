@@ -7,6 +7,8 @@ import { gameTemplateSchema } from "../shared/contracts";
 import { submitProduction, getProductionJob, watchProductionJob, getProject, getLatestBuild, retryProduction, startBuild, cancelProduction, type ProductionJob } from "../web/api";
 import { LiveExcerpt, WaitingActivity } from "./WaitingActivity";
 import { BuildStageList } from "./BuildStageList";
+import { FailureDetails } from "./FailureDetails";
+import { failureDetailsFrom } from "../web/failure";
 
 const RECEIPTS_KEY = "studio-production-receipts-v1";
 const PENDING_KEY = "studio-pending-production-v1";
@@ -38,18 +40,13 @@ function playableFrameUrl(value?: string | null): string | null {
   } catch { return null; }
 }
 
-function ProductionError({ message }: { message: string }) {
-  const technical = /"(?:code|path|origin)"|stack trace|TypeError|expected string/i.test(message);
-  return <div><p role="alert">{technical ? "制作资料未通过检查，本次任务已停止。原记录已保留，不会自动重新提交或再次收费。" : message}</p>{technical && <details><summary>查看问题详情</summary><pre style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>{message}</pre></details>}</div>;
-}
-
 export function AutomaticProduction({ draft, confirmedPlan, confirmedDesignProfile, originalIdea, revisionPlan }: { draft: StudioDraft; confirmedPlan?: string; confirmedDesignProfile?: GameDesignProfile; originalIdea?: string; revisionPlan?: RevisionPlan }) {
   const [projectId, setProjectId] = useState(() => new URLSearchParams(location.search).get("production") ?? getPendingProductionId());
   const [build, setBuild] = useState<Build | null>(null);
   const [project, setProject] = useState<ProjectDetail | null>(null);
   const [job, setJob] = useState<ProductionJob | null>(null);
-  const [error, setError] = useState("");
-  const [readError, setReadError] = useState("");
+  const [error, setError] = useState<unknown>(null);
+  const [readError, setReadError] = useState<unknown>(null);
   const [busy, setBusy] = useState(!projectId);
   const [loaded, setLoaded] = useState(false);
   const [refresh, setRefresh] = useState(0);
@@ -59,7 +56,7 @@ export function AutomaticProduction({ draft, confirmedPlan, confirmedDesignProfi
   const streamController = useRef<AbortController | null>(null);
   const stopRequested = useRef<string | null>(null);
   const [stopping, setStopping] = useState(false);
-  const [stopError, setStopError] = useState("");
+  const [stopError, setStopError] = useState<unknown>(null);
   const preparing = job?.status === "queued" || job?.status === "creating";
   const working = preparing || build?.status === "queued" || build?.status === "running";
   const cancelled = job?.status === "cancelled" || build?.status === "cancelled";
@@ -69,7 +66,7 @@ export function AutomaticProduction({ draft, confirmedPlan, confirmedDesignProfi
     const timer = window.setTimeout(async () => {
       if (creating.current) return;
       if (!confirmedPlan) {
-        setBusy(false); setError("尚未确认实时生成的方案，请返回创作页生成并确认方案。"); return;
+        setBusy(false); setError("尚未确认方案。请返回创作页确认方案后，再明确开始制作。"); return;
       }
       creating.current = true;
       let savedProjectId: string | null = null;
@@ -100,7 +97,7 @@ export function AutomaticProduction({ draft, confirmedPlan, confirmedDesignProfi
       } catch (reason) {
         if (active) {
           if (savedProjectId) setProjectId(savedProjectId);
-          setError(reason instanceof Error ? reason.message : "项目创建未完成，未开始制作。");
+          setError(reason);
         }
       } finally { if (active) setBusy(false); }
     }, 0);
@@ -143,7 +140,7 @@ export function AutomaticProduction({ draft, confirmedPlan, confirmedDesignProfi
         if (!latest || latest.status === "queued" || latest.status === "running") timer = window.setTimeout(read, 1500);
       } catch (reason) {
         if (abort.signal.aborted) return;
-        if (active) { setReadError(reason instanceof Error ? reason.message : "读取制作记录失败。"); timer = window.setTimeout(read, 5000); }
+        if (active) { setReadError(reason); timer = window.setTimeout(read, 5000); }
       }
     };
     void read();
@@ -163,24 +160,24 @@ export function AutomaticProduction({ draft, confirmedPlan, confirmedDesignProfi
     return () => { active = false; };
   }, [detailProjectId, project?.id]);
   const [retrying, setRetrying] = useState(false);
-  const [retryError, setRetryError] = useState("");
+  const [retryError, setRetryError] = useState<unknown>(null);
   const retry = async () => {
     if (!projectId || retrying) return;
-    setRetrying(true); setRetryError("");
+    setRetrying(true); setRetryError(null);
     try {
       const next = await retryProduction(projectId);
       const url = new URL(location.href); url.searchParams.set("production", next.id);
       history.replaceState(null, "", url);
       setJob(next); setBuild(null); setLoaded(false); setProjectId(next.id); setRefresh(n => n + 1);
     } catch (reason) {
-      setRetryError(reason instanceof Error ? reason.message : "重新提交未成功，原记录保留。");
+      setRetryError(reason);
     } finally { setRetrying(false); }
   };
   const stop = async () => {
     const id = projectId ?? activeRequestId.current ?? getPendingProductionId();
     if (!id || stopping) return;
     stopRequested.current = id;
-    setStopping(true); setStopError("");
+    setStopping(true); setStopError(null);
     // Tear down the progress stream immediately, then wait for the durable server result.
     streamController.current?.abort();
     setRefresh(value => value + 1);
@@ -205,7 +202,7 @@ export function AutomaticProduction({ draft, confirmedPlan, confirmedDesignProfi
       }
     } catch (reason) {
       stopRequested.current = null;
-      setStopError(reason instanceof Error ? reason.message : "停止请求没有确认，请重试。");
+      setStopError(reason);
       setRefresh(value => value + 1);
     } finally {
       setStopping(false);
@@ -213,22 +210,24 @@ export function AutomaticProduction({ draft, confirmedPlan, confirmedDesignProfi
   };
   // 构建失败后的重试是用户的明确操作：沿用已确认方案与已生成的图片，重新走代码、验收与审核；平台自身从不自动重试付费调用。
   const [rebuilding, setRebuilding] = useState(false);
-  const [rebuildError, setRebuildError] = useState("");
+  const [rebuildError, setRebuildError] = useState<unknown>(null);
   const rebuild = async () => {
     const target = build?.projectId ?? projectId;
     if (!target || rebuilding) return;
-    setRebuilding(true); setRebuildError("");
+    setRebuilding(true); setRebuildError(null);
     try {
       const next = await startBuild(target);
       setBuild(next); setLoaded(true); setReadError("");
       setRefresh(n => n + 1);
     } catch (reason) {
-      setRebuildError(reason instanceof Error ? reason.message : "重新制作没有开始，原记录保留。");
+      setRebuildError(reason);
     } finally { setRebuilding(false); }
   };
   const step = build?.steps.find(item => item.status === "running");
   const previewUrl = playableFrameUrl(build?.previewUrl);
-  const label = stopping ? "正在停止制作" : cancelled ? "制作已停止" : error || job?.status === "failed" ? "本次制作未能开始" : readError ? "无法恢复制作记录" : busy ? "正在提交制作任务" : preparing ? (job?.events?.at(-1)?.title ?? "服务端已接收，等待开始处理") : working ? step?.title ?? "正在排队制作" : build?.status === "succeeded" ? "游戏制作已完成" : build?.status === "failed" ? "本次制作未完成" : loaded ? "项目已保存，尚未收到制作任务" : "正在恢复制作记录";
+  const failureDetails = build?.failureDetails ?? job?.failureDetails ?? failureDetailsFrom(error);
+  const canRetryFailure = Boolean(failureDetails?.length && failureDetails.every(detail => detail.retryable));
+  const label = stopping ? "正在停止制作" : cancelled ? "制作已停止" : error || job?.status === "failed" ? "本次制作未完成" : readError ? "无法恢复制作记录" : busy ? "正在提交制作任务" : preparing ? (job?.events?.at(-1)?.title ?? "服务端已接收，等待开始处理") : working ? step?.title ?? "正在排队制作" : build?.status === "succeeded" ? "游戏制作已完成" : build?.status === "failed" ? "本次制作未完成" : loaded ? "项目已保存，尚未收到制作任务" : "正在恢复制作记录";
   const succeeded = !cancelled && build?.status === "succeeded";
   const failed = build?.status === "failed" || job?.status === "failed" || Boolean(error);
   const workspaceProjectId = build?.projectId ?? projectId ?? "";
@@ -243,7 +242,7 @@ export function AutomaticProduction({ draft, confirmedPlan, confirmedDesignProfi
   const liveState = stopping ? "stopping" : cancelled ? "cancelled" : failed ? "failed" : succeeded ? "succeeded" : working || busy ? "running" : preparing ? "queued" : "idle";
   const liveStateLabel = stopping ? "正在停止" : cancelled ? "已停止" : failed ? "未完成" : succeeded ? "可试玩" : working || busy ? "制作中" : preparing ? "准备中" : "等待";
   const placeholderTitle = stopping ? "正在停止制作" : cancelled ? "本轮制作已停止" : failed ? "本次制作未完成" : working ? "游戏正在这里成形" : preparing || busy ? "正在准备制作" : loaded ? "等待制作任务" : "正在恢复制作记录";
-  const placeholderDetail = stopping ? "正在等待服务端确认，不会再接收这轮制作的进度。" : cancelled ? "已停止后续制作；已有成果和上一个成功版本仍可查看。" : failed ? "已有项目记录保留，右侧步骤里有停下的位置和原因，可以直接重新制作。" : working ? (step?.detail ?? "服务端正在处理，关闭页面也不会取消任务。") : preparing ? (job?.events?.at(-1)?.title ?? "服务端已接收，等待开始处理") : "制作完成后，游戏会直接出现在这里。";
+  const placeholderDetail = stopping ? "正在等待服务端确认，不会再接收这轮制作的进度。" : cancelled ? "已停止后续制作；已有成果和上一个成功版本仍可查看。" : failed ? "已有项目记录保留，右侧会说明停下的位置、原因和下一步。" : working ? (step?.detail ?? "服务端正在处理，关闭页面也不会取消任务。") : preparing ? (job?.events?.at(-1)?.title ?? "服务端已接收，等待开始处理") : "制作完成后，游戏会直接出现在这里。";
   return <main className="maker-workbench production-workbench" id="main-content" tabIndex={-1} aria-busy={busy || working}>
     <div className="workbench-body">
       <section className="workbench-preview" aria-label="游戏预览">
@@ -285,18 +284,18 @@ export function AutomaticProduction({ draft, confirmedPlan, confirmedDesignProfi
           </section>
           {succeeded && <nav className="completed-game-actions" aria-label="完成后的操作"><a href={`/projects/${encodeURIComponent(workspaceProjectId)}`}>继续完善这个游戏</a><a href="/projects">查看我的游戏</a></nav>}
           {(busy || working || !loaded) && !error && !readError && job?.status !== "failed" && <WaitingActivity startedAt={build?.startedAt ?? job?.events?.[0]?.createdAt} label={working ? "步骤正在推进，右侧与左侧会同步更新。" : "正在等待服务端响应，请稍候。"} />}
-          {job?.status === "failed" && <><ProductionError message={job.error ?? "制作未能开始"} /><p>此错误已保存，不会自动重新提交付费制作。</p>
-            {!build && <div className="review-actions"><button type="button" className="primary-action" disabled={retrying} onClick={retry}>{retrying ? "正在重新提交…" : "用同一方案重新制作"}</button><p>沿用你已确认的方案，不再重新策划；会开始一次新的制作并消耗模型用量。</p>{retryError && <p role="alert">{retryError}</p>}</div>}</>}
-          {error && <><ProductionError message={error} /><p>不会自动重试付费制作。</p></>}
-          {readError && <p role="alert">{readError} 正在尝试恢复连接，不会重新提交制作。</p>}
-          {stopError && <p role="alert">{stopError}</p>}
-          {build?.error && <ProductionError message={build.error} />}
-          {build?.status === "failed" && <div className="production-retry">
-            <button type="button" className="primary-action" disabled={rebuilding} onClick={rebuild}>{rebuilding ? "正在重新开始…" : "重新制作这个游戏"}</button>
-            <p>沿用你已确认的方案，已生成的图片直接复用不再付费；代码会针对上面的失败原因重新生成并再次检查，会消耗文本模型用量。平台不会替你自动重试。</p>
-            {rebuildError && <p role="alert">{rebuildError}</p>}
+          {job?.status === "failed" && <><FailureDetails error={job.failureDetails?.length ? job.error : undefined} details={job.failureDetails} fallback="这份历史制作记录没有保存详细原因。请查看下方当前步骤或重新分析修改需求。" /><p>此错误已保存，不会自动重新提交付费制作。</p>
+            {!build && canRetryFailure ? <div className="review-actions"><button type="button" className="primary-action" disabled={retrying} onClick={retry}>{retrying ? "正在重新提交…" : "手动重新制作"}</button><p>这会创建一轮新的制作并使用模型用量。</p>{Boolean(retryError) && <FailureDetails error={retryError} fallback="重新提交没有被服务端确认，原记录保持不变。" />}</div> : null}</>}
+          {Boolean(error) && <><FailureDetails error={error} fallback="制作请求没有被确认。当前没有自动重试或新的付费制作。" /><p>不会自动重试付费制作。</p></>}
+          {Boolean(readError) && <FailureDetails error={readError} fallback="无法读取制作记录；正在尝试恢复连接，不会重新提交制作。" />}
+          {Boolean(stopError) && <FailureDetails error={stopError} fallback="停止请求没有被服务端确认。可在确认服务连接后手动重试停止。" />}
+          {build?.status === "failed" && <FailureDetails error={build.failureDetails?.length ? build.error : undefined} details={build.failureDetails} fallback="这份历史构建记录没有保存详细原因。请查看失败步骤后再决定是否新开一轮。" />}
+          {build?.status === "failed" && canRetryFailure ? <div className="production-retry">
+            <button type="button" className="primary-action" disabled={rebuilding} onClick={rebuild}>{rebuilding ? "正在重新开始…" : "手动重新制作"}</button>
+            <p>这会新开一轮制作。平台不会自动重试；请先按上面的下一步处理不可重试的问题。</p>
+            {Boolean(rebuildError) && <FailureDetails error={rebuildError} fallback="重新制作没有被服务端确认，原记录保持不变。" />}
             <a href={`/projects/${encodeURIComponent(workspaceProjectId)}`}>查看已保存的项目与问题</a>
-          </div>}
+          </div> : null}
           {!!job?.events?.length && !build && <section className="production-lane" aria-label="项目准备过程">
             <header className="production-lane-heading"><h3>准备阶段</h3><output>{job.status === "failed" ? "已中断" : "进行中"}</output></header>
             <ol className="production-prep-events">{job.events.map((event, index) => <li key={index}><strong>{event.title}</strong><span>{index < job.events!.length - 1 || job.status === "building" ? "已进入下一阶段" : job.status === "failed" ? "此处中断" : "进行中"}</span></li>)}</ol>

@@ -1,86 +1,54 @@
-import { render, screen, fireEvent, waitFor, cleanup } from "@testing-library/react";
-import { beforeEach, afterEach, it, expect, vi } from "vitest";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { ModelSettingsButton } from "./ModelSettingsButton";
-import { getOpenAISettings, getOpenAIModels, saveOpenAIKey } from "./api";
-vi.mock("./api", () => ({ getOpenAISettings: vi.fn(), getOpenAIModels: vi.fn(), saveOpenAIKey: vi.fn(), clearOpenAIKey: vi.fn() }));
-vi.mock("./preferences", () => ({ usePreferences: () => ({ t: translate }) }));
-const translate = (key: string) => key;
-const status = {provider:"openai" as const,configured:false,source:null,models:{text:"gpt-5.6",image:"gpt-image-2"}};
-const catalog = {text:[{id:"gpt-5.10",created:2},{id:"gpt-5.9",created:1}],image:[{id:"gpt-image-3",created:2}],recommended:{text:"gpt-5.10",image:"gpt-image-3"}};
+import { getOpenAISettings, saveOpenAIKey } from "./api";
+
+vi.mock("./api", () => ({ getOpenAISettings: vi.fn(), saveOpenAIKey: vi.fn(), clearOpenAIKey: vi.fn() }));
+vi.mock("./preferences", () => ({ usePreferences: () => ({ t: (key: string) => key }) }));
+
+const fixedModels = { text: "gpt-5.6-terra", image: "gpt-image-2.5-sunburst" };
+const status = { provider: "openai" as const, configured: false, source: null, models: fixedModels };
+
 beforeEach(() => {
   vi.clearAllMocks();
   HTMLDialogElement.prototype.showModal = function () { this.setAttribute("open", ""); };
   HTMLDialogElement.prototype.close = function () { this.removeAttribute("open"); this.dispatchEvent(new Event("close")); };
   vi.mocked(getOpenAISettings).mockResolvedValue(status);
-  vi.mocked(getOpenAIModels).mockResolvedValue(catalog);
-  vi.mocked(saveOpenAIKey).mockResolvedValue({...status,configured:true,source:"session",models:{text:"gpt-5.9",image:"gpt-image-3"}});
+  vi.mocked(saveOpenAIKey).mockResolvedValue({ ...status, configured: true, source: "session", models: fixedModels });
 });
 afterEach(cleanup);
-it("首先展示连接输入，模型调整默认收起且不自动保存", async () => {
+
+async function open() {
+  render(<ModelSettingsButton />);
+  fireEvent.click(screen.getByRole("button", { name: "models.trigger" }));
+  await waitFor(() => expect(screen.getByLabelText("models.keyLabel")).toBeEnabled());
+}
+
+it("模型详情只读展示固定的 Terra 与 Sunburst，不提供选择控件", async () => {
   await open();
-  const options = screen.getByText("模型选择与连接详情（可选）").closest("details");
-  expect(options).not.toHaveAttribute("open");
-  expect(screen.getByText("尚未连接，请先填写 Key")).toBeVisible();
-  expect(screen.getByLabelText("models.keyLabel").compareDocumentPosition(options!)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
-  expect(saveOpenAIKey).not.toHaveBeenCalled();
-  fireEvent.click(screen.getByText("模型选择与连接详情（可选）"));
-  expect(options).toHaveAttribute("open");
-});
-async function open() { render(<ModelSettingsButton/>); fireEvent.click(screen.getByRole("button",{name:"models.trigger"})); await waitFor(()=>expect(screen.getByLabelText("models.keyLabel")).toBeEnabled()); }
-it("输入 Key 自动查询、预选推荐项，用户调整后一起保存", async()=>{
-  await open(); fireEvent.change(screen.getByLabelText("models.keyLabel"),{target:{value:"sk-test_1234567890abcdef"}});
-  await waitFor(()=>expect(screen.getByLabelText("文本 / 游戏设计")).toHaveValue("gpt-5.10"));
-  expect(getOpenAIModels).toHaveBeenCalledTimes(1);
-  fireEvent.change(screen.getByLabelText("文本 / 游戏设计"),{target:{value:"gpt-5.9"}});
-  fireEvent.click(screen.getByRole("button",{name:"models.save"}));
-  await waitFor(()=>expect(saveOpenAIKey).toHaveBeenCalledWith("sk-test_1234567890abcdef",{text:"gpt-5.9",image:"gpt-image-3"}));
-});
-it("无需等待自动查询按钮，直接保存交给后端完成默认选择", async()=>{
-  await open(); fireEvent.change(screen.getByLabelText("models.keyLabel"),{target:{value:"sk-test_1234567890abcdef"}});
-  fireEvent.click(screen.getByRole("button",{name:"models.save"}));
-  await waitFor(()=>expect(saveOpenAIKey).toHaveBeenCalledWith("sk-test_1234567890abcdef",undefined));
+  const details = screen.getByText("模型选择与连接详情").closest("details");
+  expect(details).not.toHaveAttribute("open");
+  fireEvent.click(screen.getByText("模型选择与连接详情"));
+  expect(screen.getByText("文本模型：gpt-5.6-terra")).toBeVisible();
+  expect(screen.getByText("图像模型：gpt-image-2.5-sunburst")).toBeVisible();
+  expect(screen.queryByRole("combobox")).not.toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "重新获取" })).not.toBeInTheDocument();
+  expect(screen.queryByText(/规划与验收：|代码生成：|Claude CLI|当前文本提供方固定使用同一模型/)).not.toBeInTheDocument();
 });
 
-it("换 Key 后忽略旧请求的迟到响应", async()=>{
-  let finishOld!: (value: typeof catalog) => void;
-  vi.mocked(getOpenAIModels).mockImplementationOnce(()=>new Promise(resolve=>{finishOld=resolve;}));
+it("保存只提交 Key，旧浏览器模型偏好不会随请求传给服务端", async () => {
   await open();
-  fireEvent.change(screen.getByLabelText("models.keyLabel"),{target:{value:"sk-first_1234567890abcdef"}});
-  await waitFor(()=>expect(getOpenAIModels).toHaveBeenCalledTimes(1));
-  fireEvent.change(screen.getByLabelText("models.keyLabel"),{target:{value:"sk-second_1234567890abcdef"}});
-  await waitFor(()=>expect(screen.getByLabelText("文本 / 游戏设计")).toHaveValue("gpt-5.10"));
-  finishOld({...catalog,text:[{id:"gpt-5.8",created:0}],recommended:{...catalog.recommended,text:"gpt-5.8"}});
-  await waitFor(()=>expect(screen.getByLabelText("文本 / 游戏设计")).toHaveValue("gpt-5.10"));
+  fireEvent.change(screen.getByLabelText("models.keyLabel"), { target: { value: "sk-test_1234567890abcdef" } });
+  fireEvent.submit(screen.getByLabelText("models.keyLabel").closest("form")!);
+  await waitFor(() => expect(saveOpenAIKey).toHaveBeenCalledExactlyOnceWith("sk-test_1234567890abcdef"));
+  expect(await screen.findByRole("status")).toHaveTextContent("密钥已保存；首次制作时固定使用 gpt-5.6-terra 和 gpt-image-2.5-sunburst");
 });
 
-it("只展示服务器确认的模型分工，未保存选择不预告生效", async()=>{
-  const configured = {...status, configured:true, source:"session" as const, models:{text:"gpt-5.9",image:"gpt-image-3"}, textRouting:{
-    planner:"gpt-5.9", executor:"gpt-5.9", reviewer:"gpt-5.9", mode:"same-model" as const, reason:"catalog-unavailable" as const,
-  }};
-  vi.mocked(getOpenAISettings).mockResolvedValue(configured);
-  vi.mocked(saveOpenAIKey).mockResolvedValue({...configured, models:{text:"gpt-5.10",image:"gpt-image-3"}, textRouting:{
-    planner:"gpt-5.10", executor:"gpt-5.9", reviewer:"gpt-5.10", mode:"split", reason:"catalog-route",
-  }});
+it("即使旧服务状态报告其他模型，页面仍只声明固定生产模型", async () => {
+  vi.mocked(getOpenAISettings).mockResolvedValue({ ...status, configured: true, source: "session", models: { text: "gpt-5.10", image: "gpt-image-3" } });
   await open();
-  expect(screen.getByLabelText("当前文本模型分工")).toHaveTextContent("规划与验收：gpt-5.9；代码生成：gpt-5.9");
-  expect(screen.getByLabelText("当前文本模型分工")).toHaveTextContent("尚无当前密钥的已验证模型目录，暂用同一模型");
-  await waitFor(()=>expect(screen.getByLabelText("文本 / 游戏设计")).toHaveValue("gpt-5.9"));
-  fireEvent.change(screen.getByLabelText("文本 / 游戏设计"),{target:{value:"gpt-5.10"}});
-  expect(screen.getByLabelText("当前文本模型分工")).toHaveTextContent("规划与验收：gpt-5.9；代码生成：gpt-5.9");
-  fireEvent.click(screen.getByRole("button",{name:"models.save"}));
-  await waitFor(()=>expect(screen.getByLabelText("当前文本模型分工")).toHaveTextContent("规划与验收：gpt-5.10；代码生成：gpt-5.9"));
-  expect(screen.getByLabelText("当前文本模型分工")).toHaveTextContent("已按模型能力分工");
-});
-
-it("刷新目录后读取服务器最新路由，并提示已选规划模型失效", async()=>{
-  const initial = {...status, configured:true, source:"session" as const, models:{text:"gpt-5.9",image:"gpt-image-3"}, textRouting:{
-    planner:"gpt-5.9", executor:"gpt-5.9", reviewer:"gpt-5.9", mode:"same-model" as const, reason:"catalog-unavailable" as const,
-  }};
-  const refreshed = {...initial, textRouting:{...initial.textRouting, reason:"planner-unavailable" as const}};
-  vi.mocked(getOpenAISettings).mockResolvedValueOnce(initial).mockResolvedValue(refreshed);
-  await open();
-  expect(screen.getByLabelText("当前文本模型分工")).toHaveTextContent("尚无当前密钥的已验证模型目录");
-  await waitFor(()=>expect(screen.getByLabelText("当前文本模型分工")).toHaveTextContent("所选规划模型已不可用，请重新选择并保存"));
-  expect(getOpenAIModels).toHaveBeenCalledTimes(1);
-  expect(getOpenAISettings).toHaveBeenCalledTimes(2);
+  fireEvent.click(screen.getByText("模型选择与连接详情"));
+  expect(screen.getByText("文本模型：gpt-5.6-terra")).toBeInTheDocument();
+  expect(screen.getByText("图像模型：gpt-image-2.5-sunburst")).toBeInTheDocument();
+  expect(screen.queryByText("gpt-5.10")).not.toBeInTheDocument();
 });

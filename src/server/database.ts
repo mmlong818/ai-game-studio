@@ -102,12 +102,14 @@ const postgresSchema = `
     completed_at TIMESTAMPTZ,
     version_id TEXT,
     error_message TEXT,
+    failure_details_json TEXT,
     revision_scope TEXT CHECK (revision_scope IN ('gameplay', 'assets', 'visual-style')),
     revision_plan_json TEXT,
     asset_clip_id TEXT CHECK (asset_clip_id IN ('idle', 'run', 'hit', 'effect'))
   );
 
   ALTER TABLE builds ADD COLUMN IF NOT EXISTS revision_scope TEXT;
+  ALTER TABLE builds ADD COLUMN IF NOT EXISTS failure_details_json TEXT;
   ALTER TABLE builds ADD COLUMN IF NOT EXISTS revision_plan_json TEXT;
   ALTER TABLE builds ADD COLUMN IF NOT EXISTS asset_clip_id TEXT;
 
@@ -332,7 +334,7 @@ const sqliteSchema = `
   CREATE TABLE builds (
     id TEXT PRIMARY KEY, project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
     status TEXT NOT NULL, runtime_target TEXT NOT NULL, created_at TEXT NOT NULL, started_at TEXT,
-    completed_at TEXT, version_id TEXT, error_message TEXT, revision_scope TEXT, revision_plan_json TEXT, asset_clip_id TEXT
+    completed_at TEXT, version_id TEXT, error_message TEXT, failure_details_json TEXT, revision_scope TEXT, revision_plan_json TEXT, asset_clip_id TEXT
   );
   CREATE TABLE build_steps (
     id TEXT PRIMARY KEY, build_id TEXT NOT NULL REFERENCES builds(id) ON DELETE CASCADE,

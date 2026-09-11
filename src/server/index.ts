@@ -22,7 +22,6 @@ import { GameCodeGenerator } from "./game-generator.js";
 import { CoverArtGenerator } from "./image-generator.js";
 import { OpenAISettings } from "./openai-settings.js";
 import { configureOutboundProxy } from "./outbound-proxy.js";
-import { createClaudeCliFetch, DEFAULT_CLAUDE_CLI_MODEL } from "./claude-cli-text-provider.js";
 import { ProjectLifecycle } from "./project-lifecycle.js";
 import { importLegacySqliteIfEmpty } from "./sqlite-migration.js";
 import { gameContentSecurityPolicy, sendStaticFile, workbenchContentSecurityPolicy } from "./static-files.js";
@@ -65,20 +64,11 @@ const openAIKeyFile = process.env.OPENAI_API_KEY_FILE ?? join(projectRoot, "data
 const openAISettings = new OpenAISettings(process.env.OPENAI_API_KEY, openAIKeyFile);
 // configureOutboundProxy 已在任何模型请求前为全局 fetch 安装显式 dispatcher；
 // 不依赖调用者是否额外传入 --use-env-proxy。
-// STUDIO_TEXT_PROVIDER=claude-cli：策划、规则审核与代码生成改走本机 Claude Code CLI 的订阅额度；
-// 图片仍由 OpenAI Key 承载。CLI 每次冷启动较慢，所以放宽各文本调用的超时；重试次数不变。
-const claudeCliText = process.env.STUDIO_TEXT_PROVIDER === "claude-cli"
-  ? { fetchImpl: createClaudeCliFetch({ executable: process.env.STUDIO_CLAUDE_CLI ?? "claude", model: process.env.STUDIO_CLAUDE_MODEL ?? DEFAULT_CLAUDE_CLI_MODEL }) }
-  : null;
-if (claudeCliText) {
-  openAISettings.useClaudeCliText(process.env.STUDIO_CLAUDE_MODEL ?? DEFAULT_CLAUDE_CLI_MODEL);
-  console.log(`文本模型使用本机 Claude CLI（${process.env.STUDIO_CLAUDE_MODEL ?? DEFAULT_CLAUDE_CLI_MODEL}），图片模型继续使用 OpenAI。`);
-}
-const ideaAnalyzer = new IdeaAnalyzer(openAISettings, claudeCliText ? { ...claudeCliText, timeoutMs: 90_000 } : {});
-const designContracts = new DesignContractGenerator(openAISettings, claudeCliText ? { ...claudeCliText, timeoutMs: 300_000 } : {});
-const previewDesignContracts = new DesignContractGenerator(openAISettings, { maxAttempts: 1, ...(claudeCliText ? { ...claudeCliText, timeoutMs: 300_000 } : {}) });
+const ideaAnalyzer = new IdeaAnalyzer(openAISettings);
+const designContracts = new DesignContractGenerator(openAISettings);
+const previewDesignContracts = new DesignContractGenerator(openAISettings, { maxAttempts: 1 });
 const coverArt = new CoverArtGenerator(openAISettings);
-const codeGenerator = new GameCodeGenerator(openAISettings, claudeCliText ? { ...claudeCliText, timeoutMs: 1_200_000 } : {});
+const codeGenerator = new GameCodeGenerator(openAISettings);
 const orchestrator = new BuildOrchestrator(repository, artifactRoot, {
   designContracts,
   coverArt,

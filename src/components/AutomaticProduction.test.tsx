@@ -4,15 +4,22 @@ import { beforeEach, expect, it, vi } from "vitest";
 import { AutomaticProduction } from "./AutomaticProduction";
 import { INITIAL_DRAFT } from "../domain/storage";
 import * as api from "../web/api";
+import { StudioApiError } from "../web/failure";
 vi.mock("../web/api", () => ({ submitProduction: vi.fn(), getProductionJob: vi.fn(), watchProductionJob: vi.fn(), getProject: vi.fn(), startBuild: vi.fn(), getLatestBuild: vi.fn(), retryProduction: vi.fn(), cancelProduction: vi.fn() }));
 const build = { id: "b1", status: "succeeded", steps: [{ id: "s1", title: "准备资源", detail: "制作游戏图片", status: "succeeded" }] } as any;
+const retryableNetworkFailure = {
+  stage: "asset", category: "network", code: "IMAGE_NETWORK",
+  message: "图像服务连接中断，主角资源尚未生成。", nextStep: "确认网络恢复后，可手动重新制作。",
+  retryable: true, resource: { file: "assets/hero.png", label: "主角" },
+} as const;
 
-it("技术校验错误默认说人话，保留详情且不重新提交", async () => {
+it("技术校验错误展示安全详情且不重新提交", async () => {
   history.replaceState(null, "", "/create?production=p1");
-  vi.mocked(api.getLatestBuild).mockResolvedValue({ ...build, status: "failed", error: '[{"code":"too_big","path":["vision"]}]' });
+  vi.mocked(api.getLatestBuild).mockResolvedValue({ ...build, status: "failed", error: "资料不符合当前制作限制。", failureDetails: [{ stage: "validation", category: "validation", code: "BLUEPRINT_LIMIT", message: "方案字段超过当前限制。", nextStep: "缩短描述后重新分析方案。", retryable: false }] });
   render(<AutomaticProduction draft={INITIAL_DRAFT} />);
-  expect(await screen.findByRole("alert")).toHaveTextContent("制作资料未通过检查");
-  expect(screen.getByText("查看问题详情").closest("details")).not.toHaveAttribute("open");
+  expect(await screen.findByRole("alert")).toHaveTextContent("规则检查 · 检查未通过");
+  expect(screen.getByRole("alert")).toHaveTextContent("缩短描述后重新分析方案。");
+  expect(screen.queryByRole("button", { name: "手动重新制作" })).not.toBeInTheDocument();
   expect(api.submitProduction).not.toHaveBeenCalled();
 });
 
@@ -92,16 +99,19 @@ it("从零创建新游戏不携带已有游戏改造字段", async () => {
   expect(api.submitProduction).toHaveBeenCalledWith(expect.objectContaining({ spriteAnimation: "auto" }));
   expect(api.submitProduction).toHaveBeenCalledWith(expect.not.objectContaining({ sourceProjectId: expect.anything(), revisionScope: expect.anything() }));
 });
-it.each(["queued", "running", "succeeded", "failed", "cancelled"])("%s 状态刷新不会发起制作；只有失败后才出现明确的重新制作按钮", async status => {
+it.each(["queued", "running", "succeeded", "failed", "cancelled"])("%s 状态刷新不会发起制作；仅安全标记为可重试的失败才能重新制作", async status => {
   history.replaceState(null, "", "/create?production=p1");
   vi.mocked(api.getLatestBuild).mockResolvedValue({ ...build, status, error: status === "failed" ? "模型失败" : null });
   render(<AutomaticProduction draft={INITIAL_DRAFT} />);
   await screen.findByText("准备资源");
-  if (status === "failed") expect(screen.getByRole("button", { name: "重新制作这个游戏" })).toBeEnabled();
+  if (status === "failed") {
+    expect(await screen.findByRole("alert")).toHaveTextContent("这份历史构建记录没有保存详细原因");
+    expect(screen.queryByRole("button", { name: "手动重新制作" })).not.toBeInTheDocument();
+  }
   else if (status === "queued" || status === "running") expect(screen.getByRole("button", { name: "停止制作" })).toBeEnabled();
   else expect(screen.queryByRole("button")).not.toBeInTheDocument();
   if (status === "succeeded") expect(screen.getByRole("link", { name: "继续完善这个游戏" })).toBeInTheDocument();
-  else if (status === "failed") expect(screen.getByRole("link", { name: "查看已保存的项目与问题" })).toHaveAttribute("href", "/projects/p1");
+  else if (status === "failed") expect(screen.queryByRole("link", { name: "查看已保存的项目与问题" })).not.toBeInTheDocument();
   else expect(screen.queryByRole("link")).not.toBeInTheDocument();
   expect(api.submitProduction).not.toHaveBeenCalled();
   expect(api.startBuild).not.toHaveBeenCalled();
@@ -135,10 +145,11 @@ it("停止请求等待服务端确认、终止进度流，并丢弃迟到的完�
   view.unmount();
 });
 
-it("创建失败保留真实错误，不生成不存在项目的恢复地址", async () => {
-  vi.mocked(api.submitProduction).mockRejectedValue(new Error("方案校验未通过"));
+it("创建失败展示安全原因，不生成不存在项目的恢复地址", async () => {
+  vi.mocked(api.submitProduction).mockRejectedValue(new StudioApiError("方案需要补充关卡目标。", [{ stage: "planning", category: "validation", code: "PLAN_REQUIRED", message: "方案需要补充关卡目标。", nextStep: "补充目标后重新生成方案，再明确确认制作。", retryable: false }]));
   render(<AutomaticProduction draft={INITIAL_DRAFT} confirmedPlan="用户确认的完整方案" />);
-  expect(await screen.findByRole("alert")).toHaveTextContent("方案校验未通过");
+  expect(await screen.findByRole("alert")).toHaveTextContent("方案需要补充关卡目标。");
+  expect(screen.getByRole("alert")).toHaveTextContent("补充目标后重新生成方案");
   expect(location.search).toBe("");
   expect(api.startBuild).not.toHaveBeenCalled();
   expect(screen.queryByText(/项目已保存/)).not.toBeInTheDocument();
@@ -147,9 +158,9 @@ it("创建失败保留真实错误，不生成不存在项目的恢复地址", a
 it("任务为空时核实项目，不把不存在的项目显示成已保存", async () => {
   history.replaceState(null, "", "/create?production=missing");
   vi.mocked(api.getLatestBuild).mockResolvedValue(null);
-  vi.mocked(api.getProject).mockRejectedValue(new Error("项目不存在。"));
+  vi.mocked(api.getProject).mockRejectedValue(new StudioApiError("找不到该项目记录。", [{ stage: "delivery", category: "validation", code: "PROJECT_NOT_FOUND", message: "找不到该项目记录。", nextStep: "返回项目列表，选择仍在保存中的作品。", retryable: false }]));
   render(<AutomaticProduction draft={INITIAL_DRAFT} />);
-  expect(await screen.findByRole("alert")).toHaveTextContent("项目不存在");
+  expect(await screen.findByRole("alert")).toHaveTextContent("找不到该项目记录");
   expect(screen.queryByText(/已确认项目存在/)).not.toBeInTheDocument();
   expect(api.startBuild).not.toHaveBeenCalled();
 });
@@ -187,14 +198,14 @@ it("不嵌入工作台同源或脚本地址", async () => {
   expect(screen.queryByTitle("游戏试玩")).not.toBeInTheDocument();
 });
 
-it("创建阶段失败后提供同方案重试，成功后切换到新任务且不重新策划", async () => {
+it("创建阶段失败且所有原因可重试时提供同方案重试，成功后切换到新任务且不重新策划", async () => {
   history.replaceState(null, "", "/create?production=p1");
-  const failed = { id: "p1", status: "failed" as const, error: "普通项目设计合同不完整：ID 重复：3", events: [] };
+  const failed = { id: "p1", status: "failed" as const, error: retryableNetworkFailure.message, failureDetails: [retryableNetworkFailure], events: [] };
   vi.mocked(api.getProductionJob).mockImplementation(async id => id === "p1" ? failed : { id: "p2", status: "queued" as const, error: null, events: [] });
   vi.mocked(api.watchProductionJob).mockImplementation(async (id, _signal, update) => { if (id === "p2") update({ id: "p2", status: "creating", error: null }, null); });
   vi.mocked(api.retryProduction).mockResolvedValue({ id: "p2", status: "queued", error: null });
   render(<AutomaticProduction draft={INITIAL_DRAFT} />);
-  const button = await screen.findByRole("button", { name: "用同一方案重新制作" });
+  const button = await screen.findByRole("button", { name: "手动重新制作" });
   expect(screen.queryByText(/查看已保存的项目/)).not.toBeInTheDocument();
   button.click();
   await screen.findByText(/服务端已接收|正在提交|等待开始处理/);
@@ -203,20 +214,20 @@ it("创建阶段失败后提供同方案重试，成功后切换到新任务且�
   expect(new URLSearchParams(location.search).get("production")).toBe("p2");
 });
 
-it("构建失败（项目已存在）不重新创建项目，而是在同一项目上重新制作，且只在用户点击后开始", async () => {
+it("构建失败（项目已存在）且可重试时不重新创建项目，而是在同一项目上重新制作，且只在用户点击后开始", async () => {
   history.replaceState(null, "", "/create?production=p1");
   const queued = { ...build, id: "b2", status: "queued", error: null, projectId: "p1", steps: [{ ...build.steps[0], status: "pending" }] };
   // 点击前读到的是失败记录；点击后服务端返回新排队的构建，后续轮询也读到它。
-  vi.mocked(api.getLatestBuild).mockResolvedValueOnce({ ...build, status: "failed", error: "浏览器验收未通过", projectId: "p1" }).mockResolvedValue(queued);
+  vi.mocked(api.getLatestBuild).mockResolvedValueOnce({ ...build, status: "failed", error: retryableNetworkFailure.message, failureDetails: [retryableNetworkFailure], projectId: "p1" }).mockResolvedValue(queued);
   vi.mocked(api.startBuild).mockResolvedValue(queued);
   render(<AutomaticProduction draft={INITIAL_DRAFT} />);
   await screen.findByText(/查看已保存的项目/);
   expect(screen.queryByRole("button", { name: "用同一方案重新制作" })).not.toBeInTheDocument();
   expect(api.startBuild).not.toHaveBeenCalled();
-  screen.getByRole("button", { name: "重新制作这个游戏" }).click();
+  screen.getByRole("button", { name: "手动重新制作" }).click();
   await screen.findAllByText(/正在排队制作|正在等待服务端响应|服务端正在处理/);
   expect(api.startBuild).toHaveBeenCalledTimes(1);
   expect(api.startBuild).toHaveBeenCalledWith("p1");
   expect(api.submitProduction).not.toHaveBeenCalled();
-  expect(screen.queryByRole("button", { name: "重新制作这个游戏" })).not.toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "手动重新制作" })).not.toBeInTheDocument();
 });

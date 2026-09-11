@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { ProjectDetail } from "../shared/contracts";
 import { getProject } from "../web/api";
+import { failureMessage } from "../web/failure";
+import { FailureDetails } from "./FailureDetails";
 import { generateProjectImage } from "../domain/imageGenerationClient";
 import { runtimeAssetPaths } from "../domain/assets";
 import { buildGameSpec } from "../domain/gameSpec";
@@ -132,7 +134,7 @@ export function SimpleStudioApp() {
           : { ...current, revision: project.publication?.versionNumber ?? project.version.number });
       })
       .catch((error) => {
-        if (active) setSourceError(error instanceof Error ? error.message : "没有找到这个游戏。");
+        if (active) setSourceError(failureMessage(error, "当前游戏暂时无法读取。请确认本机制作服务可用后再打开。"));
       })
       .finally(() => {
         if (active) setSourceLoading(false);
@@ -304,7 +306,7 @@ export function SimpleStudioApp() {
       }));
     } catch (error) {
       if (controller.signal.aborted) return;
-      const message = error instanceof Error ? error.message : "制作失败";
+      const message = failureMessage(error, "资源和代码制作没有完成。当前可玩版本保持不变。");
       setFlow((current) => current.activityId !== activityId ? current : ({
         ...current,
         phase: "failed",
@@ -349,7 +351,7 @@ export function SimpleStudioApp() {
         }],
       }));
     } catch (error) {
-      const message = error instanceof Error ? error.message : "多设备检查失败";
+      const message = failureMessage(error, "浏览器检查没有完成。当前可玩版本保持不变。");
       setFlow((current) => current.activityId !== activityId ? current : ({ ...current, phase: "failed", lastError: message, events: [...current.events, { id: `audit-failed-${activityId}`, author: "studio", text: message }] }));
     }
   };
@@ -368,7 +370,7 @@ export function SimpleStudioApp() {
         events: [...current.events, { id: `published-${current.activityId}`, author: "studio", text: `版本 ${current.revision} 已发布，之后仍可继续提出改造意见。` }],
       }));
     } catch (error) {
-      const message = error instanceof Error ? error.message : "发布失败";
+      const message = failureMessage(error, "发布没有完成。当前已保存版本不会被覆盖。");
       setFlow((current) => current.activityId !== activityId ? current : ({ ...current, phase: "failed", lastError: message, events: [...current.events, { id: `publish-failed-${activityId}`, author: "studio", text: `发布没有完成：${message}` }] }));
     }
   };
@@ -387,7 +389,7 @@ export function SimpleStudioApp() {
       URL.revokeObjectURL(url);
       setFlow((current) => ({ ...current, events: [...current.events, { id: `bundle-${current.activityId}`, author: "studio", text: "开源包已经下载，包含当前运行时、全部本地位图、规格、来源和质量证据。" }] }));
     } catch (error) {
-      const message = error instanceof Error ? error.message : "开源包下载失败";
+      const message = failureMessage(error, "开源包下载没有完成。当前已保存版本保持不变。");
       setFlow((current) => ({ ...current, lastError: message, events: [...current.events, { id: `bundle-failed-${current.activityId}`, author: "studio", text: message }] }));
     }
   };
@@ -454,7 +456,7 @@ export function SimpleStudioApp() {
               {flow.phase === "ready" && <div className="chat-notice"><strong>新版本已经做好</strong><span>按你的意见完成了第 {flow.revision} 版，可以直接试玩。</span><div><button type="button" className="quiet-action" onClick={() => openRequest(flow.mode)}>补充意见</button><button type="button" onClick={startTesting}>试玩新版本</button></div></div>}
               {flow.phase === "testing" && <div className="chat-notice"><strong>你正在试玩新版本</strong><span>不满意就继续提意见；确认目标清楚、操作舒适后再发布。</span><div><button type="button" className="quiet-action" onClick={() => openRequest(flow.mode)}>继续提意见</button><button type="button" onClick={publishVersion}>试玩满意，发布版本</button></div></div>}
               {flow.phase === "published" && <div className="chat-notice"><strong>这个版本已发布</strong><span>以后仍然可以从游戏边缘继续改造。</span>{flow.publishedUrl && <a className="published-link" href={flow.publishedUrl} target="_blank" rel="noreferrer">打开玩家网址</a>}<div><button type="button" className="quiet-action" onClick={downloadBundle}>下载开源包</button><button type="button" className="quiet-action" onClick={() => openRequest(flow.mode)}>继续改造</button></div></div>}
-              {flow.phase === "failed" && <div className="chat-notice is-error"><strong>这次没有覆盖旧版本</strong><span>{flow.lastError || "制作或验收没有通过。"}</span><button type="button" onClick={() => openRequest(flow.mode)}>调整意见后重试</button></div>}
+              {flow.phase === "failed" && <div className="chat-notice is-error"><strong>这次没有覆盖旧版本</strong><FailureDetails error={flow.lastError} fallback="这份本地记录没有保存详细原因。请调整意见后再次明确提交。" /><button type="button" onClick={() => openRequest(flow.mode)}>调整意见后重新提交</button></div>}
               {flow.phase === "stopped" && <div className="chat-notice"><strong>本轮制作已停止</strong><span>已发出的图片请求已尝试中止；服务商可能已开始计费。当前可玩版本和已保存成果保持不变。</span><button type="button" onClick={() => openRequest(flow.mode)}>提出新意见，重新开始</button></div>}
             </div>
           )}
