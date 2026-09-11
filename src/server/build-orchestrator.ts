@@ -9,6 +9,7 @@ import {
   type ProjectDetail,
   type QualityCheck,
   type RenovationScope,
+  type RevisionPlan,
 } from "../shared/contracts.js";
 import { renovationScopeInstruction, renovationSourceForBuild } from "../shared/renovation-scope.js";
 import { inspectDifficultyProgressionInBrowser, inspectFailureAssistanceInBrowser, inspectGameInBrowser, inspectGeneratedGameInBrowser, inspectMergeOnboardingInBrowser, inspectNonRealtimeOnboardingInBrowser, inspectSignalHuntOnboardingInBrowser, inspectStageF3DInBrowser, inspectTemplateOnboardingInBrowser, inspectThreeOnboardingInBrowser, inspectVariationRehearsalInBrowser, type FailureAssistanceTemplate, type NonRealtimeOnboardingTemplate, type StageF3DMode, type TemplateOnboardingQualityResult, type VariationRehearsalTemplate } from "./browser-quality.js";
@@ -33,6 +34,59 @@ import { runWithCancellation, throwIfCancellationRequested } from "./cancellatio
 
 const variationRehearsalTemplates: readonly VariationRehearsalTemplate[] = ["signal-hunt", "tetris", "breakout", "snake", "space-shooter", "merge-2048", "klotski", "puzzle", "block-place", "polyomino-fit", "region-logic", "mahjong-roguelite"];
 const failureAssistanceTemplates: readonly FailureAssistanceTemplate[] = ["tetris", "breakout", "snake", "space-shooter", ...variationRehearsalTemplates];
+
+const defaultRoleAnimation = (): SpriteSheetAnimation => spriteSheetAnimationSchema.parse({
+  frameWidth: 128,
+  frameHeight: 128,
+  columns: 4,
+  rows: 4,
+  frameCount: 16,
+  anchor: { x: 64, y: 120 },
+  clips: [
+    { id: "idle", startFrame: 0, frameCount: 4, fps: 6, loop: true },
+    { id: "run", startFrame: 4, frameCount: 4, fps: 10, loop: true },
+    { id: "hit", startFrame: 8, frameCount: 4, fps: 8, loop: false },
+    { id: "effect", startFrame: 12, frameCount: 4, fps: 8, loop: false },
+  ],
+});
+
+export function applyRevisionPlanAnimationUpgrades(project: ProjectDetail, revisionPlan: RevisionPlan | null) {
+  const targets = revisionPlan?.operations.filter((operation) => operation.scope === "assets").flatMap((operation) => operation.targets.filter((target) => target.animation === "sprite-sheet")) ?? [];
+  const sprites = project.spec.designProfile.generatedBlueprint?.sprites;
+  if (!targets.length) return new Set<string>();
+  if (!sprites) throw new Error("当前游戏运行时没有可升级的角色动画槽位，请重新选择资源。");
+  const files = new Set<string>();
+  for (const target of targets) {
+    const sprite = sprites.find((entry) => entry.file === target.file);
+    if (!sprite) throw new Error(`“${target.label}”没有可升级的角色动画槽位，请重新选择。`);
+    if (!sprite.animation) sprite.animation = defaultRoleAnimation();
+    files.add(sprite.file);
+  }
+  return files;
+}
+
+// A plan is assembled from independently selectable operations.  Treat each operation's
+// scope as the authority at execution time: older clients (and hand-built API requests)
+// can still contain the original multi-part sentence in every operation.
+const operationScopePatterns = {
+  gameplay: /墨量|能量|消耗|数值|速度|难度|伤害|生命|得分|分数|规则|玩法|关卡|碰撞|操作|冷却|生成间隔/,
+  assets: /角色|人物|唐僧|妖精|小妖|厉妖|封面|背景|图片|图标|素材|精灵|动画|动图|sprite/i,
+  "visual-style": /美术风格|画风|视觉风格|配色|材质|绘本|水彩|像素风|卡通风/,
+} as const;
+
+function selectedOperationContent(scope: RevisionPlan["operations"][number]["scope"], content: string) {
+  const clauses = content.split(/[，,。；;\n]|同时|并且/).map(clause => clause.trim()).filter(Boolean);
+  const selected = clauses.filter(clause => operationScopePatterns[scope].test(clause));
+  return selected.join("，") || content.trim();
+}
+
+export function revisionPlanInstructions(revisionPlan: RevisionPlan) {
+  return revisionPlan.operations.map((operation) => renovationScopeInstruction(operation.scope, selectedOperationContent(operation.scope, operation.content)));
+}
+
+export function selectedRevisionRequest(revisionPlan: RevisionPlan) {
+  return revisionPlan.operations.map((operation) => selectedOperationContent(operation.scope, operation.content)).join("；");
+}
 const realtimeOnboardingTemplates: readonly TemplateOnboardingQualityResult["template"][] = ["tetris", "breakout", "snake", "space-shooter"];
 const nonRealtimeOnboardingTemplates: readonly NonRealtimeOnboardingTemplate[] = ["klotski", "puzzle", "block-place", "polyomino-fit", "region-logic", "mahjong-roguelite"];
 import type { ResourceFamily } from "../shared/resource-library/index.js";
@@ -125,7 +179,7 @@ export class BuildOrchestrator {
     this.maxRepairRounds = Math.max(1, options.maxRepairRounds ?? DEFAULT_REPAIR_ROUNDS);
   }
 
-  async start(projectId: string, revision?: { requestId: string; revisionScope: RenovationScope; assetTarget?: { clipId: import("../shared/generated-blueprint.js").SpriteAnimationClipId }; content: string }, signal?: AbortSignal): Promise<Build> {
+  async start(projectId: string, revision?: { requestId: string; revisionScope?: RenovationScope; revisionPlan?: RevisionPlan; assetTarget?: { clipId: import("../shared/generated-blueprint.js").SpriteAnimationClipId }; content: string }, signal?: AbortSignal): Promise<Build> {
     const build = revision ? await this.repository.createBuild(projectId, revision) : await this.repository.createBuild(projectId);
     if (build.status === "queued") {
       this.enqueue(build.id);
@@ -207,21 +261,33 @@ export class BuildOrchestrator {
       if (!storedProject) throw new Error("项目不存在。");
       if (storedProject.archivedAt) throw new Error("项目已归档，未继续制作或调用模型；恢复项目后可明确启动新任务。");
       const userMessages = (await this.repository.listMessages(build.projectId)).filter((message) => message.role === "user");
-      const revisionMessage = build.revisionScope ? userMessages.find((message) => message.id === build.id) : null;
+      const revisionPlan = build.revisionPlan ?? storedProject.spec.renovation?.revisionPlan ?? null;
+      const planScopes = new Set(revisionPlan?.operations.map((operation) => operation.scope) ?? []);
+      const hasAssetOperation = planScopes.has("assets");
+      const hasGameplayOperation = planScopes.has("gameplay");
+      const hasVisualOperation = planScopes.has("visual-style");
+      const plannedAssetTargets = revisionPlan?.operations.filter((operation) => operation.scope === "assets").flatMap((operation) => operation.targets) ?? [];
+      let animationUpgradeFiles = new Set<string>();
+      const revisionMessage = build.revisionScope || revisionPlan ? userMessages.find((message) => message.id === build.id) : null;
       const revisionRequest = revisionMessage?.content ?? storedProject.spec.renovation?.request ?? null;
-      const revisionScope = build.revisionScope ?? storedProject.spec.renovation?.revisionScope ?? null;
-      const directions = revisionScope && revisionRequest
-        ? [renovationScopeInstruction(revisionScope, revisionRequest)]
+      const revisionScope = build.revisionScope ?? (hasGameplayOperation ? "gameplay" : hasAssetOperation ? "assets" : hasVisualOperation ? "visual-style" : storedProject.spec.renovation?.revisionScope ?? null);
+      const directions = revisionPlan
+        ? revisionPlanInstructions(revisionPlan)
+        : revisionScope && revisionRequest
+          ? [renovationScopeInstruction(revisionScope, revisionRequest)]
         : userMessages.map((message) => message.content);
+      const effectiveRevisionRequest = revisionPlan ? selectedRevisionRequest(revisionPlan) : revisionRequest;
       // A new renovation already carries a locally constrained confirmed profile.
       // Only a /revisions request asks the planner to revise the current contract again.
-      const project = await this.normalizeProject(storedProject, build.revisionScope ? directions : [], build.revisionScope, revisionRequest);
-      if (revisionScope && revisionRequest && storedProject.spec.renovation) project.spec.renovation = {
-        sourceProjectId: renovationSourceForBuild(storedProject.spec.renovation.sourceProjectId, storedProject.id, Boolean(build.revisionScope)),
+      const project = await this.normalizeProject(storedProject, build.revisionScope || build.revisionPlan ? directions : [], revisionScope, effectiveRevisionRequest);
+      if (revisionScope && effectiveRevisionRequest && (storedProject.spec.renovation || revisionPlan)) project.spec.renovation = {
+        sourceProjectId: renovationSourceForBuild(storedProject.spec.renovation?.sourceProjectId ?? storedProject.id, storedProject.id, Boolean(build.revisionScope || build.revisionPlan)),
         revisionScope,
-        request: revisionRequest,
+        request: effectiveRevisionRequest,
+        revisionPlan: revisionPlan ?? null,
         assetTarget: null,
       };
+      animationUpgradeFiles = applyRevisionPlanAnimationUpgrades(project, revisionPlan);
       const root = join(this.artifactRoot, build.id);
 
       await this.step(buildId, sequence, () => this.analyze(project, directions));
@@ -249,7 +315,9 @@ export class BuildOrchestrator {
           writeFileSync(join(provenanceRoot, "RESOURCE_PLAN.json"), JSON.stringify(resourcePlan, null, 2), "utf8");
         }
         if (!this.options.coverArt) throw new Error("AI 生图服务未配置，构建已中断。请先配置 OpenAI API Key。");
-        const resolvedAssetTarget = project.spec.renovation?.revisionScope === "assets" ? resolveAssetRenovationTarget(project) : null;
+        const resolvedAssetTarget = plannedAssetTargets.length
+          ? { kind: plannedAssetTargets.length === 1 ? "single" as const : "set" as const, files: plannedAssetTargets.map((target) => target.file), label: plannedAssetTargets.map((target) => target.label).join("、") }
+          : project.spec.renovation?.revisionScope === "assets" ? resolveAssetRenovationTarget(project) : null;
         const assetTarget = resolvedAssetTarget && build.assetClipId ? { ...resolvedAssetTarget, clipId: build.assetClipId } : resolvedAssetTarget;
         if (assetTarget && project.spec.renovation) {
           project.spec.renovation.assetTarget = assetTarget;
@@ -260,7 +328,7 @@ export class BuildOrchestrator {
             const animatedSpec = animatedRenovationSpec(project, assetTarget, sourceApp)!;
             await assertSourceSpriteSheetProvenance(join(this.artifactRoot, assetSourceBuildId), animatedSpec.file, animatedSpec.animation!);
           } else {
-            const animatedTargets = project.spec.designProfile.generatedBlueprint?.sprites.filter(sprite => assetTarget.files.includes(sprite.file) && sprite.animation) ?? [];
+            const animatedTargets = project.spec.designProfile.generatedBlueprint?.sprites.filter(sprite => assetTarget.files.includes(sprite.file) && sprite.animation && !animationUpgradeFiles.has(sprite.file)) ?? [];
             for (const animatedTarget of animatedTargets) {
               await assertSourceSpriteSheetProvenance(join(this.artifactRoot, assetSourceBuildId), animatedTarget.file, animatedTarget.animation!);
             }
@@ -372,11 +440,12 @@ export class BuildOrchestrator {
       await this.step(buildId, sequence, async () => {
         const art = artResult;
         if (!art) throw new Error("资源步骤没有完成，未继续生成代码。");
+        const appliedAssetTarget = project.spec.renovation?.assetTarget ?? null;
         const codeSummary = await (async (): Promise<string> => {
-          if (project.spec.renovation?.revisionScope === "assets") {
+          if (appliedAssetTarget && !hasGameplayOperation && !hasVisualOperation && animationUpgradeFiles.size === 0) {
             const sourceRuntimeBuildId = await this.reuseSourceRuntime(project, root);
             if (!sourceRuntimeBuildId) throw new Error("来源游戏的可玩运行时不可用，已停止部分资源替换；没有重新生成代码。");
-            return `页面公开：完整复用来源构建 ${sourceRuntimeBuildId} 的 HTML、CSS、脚本与未点名资源；仅覆盖“${project.spec.renovation.assetTarget?.label ?? "已选资源"}”，本次未调用代码生成模型。`;
+            return `页面公开：完整复用来源构建 ${sourceRuntimeBuildId} 的 HTML、CSS、脚本与未点名资源；仅覆盖“${appliedAssetTarget.label}”，本次未调用代码生成模型。`;
           }
           if (project.spec.template === "generated") {
             const experimental = await this.generateExperimentalGame(project, root, directions, (detail, excerpt) =>
@@ -419,10 +488,10 @@ export class BuildOrchestrator {
         const style = visualStyleOptions.find((option) => option.id === project.spec.visualStyle)!;
         // 黄金模板在 AI 位图落盘后覆盖已核验的运行时槽位，确保最终游戏实际使用精选资源。
         // 被覆盖的槽位必须从 AI 清单剔除，避免错误声明素材来源。
-        const curatedResources = project.spec.renovation?.revisionScope === "assets" ? null : applyQualifiedProjectResources(root, project);
+        const curatedResources = appliedAssetTarget ? null : applyQualifiedProjectResources(root, project);
         const curatedTargets = new Set(curatedResources?.assets.map(({ target }) => target.replaceAll("\\", "/").toLowerCase()) ?? []);
-        if (project.spec.renovation?.revisionScope === "assets") {
-          if (project.spec.renovation.assetTarget?.files.includes("assets/cover.png")) writeFileSync(join(root, "assets", "cover.png"), art.cover);
+        if (appliedAssetTarget) {
+          if (appliedAssetTarget.files.includes("assets/cover.png")) writeFileSync(join(root, "assets", "cover.png"), art.cover);
           for (const entry of art.dynamicArt) {
             const target = join(root, entry.file);
             mkdirSync(dirname(target), { recursive: true });
@@ -439,13 +508,13 @@ export class BuildOrchestrator {
           ...writtenDynamicArt.map((entry) => ({ file: entry.file, role: entry.role, bytes: entry.bytes.length, prompt: entry.prompt, ...(entry.image ? { image: entry.image } : {}) })),
         ];
         let assetRenovationProvenance: string | null = null;
-        if (project.spec.renovation?.revisionScope === "assets") {
+        if (appliedAssetTarget) {
           if (!assetSourceBuildId) throw new Error("部分资源替换缺少来源构建记录，已停止写入产物溯源。");
           const sourceProvenancePath = join(this.artifactRoot, assetSourceBuildId, "_studio", "DYNAMIC_ART.json");
           if (!existsSync(sourceProvenancePath)) throw new Error("来源游戏缺少图片溯源记录，已停止部分资源替换；没有虚构未替换资源的来源。");
           const sourceProvenance = JSON.parse(readFileSync(sourceProvenancePath, "utf8")) as { entries?: Array<{ file: string; role: string; bytes: number; prompt: string }>; [key: string]: unknown };
           if (!Array.isArray(sourceProvenance.entries)) throw new Error("来源游戏的图片溯源记录不可用，已停止部分资源替换。");
-          const targetFiles = new Set(project.spec.renovation.assetTarget?.files ?? []);
+          const targetFiles = new Set(appliedAssetTarget.files);
           const replacements = entries.filter(entry => targetFiles.has(entry.file));
           const mergedEntries = [...sourceProvenance.entries.filter(entry => !targetFiles.has(entry.file)), ...replacements];
           assetRenovationProvenance = JSON.stringify({
@@ -453,7 +522,7 @@ export class BuildOrchestrator {
             model: this.options.coverArt?.model ?? sourceProvenance.model,
             generatedAt: new Date().toISOString(),
             entries: mergedEntries,
-            renovation: { sourceBuildId: assetSourceBuildId, target: project.spec.renovation.assetTarget },
+            renovation: { sourceBuildId: assetSourceBuildId, target: appliedAssetTarget },
           }, null, 2);
         }
         writeFileSync(join(provenanceRoot, "DYNAMIC_ART.json"), assetRenovationProvenance ?? (art.reusedArt ? art.reusedArt.provenanceJson : JSON.stringify({
@@ -632,7 +701,10 @@ export class BuildOrchestrator {
   private async reuseSourceRuntime(project: ProjectDetail, root: string): Promise<string | null> {
     const sourceProjectId = project.spec.renovation?.sourceProjectId;
     if (!sourceProjectId) return null;
-    for (const candidate of await this.repository.recentReusableBuilds(sourceProjectId, basename(root))) {
+    const preferredBuildId = project.spec.renovation?.revisionPlan?.sourceVersionId;
+    const recent = await this.repository.recentReusableBuilds(sourceProjectId, basename(root));
+    const candidates = [...(preferredBuildId ? [{ id: preferredBuildId }] : []), ...recent.filter((candidate) => candidate.id !== preferredBuildId)];
+    for (const candidate of candidates) {
       const sourceRoot = join(this.artifactRoot, candidate.id);
       const indexPath = join(sourceRoot, "index.html");
       if (!existsSync(indexPath)) continue;
@@ -663,7 +735,9 @@ export class BuildOrchestrator {
     let reusable: GeneratedGame | null = null;
     let reusableSourceBuildId: string | null = null;
     const reusableProjectIds = [...new Set([project.id, project.spec.renovation?.sourceProjectId].filter(Boolean))] as string[];
-    const candidates = (await Promise.all(reusableProjectIds.map(projectId => this.repository.recentReusableBuilds(projectId, basename(root))))).flat();
+    const preferredBuildId = project.spec.renovation?.revisionPlan?.sourceVersionId;
+    const recentCandidates = (await Promise.all(reusableProjectIds.map(projectId => this.repository.recentReusableBuilds(projectId, basename(root))))).flat();
+    const candidates = [...(preferredBuildId ? [{ id: preferredBuildId }] : []), ...recentCandidates.filter((candidate) => candidate.id !== preferredBuildId)];
     for (const candidate of candidates) {
       const html = readGeneratedSource(join(this.artifactRoot, candidate.id));
       if (!html) continue;
@@ -798,7 +872,7 @@ export class BuildOrchestrator {
       ...baseSpec,
       resourcePlanning,
       renovation: revisionScope && revisionRequest
-        ? { sourceProjectId: project.id, revisionScope, request: revisionRequest, assetTarget: null }
+        ? { sourceProjectId: project.id, revisionScope, request: revisionRequest, revisionPlan: project.spec.renovation?.revisionPlan ?? null, assetTarget: null }
         : project.spec.renovation,
     };
     const designContract = createGameDesignContractForLegacyProject({

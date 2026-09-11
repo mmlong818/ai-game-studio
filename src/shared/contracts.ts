@@ -86,10 +86,46 @@ export const puzzlePieceCountSchema = z.union([
 
 export const renovationScopeSchema = z.enum(["gameplay", "assets", "visual-style"]);
 
+export const revisionAssetTargetSchema = z.object({
+  file: z.string().min(1),
+  label: z.string().min(1),
+  animation: z.literal("sprite-sheet").optional(),
+});
+export const revisionOperationSchema = z.discriminatedUnion("scope", [
+  z.object({
+    scope: z.literal("gameplay"),
+    content: z.string().trim().min(2).max(2_000),
+  }),
+  z.object({ scope: z.literal("visual-style"), content: z.string().trim().min(2).max(2_000) }),
+  z.object({
+    scope: z.literal("assets"),
+    content: z.string().trim().min(2).max(2_000),
+    targets: z.array(revisionAssetTargetSchema).min(1),
+  }),
+]);
+export const revisionPlanSchema = z.object({
+  sourceProjectId: z.string().min(1),
+  sourceVersionId: z.string().min(1),
+  content: z.string().trim().min(2).max(2_000),
+  operations: z.array(revisionOperationSchema).max(12),
+});
+export const revisionAssetCandidateSchema = revisionAssetTargetSchema.omit({ animation: true }).extend({
+  kind: z.enum(["role", "background", "cover", "other"]),
+  recommended: z.boolean(),
+  supportsAnimation: z.boolean(),
+});
+export const revisionPlanResponseSchema = z.object({
+  status: z.enum(["ready", "selection-required"]),
+  revisionPlan: revisionPlanSchema,
+  candidates: z.array(revisionAssetCandidateSchema),
+  recommendedTargetFiles: z.array(z.string()),
+});
+
 export const projectInputSchema = z.object({
   requestId: z.string().uuid().optional(),
   sourceProjectId: z.string().uuid().optional(),
   revisionScope: renovationScopeSchema.optional(),
+  revisionPlan: revisionPlanSchema.optional(),
   spriteAnimation: z.enum(["auto", "none"]).default("auto"),
   confirmedDesignProfile: z.lazy(() => gameDesignProfileSchema).optional(),
   idea: z
@@ -113,9 +149,11 @@ export const projectInputSchema = z.object({
     .regex(/^data:image\/jpeg;base64,[A-Za-z0-9+/=]+$/, "自定义拼图图片格式不正确。")
     .optional(),
 }).superRefine((input, context) => {
-  if (Boolean(input.sourceProjectId) !== Boolean(input.revisionScope)) {
+  if (Boolean(input.sourceProjectId) !== Boolean(input.revisionScope || input.revisionPlan)) {
     context.addIssue({ code: "custom", path: [input.sourceProjectId ? "revisionScope" : "sourceProjectId"], message: "已有游戏改造必须同时提供来源游戏和改造范围。" });
   }
+  if (input.revisionPlan && input.revisionPlan.sourceProjectId !== input.sourceProjectId) context.addIssue({ code: "custom", path: ["revisionPlan", "sourceProjectId"], message: "修改计划与来源游戏不一致。" });
+  if (input.revisionPlan && input.revisionPlan.operations.length === 0) context.addIssue({ code: "custom", path: ["revisionPlan", "operations"], message: "请先选择这次要执行的修改。" });
 });
 
 export const acceptanceCriterionSchema = z.object({
@@ -252,6 +290,7 @@ export const gameSpecSchema = z.object({
     sourceProjectId: z.string().uuid(),
     revisionScope: renovationScopeSchema,
     request: z.string().trim().min(2).max(2_000),
+    revisionPlan: revisionPlanSchema.nullable().default(null),
     assetTarget: z.object({
       kind: z.enum(["single", "set"]),
       files: z.array(z.string().min(1)).min(1),
@@ -421,6 +460,7 @@ export const buildSchema = z.object({
   previewUrl: z.string().url().nullable(),
   error: z.string().nullable(),
   revisionScope: renovationScopeSchema.nullable().default(null),
+  revisionPlan: revisionPlanSchema.nullable().default(null),
   assetClipId: z.enum(spriteAnimationClipIds).nullable().default(null),
   steps: z.array(buildStepSchema),
 });
@@ -446,15 +486,23 @@ export const projectMessagesResponseSchema = z.object({
 
 export const projectRevisionInputSchema = z.object({
   requestId: z.string().uuid(),
-  revisionScope: renovationScopeSchema,
+  revisionScope: renovationScopeSchema.optional(),
   assetTarget: z.object({ clipId: z.enum(spriteAnimationClipIds) }).optional(),
+  revisionPlan: revisionPlanSchema.optional(),
   content: projectMessageInputSchema.shape.content,
 }).superRefine((input, context) => {
+  if (!input.revisionScope && !input.revisionPlan) context.addIssue({ code: "custom", path: ["revisionPlan"], message: "请选择修改范围或提交已确认的修改计划。" });
+  if (input.revisionPlan && input.revisionPlan.operations.length === 0) context.addIssue({ code: "custom", path: ["revisionPlan", "operations"], message: "请先选择这次要执行的修改。" });
+  if (input.revisionPlan && input.revisionPlan.content !== input.content) context.addIssue({ code: "custom", path: ["revisionPlan", "content"], message: "修改内容已变化，请重新确认修改计划。" });
   if (input.assetTarget && input.revisionScope !== "assets") context.addIssue({ code: "custom", path: ["assetTarget"], message: "只有资源替换可以选择动画动作。" });
 });
 
 export type ProjectInput = z.input<typeof projectInputSchema>;
 export type RenovationScope = z.infer<typeof renovationScopeSchema>;
+export type RevisionPlan = z.infer<typeof revisionPlanSchema>;
+export type RevisionOperation = z.infer<typeof revisionOperationSchema>;
+export type RevisionAssetTarget = z.infer<typeof revisionAssetTargetSchema>;
+export type RevisionAssetCandidate = z.infer<typeof revisionAssetCandidateSchema>;
 type ParsedProjectInput = z.output<typeof projectInputSchema>;
 export type GameTemplate = z.infer<typeof gameTemplateSchema>;
 export type GameDesignProfile = z.infer<typeof gameDesignProfileSchema>;
@@ -971,10 +1019,11 @@ export function generateGameSpec(
     designContract: null,
     resourcePlanning,
     spriteAnimation: input.spriteAnimation,
-    renovation: input.sourceProjectId && input.revisionScope ? {
+    renovation: input.sourceProjectId && (input.revisionScope || input.revisionPlan) ? {
       sourceProjectId: input.sourceProjectId,
-      revisionScope: input.revisionScope,
-      request: input.idea,
+      revisionScope: input.revisionScope ?? input.revisionPlan!.operations[0]!.scope,
+      request: input.revisionPlan?.content ?? input.idea,
+      revisionPlan: input.revisionPlan ?? null,
       assetTarget: null,
     } : null,
   };

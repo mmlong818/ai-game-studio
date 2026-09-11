@@ -62,9 +62,11 @@ import {
   type ProjectMessage,
   type ProjectSummary,
   type ProjectVersion,
+  type RevisionPlan,
   type PlayActivity,
   type VersionQualityReport,
 } from "../shared/contracts.js";
+import { validateRevisionPlan } from "./revision-planner.js";
 
 /**
  * Serializes async work per key inside this single Node process. The production database is
@@ -217,6 +219,7 @@ type BuildRow = {
   version_id: string | null;
   error_message: string | null;
   revision_scope: import("../shared/contracts.js").RenovationScope | null;
+  revision_plan_json: string | RevisionPlan | null;
   asset_clip_id: import("../shared/generated-blueprint.js").SpriteAnimationClipId | null;
 };
 
@@ -535,6 +538,7 @@ function toBuild(row: BuildRow, steps: BuildStepRow[], gameOrigin: string): Buil
     previewUrl: row.version_id ? `${origin}/version/${row.version_id}/` : null,
     error: row.error_message,
     revisionScope: row.revision_scope ?? null,
+    revisionPlan: row.revision_plan_json ? (typeof row.revision_plan_json === "string" ? JSON.parse(row.revision_plan_json) : row.revision_plan_json) : null,
     assetClipId: row.asset_clip_id ?? null,
     steps: steps.map((step) => ({
       id: step.id,
@@ -1705,7 +1709,7 @@ export class StudioRepository {
     return row ? this.buildById(row.id) : null;
   }
 
-  async createBuild(projectId: string, revision?: { requestId: string; revisionScope: import("../shared/contracts.js").RenovationScope; assetTarget?: { clipId: import("../shared/generated-blueprint.js").SpriteAnimationClipId }; content: string }) {
+  async createBuild(projectId: string, revision?: { requestId: string; revisionScope?: import("../shared/contracts.js").RenovationScope; revisionPlan?: RevisionPlan; assetTarget?: { clipId: import("../shared/generated-blueprint.js").SpriteAnimationClipId }; content: string }) {
     const confirmed = revision ? projectRevisionInputSchema.parse(revision) : null;
     // The "is there already a queued/running build" check and the INSERT that follows must be
     // atomic per project, otherwise two concurrent calls (e.g. a double click) can both see "no
@@ -1713,17 +1717,30 @@ export class StudioRepository {
     return this.locks.run(`build:${projectId}`, async () => {
       const project = await this.get(projectId);
       if (!project) throw new Error("项目不存在。");
+      let confirmedPlan: RevisionPlan | null = null;
       const buildId = await this.database.transaction(async transaction => {
       const lockedProject = (await transaction.query<{ archived_at: string | null; fixture_kind: string | null }>(
         `SELECT archived_at, fixture_kind FROM projects WHERE id = $1${transaction.provider === "postgresql" ? " FOR UPDATE" : ""}`, [projectId],
       )).rows[0];
       if (!lockedProject) throw new Error("项目不存在。");
+      // Read the version and its blueprint after the project lock is held.  The plan is a
+      // receipt for this exact source: validating it against the pre-lock project snapshot
+      // would allow a completed revision to change available resource slots in between.
+      const lockedVersion = (await transaction.query<{ id: string; spec_json: string | GameSpec }>(
+        `SELECT v.id, gs.spec_json FROM versions v JOIN game_specs gs ON gs.id = v.spec_id
+         WHERE v.project_id = $1 ORDER BY v.number DESC LIMIT 1`, [projectId],
+      )).rows[0];
+      if (!lockedVersion) throw new Error("项目不存在。");
+      const lockedSpec = gameSpecSchema.parse(typeof lockedVersion.spec_json === "string" ? JSON.parse(lockedVersion.spec_json) : lockedVersion.spec_json);
+      const lockedProjectDetail = { ...project, version: { ...project.version, id: lockedVersion.id }, spec: lockedSpec };
+      confirmedPlan = confirmed?.revisionPlan ? validateRevisionPlan(lockedProjectDetail, confirmed.revisionPlan, confirmed.content) : null;
       if (confirmed) {
-        const existing = (await transaction.query<{ project_id: string; content: string; revision_scope: string | null; asset_clip_id: string | null }>(
-          "SELECT b.project_id, b.revision_scope, b.asset_clip_id, m.content FROM builds b LEFT JOIN project_messages m ON m.id = b.id WHERE b.id = $1", [confirmed.requestId],
+        const existing = (await transaction.query<{ project_id: string; content: string; revision_scope: string | null; revision_plan_json: string | RevisionPlan | null; asset_clip_id: string | null }>(
+          "SELECT b.project_id, b.revision_scope, b.revision_plan_json, b.asset_clip_id, m.content FROM builds b LEFT JOIN project_messages m ON m.id = b.id WHERE b.id = $1", [confirmed.requestId],
         )).rows[0];
         if (existing) {
-          if (existing.project_id !== projectId || existing.content !== confirmed.content || existing.revision_scope !== confirmed.revisionScope || existing.asset_clip_id !== (confirmed.assetTarget?.clipId ?? null)) throw new Error("修改请求编号已用于其他内容或范围，不能重复使用。");
+          const existingPlan = existing.revision_plan_json ? (typeof existing.revision_plan_json === "string" ? JSON.parse(existing.revision_plan_json) : existing.revision_plan_json) : null;
+          if (existing.project_id !== projectId || existing.content !== confirmed.content || existing.revision_scope !== (confirmed.revisionScope ?? null) || JSON.stringify(existingPlan) !== JSON.stringify(confirmedPlan) || existing.asset_clip_id !== (confirmed.assetTarget?.clipId ?? null)) throw new Error("修改请求编号已用于其他内容或范围，不能重复使用。");
           return confirmed.requestId;
         }
       }
@@ -1736,7 +1753,6 @@ export class StudioRepository {
         if (confirmed) throw new Error("当前游戏仍在制作，请等本次任务结束后再确认修改。");
         return active.id;
       }
-
       const buildId = confirmed?.requestId ?? randomUUID();
       const now = new Date().toISOString();
         // The direction and build receipt are one transaction: neither can exist
@@ -1746,9 +1762,9 @@ export class StudioRepository {
           [buildId, projectId, confirmed.content, now],
         );
         await transaction.query(
-          `INSERT INTO builds (id, project_id, status, runtime_target, created_at, started_at, completed_at, version_id, error_message, revision_scope, asset_clip_id)
-           VALUES ($1, $2, 'queued', $3, $4, NULL, NULL, NULL, NULL, $5, $6)`,
-          [buildId, projectId, project.spec.runtimeTarget, now, confirmed?.revisionScope ?? null, confirmed?.assetTarget?.clipId ?? null],
+          `INSERT INTO builds (id, project_id, status, runtime_target, created_at, started_at, completed_at, version_id, error_message, revision_scope, revision_plan_json, asset_clip_id)
+           VALUES ($1, $2, 'queued', $3, $4, NULL, NULL, NULL, NULL, $5, $6, $7)`,
+          [buildId, projectId, lockedSpec.runtimeTarget, now, confirmed?.revisionScope ?? null, confirmedPlan ? JSON.stringify(confirmedPlan) : null, confirmed?.assetTarget?.clipId ?? null],
         );
         for (const [sequence, step] of buildPlan.entries()) {
           await transaction.query(

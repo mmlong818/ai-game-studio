@@ -6,7 +6,7 @@
 
 | 阶段 | 实际字段或调用 | 失败处理 |
 |---|---|---|
-| 策划与设计合同 | 设计合同先确定核心玩点、现有状态、资源角色和验收信号；局部改造继续受 `revisionScope`、来源项目和保留基线约束 | 不为凑状态矩阵新增玩法；合同与用户范围冲突时不进入全量重做 |
+| 策划与设计合同 | 设计合同先确定核心玩点、现有状态、资源角色和验收信号；局部改造由可多选的 `revisionPlan.operations`、来源项目和保留基线约束 | 不为凑状态矩阵新增玩法；合同与用户范围冲突时不进入全量重做 |
 | 简单创作资源规划 | `AssetDeliverySpec { fit, background, purpose, safeArea }` 随 role/label/prompt 进入 `/api/image-generation` | 返回尺寸、alpha 或角色合同不符时不写入可用资源 |
 | 主构建提示 | `coverPrompt`、`backgroundPrompt`、`roleBitmapPrompt`、`animationSheetPrompt` 按用途、主体、构图与交付、只改变、必须保持组织 | 内部规则不进入玩家文案；缺少明确资源目标时构建停止 |
 | 普通新生成 | `/v1/images/generations` JSON 请求，沿用已配置模型，显式 `quality=high`、合规标准 `size`、`output_format=png`；透明主体另传 `background=transparent` | 不改变模型，不以另一模型或占位图回退 |

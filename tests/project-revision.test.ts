@@ -51,6 +51,31 @@ test("构建记录写入失败时修改意见一并回滚", async () => {
   } finally { await db.close(); }
 });
 
+test("多操作计划与来源版本作为同一构建回执持久化", async () => {
+  const db = await openTestDatabase();
+  try {
+    const repo = new StudioRepository(db, "http://localhost:4312");
+    const project = await repo.create({ idea: "制作一个轻松的花园记忆配对小游戏", template: "generated" });
+    const content = "第一关配对次数减半，同时改成水彩画风";
+    const revisionPlan = {
+      sourceProjectId: project.id,
+      sourceVersionId: project.version.id,
+      content,
+      operations: [
+        { scope: "gameplay" as const, content },
+        { scope: "visual-style" as const, content },
+      ],
+    };
+    const revision = { requestId: randomUUID(), content, revisionPlan };
+    const created = await repo.createBuild(project.id, revision);
+    assert.deepEqual(created.revisionPlan, revisionPlan);
+    assert.equal(created.revisionScope, null);
+    assert.deepEqual((await repo.buildById(created.id)).revisionPlan, revisionPlan);
+    assert.equal((await repo.createBuild(project.id, revision)).id, created.id);
+    await assert.rejects(repo.createBuild(project.id, { ...revision, revisionPlan: { ...revisionPlan, operations: revisionPlan.operations.slice(0, 1) } }), /其他内容或范围/);
+  } finally { await db.close(); }
+});
+
 test("只有首次领取排队任务成功，重复或终态领取不重新执行", async () => {
   const db = await openTestDatabase();
   try {
