@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { safeFailure } from "../src/server/build-failure.js";
+import { SpriteSheetValidationError } from "../src/server/sprite-sheet.js";
 
 test("安全失败分类不会回显密钥或远端正文", () => {
   const cases: Array<[Error, string, boolean]> = [
@@ -43,4 +44,16 @@ test("参考编辑未完整返回目标会保留可信的资源清单", () => {
   assert.equal(detail.category, "validation");
   assert.equal(detail.retryable, false);
   assert.match(detail.message, /assets\/roles\/monk\.png/);
+});
+
+test("可信 Sprite Sheet 本地门禁保留具体且安全的失败原因", () => {
+  const detail = safeFailure("asset", new SpriteSheetValidationError("SPRITE_FRAME_EDGE", "动画帧主体触碰了草稿格边缘，可能与相邻帧串格。"), {
+    resource: { file: "assets/monk-tang.png", label: "唐僧" }, operation: "sprite-sheet-edit",
+  });
+  assert.deepEqual(detail, {
+    stage: "asset", category: "invalid-image", code: "SPRITE_FRAME_EDGE",
+    message: "动画帧主体触碰了草稿格边缘，可能与相邻帧串格。",
+    nextStep: "按提示调整动画帧的透明背景、主体留白或图集合同后，再由你明确重新制作。",
+    retryable: false, resource: { file: "assets/monk-tang.png", label: "唐僧" }, operation: "sprite-sheet-edit",
+  });
 });

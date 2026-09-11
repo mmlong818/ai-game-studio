@@ -26,14 +26,31 @@ export interface SpriteSheetDraftGrid { columns: number; rows: number; frameCoun
 type RawFrame = { data: Buffer; width: number; height: number; channels: number };
 type DecodedFrame = Awaited<ReturnType<typeof decodeFrame>>;
 
+export type SpriteSheetFailureCode =
+  | "SPRITE_FRAME_FORMAT" | "SPRITE_FRAME_SUBJECT" | "SPRITE_FRAME_TRANSPARENCY" | "SPRITE_GRID"
+  | "SPRITE_SHEET_FORMAT" | "SPRITE_ANCHOR" | "SPRITE_FRAME_EDGE" | "SPRITE_FRAME_NORMALIZE"
+  | "SPRITE_FRAME_BOUNDS" | "SPRITE_CLIP_AREA" | "SPRITE_CLIP_ASPECT" | "SPRITE_CELL_CONTRACT"
+  | "SPRITE_DELIVERY_SIZE" | "SPRITE_FRAME_COUNT" | "SPRITE_FRAME_RESOLUTION" | "SPRITE_FRAME_CLIP"
+  | "SPRITE_SOURCE_CLIP" | "SPRITE_SOURCE_FRAME_COUNT" | "SPRITE_SOURCE_SIZE" | "SPRITE_REPLACEMENT_RESOLUTION";
+
+/** Safe, local validation detail. Its message is assembled only from contract values. */
+export class SpriteSheetValidationError extends Error {
+  constructor(readonly code: SpriteSheetFailureCode, message: string) {
+    super(message);
+    this.name = "SpriteSheetValidationError";
+  }
+}
+
+const spriteFailure = (code: SpriteSheetFailureCode, message: string) => new SpriteSheetValidationError(code, message);
+
 function clipForFrame(animation: SpriteSheetAnimation, frameIndex: number) {
   return animation.clips.find(({ startFrame, frameCount }) => frameIndex >= startFrame && frameIndex < startFrame + frameCount);
 }
 
-async function decodeFrame(bytes: Buffer): Promise<RawFrame & { source: SpriteFrameSourceMetadata; bounds: { left: number; top: number; width: number; height: number } }> {
+async function decodeFrame(bytes: Buffer, frameIndex: number): Promise<RawFrame & { source: SpriteFrameSourceMetadata; bounds: { left: number; top: number; width: number; height: number } }> {
   const image = sharp(bytes, { failOn: "error", limitInputPixels: MAX_SHEET_PIXELS });
   const metadata = await image.metadata();
-  if (metadata.format !== "png" || !metadata.width || !metadata.height) throw new Error("动画帧必须是可完整解码的 PNG。");
+  if (metadata.format !== "png" || !metadata.width || !metadata.height) throw spriteFailure("SPRITE_FRAME_FORMAT", `第 ${frameIndex + 1} 帧无法完整解码为 PNG（实际格式 ${metadata.format ?? "未知"}）。`);
   const { data, info } = await image.ensureAlpha().raw().toBuffer({ resolveWithObject: true });
   let minX = info.width;
   let minY = info.height;
@@ -52,8 +69,9 @@ async function decodeFrame(bytes: Buffer): Promise<RawFrame & { source: SpriteFr
       }
     }
   }
-  if (maxX < minX || maxY < minY) throw new Error("动画帧没有可见主体。");
-  if (transparentPixels / (info.width * info.height) < 0.01) throw new Error("动画帧没有足够的真实透明背景，不能安全打包。");
+  if (maxX < minX || maxY < minY) throw spriteFailure("SPRITE_FRAME_SUBJECT", `第 ${frameIndex + 1} 帧没有可见主体（实际可见像素 0）。`);
+  const transparencyRatio = transparentPixels / (info.width * info.height);
+  if (transparencyRatio < 0.01) throw spriteFailure("SPRITE_FRAME_TRANSPARENCY", `第 ${frameIndex + 1} 帧真实透明背景占比 ${(transparencyRatio * 100).toFixed(2)}%，低于要求 1.00%。`);
   return {
     data,
     width: info.width,
@@ -68,10 +86,10 @@ async function decodeFrame(bytes: Buffer): Promise<RawFrame & { source: SpriteFr
 export async function splitSpriteSheetDraft(bytes: Buffer, grid: SpriteSheetDraftGrid): Promise<Buffer[]> {
   if (!Number.isInteger(grid.columns) || !Number.isInteger(grid.rows) || !Number.isInteger(grid.frameCount)
     || grid.columns < 1 || grid.rows < 1 || grid.frameCount < 1 || grid.frameCount > grid.columns * grid.rows) {
-    throw new Error("Sprite Sheet 草稿网格无效。");
+    throw spriteFailure("SPRITE_GRID", `Sprite Sheet 草稿网格无效（列 ${grid.columns}、行 ${grid.rows}、帧 ${grid.frameCount}；要求帧数不超过列×行）。`);
   }
   const metadata = await sharp(bytes, { failOn: "error", limitInputPixels: MAX_SHEET_PIXELS }).metadata();
-  if (metadata.format !== "png" || !metadata.width || !metadata.height || !metadata.hasAlpha) throw new Error("Sprite Sheet 草稿必须是带透明通道的 PNG。");
+  if (metadata.format !== "png" || !metadata.width || !metadata.height || !metadata.hasAlpha) throw spriteFailure("SPRITE_SHEET_FORMAT", `Sprite Sheet 草稿必须是带透明通道的 PNG（实际 ${metadata.format ?? "未知"} ${metadata.width ?? 0}×${metadata.height ?? 0}，透明通道 ${metadata.hasAlpha ? "有" : "无"}）。`);
   const frames: Buffer[] = [];
   for (let index = 0; index < grid.frameCount; index += 1) {
     const column = index % grid.columns;
@@ -92,7 +110,7 @@ function availableEnvelope(animation: SpriteSheetAnimation) {
   const verticalRadius = anchor.y - margin;
   const width = Math.floor(horizontalRadius * 2);
   const height = Math.floor(verticalRadius);
-  if (width < 1 || height < 1) throw new Error(`动画锚点 ${anchor.x},${anchor.y} 没有给主体留出安全绘制区域。`);
+  if (width < 1 || height < 1) throw spriteFailure("SPRITE_ANCHOR", `动画锚点 ${anchor.x},${anchor.y} 的可用区域为 ${width}×${height}，要求至少 1×1。`);
   return { width, height };
 }
 
@@ -102,12 +120,12 @@ function sharedScale(frames: readonly DecodedFrame[], envelope: { width: number;
   return Math.min(1, envelope.width / maxWidth, envelope.height / maxHeight);
 }
 
-async function prepareFrame(decoded: DecodedFrame, animation: SpriteSheetAnimation, scale: number): Promise<{ cell: Buffer; source: SpriteFrameSourceMetadata; subject: { area: number; aspect: number } }> {
+async function prepareFrame(decoded: DecodedFrame, animation: SpriteSheetAnimation, scale: number, frameIndex: number): Promise<{ cell: Buffer; source: SpriteFrameSourceMetadata; subject: { area: number; aspect: number } }> {
   const edgeMargin = Math.max(1, Math.round(Math.min(decoded.width, decoded.height) * 0.01));
   if (decoded.bounds.left < edgeMargin || decoded.bounds.top < edgeMargin
     || decoded.bounds.left + decoded.bounds.width > decoded.width - edgeMargin
     || decoded.bounds.top + decoded.bounds.height > decoded.height - edgeMargin) {
-    throw new Error("动画帧主体触碰了草稿格边缘，可能与相邻帧串格。");
+    throw spriteFailure("SPRITE_FRAME_EDGE", `第 ${frameIndex + 1} 帧主体边界 ${decoded.bounds.left},${decoded.bounds.top},${decoded.bounds.width}×${decoded.bounds.height} 触碰草稿格边缘；要求至少保留 ${edgeMargin}px 留白。`);
   }
   const { frameWidth, frameHeight, anchor } = animation;
   const targetWidth = Math.max(1, Math.round(decoded.bounds.width * scale));
@@ -118,10 +136,10 @@ async function prepareFrame(decoded: DecodedFrame, animation: SpriteSheetAnimati
     .png({ compressionLevel: 9, adaptiveFiltering: true })
     .toBuffer();
   const size = await sharp(cropped).metadata();
-  if (!size.width || !size.height) throw new Error("动画帧等比适配失败。");
+  if (!size.width || !size.height) throw spriteFailure("SPRITE_FRAME_NORMALIZE", `第 ${frameIndex + 1} 帧等比适配失败（目标 ${targetWidth}×${targetHeight}，实际 ${size.width ?? 0}×${size.height ?? 0}）。`);
   const left = Math.round(anchor.x - size.width / 2);
   const top = Math.round(anchor.y - size.height);
-  if (left < 0 || top < 0 || left + size.width > frameWidth || top + size.height > frameHeight) throw new Error("动画帧按锚点放置后越出单帧边界。");
+  if (left < 0 || top < 0 || left + size.width > frameWidth || top + size.height > frameHeight) throw spriteFailure("SPRITE_FRAME_BOUNDS", `第 ${frameIndex + 1} 帧按锚点放置为 ${left},${top},${size.width}×${size.height}，超出单帧 ${frameWidth}×${frameHeight}。`);
   const cell = await sharp({ create: { width: frameWidth, height: frameHeight, channels: 4, background: { r: 0, g: 0, b: 0, alpha: 0 } } })
     .composite([{ input: cropped, left, top }])
     .png({ compressionLevel: 9, adaptiveFiltering: true })
@@ -138,8 +156,10 @@ function assertClipConsistency(animation: SpriteSheetAnimation, prepared: readon
     const frames = prepared.slice(start - frameOffset, end - frameOffset);
     const areas = frames.map(({ subject }) => subject.area);
     const aspects = frames.map(({ subject }) => subject.aspect);
-    if (Math.max(...areas) / Math.max(1, Math.min(...areas)) > 3) throw new Error(`动作 ${clip.id} 的主体面积跳变过大，需要重新生成并人工预览连续性。`);
-    if (Math.max(...aspects) / Math.max(0.001, Math.min(...aspects)) > 2.5) throw new Error(`动作 ${clip.id} 的主体轮廓比例跳变过大，需要重新生成并人工预览连续性。`);
+    const areaRatio = Math.max(...areas) / Math.max(1, Math.min(...areas));
+    const aspectRatio = Math.max(...aspects) / Math.max(0.001, Math.min(...aspects));
+    if (areaRatio > 3) throw spriteFailure("SPRITE_CLIP_AREA", `动作 ${clip.id} 在第 ${start + 1}–${end} 帧的主体面积倍率为 ${areaRatio.toFixed(2)}，上限为 3.00。`);
+    if (aspectRatio > 2.5) throw spriteFailure("SPRITE_CLIP_ASPECT", `动作 ${clip.id} 在第 ${start + 1}–${end} 帧的主体宽高比倍率为 ${aspectRatio.toFixed(2)}，上限为 2.50。`);
   }
 }
 
@@ -149,7 +169,7 @@ async function packCells(cells: readonly Buffer[], animation: SpriteSheetAnimati
   const sheet = Buffer.alloc(width * height * 4);
   await Promise.all(cells.map(async (cell, index) => {
     const { data, info } = await sharp(cell).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
-    if (info.width !== animation.frameWidth || info.height !== animation.frameHeight || info.channels !== 4) throw new Error("待打包动画格尺寸不符合合同。");
+    if (info.width !== animation.frameWidth || info.height !== animation.frameHeight || info.channels !== 4) throw spriteFailure("SPRITE_CELL_CONTRACT", "待打包动画格尺寸不符合合同。");
     const cellLeft = (index % animation.columns) * animation.frameWidth;
     const cellTop = Math.floor(index / animation.columns) * animation.frameHeight;
     for (let row = 0; row < animation.frameHeight; row += 1) {
@@ -162,17 +182,19 @@ async function packCells(cells: readonly Buffer[], animation: SpriteSheetAnimati
     .png({ compressionLevel: 9, adaptiveFiltering: true })
     .toBuffer();
   const metadata = await sharp(bytes).metadata();
-  if (metadata.width !== width || metadata.height !== height) throw new Error(`Sprite Sheet 交付尺寸错误，应为 ${width}×${height}。`);
+  if (metadata.width !== width || metadata.height !== height) throw spriteFailure("SPRITE_DELIVERY_SIZE", `Sprite Sheet 交付尺寸错误，应为 ${width}×${height}。`);
   return bytes;
 }
 
 /** Each input is adapted inside its own cell before row-major packing. */
 export async function packAnimationSpriteSheet(rawFrames: readonly Buffer[], rawAnimation: SpriteSheetAnimation): Promise<PackedSpriteSheet> {
   const animation = spriteSheetAnimationSchema.parse(rawAnimation);
-  if (rawFrames.length !== animation.frameCount) throw new Error(`Sprite Sheet 需要 ${animation.frameCount} 帧，实际收到 ${rawFrames.length} 帧。`);
-  const decoded = await Promise.all(rawFrames.map(bytes => decodeFrame(bytes)));
-  if (decoded.some(frame => frame.width < animation.frameWidth || frame.height < animation.frameHeight)) {
-    throw new Error(`Sprite Sheet 草稿单格分辨率不足以无放大交付 ${animation.frameWidth}×${animation.frameHeight} 帧。`);
+  if (rawFrames.length !== animation.frameCount) throw spriteFailure("SPRITE_FRAME_COUNT", `Sprite Sheet 需要 ${animation.frameCount} 帧，实际收到 ${rawFrames.length} 帧。`);
+  const decoded = await Promise.all(rawFrames.map((bytes, index) => decodeFrame(bytes, index)));
+  const undersized = decoded.findIndex(frame => frame.width < animation.frameWidth || frame.height < animation.frameHeight);
+  if (undersized >= 0) {
+    const frame = decoded[undersized]!;
+    throw spriteFailure("SPRITE_FRAME_RESOLUTION", `第 ${undersized + 1} 帧实际 ${frame.width}×${frame.height}，单格分辨率不足以无放大交付要求 ${animation.frameWidth}×${animation.frameHeight}。`);
   }
   const characterFrames = decoded.filter((_, index) => clipForFrame(animation, index)?.id !== "effect");
   const effectFrames = decoded.filter((_, index) => clipForFrame(animation, index)?.id === "effect");
@@ -180,8 +202,8 @@ export async function packAnimationSpriteSheet(rawFrames: readonly Buffer[], raw
   const effectScale = effectFrames.length ? sharedScale(effectFrames, availableEnvelope(animation)) : 1;
   const prepared = await Promise.all(decoded.map(async (frame, index) => {
     const clip = clipForFrame(animation, index);
-    if (!clip) throw new Error(`第 ${index} 帧没有归属任何动作，第一版不允许未分配帧。`);
-    return prepareFrame(frame, animation, clip.id === "effect" ? effectScale : characterScale);
+    if (!clip) throw spriteFailure("SPRITE_FRAME_CLIP", `第 ${index} 帧没有归属任何动作，第一版不允许未分配帧。`);
+    return prepareFrame(frame, animation, clip.id === "effect" ? effectScale : characterScale, index);
   }));
   assertClipConsistency(animation, prepared);
   return {
@@ -195,13 +217,13 @@ export async function packAnimationSpriteSheet(rawFrames: readonly Buffer[], raw
 export async function replaceAnimationSpriteClip(sourceSheet: Buffer, rawAnimation: SpriteSheetAnimation, clipId: SpriteAnimationClipId, replacementFrames: readonly Buffer[]): Promise<PackedSpriteSheet> {
   const animation = spriteSheetAnimationSchema.parse(rawAnimation);
   const clip = animation.clips.find(({ id }) => id === clipId);
-  if (!clip) throw new Error(`来源 Sprite Sheet 不包含动作 ${clipId}。`);
-  if (replacementFrames.length !== clip.frameCount) throw new Error(`动作 ${clipId} 需要 ${clip.frameCount} 帧，实际收到 ${replacementFrames.length} 帧。`);
+  if (!clip) throw spriteFailure("SPRITE_SOURCE_CLIP", `来源 Sprite Sheet 不包含动作 ${clipId}。`);
+  if (replacementFrames.length !== clip.frameCount) throw spriteFailure("SPRITE_SOURCE_FRAME_COUNT", `动作 ${clipId} 需要 ${clip.frameCount} 帧，实际收到 ${replacementFrames.length} 帧。`);
   const metadata = await sharp(sourceSheet, { failOn: "error", limitInputPixels: MAX_SHEET_PIXELS }).metadata();
   const expectedWidth = animation.frameWidth * animation.columns;
   const expectedHeight = animation.frameHeight * animation.rows;
   if (metadata.format !== "png" || metadata.width !== expectedWidth || metadata.height !== expectedHeight) {
-    throw new Error(`来源 Sprite Sheet 尺寸必须为 ${expectedWidth}×${expectedHeight}，不能对整张图集裁切或补边。`);
+    throw spriteFailure("SPRITE_SOURCE_SIZE", `来源 Sprite Sheet 尺寸必须为 ${expectedWidth}×${expectedHeight}（实际 ${metadata.width ?? 0}×${metadata.height ?? 0}），不能整图裁切或补边。`);
   }
   const cells = await Promise.all(Array.from({ length: animation.frameCount }, (_, index) => sharp(sourceSheet)
     .extract({
@@ -212,17 +234,19 @@ export async function replaceAnimationSpriteClip(sourceSheet: Buffer, rawAnimati
     })
     .png({ compressionLevel: 9, adaptiveFiltering: true })
     .toBuffer()));
-  const decodedReplacement = await Promise.all(replacementFrames.map(bytes => decodeFrame(bytes)));
-  if (decodedReplacement.some(frame => frame.width < animation.frameWidth || frame.height < animation.frameHeight)) {
-    throw new Error(`替换动作的草稿单格分辨率不足以无放大交付 ${animation.frameWidth}×${animation.frameHeight} 帧。`);
+  const decodedReplacement = await Promise.all(replacementFrames.map((bytes, index) => decodeFrame(bytes, index)));
+  const undersized = decodedReplacement.findIndex(frame => frame.width < animation.frameWidth || frame.height < animation.frameHeight);
+  if (undersized >= 0) {
+    const frame = decodedReplacement[undersized]!;
+    throw spriteFailure("SPRITE_REPLACEMENT_RESOLUTION", `替换动作第 ${undersized + 1} 帧实际 ${frame.width}×${frame.height}，单格分辨率不足以无放大交付要求 ${animation.frameWidth}×${animation.frameHeight}。`);
   }
-  const sourceClipFrames = await Promise.all(cells.slice(clip.startFrame, clip.startFrame + clip.frameCount).map(cell => decodeFrame(cell)));
+  const sourceClipFrames = await Promise.all(cells.slice(clip.startFrame, clip.startFrame + clip.frameCount).map((cell, index) => decodeFrame(cell, clip.startFrame + index)));
   const sourceEnvelope = {
     width: Math.max(...sourceClipFrames.map(({ bounds }) => bounds.width)),
     height: Math.max(...sourceClipFrames.map(({ bounds }) => bounds.height)),
   };
   const scale = sharedScale(decodedReplacement, sourceEnvelope);
-  const prepared = await Promise.all(decodedReplacement.map(frame => prepareFrame(frame, animation, scale)));
+  const prepared = await Promise.all(decodedReplacement.map((frame, index) => prepareFrame(frame, animation, scale, clip.startFrame + index)));
   assertClipConsistency(animation, prepared, clip.startFrame);
   prepared.forEach(({ cell }, offset) => { cells[clip.startFrame + offset] = Buffer.from(cell); });
   return {

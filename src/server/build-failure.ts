@@ -1,15 +1,27 @@
 import type { Build } from "../shared/contracts.js";
+import { SpriteSheetValidationError } from "./sprite-sheet.js";
 
 export type FailureDetail = NonNullable<Build["failureDetails"]>[number];
 
 export class BuildFailure extends Error {
-  constructor(message: string, readonly details: FailureDetail[]) { super(message); this.name = "BuildFailure"; }
+  constructor(message: string, readonly details: FailureDetail[], cause?: unknown) { super(message, cause === undefined ? undefined : { cause }); this.name = "BuildFailure"; }
 }
 
 type FailureMeta = { attempt?: number; httpStatus?: number; requestId?: string };
 
 export function safeFailure(stage: FailureDetail["stage"], error: unknown, extra: Partial<FailureDetail> = {}): FailureDetail {
   const source = error instanceof Error ? error : new Error("未知错误");
+  if (source instanceof SpriteSheetValidationError) {
+    return {
+      stage,
+      category: "invalid-image",
+      code: source.code,
+      message: source.message,
+      nextStep: "按提示调整动画帧的透明背景、主体留白或图集合同后，再由你明确重新制作。",
+      retryable: false,
+      ...extra,
+    };
+  }
   const meta = source as Error & { failureMeta?: FailureMeta };
   const message = source.message.replace(/(?:Bearer\s+|sk-)[A-Za-z0-9._-]+/gi, "[已隐藏]").slice(0, 500);
   const http = message.match(/(?:接口返回|HTTP)\s*(\d{3})/);
