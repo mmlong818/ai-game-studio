@@ -26,12 +26,12 @@ function selectedAssetTargets(content: string, candidates: RevisionAssetCandidat
   }));
 }
 
-export function planProjectRevision(project: ProjectDetail, rawContent: string) {
+export function planProjectRevision(project: ProjectDetail, rawContent: string, sourceRoot?: string) {
   const content = rawContent.trim();
   if (content.length < 2) throw new Error("请说明这次要修改的内容。");
   const clauses = content.split(/[，,。；;\n]|同时|并且/).map((clause) => clause.trim()).filter(Boolean);
   const scopedContent = (pattern: RegExp) => clauses.filter((clause) => pattern.test(clause)).join("，") || content;
-  const candidates = revisionAssetCandidates(project);
+  const candidates = revisionAssetCandidates(project, sourceRoot);
   const operations: RevisionOperation[] = [];
   const hasAssetIntent = assetPattern.test(content);
   const targets = hasAssetIntent ? selectedAssetTargets(content, candidates) : [];
@@ -58,13 +58,13 @@ export function planProjectRevision(project: ProjectDetail, rawContent: string) 
   });
 }
 
-export function validateRevisionPlan(project: ProjectDetail, rawPlan: RevisionPlan, content: string) {
+export function validateRevisionPlan(project: ProjectDetail, rawPlan: RevisionPlan, content: string, sourceRoot?: string) {
   const plan = revisionPlanSchema.parse(rawPlan);
   if (plan.sourceProjectId !== project.id || plan.sourceVersionId !== project.version.id) {
     throw new Error("来源游戏版本已经变化，请重新检查并确认这次修改。");
   }
   if (plan.content !== content.trim()) throw new Error("修改内容已变化，请重新检查并确认这次修改。");
-  const allowed = new Map(revisionAssetCandidates(project).map((candidate) => [candidate.file, candidate]));
+  const allowed = new Map(revisionAssetCandidates(project, sourceRoot).map((candidate) => [candidate.file, candidate]));
   for (const operation of plan.operations) {
     if (operation.scope !== "assets") continue;
     for (const target of operation.targets) {

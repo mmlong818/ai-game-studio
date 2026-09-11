@@ -109,6 +109,39 @@ it("确认尚未返回时双击只发一次，失败后保留已选计划和文�
   expect(screen.getByRole("textbox")).toHaveValue(plannedRevision.revisionPlan.content);
 });
 
+it("心卡没有动画播放器时保留文字、显示原因且绝不退化为静态资源提交", async () => {
+  const selectionRequired = {
+    ...plannedRevision,
+    status: "selection-required" as const,
+    revisionPlan: {
+      ...plannedRevision.revisionPlan,
+      content: "心卡改为精灵动图",
+      operations: [],
+    },
+    candidates: [{
+      file: "assets/tiles-v2/heart.png", label: "心卡", kind: "other" as const,
+      recommended: false, supportsAnimation: false,
+      animationUnavailableReason: "来源运行时将此资源作为单张静态图片显示，未声明图集帧或播放器，不能升级为精灵动图。",
+    }],
+    recommendedTargetFiles: [],
+  };
+  vi.mocked(planProjectRevision).mockResolvedValueOnce(selectionRequired);
+  const user = userEvent.setup();
+  const onConfirm = vi.fn().mockResolvedValue(undefined);
+  render(<RevisionComposer projectId="0822f4c4-51a8-4d90-bceb-009b365e2572" disabled={false} working={false} onConfirm={onConfirm} />);
+
+  await user.type(screen.getByRole("textbox"), selectionRequired.revisionPlan.content);
+  await user.click(screen.getByRole("button", { name: "分析修改内容" }));
+  await screen.findByText("该资源不能升级为精灵动图");
+  expect(screen.getByRole("textbox")).toHaveValue(selectionRequired.revisionPlan.content);
+  expect(screen.getByRole("checkbox", { name: /心卡/ })).not.toBeChecked();
+  expect(screen.getByRole("checkbox", { name: /心卡/ })).toBeDisabled();
+  expect(screen.getByText(/来源运行时将此资源作为单张静态图片显示/)).toBeInTheDocument();
+  expect(screen.getByRole("status")).toHaveTextContent("当前作品没有可升级为精灵动图的资源");
+  expect(screen.getByRole("button", { name: "确认修改，制作新版" })).toBeDisabled();
+  expect(onConfirm).not.toHaveBeenCalled();
+});
+
 it("正在制作时保留草稿但不能分析，且不同作品不共用草稿", () => {
   sessionStorage.setItem("studio-revision-draft:p1", "保留此修改草稿");
   const view = render(<RevisionComposer projectId="p1" disabled={false} working onConfirm={vi.fn()} />);

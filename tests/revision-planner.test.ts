@@ -1,5 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
+import { tmpdir } from "node:os";
 import type { ProjectDetail } from "../src/shared/contracts.js";
 import { planProjectRevision, validateRevisionPlan } from "../src/server/revision-planner.js";
 import { revisionPlanInstructions, selectedRevisionRequest } from "../src/server/build-orchestrator.js";
@@ -59,6 +62,23 @@ test("不能确定资源时返回候选而不伪造执行项", () => {
   assert.equal(result.status, "selection-required");
   assert.deepEqual(result.revisionPlan.operations, []);
   assert.ok(result.candidates.some((candidate) => candidate.label === "唐僧"));
+});
+
+test("来源静态资源清单会暴露心卡，但不把没有播放器的图片伪装成可动画目标", () => {
+  const root = mkdtempSync(join(tmpdir(), "revision-static-asset-"));
+  try {
+    const tiles = join(root, "assets", "tiles-v2");
+    mkdirSync(tiles, { recursive: true });
+    writeFileSync(join(tiles, "heart.png"), "fixture");
+    writeFileSync(join(tiles, "manifest.json"), JSON.stringify({ assets: [{ filename: "heart.png", role: "match3-tile-heart" }] }));
+    const result = planProjectRevision(project(), "心卡改为精灵动图", root);
+    assert.equal(result.status, "selection-required");
+    assert.deepEqual(result.revisionPlan.operations, []);
+    assert.deepEqual(result.candidates.find((candidate) => candidate.file === "assets/tiles-v2/heart.png"), {
+      file: "assets/tiles-v2/heart.png", label: "心卡", kind: "other", recommended: false, supportsAnimation: false,
+      animationUnavailableReason: "来源运行时将此资源作为单张静态图片显示，未声明图集帧或播放器，不能升级为精灵动图。",
+    });
+  } finally { rmSync(root, { recursive: true, force: true }); }
 });
 
 test("正式提交绑定来源版本和原文并拒绝任意文件", () => {

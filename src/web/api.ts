@@ -83,7 +83,7 @@ function serviceConnectionFailure(stage: FailureDetail["stage"] = "unknown") {
   return new StudioApiError(detail.message, [detail]);
 }
 
-async function apiRequest(path: string, init?: RequestInit) {
+async function apiRequest(path: string, init?: RequestInit, acceptedErrorStatuses: readonly number[] = []) {
   const token = accessToken();
   let response: Response;
   try {
@@ -107,7 +107,7 @@ async function apiRequest(path: string, init?: RequestInit) {
       throw new Error("本地制作服务返回了无法识别的数据。");
     }
   }
-  if (!response.ok) {
+  if (!response.ok && !acceptedErrorStatuses.includes(response.status)) {
     const details = safeFailureDetails(payload);
     throw new StudioApiError(details[0]?.message ?? apiFailureFallback(response.status), details);
   }
@@ -301,7 +301,9 @@ export async function planProjectRevision(projectId: string, content: string) {
   const { revisionPlanResponseSchema } = await import("../shared/contracts");
   return revisionPlanResponseSchema.parse(await apiRequest(`/api/projects/${encodeURIComponent(projectId)}/revisions/plan`, {
     method: "POST", body: JSON.stringify({ content }),
-  }));
+  // A 409 here is not a rejected request: it is the planner asking the user to
+  // choose a concrete asset before any build or model request is started.
+  }, [409]));
 }
 
 export async function submitProjectRevision(projectId: string, input: { requestId: string; content: string; revisionScope?: RenovationScope; assetTarget?: { clipId: SpriteAnimationClipId }; revisionPlan?: RevisionPlan }): Promise<Build> {

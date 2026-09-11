@@ -1,5 +1,5 @@
 import { afterEach, expect, it, vi } from "vitest";
-import { generateDesignPreview, getLatestBuild } from "./api";
+import { generateDesignPreview, getLatestBuild, planProjectRevision } from "./api";
 import { INITIAL_DRAFT } from "../domain/storage";
 import { StudioApiError } from "./failure";
 
@@ -67,4 +67,33 @@ it("连接不上本机制作服务时返回可解释且可手动重试的安全�
     expect(failure.message).not.toContain("browser network internals");
     expect(failure.failureDetails).toEqual([expect.objectContaining({ stage: "unknown", category: "network", retryable: true })]);
   }
+});
+
+it("资源选择预检的 409 会保留为可选择的计划，而不是通用请求失败", async () => {
+  const selectionRequired = {
+    status: "selection-required",
+    revisionPlan: {
+      sourceProjectId: "0822f4c4-51a8-4d90-bceb-009b365e2572",
+      sourceVersionId: "version-current",
+      content: "心卡改为精灵动图",
+      operations: [],
+    },
+    candidates: [{
+      file: "assets/tiles-v2/heart.png", label: "心卡", kind: "other",
+      recommended: false, supportsAnimation: false,
+    }],
+    recommendedTargetFiles: [],
+  };
+  vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
+    ok: false,
+    status: 409,
+    text: async () => JSON.stringify(selectionRequired),
+  }));
+
+  await expect(planProjectRevision(selectionRequired.revisionPlan.sourceProjectId, selectionRequired.revisionPlan.content))
+    .resolves.toEqual(selectionRequired);
+  expect(fetch).toHaveBeenCalledWith(
+    "/api/projects/0822f4c4-51a8-4d90-bceb-009b365e2572/revisions/plan",
+    expect.objectContaining({ method: "POST", body: JSON.stringify({ content: "心卡改为精灵动图" }) }),
+  );
 });

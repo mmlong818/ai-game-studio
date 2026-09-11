@@ -452,7 +452,8 @@ async function handleApi(request: IncomingMessage, response: ServerResponse, pat
     const project = await repository.get(decodeURIComponent(revisionPlanRoute[1]));
     if (!project) { sendJson(response, 404, { error: "项目不存在。" }); return true; }
     const raw = await readJson(request) as { content?: unknown };
-    const result = planProjectRevision(project, typeof raw.content === "string" ? raw.content : "");
+    const sourceRoot = join(artifactRoot, project.version.id);
+    const result = planProjectRevision(project, typeof raw.content === "string" ? raw.content : "", sourceRoot);
     sendJson(response, result.status === "ready" ? 200 : 409, result);
     return true;
   }

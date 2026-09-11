@@ -3,6 +3,8 @@ import type { SpriteAnimationClipId, SpriteSheetAnimation } from "../shared/gene
 import { type OpenAISettings } from "./openai-settings.js";
 import { packAnimationSpriteSheet, replaceAnimationSpriteClip, splitSpriteSheetDraft, type SpriteFrameSourceMetadata } from "./sprite-sheet.js";
 import { createHash } from "node:crypto";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { join, relative } from "node:path";
 import sharp from "sharp";
 import { cancellationSignal, withTimeoutSignal } from "./cancellation.js";
 import { BuildFailure, safeFailure } from "./build-failure.js";
@@ -332,8 +334,52 @@ function assetTargetCandidates(project: ProjectDetail): AssetTargetCandidate[] {
   ];
 }
 
-export function revisionAssetCandidates(project: ProjectDetail): RevisionAssetCandidate[] {
-  return assetTargetCandidates(project).flatMap((candidate) => candidate.files.map((file) => {
+const staticAnimationUnavailableReason = "来源运行时将此资源作为单张静态图片显示，未声明图集帧或播放器，不能升级为精灵动图。";
+
+function staticAssetLabel(role: unknown, filename: string) {
+  const semantic = `${typeof role === "string" ? role : ""} ${filename}`.toLowerCase();
+  // This is keyed to a portable asset semantic from a manifest, never to a fixture
+  // or project id. The visible name lets a Chinese request identify the source tile.
+  if (/(?:match3[-_]tile[-_])?heart/.test(semantic)) return "心卡";
+  return filename.replace(/\.png$/i, "").replace(/[-_]+/g, " ");
+}
+
+function staticAssetManifestCandidates(sourceRoot?: string): RevisionAssetCandidate[] {
+  if (!sourceRoot) return [];
+  const assetsRoot = join(sourceRoot, "assets");
+  if (!existsSync(assetsRoot)) return [];
+  const candidates: RevisionAssetCandidate[] = [];
+  const visit = (directory: string) => {
+    for (const entry of readdirSync(directory, { withFileTypes: true })) {
+      const fullPath = join(directory, entry.name);
+      if (entry.isDirectory()) { visit(fullPath); continue; }
+      if (entry.name !== "manifest.json") continue;
+      try {
+        const parsed = JSON.parse(readFileSync(fullPath, "utf8")) as { assets?: Array<{ filename?: unknown; role?: unknown }> };
+        for (const asset of parsed.assets ?? []) {
+          if (typeof asset.filename !== "string" || !asset.filename.toLowerCase().endsWith(".png")) continue;
+          const imagePath = join(directory, asset.filename);
+          if (!existsSync(imagePath)) continue;
+          const file = relative(sourceRoot, imagePath).replaceAll("\\", "/");
+          if (!file.startsWith("assets/")) continue;
+          candidates.push({
+            file,
+            label: staticAssetLabel(asset.role, asset.filename),
+            kind: "other",
+            recommended: false,
+            supportsAnimation: false,
+            animationUnavailableReason: staticAnimationUnavailableReason,
+          });
+        }
+      } catch { /* An unrelated or malformed manifest cannot block revision planning. */ }
+    }
+  };
+  try { visit(assetsRoot); } catch { return []; }
+  return candidates;
+}
+
+export function revisionAssetCandidates(project: ProjectDetail, sourceRoot?: string): RevisionAssetCandidate[] {
+  const planned = assetTargetCandidates(project).flatMap((candidate) => candidate.files.map((file) => {
     const label = candidate.files.length === 1 ? candidate.label : dynamicArtPlan(project).find((entry) => entry.file === file)?.role ?? candidate.label;
     const kind: RevisionAssetCandidate["kind"] = file === "assets/cover.png"
       ? "cover"
@@ -343,8 +389,14 @@ export function revisionAssetCandidates(project: ProjectDetail): RevisionAssetCa
           ? "role"
           : "other";
     const blueprint = project.spec.designProfile.generatedBlueprint?.sprites.find((entry) => entry.file === file);
-    return { file, label, kind, recommended: false, supportsAnimation: kind === "role" && Boolean(blueprint) };
+    const supportsAnimation = kind === "role" && Boolean(blueprint);
+    return {
+      file, label, kind, recommended: false, supportsAnimation,
+      ...(!supportsAnimation ? { animationUnavailableReason: staticAnimationUnavailableReason } : {}),
+    };
   }));
+  const knownFiles = new Set(planned.map((candidate) => candidate.file));
+  return [...planned, ...staticAssetManifestCandidates(sourceRoot).filter((candidate) => !knownFiles.has(candidate.file))];
 }
 
 /** Resolve exactly one source-art slot before any paid image call. */
