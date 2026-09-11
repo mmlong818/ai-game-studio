@@ -1,5 +1,6 @@
 import { heuristicIdeaAnalysis, ideaAnalysisSchema, projectInputSchema, type GameDesignProfile, type IdeaAnalysis, type ProjectDetail, type ProjectInput } from "../shared/contracts.js";
 import { constrainRenovationProfile } from "../shared/renovation-scope.js";
+import { validateRevisionPlan } from "./revision-planner.js";
 
 type Dependencies = {
   analyze: (input: ProjectInput) => Promise<IdeaAnalysis>;
@@ -8,11 +9,18 @@ type Dependencies = {
 
 export async function prepareRenovationInput(rawInput: ProjectInput, findProject: (id: string) => Promise<ProjectDetail | null>) {
   const input = projectInputSchema.parse(rawInput);
-  if (!input.sourceProjectId || !input.revisionScope) return input;
+  if (!input.sourceProjectId || (!input.revisionScope && !input.revisionPlan)) return input;
   const source = await findProject(input.sourceProjectId);
   if (!source) throw new Error("找不到要改造的来源游戏，已停止制作；没有按新游戏继续生成。");
+  const revisionPlan = input.revisionPlan ? validateRevisionPlan(source, input.revisionPlan, input.revisionPlan.content) : null;
+  const revisionScope = input.revisionScope
+    ?? (revisionPlan!.operations.some((operation) => operation.scope === "gameplay")
+      ? "gameplay"
+      : revisionPlan!.operations.some((operation) => operation.scope === "assets") ? "assets" : "visual-style");
   return projectInputSchema.parse({
     ...input,
+    revisionScope,
+    ...(revisionPlan ? { revisionPlan } : {}),
     template: source.spec.template,
     dimensions: source.dimensions,
     artStyle: source.spec.artStyle,
@@ -24,7 +32,7 @@ export async function prepareRenovationInput(rawInput: ProjectInput, findProject
     puzzlePieceCount: source.spec.puzzleRules?.pieceCount,
     customImageDataUrl: source.spec.customImageDataUrl ?? undefined,
     confirmedDesignProfile: input.confirmedDesignProfile
-      ? constrainRenovationProfile(input.confirmedDesignProfile, source.spec.designProfile, input.revisionScope)
+      ? constrainRenovationProfile(input.confirmedDesignProfile, source.spec.designProfile, revisionScope)
       : source.spec.designProfile,
   });
 }

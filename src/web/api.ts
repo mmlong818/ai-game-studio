@@ -18,6 +18,7 @@ import {
   type ProjectVersion,
   type PlayActivity,
   type RenovationScope,
+  type RevisionPlan,
 } from "../shared/contracts";
 import type { SpriteAnimationClipId } from "../shared/generated-blueprint";
 import { streamLines } from "../shared/stream-lines";
@@ -257,7 +258,14 @@ export async function cancelBuild(projectId: string, buildId: string): Promise<B
   return buildSchema.parse(payload.build);
 }
 
-export async function submitProjectRevision(projectId: string, input: { requestId: string; content: string; revisionScope: RenovationScope; assetTarget?: { clipId: SpriteAnimationClipId } }): Promise<Build> {
+export async function planProjectRevision(projectId: string, content: string) {
+  const { revisionPlanResponseSchema } = await import("../shared/contracts");
+  return revisionPlanResponseSchema.parse(await apiRequest(`/api/projects/${encodeURIComponent(projectId)}/revisions/plan`, {
+    method: "POST", body: JSON.stringify({ content }),
+  }));
+}
+
+export async function submitProjectRevision(projectId: string, input: { requestId: string; content: string; revisionScope?: RenovationScope; assetTarget?: { clipId: SpriteAnimationClipId }; revisionPlan?: RevisionPlan }): Promise<Build> {
   const payload = await apiRequest(`/api/projects/${encodeURIComponent(projectId)}/revisions`, { method: "POST", body: JSON.stringify(input) });
   return buildSchema.parse(payload.build);
 }

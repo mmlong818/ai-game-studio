@@ -13,25 +13,12 @@ import { DOMAIN_TEMPLATE_ART, resolveTemplateForGame } from "./domain/templateRe
 import { validateDraft } from "./domain/validation";
 import { getPublishedGames } from "./web/api";
 import type { GameDesignProfile } from "./shared/contracts";
-import type { RenovationScope } from "./shared/contracts";
-import { RevisionScopePicker, revisionScopeOptions } from "./web/RevisionScopePicker";
+import type { RevisionPlan } from "./shared/contracts";
+import { RevisionPlanPicker } from "./web/RevisionPlanPicker";
 import { SpriteAnimationChoice, type SpriteAnimationPreference } from "./components/SpriteAnimationControl";
 
 type Stage = "compose" | "review" | "produce";
 type ComposeStep = "choose" | "pick-game" | "describe";
-
-function useAutomaticReview(value: string, enabled: boolean, onContinue: () => void) {
-  const [edited, setEdited] = useState(false);
-  const [composing, setComposing] = useState(false);
-  const callback = useRef(onContinue);
-  callback.current = onContinue;
-  useEffect(() => {
-    if (!edited || !enabled || composing) return;
-    const timer = window.setTimeout(() => { setEdited(false); callback.current(); }, 1500);
-    return () => window.clearTimeout(timer);
-  }, [value, enabled, edited, composing]);
-  return { onInput: () => setEdited(true), onCompositionStart: () => setComposing(true), onCompositionEnd: () => setComposing(false) };
-}
 
 // 面向外行的改动说明：不出现 R0–R3 代码，只说会发生什么。
 const LEVEL_EXPLAIN: Record<ChangeLevel, { tone: "safe" | "caution" | "blocked"; title: string; detail: string }> = {
@@ -148,11 +135,8 @@ function RemixDescribeStep({
   onChangeGame,
   level,
   uncertain,
-  validation,
-  onContinue,
   onConvert,
-  revisionScope,
-  onScopeChange,
+  onPlanReady,
 }: {
   template: GameTemplate;
   sourceGame: SourceGame | null;
@@ -161,16 +145,13 @@ function RemixDescribeStep({
   onChangeGame: () => void;
   level: ChangeLevel;
   uncertain: boolean;
-  validation: ValidationResult;
-  onContinue: (explicit?: boolean) => void;
   onConvert: () => void;
-  revisionScope: RenovationScope;
-  onScopeChange: (value: RenovationScope) => void;
+  onPlanReady: (plan: RevisionPlan) => void;
 }) {
   const hasText = value.trim().length > 0;
   const explain = uncertain ? UNCERTAIN_EXPLAIN : LEVEL_EXPLAIN[level];
   const blocked = level === "R3";
-  const automatic = useAutomaticReview(value, validation.valid && !blocked, onContinue);
+  const showAssessment = hasText && (explain.tone !== "caution" || /新增|加入|添加|新机制|玩法|战斗|联机/i.test(value));
   const title = sourceGame?.title ?? template.name;
   const art = sourceGame?.coverUrl ?? templateAsPickable(template).coverUrl;
   return (
@@ -183,33 +164,25 @@ function RemixDescribeStep({
         </span>
         <button type="button" className="text-link" onClick={onChangeGame}>换一个游戏</button>
       </div>
-      <RevisionScopePicker value={revisionScope} onChange={onScopeChange} />
-      <label htmlFor="remix-request">具体想调整什么？</label>
-      <textarea
-        id="remix-request"
-        {...automatic}
-        value={value}
-        onChange={(event) => onChange(event.target.value)}
-        rows={6}
-        placeholder={revisionScopeOptions.find(option => option.id === revisionScope)?.example}
-      />
-      {hasText && (
+      <RevisionPlanPicker projectId={sourceGame?.id ?? ""} content={value} onContentChange={onChange}
+        disabled={!sourceGame} inputId="remix-request" inputLabel="这次想怎么改？"
+        placeholder="例如：所有角色改为精灵动图，同时把技能墨量消耗减半。"
+        submitLabel="确认改造需求，生成方案" onConfirm={plan => { onPlanReady(plan); }} />
+      {showAssessment && (
         <div className={`assessment tone-${explain.tone}`} role="status">
           <strong>{explain.title}</strong>
           <span>{explain.detail}</span>
         </div>
       )}
-      <p className="remix-preservation-note">本次制作要求沿用当前游戏，只调整上面圈定的范围，并保留原有核心玩法和操作。</p>
+      <p className="remix-preservation-note">可一次确认玩法、资源和画面风格等互不冲突的修改。未点名的资源、玩法和操作仍会保留。</p>
       {blocked ? (
         <button type="button" className="primary-action" onClick={onConvert}>
           按新游戏继续 <span aria-hidden="true">→</span>
         </button>
       ) : (
-        <button type="button" className="primary-action" onClick={() => onContinue(true)} disabled={!validation.valid}>
-          开始制作 <span aria-hidden="true">→</span>
-        </button>
+        null
       )}
-      <p className="action-footnote">{hasText ? "下一步会先给你看一份可检查的方案，不会马上消耗 AI 额度。" : "先写一句你想改什么。"}</p>
+      <p className="action-footnote">{hasText ? "分析修改内容只会读取当前作品和资源，不调用模型；确认后生成方案会使用文字模型用量。" : "先写一句你想改什么。"}</p>
     </section>
   );
 }
@@ -230,14 +203,12 @@ function NewGameDescribeStep({
   onContinue: (explicit?: boolean) => void;
 }) {
   const ready = value.trim().length >= 12;
-  const automatic = useAutomaticReview(value, validation.valid, onContinue);
   const mechanics = ready ? recommendMechanics(value).slice(0, 2) : [];
   return (
     <section className="describe-panel" aria-label="描述新游戏">
       <label htmlFor="new-game-brief">说说你想做的游戏</label>
       <textarea
         id="new-game-brief"
-        {...automatic}
         value={value}
         onChange={(event) => onChange(event.target.value)}
         rows={7}
@@ -251,7 +222,7 @@ function NewGameDescribeStep({
       )}
       <SpriteAnimationChoice value={spriteAnimation} onChange={onSpriteAnimationChange} />
       <button type="button" className="primary-action" onClick={() => onContinue(true)} disabled={!validation.valid}>
-        开始制作 <span aria-hidden="true">→</span>
+        提交，生成方案 <span aria-hidden="true">→</span>
       </button>
       <p className="action-footnote">
         {ready ? "下一步会先给你看一份可检查的方案，不会马上消耗 AI 额度。" : "再多写一点，一句完整的话就够。"}
@@ -266,6 +237,7 @@ export function AdvancedStudioApp() {
   const [confirmedPlan, setConfirmedPlan] = useState<string>();
   const [confirmedDesignProfile, setConfirmedDesignProfile] = useState<GameDesignProfile>();
   const [originalIdea, setOriginalIdea] = useState<string>();
+  const [revisionPlan, setRevisionPlan] = useState<RevisionPlan>();
   const [reviewScrollRequest, setReviewScrollRequest] = useState(0);
   const completedReviewScroll = useRef(0);
   useEffect(() => {
@@ -331,12 +303,14 @@ export function AdvancedStudioApp() {
   const scrollTop = () => window.scrollTo({ top: 0, behavior: "smooth" });
 
   const choose = (creationMode: CreationMode) => {
+    setRevisionPlan(undefined);
     updateDraft({ creationMode, revisionScope: "gameplay", referenceDossier: null, changeLevel: creationMode === "template-remix" ? "R0" : "R3" });
     setStep(creationMode === "template-remix" ? "pick-game" : "describe");
   };
 
   const pickGame = (game: PickableGame) => {
     if (!game.templateId) return;
+    setRevisionPlan(undefined);
     updateDraft({
       revisionScope: "gameplay",
       templateId: game.templateId,
@@ -352,6 +326,7 @@ export function AdvancedStudioApp() {
   const convertToNewGame = () => {
     const inspiration = draft.sourceGame?.title ?? template?.name;
     const combinedBrief = [inspiration ? `以「${inspiration}」为灵感` : "", draft.freeRequest].filter(Boolean).join("，");
+    setRevisionPlan(undefined);
     updateDraft({ creationMode: "mechanic-composition", newGameBrief: combinedBrief, changeLevel: "R3" });
     setStep("describe");
     scrollTop();
@@ -366,7 +341,7 @@ export function AdvancedStudioApp() {
   if (stage === "produce") {
     return (
       <div className="app-shell studio-app">
-        <AutomaticProduction draft={finalizedDraft} confirmedPlan={confirmedPlan} confirmedDesignProfile={confirmedDesignProfile} originalIdea={originalIdea} />
+        <AutomaticProduction draft={finalizedDraft} confirmedPlan={confirmedPlan} confirmedDesignProfile={confirmedDesignProfile} originalIdea={originalIdea} revisionPlan={revisionPlan} />
       </div>
     );
   }
@@ -378,14 +353,15 @@ export function AdvancedStudioApp() {
     : step === "pick-game"
       ? { title: "你想改哪一个？", lead: "点一个游戏。" }
       : isRemix
-        ? { title: `个性化「${remixTitle}」`, lead: "圈定一类局部调整，再说清最想改变的一件事。本次制作要求保留原玩法和操作。" }
+        ? { title: `个性化「${remixTitle}」`, lead: "可以一次说明玩法、资源和画面风格等互不冲突的调整。未点名的内容会保留。" }
         : { title: "你想做一个什么游戏？", lead: "可以说一个你玩过的游戏，也可以说一个从没见过的点子。" };
   const backStep: ComposeStep | null = step === "choose" ? null : step === "describe" && isRemix ? "pick-game" : "choose";
 
   return (
     <div className="app-shell studio-app">
-      <div className="studio-layout">
-        <main className="studio-main" id="main-content" tabIndex={-1}>
+      {stage === "compose" && (
+        <div className="studio-layout">
+          <main className="studio-main" id="main-content" tabIndex={-1}>
           <div className="intro-row">
             <div>
               {backStep ? (
@@ -417,15 +393,12 @@ export function AdvancedStudioApp() {
               template={template}
               sourceGame={draft.sourceGame ?? null}
               value={draft.freeRequest}
-              onChange={(freeRequest) => updateDraft({ freeRequest })}
+              onChange={(freeRequest) => { setRevisionPlan(undefined); updateDraft({ freeRequest }); }}
               onChangeGame={() => setStep("pick-game")}
               level={finalizedDraft.changeLevel}
               uncertain={classification.matchedTerms.length === 0 && draft.freeRequest.trim().length > 0}
-              validation={validation}
-              onContinue={startReview}
               onConvert={convertToNewGame}
-              revisionScope={draft.revisionScope}
-              onScopeChange={(revisionScope) => updateDraft({ revisionScope })}
+              onPlanReady={(plan) => { setRevisionPlan(plan); startReview(true); }}
             />
           )}
           {step === "describe" && !isRemix && (
@@ -438,9 +411,14 @@ export function AdvancedStudioApp() {
               onContinue={startReview}
             />
           )}
-        </main>
-      </div>
-      {stage === "review" && validation.valid && <LiveDesignReview draft={finalizedDraft} onBack={() => { setStage("compose"); document.querySelector<HTMLTextAreaElement>("textarea")?.focus(); }} onConfirm={(text, profile, idea) => { if (validation.valid) { setConfirmedPlan(text); setConfirmedDesignProfile(profile); setOriginalIdea(idea); setStage("produce"); scrollTop(); } }} />}
+          </main>
+        </div>
+      )}
+      {stage === "review" && validation.valid && (
+        <div className="review-stage">
+          <LiveDesignReview draft={finalizedDraft} revisionPlan={revisionPlan} onBack={() => { setStage("compose"); document.querySelector<HTMLTextAreaElement>("textarea")?.focus(); }} onConfirm={(text, profile, idea) => { if (validation.valid) { setConfirmedPlan(text); setConfirmedDesignProfile(profile); setOriginalIdea(idea); setStage("produce"); scrollTop(); } }} />
+        </div>
+      )}
       <footer className="app-footer">
         <span>当前能力：从范围判断到构建、验证与发布闭环</span>
         <span>不会复制参考游戏的品牌、美术、音乐或界面识别</span>

@@ -29,8 +29,7 @@ import {
   UserRound,
   XCircle,
 } from "lucide-react";
-import { visualStyleOptions, type Build, type IdeaAnalysis, type ProjectDetail, type ProjectMessage, type ProjectVersion, type RenovationScope } from "../shared/contracts";
-import type { SpriteAnimationClipId } from "../shared/generated-blueprint";
+import { visualStyleOptions, type Build, type IdeaAnalysis, type ProjectDetail, type ProjectMessage, type ProjectVersion, type RevisionPlan } from "../shared/contracts";
 import {
   archiveProject,
   cancelBuild,
@@ -527,7 +526,7 @@ type WorkbenchPanelProps = {
   busy: boolean;
   canStartBuild: boolean;
   stopping: boolean;
-  onSend: (content: string, revisionScope: RenovationScope, assetTarget?: { clipId: SpriteAnimationClipId }) => Promise<void>;
+  onSend: (content: string, revisionPlan: RevisionPlan) => Promise<void>;
   onStartBuild: () => void;
   onRetryBuild: () => Promise<void>;
   onCancelBuild: () => Promise<void>;
@@ -557,7 +556,7 @@ function WorkbenchPanel({ project, build, messages, loading, sending, archived, 
           <p>沿用已确认方案，已生成的图片直接复用不再付费；代码会针对失败原因重新生成并再次检查，会消耗文本模型用量。也可以先在下方写下修改意见再制作。</p>
         </div>}
         {(build?.status === "queued" || build?.status === "running") && <div className="review-actions"><button type="button" className="workbench-button button-secondary stop-action" disabled={stopping} onClick={() => void onCancelBuild()}>{stopping ? "正在停止…" : "停止制作"}</button></div>}
-        <RevisionComposer key={project.id} projectId={project.id} disabled={archived || busy || sending || loading || stopping || !canStartBuild} working={build?.status === "running" || build?.status === "queued"} animationClipIds={Array.from(new Set(project.spec.designProfile.generatedBlueprint?.sprites.flatMap(sprite => sprite.animation?.clips.map(clip => clip.id) ?? []) ?? []))} onConfirm={onSend} />
+        <RevisionComposer key={project.id} projectId={project.id} disabled={archived || busy || sending || loading || stopping || !canStartBuild} working={build?.status === "running" || build?.status === "queued"} onConfirm={onSend} />
         {!!messages.filter(message => message.role === "user").length && <details className="workspace-details"><summary>最近的修改意见</summary><DirectionLog messages={messages.filter(message => message.role === "user").slice(-3)} /></details>}
         <details className="workspace-details"><summary>查看完整方案、制作与审核记录</summary><p>以下为专业制作详情。实际审核仍按原有标准执行，不以展开或关闭记录代替审核。</p>
         <CreatorBrief project={project} />
@@ -735,11 +734,11 @@ export function ProjectStudio({ project, onProjectChange }: ProjectStudioProps) 
     }
   }
 
-  async function sendMessage(content: string, revisionScope: RenovationScope, assetTarget?: { clipId: SpriteAnimationClipId }) {
+  async function sendMessage(content: string, revisionPlan: RevisionPlan) {
     setSending(true);
     setError(null);
     try {
-      setBuild(await confirmProjectRevision(project.id, content, revisionScope, assetTarget));
+      setBuild(await confirmProjectRevision(project.id, content, revisionPlan));
       // Failure to refresh discussion after acceptance must never make the
       // confirmed paid request look unaccepted or encourage another submission.
       try { setMessages(await getProjectMessages(project.id)); } catch { /* Build receipt already confirmed. */ }

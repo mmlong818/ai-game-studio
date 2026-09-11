@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { modelCatalog, fetchModelCatalog } from "../src/server/openai-model-catalog.js";
+import { modelCatalog, fetchModelCatalog, modelCatalogConnectionError } from "../src/server/openai-model-catalog.js";
 import { OpenAISettings } from "../src/server/openai-settings.js";
 import { CoverArtGenerator } from "../src/server/image-generator.js";
 import { generateGameSpec, type ProjectDetail } from "../src/shared/contracts.js";
@@ -163,6 +163,21 @@ test("换 Key 重新验证；失败不污染原配置，不泄露远端错误正
   await assert.rejects(settings.save({ apiKey: key+"other" }, bad), /API Key 无效/);
   assert.equal(settings.getApiKey(), key);
   await assert.rejects(fetchModelCatalog(key, (async () => { throw new Error(key); }) as typeof fetch), /检查网络/);
+});
+test("模型目录把连接失败与 Key 的 HTTP 鉴权失败分开说明", async () => {
+  assert.match(modelCatalogConnectionError({ cause: { code: "UND_ERR_CONNECT_TIMEOUT" } }).message, /连接模型服务超时.*尚未送达/);
+  assert.match(modelCatalogConnectionError({ cause: { code: "ENOTFOUND" } }).message, /域名解析失败.*尚未送达/);
+  assert.match(modelCatalogConnectionError({ cause: { code: "ECONNREFUSED" } }).message, /连接被拒绝.*尚未送达/);
+  assert.match(modelCatalogConnectionError({ cause: { code: "CERT_HAS_EXPIRED" } }).message, /安全连接校验失败.*尚未送达/);
+  assert.doesNotMatch(modelCatalogConnectionError({ name: "AbortError" }).message, /尚未送达/);
+  assert.match(modelCatalogConnectionError({ name: "AbortError" }).message, /未能确认 API Key 是否有效/);
+  assert.doesNotMatch(modelCatalogConnectionError({ cause: { code: "ETIMEDOUT" } }).message, /尚未送达/);
+  assert.match(modelCatalogConnectionError({ cause: { code: "ETIMEDOUT" } }).message, /未能确认 API Key 是否有效/);
+  assert.doesNotMatch(modelCatalogConnectionError({ cause: { code: "UND_ERR_SOCKET" } }).message, /尚未送达/);
+  assert.match(modelCatalogConnectionError({ cause: { code: "UND_ERR_SOCKET" } }).message, /未能确认 API Key 是否有效/);
+  assert.match(modelCatalogConnectionError(new Error("private upstream detail")).message, /尚未完成远端验证/);
+  await assert.rejects(fetchModelCatalog(key, (async () => new Response("private", { status: 401 })) as typeof fetch), /API Key 无效/);
+  await assert.rejects(fetchModelCatalog(key, (async () => new Response("private", { status: 403 })) as typeof fetch), /无权读取模型列表/);
 });
 test("没有兼容图像模型时不保存虚假的推荐项", async () => {
   const settings = new OpenAISettings(null);

@@ -50,6 +50,8 @@ body:has(.studio-app) .header-nav > a[aria-current="page"]::after { background: 
 body:has(.studio-app) .app-header button { color: var(--text); background: var(--surface-raised); border-color: var(--border); }
 .studio-app .studio-layout, .studio-app:has(.creation-start) .studio-layout { width: min(1100px, calc(100% - 64px)); }
 .studio-app .studio-main { padding: 48px 0 32px; }
+.studio-app .review-stage { grid-column: 1 / -1; width: min(1100px, calc(100% - 64px)); min-width: 0; margin: 0 auto; }
+.studio-app .review-stage .review-screen { width: 100%; }
 .studio-app .intro-row { padding-bottom: 28px; gap: 24px; }
 .studio-app .intro-row h1 { font-size: clamp(30px, 3.5vw, 46px); line-height: 1.2; font-weight: 650; }
 .studio-app .intro-row p { font-size: 14px; }
@@ -109,6 +111,7 @@ body:has(.studio-app) .app-header button { color: var(--text); background: var(-
   body:has(.studio-app) .header-nav { gap: 2px; font-size: 12px; }
   body:has(.studio-app) .header-nav > a { padding-inline: 6px; white-space: nowrap; }
   .studio-app .studio-layout, .studio-app:has(.creation-start) .studio-layout, .studio-app .review-screen { width: calc(100% - 32px); }
+  .studio-app .review-stage { width: calc(100% - 32px); }
   .studio-app .studio-main { padding: 28px 0; }
   .studio-app .creation-start { grid-template-columns: 1fr; gap: 20px; }
   .studio-app .creation-composer, .studio-app .live-design-review { padding: 20px; }

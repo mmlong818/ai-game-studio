@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useState } from "react";
 import { SpriteAnimationChoice, type SpriteAnimationPreference } from "./SpriteAnimationControl";
 
 const ideas = [
@@ -12,17 +12,8 @@ export function CreationStart({ value, onChange, onContinue, onRemix, errors, sp
   spriteAnimation: SpriteAnimationPreference; onSpriteAnimationChange: (value: SpriteAnimationPreference) => void;
 }) {
   const [replacement, setReplacement] = useState<string | null>(null);
-  const [edited, setEdited] = useState(false);
-  const [composing, setComposing] = useState(false);
-  const continueRef = useRef(onContinue);
-  continueRef.current = onContinue;
   const ready = value.trim().length >= 12;
-  useEffect(() => {
-    if (!edited || !ready || composing || replacement) return;
-    const timer = window.setTimeout(() => { setEdited(false); continueRef.current(); }, 1500);
-    return () => window.clearTimeout(timer);
-  }, [value, edited, ready, composing, replacement]);
-  function update(text: string) { setEdited(true); onChange(text); }
+  function update(text: string) { onChange(text); }
   function useIdea(text: string) {
     if (value.trim() && value !== text) setReplacement(text);
     else update(text);
@@ -32,11 +23,10 @@ export function CreationStart({ value, onChange, onContinue, onRemix, errors, sp
       <div className="creation-composer-heading"><span>从一个想法开始</span><span>01 / 描述</span></div>
       <label id="creation-brief-label" htmlFor="creation-brief">你想做一个什么游戏？</label>
       <textarea id="creation-brief" value={value} onChange={event => update(event.target.value)} rows={5}
-        onCompositionStart={() => setComposing(true)} onCompositionEnd={() => setComposing(false)}
         aria-describedby="creation-brief-help" placeholder="比如：让一只小龙在花园里吃星星，越吃越长。轻松上手，也能一直玩下去。" />
       <div className="creation-submit-row">
-        <p id="creation-brief-help" role="status">{ready ? "停止输入后由 AI 实时生成方案，会使用文字模型额度；确认前不会生成图片或制作游戏。" : "写一句完整的话就好，不需要填写技术参数。方案分析会使用文字模型额度。"}</p>
-        <button type="button" className="primary-action" disabled={!ready} onClick={() => { setEdited(false); onContinue(true); }}>看看游戏方案 <span aria-hidden="true">→</span></button>
+        <p id="creation-brief-help" role="status">{ready ? "确认后会生成方案并使用文字模型额度；确认前不会生成图片或制作游戏。" : "写一句完整的话就好，不需要填写技术参数。确认查看方案时会使用文字模型额度。"}</p>
+        <button type="button" className="primary-action" disabled={!ready} onClick={() => onContinue(true)}>提交，生成方案 <span aria-hidden="true">→</span></button>
       </div>
       <div className="creation-inspiration"><span>没想好？试试一个灵感</span>
         {ideas.map(idea => <button type="button" key={idea.name} onClick={() => useIdea(idea.text)}>{idea.name} ↗</button>)}
