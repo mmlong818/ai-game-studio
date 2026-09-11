@@ -11,6 +11,20 @@
 .revision-composer .revision-primary { background: #b84a27; color: #fff; border-color: transparent; }
 .revision-composer .revision-primary:hover:not(:disabled) { background: #983c20; }
 .revision-composer button:disabled { cursor: not-allowed; opacity: .5; }
+.revision-plan-picker > label { display: block; font-size: 17px; font-weight: 650; }
+.revision-plan-picker > p { margin: 8px 0 0; }
+.revision-plan-picker > .revision-primary { margin-top: 12px; width: 100%; }
+.revision-plan-summary, .revision-resource-list { margin-top: 16px; padding: 14px; border: 1px solid var(--workbench-border); border-radius: 10px; }
+.revision-plan-summary header { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+.revision-plan-summary header button { min-height: 34px; padding: 6px 10px; }
+.revision-operation-list, .revision-resource-list { display: grid; gap: 8px; }
+.revision-operation-list label, .revision-resource-list label { display: flex; align-items: flex-start; gap: 9px; padding: 9px; border-radius: 7px; background: color-mix(in srgb, var(--workbench-panel) 90%, #b84a27 10%); cursor: pointer; }
+.revision-operation-list input, .revision-resource-list input { margin-top: 3px; }
+.revision-operation-list span, .revision-resource-list span { display: grid; gap: 2px; min-width: 0; }
+.revision-operation-list small, .revision-resource-list small { color: var(--workbench-muted); line-height: 1.5; }
+.revision-resource-list legend { padding: 0 5px; font-weight: 650; }
+.revision-resource-list > p { margin: 0 0 6px; }
+.revision-plan-confirmation { margin-top: 12px; color: var(--workbench-text); }
 .revision-confirmation { margin-top: 18px; padding-top: 16px; border-top: 1px solid var(--workbench-border); }
 .revision-confirmation h3 { font-size: 18px; margin: 0 0 10px; }
 .revision-confirmation .revision-quote { padding: 12px; color: var(--workbench-text); border-left: 3px solid #b84a27; white-space: pre-wrap; overflow-wrap: anywhere; }

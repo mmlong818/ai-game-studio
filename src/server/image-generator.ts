@@ -1,4 +1,4 @@
-import { visualStyleOptions, type GameTemplate, type ProjectDetail } from "../shared/contracts.js";
+import { visualStyleOptions, type GameTemplate, type ProjectDetail, type RevisionAssetCandidate } from "../shared/contracts.js";
 import type { SpriteAnimationClipId, SpriteSheetAnimation } from "../shared/generated-blueprint.js";
 import { type OpenAISettings } from "./openai-settings.js";
 import { packAnimationSpriteSheet, replaceAnimationSpriteClip, splitSpriteSheetDraft, type SpriteFrameSourceMetadata } from "./sprite-sheet.js";
@@ -329,6 +329,21 @@ function assetTargetCandidates(project: ProjectDetail): AssetTargetCandidate[] {
       aliases: [entry.role],
     })) ?? []),
   ];
+}
+
+export function revisionAssetCandidates(project: ProjectDetail): RevisionAssetCandidate[] {
+  return assetTargetCandidates(project).flatMap((candidate) => candidate.files.map((file) => {
+    const label = candidate.files.length === 1 ? candidate.label : dynamicArtPlan(project).find((entry) => entry.file === file)?.role ?? candidate.label;
+    const kind: RevisionAssetCandidate["kind"] = file === "assets/cover.png"
+      ? "cover"
+      : file === "assets/background.png"
+        ? "background"
+        : /唐僧|妖|主角|角色|玩家|敌人|怪物|蛇头|人物/.test(label)
+          ? "role"
+          : "other";
+    const blueprint = project.spec.designProfile.generatedBlueprint?.sprites.find((entry) => entry.file === file);
+    return { file, label, kind, recommended: false, supportsAnimation: kind === "role" && Boolean(blueprint) };
+  }));
 }
 
 /** Resolve exactly one source-art slot before any paid image call. */

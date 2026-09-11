@@ -21,6 +21,7 @@ import { IdeaAnalyzer } from "./idea-analyzer.js";
 import { GameCodeGenerator } from "./game-generator.js";
 import { CoverArtGenerator } from "./image-generator.js";
 import { OpenAISettings } from "./openai-settings.js";
+import { configureOutboundProxy } from "./outbound-proxy.js";
 import { createClaudeCliFetch, DEFAULT_CLAUDE_CLI_MODEL } from "./claude-cli-text-provider.js";
 import { ProjectLifecycle } from "./project-lifecycle.js";
 import { importLegacySqliteIfEmpty } from "./sqlite-migration.js";
@@ -30,6 +31,7 @@ import { ResearchPrototypeService } from "./research-prototype.js";
 import { loadCuratedResourceLibrary } from "./resource-library.js";
 import { ensureV11FixtureArtifact } from "./v11-build-metadata.js";
 import { renderGameLobbyShell, resolveGameLobbyOrigin } from "./game-lobby-navigation.js";
+import { planProjectRevision, validateRevisionPlan } from "./revision-planner.js";
 
 const port = Number.parseInt(process.env.PORT ?? "4312", 10);
 const gamePort = Number.parseInt(process.env.GAME_PORT ?? "4313", 10);
@@ -39,6 +41,8 @@ const publicOrigin = process.env.PUBLIC_ORIGIN ?? `http://${host}:${port}`;
 // 生产环境用 PUBLIC_GAME_ORIGIN 指向游戏子域。
 const publicGameOrigin = process.env.PUBLIC_GAME_ORIGIN ?? `http://${host}:${gamePort}`;
 const projectRoot = process.cwd();
+const outboundProxySource = configureOutboundProxy();
+if (outboundProxySource === "windows-system") console.log("模型网络已采用 Windows 系统代理；本地服务地址保持直连。");
 const connectionString = process.env.DATABASE_URL ?? "postgresql://studio@127.0.0.1:54329/ai_game_studio";
 const legacySqlitePath = process.env.LEGACY_SQLITE_PATH ?? process.env.DATABASE_PATH ?? join(projectRoot, "data", "studio.db");
 const runtimeOwnership = await acquireRuntimeOwnership(connectionString, () => {
@@ -59,11 +63,8 @@ const artifactRoot = join(projectRoot, "data", "artifacts-v1.1");
 const researchPrototypeRoot = join(projectRoot, "data", "research-prototypes");
 const openAIKeyFile = process.env.OPENAI_API_KEY_FILE ?? join(projectRoot, "data", "secrets", "openai-api-key.txt");
 const openAISettings = new OpenAISettings(process.env.OPENAI_API_KEY, openAIKeyFile);
-// Node 的全局 fetch 默认不走 HTTP(S)_PROXY;在设置了代理但未开启 NODE_USE_ENV_PROXY 的环境里,
-// OpenAI 调用会以 fetch failed 静默回退,这里提前把问题喊出来。
-if ((process.env.HTTPS_PROXY || process.env.HTTP_PROXY) && process.env.NODE_USE_ENV_PROXY !== "1") {
-  console.warn("检测到系统代理，但未设置 NODE_USE_ENV_PROXY=1：Node fetch 不会走代理，OpenAI 调用可能全部失败并回退。请用 NODE_USE_ENV_PROXY=1 启动服务。");
-}
+// configureOutboundProxy 已在任何模型请求前为全局 fetch 安装显式 dispatcher；
+// 不依赖调用者是否额外传入 --use-env-proxy。
 // STUDIO_TEXT_PROVIDER=claude-cli：策划、规则审核与代码生成改走本机 Claude Code CLI 的订阅额度；
 // 图片仍由 OpenAI Key 承载。CLI 每次冷启动较慢，所以放宽各文本调用的超时；重试次数不变。
 const claudeCliText = process.env.STUDIO_TEXT_PROVIDER === "claude-cli"
@@ -456,9 +457,23 @@ async function handleApi(request: IncomingMessage, response: ServerResponse, pat
     sendJson(response, 200, { build: await orchestrator.cancel(build.id) });
     return true;
   }
+  const revisionPlanRoute = pathname.match(/^\/api\/projects\/([^/]+)\/revisions\/plan$/);
+  if (request.method === "POST" && revisionPlanRoute) {
+    const project = await repository.get(decodeURIComponent(revisionPlanRoute[1]));
+    if (!project) { sendJson(response, 404, { error: "项目不存在。" }); return true; }
+    const raw = await readJson(request) as { content?: unknown };
+    const result = planProjectRevision(project, typeof raw.content === "string" ? raw.content : "");
+    sendJson(response, result.status === "ready" ? 200 : 409, result);
+    return true;
+  }
   const revisionRoute = pathname.match(/^\/api\/projects\/([^/]+)\/revisions(?:\/([^/]+))?$/);
   if (revisionRoute && request.method === "POST" && !revisionRoute[2]) {
     const input = projectRevisionInputSchema.parse(await readJson(request));
+    if (input.revisionPlan) {
+      const project = await repository.get(decodeURIComponent(revisionRoute[1]));
+      if (!project) { sendJson(response, 404, { error: "项目不存在。" }); return true; }
+      validateRevisionPlan(project, input.revisionPlan, input.content);
+    }
     sendJson(response, 202, { build: await orchestrator.start(decodeURIComponent(revisionRoute[1]), input) });
     return true;
   }

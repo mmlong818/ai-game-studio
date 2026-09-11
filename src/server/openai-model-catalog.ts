@@ -25,13 +25,42 @@ export function modelCatalog(payload: unknown): OpenAIModelCatalog {
   return { text, image, recommended: { text: text[0]?.id ?? null, image: image[0]?.id ?? null } };
 }
 
+type NetworkFailure = { name?: unknown; code?: unknown; cause?: NetworkFailure };
+
+/** Convert transport failures to safe, actionable categories without echoing URLs, keys, or response bodies. */
+export function modelCatalogConnectionError(reason: unknown): Error {
+  const failure = reason && typeof reason === "object" ? reason as NetworkFailure : {};
+  const cause = failure.cause && typeof failure.cause === "object" ? failure.cause : failure;
+  const name = String(failure.name ?? "");
+  const code = String(cause.code ?? "").toUpperCase();
+  if (code === "UND_ERR_CONNECT_TIMEOUT") {
+    return new Error("连接模型服务超时，API Key 尚未送达远端验证。请检查代理或网络连接后重试。");
+  }
+  if (name === "TimeoutError" || name === "AbortError" || code === "ETIMEDOUT") {
+    return new Error("模型列表请求超时，未能确认 API Key 是否有效。请检查网络后重试。");
+  }
+  if (code === "ENOTFOUND" || code === "EAI_AGAIN") {
+    return new Error("模型服务域名解析失败，API Key 尚未送达远端验证。请检查 DNS 或网络设置后重试。");
+  }
+  if (code === "ECONNREFUSED") {
+    return new Error("模型服务连接被拒绝，API Key 尚未送达远端验证。请检查代理服务后重试。");
+  }
+  if (code === "UND_ERR_SOCKET") {
+    return new Error("模型服务连接中断，未能确认 API Key 是否有效。请检查代理或网络连接后重试。");
+  }
+  if (/CERT|TLS|SSL|SELF_SIGNED|UNABLE_TO_VERIFY/.test(code)) {
+    return new Error("模型服务安全连接校验失败，API Key 尚未送达远端验证。请检查代理证书或系统时间后重试。");
+  }
+  return new Error("模型服务连接失败，API Key 尚未完成远端验证。请检查网络后重试。");
+}
+
 export async function fetchModelCatalog(key: string, fetcher: typeof fetch = fetch): Promise<OpenAIModelCatalog> {
   let response: Response;
   try {
     response = await fetcher("https://api.openai.com/v1/models", {
       headers: { Authorization: `Bearer ${key}` }, signal: AbortSignal.timeout(15000), redirect: "error",
     });
-  } catch { throw new Error("模型列表获取失败或超时，请检查网络后重试。"); }
+  } catch (reason) { throw modelCatalogConnectionError(reason); }
   if (!response.ok) throw new Error(response.status === 401 ? "API Key 无效，请检查后重试。" : response.status === 403 ? "此 Key 无权读取模型列表。" : response.status === 429 ? "请求过于频繁，请稍后重试。" : "远端模型服务暂不可用，请稍后重试。");
   try { return modelCatalog(await response.json()); }
   catch { throw new Error("远端模型列表格式不正确，请稍后重试。"); }

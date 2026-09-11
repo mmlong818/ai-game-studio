@@ -54,6 +54,37 @@ it("已有游戏个性化把来源项目和范围传给制作任务", async () =
   }));
 });
 
+it("多项改造只在确认制作后把完整计划、来源版本和所有角色图集传给一个任务", async () => {
+  const remix = { ...INITIAL_DRAFT, creationMode: "template-remix" as const, sourceGame: { id: "770e8400-e29b-41d4-a716-446655440000", title: "数织矩阵", coverUrl: null } };
+  const revisionPlan = {
+    sourceProjectId: remix.sourceGame.id,
+    sourceVersionId: "version-3",
+    content: "全部角色改为精灵动图，同时把技能墨量消耗减半",
+    operations: [
+      { scope: "assets" as const, content: "全部角色改为精灵动图", targets: [
+        { file: "assets/hero.png", label: "主角", animation: "sprite-sheet" as const },
+        { file: "assets/foe.png", label: "对手", animation: "sprite-sheet" as const },
+      ] },
+      { scope: "gameplay" as const, content: "把技能墨量消耗减半" },
+    ],
+  };
+  render(<AutomaticProduction draft={remix} confirmedPlan="用户已确认的多项改造方案" revisionPlan={revisionPlan} />);
+  await screen.findByText("准备资源");
+  expect(api.submitProduction).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({
+    sourceProjectId: remix.sourceGame.id,
+    revisionPlan: expect.objectContaining({
+      sourceVersionId: "version-3",
+      operations: expect.arrayContaining([
+        expect.objectContaining({ scope: "gameplay" }),
+        expect.objectContaining({ scope: "assets", targets: expect.arrayContaining([
+          expect.objectContaining({ file: "assets/hero.png", animation: "sprite-sheet" }),
+          expect.objectContaining({ file: "assets/foe.png", animation: "sprite-sheet" }),
+        ]) }),
+      ]),
+    }),
+  }));
+});
+
 it("从零创建新游戏不携带已有游戏改造字段", async () => {
   const fresh = { ...INITIAL_DRAFT, creationMode: "mechanic-composition" as const, sourceGame: null, newGameBrief: "控制小船收集水晶并避开陨石" };
   render(<AutomaticProduction draft={fresh} confirmedPlan="控制小船收集水晶并避开陨石，收集十颗后完成。" />);

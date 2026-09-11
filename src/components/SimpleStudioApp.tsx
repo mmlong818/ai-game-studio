@@ -483,18 +483,19 @@ export function SimpleStudioApp() {
                   <span>{flow.mode === "new-game" ? "游戏需求" : "你的意见"}</span>
                   <textarea value={draftRequest} onChange={(event) => setDraftRequest(event.target.value)} rows={4} placeholder={flow.mode === "new-game" ? "例如：小昆虫在树干上收集露珠并躲避障碍…" : "例如：角色太大了，障碍根本躲不过去…"} />
                 </label>
-                <button type="button" className="submit-request" disabled={!draftRequest.trim()} onClick={submitRequest}>提交，开始改造</button>
+                <button type="button" className="submit-request" disabled={!draftRequest.trim()} onClick={submitRequest}>提交需求，查看方向</button>
               </>
             ) : (
               <>
                 <span className="sheet-kicker">需要你选一下</span>
                 <h1 id="request-title">{isVisualRequest(flow.request) ? "你更喜欢哪种画面？" : "这次改到什么程度？"}</h1>
-                <p>我们已经先排除了不适合当前玩法的方向。推荐项最稳妥。</p>
+                <p>我们已经先排除了不适合当前玩法的方向。选择一个方向会开始制作并产生模型用量。</p>
                 <div className="direction-list">
                   {choices.map((choice) => (
                     <button type="button" key={choice.id} onClick={() => chooseDirection(choice.id)}>
                       <span><strong>{choice.label}</strong>{choice.recommended && <small>推荐</small>}</span>
                       <p>{choice.note}</p>
+                      <span>使用此方向，开始制作</span>
                     </button>
                   ))}
                 </div>

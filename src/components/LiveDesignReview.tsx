@@ -2,17 +2,18 @@ import { useEffect, useState } from "react";
 import type { StudioDraft } from "../domain/types";
 import { getTemplate } from "../domain/templates";
 import { DOMAIN_TEMPLATE_ART } from "../domain/templateResolution";
-import { gameTemplateSchema, type GameDesignProfile } from "../shared/contracts";
+import { gameTemplateSchema, type GameDesignProfile, type RevisionPlan } from "../shared/contracts";
 import { cancelDesignPreview, getDesignPreview } from "../domain/designPreviewCache";
 import { WaitingActivity } from "./WaitingActivity";
 import { streamingDesignText } from "../domain/streamingDesignText";
 import type { DesignPreviewPhase } from "../web/api";
 import { renovationScopeInstruction } from "../shared/renovation-scope";
 
-export function LiveDesignReview({ draft, onBack, onConfirm }: { draft: StudioDraft; onBack: () => void; onConfirm: (text: string, profile: GameDesignProfile, originalIdea: string) => void }) {
+export function LiveDesignReview({ draft, revisionPlan, onBack, onConfirm }: { draft: StudioDraft; revisionPlan?: RevisionPlan; onBack: () => void; onConfirm: (text: string, profile: GameDesignProfile, originalIdea: string) => void }) {
   const template = draft.creationMode === "template-remix" ? getTemplate(draft.templateId) : undefined;
   const request = template
-    ? ["基于游戏：" + (draft.sourceGame?.title ?? template.name), "原玩法：" + template.coreLoop, renovationScopeInstruction(draft.revisionScope, "用户指定的局部调整：" + draft.freeRequest),
+    ? ["基于游戏：" + (draft.sourceGame?.title ?? template.name), "原玩法：" + template.coreLoop,
+      ...(revisionPlan ? ["用户已确认的修改项：", ...revisionPlan.operations.map(operation => operation.content)] : [renovationScopeInstruction(draft.revisionScope, "用户指定的局部调整：" + draft.freeRequest)]),
       ...template.suggestions.filter(item => draft.selectedSuggestionIds.includes(item.id)).map(item => item.description)].join("\n")
     : draft.newGameBrief;
   const mapped = gameTemplateSchema.safeParse(template ? DOMAIN_TEMPLATE_ART[template.id] : "generated");
@@ -21,7 +22,7 @@ export function LiveDesignReview({ draft, onBack, onConfirm }: { draft: StudioDr
     idea: request,
     template: templateId,
     ...(draft.creationMode === "mechanic-composition" ? { spriteAnimation: draft.spriteAnimation } : {}),
-    ...(template && draft.sourceGame ? { sourceProjectId: draft.sourceGame.id, revisionScope: draft.revisionScope } : {}),
+    ...(template && draft.sourceGame ? revisionPlan ? { sourceProjectId: draft.sourceGame.id, revisionPlan } : { sourceProjectId: draft.sourceGame.id, revisionScope: draft.revisionScope } : {}),
   };
   const [result, setResult] = useState<{ key: string; profile: GameDesignProfile } | null>(null);
   const [failure, setFailure] = useState<{ key: string; message: string } | null>(null);
@@ -77,7 +78,7 @@ export function LiveDesignReview({ draft, onBack, onConfirm }: { draft: StudioDr
     ["手机与易用性", profile.accessibility.join("\n")], ["制作时需验证", profile.productionRisks.join("\n")],
   ].filter(([, value]) => value) : [];
   return <section className="review-screen live-design-review" id="live-game-design" aria-label="游戏方案">
-    <header className="review-heading"><div><span className="eyebrow">实时 AI 策划</span><h1>{template ? (draft.sourceGame?.title ?? template.name) + "个性化方案" : "新游戏机制方案"}</h1><p>{template ? "方案按你圈定的局部范围生成，并把原有核心玩法和操作列为保留项。" : "根据当前描述实时生成，不是预先写好的灵感方案。"}分析会使用文字模型额度；此时不生成图片或制作游戏。</p></div></header>
+    <header className="review-heading"><div><span className="eyebrow">实时 AI 策划</span><h1>{template ? (draft.sourceGame?.title ?? template.name) + "个性化方案" : "新游戏机制方案"}</h1><p>{template ? "方案会按你确认的修改项生成，并把未点名的玩法、资源和操作列为保留项。" : "根据当前描述实时生成，不是预先写好的灵感方案。"}分析会使用文字模型额度；此时不生成图片或制作游戏。</p></div></header>
     {!profile && !error && !stopped && !stopping && <WaitingActivity key={key} startedAt={phase.key === key ? phase.startedAt : null} elapsedLabel="本次方案已等待" label={phase.key !== key || phase.value === "submitted" ? "请求已提交，等待方案内容。" : phase.value === "receiving" ? "正在接收方案内容。" : "正在检查方案。"} />}
     {!profile && partial.key === key && partial.text && <section aria-label="正在生成的方案"><p>以下是模型正在生成的内容，尚未完成检查。</p><div className="streaming-design-text">{streamingDesignText(partial.text)}</div></section>}
     {stopping && <p className="flow-stopped" role="status">正在停止方案生成…</p>}

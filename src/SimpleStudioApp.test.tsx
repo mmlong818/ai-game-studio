@@ -1,9 +1,16 @@
 import { render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import App from "./App";
 import { createProject } from "./domain/project";
 import { saveProject } from "./domain/projectStorage";
 import { INITIAL_DRAFT } from "./domain/storage";
+
+const simpleProduction = vi.hoisted(() => ({
+  buildSimplePlayableRevision: vi.fn(() => new Promise(() => {})),
+}));
+
+vi.mock("./domain/simpleProduction", () => simpleProduction);
 
 vi.mock("./web/api", () => ({
   getProject: async (id: string) => ({
@@ -34,6 +41,7 @@ describe("player-first creation flow", () => {
     expect(screen.queryByRole('link',{name:/改造这个游戏/})).not.toBeInTheDocument();
   });
   beforeEach(() => {
+    simpleProduction.buildSimplePlayableRevision.mockClear();
     localStorage.clear();
     window.history.replaceState({}, "", "/player-first?game=game-a");
     vi.stubGlobal("fetch", vi.fn(async (_url: string, init?: RequestInit) => {
@@ -83,5 +91,31 @@ describe("player-first creation flow", () => {
     expect(screen.getByRole("heading", { name: "先选一个要改造的游戏" })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "去游戏大厅选择" })).toHaveAttribute("href", "/games");
     expect(screen.queryByTitle(/游戏画面/)).not.toBeInTheDocument();
+  });
+
+  it("旧流程选择方向前不会制作，执行按钮明确说明开始制作", async () => {
+    const user = userEvent.setup();
+    localStorage.setItem("ai-game-studio:simple-flow:v2:game-a", JSON.stringify({
+      mode: "remix",
+      phase: "choices",
+      request: "操作反馈再明显一点",
+      requestHistory: ["操作反馈再明显一点"],
+      selectedDirection: "",
+      revision: 3,
+      activityId: 1,
+      events: [],
+      projectId: null,
+      lastError: "",
+      publishedUrl: "",
+    }));
+
+    render(<App />);
+    await screen.findByTitle("数织矩阵游戏画面");
+    expect(simpleProduction.buildSimplePlayableRevision).not.toHaveBeenCalled();
+    await user.click(screen.getByRole("button", { name: "查看选项" }));
+    const submitDirection = screen.getByRole("button", { name: /小幅调整.*使用此方向，开始制作/ });
+    expect(simpleProduction.buildSimplePlayableRevision).not.toHaveBeenCalled();
+    await user.click(submitDirection);
+    expect(simpleProduction.buildSimplePlayableRevision).toHaveBeenCalledTimes(1);
   });
 });

@@ -41,6 +41,10 @@ export function constrainRenovationProfile(candidate: GameDesignProfile, baselin
     winCondition: baseline.winCondition,
     failCondition: baseline.failCondition,
     progression: baseline.progression,
+    gameFeel: baseline.gameFeel,
+    onboarding: baseline.onboarding,
+    accessibility: baseline.accessibility,
+    productionRisks: baseline.productionRisks,
     generatedCampaign: baseline.generatedCampaign,
     generatedBlueprint: baseline.generatedBlueprint,
   };

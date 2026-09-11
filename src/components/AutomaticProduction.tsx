@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { Play } from "lucide-react";
 import type { StudioDraft } from "../domain/types";
-import type { Build, GameDesignProfile, ProjectDetail, ProjectInput } from "../shared/contracts";
+import type { Build, GameDesignProfile, ProjectDetail, ProjectInput, RevisionPlan } from "../shared/contracts";
 import { DOMAIN_TEMPLATE_ART } from "../domain/templateResolution";
 import { gameTemplateSchema } from "../shared/contracts";
 import { submitProduction, getProductionJob, watchProductionJob, getProject, getLatestBuild, retryProduction, startBuild, cancelProduction, type ProductionJob } from "../web/api";
@@ -43,7 +43,7 @@ function ProductionError({ message }: { message: string }) {
   return <div><p role="alert">{technical ? "制作资料未通过检查，本次任务已停止。原记录已保留，不会自动重新提交或再次收费。" : message}</p>{technical && <details><summary>查看问题详情</summary><pre style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>{message}</pre></details>}</div>;
 }
 
-export function AutomaticProduction({ draft, confirmedPlan, confirmedDesignProfile, originalIdea }: { draft: StudioDraft; confirmedPlan?: string; confirmedDesignProfile?: GameDesignProfile; originalIdea?: string }) {
+export function AutomaticProduction({ draft, confirmedPlan, confirmedDesignProfile, originalIdea, revisionPlan }: { draft: StudioDraft; confirmedPlan?: string; confirmedDesignProfile?: GameDesignProfile; originalIdea?: string; revisionPlan?: RevisionPlan }) {
   const [projectId, setProjectId] = useState(() => new URLSearchParams(location.search).get("production") ?? getPendingProductionId());
   const [build, setBuild] = useState<Build | null>(null);
   const [project, setProject] = useState<ProjectDetail | null>(null);
@@ -81,7 +81,7 @@ export function AutomaticProduction({ draft, confirmedPlan, confirmedDesignProfi
           template: template.success ? template.data : "auto",
           ...(value.creationMode === "mechanic-composition" ? { spriteAnimation: value.spriteAnimation } : {}),
           ...(value.creationMode === "template-remix" && value.sourceGame
-            ? { sourceProjectId: value.sourceGame.id, revisionScope: value.revisionScope }
+            ? revisionPlan ? { sourceProjectId: value.sourceGame.id, revisionPlan } : { sourceProjectId: value.sourceGame.id, revisionScope: value.revisionScope }
             : {}),
           ...(confirmedDesignProfile ? { confirmedDesignProfile } : {}),
         };
