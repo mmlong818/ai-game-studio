@@ -473,7 +473,7 @@ export class CoverArtGenerator {
       if (cancellationSignal()?.aborted) throw error;
       throw new BuildFailure(`角色动画“${spec.role}”未生成可用图集。`, [safeFailure("asset", error, {
         resource: { file: spec.file, label: spec.role }, operation: "sprite-sheet-edit",
-      })]);
+      })], error);
     }
   }
 
@@ -593,7 +593,7 @@ export class CoverArtGenerator {
       return adapted.bytes;
     } catch (error) {
       if (cancellationSignal()?.aborted) throw error;
-      throw new BuildFailure(`${label}未生成可用图片。`, [safeFailure("asset", error, { resource: request.resource, operation: request.sourceImage ? "image-edit" : "image-generation" })]);
+      throw new BuildFailure(`${label}未生成可用图片。`, [safeFailure("asset", error, { resource: request.resource, operation: request.sourceImage ? "image-edit" : "image-generation" })], error);
     }
   }
 

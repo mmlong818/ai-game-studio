@@ -143,7 +143,7 @@ test("生成成功时返回 PNG 字节，请求携带画幅对应尺寸与无文
   const bytes = await generator.generate(fakeProject("9:16"));
   assert.ok(bytes && bytes.length > 500);
   assert.ok(bytes.subarray(0, 4).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47])));
-  assert.equal(requestBody!.model, "gpt-image-2");
+  assert.equal(requestBody!.model, "gpt-image-2.5-sunburst");
   assert.equal(requestBody!.size, "1024x1536");
   assert.equal(requestBody!.quality, "high");
   assert.equal(requestBody!.output_format, "png");
@@ -281,7 +281,7 @@ test("部分资源替换使用本地来源 PNG 的 multipart edits，显式质�
   assert.ok(observedInit?.body instanceof FormData);
   assert.equal(new Headers(observedInit?.headers).has("content-type"), false, "multipart boundary 必须由 fetch 设置");
   const form = observedInit!.body as FormData;
-  assert.equal(form.get("model"), "gpt-image-2");
+  assert.equal(form.get("model"), "gpt-image-2.5-sunburst");
   assert.equal(form.get("quality"), "high");
   assert.equal(form.get("size"), "1536x1024");
   assert.equal(form.get("output_format"), "png");
@@ -535,6 +535,31 @@ test("动画主体使用单次整sheet草稿并逐格打包，归档真实网格
   assert.equal(entry.image!.delivered.fit, "sprite-sheet");
   assert.deepEqual(entry.image!.spriteSheet, animation);
   assert.equal(entry.image!.providerFrames!.length, 4);
+
+  // A legacy role starts as one transparent PNG. Its upgrade must submit that
+  // exact source as a reference and then split the returned draft into cells;
+  // it must never assume the source is already a packed sheet.
+  const staticReference = await circleFixture(160, 160, 38);
+  let staticEditUrl = "";
+  let staticEditForm: FormData | null = null;
+  project.spec.renovation = { sourceProjectId: "p-source", revisionScope: "assets", request: "让奔跑者成为精灵动图", assetTarget: { kind: "single", files: [spec.file], label: spec.role } };
+  const staticUpgradeGenerator = new CoverArtGenerator(new OpenAISettings(validKey), {
+    fetchImpl: async (url, init) => {
+      staticEditUrl = String(url);
+      staticEditForm = init?.body as FormData;
+      return imageResponse(providerDraft.bytes);
+    },
+  });
+  const staticUpgrade = await staticUpgradeGenerator.generateAnimationSpriteSheet(project, spec, { sourceSheet: staticReference });
+  assert.ok(staticUpgrade);
+  assert.equal(staticEditUrl, "https://api.openai.com/v1/images/edits");
+  assert.ok(staticEditForm instanceof FormData);
+  assert.equal(staticEditForm!.get("model"), "gpt-image-2.5-sunburst");
+  assert.equal(staticEditForm!.get("quality"), "high");
+  assert.equal(staticEditForm!.get("size"), "1536x1024");
+  assert.equal(staticEditForm!.get("background"), "transparent");
+  assert.deepEqual(Buffer.from(await (staticEditForm!.get("image") as Blob).arrayBuffer()), staticReference);
+  assert.deepEqual(await readPngDimensions(staticUpgrade.bytes), { width: 256, height: 64, hasAlpha: true, hasTransparency: true });
 
   project.spec.renovation = { sourceProjectId: "p-source", revisionScope: "assets", request: "只替换奔跑者整套人物美术", assetTarget: { kind: "single", files: [spec.file], label: spec.role } };
   let wholeEditUrl = "";
