@@ -225,11 +225,13 @@ export function writeDesignDocuments(
     ? `\n## 创作对话修订依据\n\n本版本设计合同参考了创作者在制作对话中的 ${directions.length} 条意见（按时间顺序${directionAudit ? "，并经模型逐条审计落实情况" : ""}）：\n\n${directionLines.join("\n")}\n`
     : "";
   const design = project.spec.designProfile;
+  // 取消新手教学只针对生成游戏：其交付物不写教学/分层帮助计划；官方模板、3D 与 signal-hunt 照旧归档。
+  const tutorialDelivery = project.spec.template !== "generated";
   if (project.spec.designContract) {
     writeFileSync(join(studioRoot, "GAME_DESIGN_CONTRACT.json"), serializeGameDesignContractV1(project.spec.designContract), "utf8");
-    writeFileSync(join(studioRoot, "ASSISTANCE_PLAN.json"), `${JSON.stringify(project.spec.designContract.assistance, null, 2)}\n`, "utf8");
+    if (tutorialDelivery) writeFileSync(join(studioRoot, "ASSISTANCE_PLAN.json"), `${JSON.stringify(project.spec.designContract.assistance, null, 2)}\n`, "utf8");
   }
-  const executableOnboarding = project.spec.designContract ? createOnboardingRuntimePlan(project.spec.designContract) : null;
+  const executableOnboarding = tutorialDelivery && project.spec.designContract ? createOnboardingRuntimePlan(project.spec.designContract) : null;
   if (executableOnboarding) {
     writeFileSync(join(studioRoot, "ONBOARDING_PLAN.json"), `${JSON.stringify(executableOnboarding, null, 2)}\n`, "utf8");
   }

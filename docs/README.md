@@ -16,6 +16,9 @@
 - [游戏设计知识系统](63-game-design-knowledge-system.md)：独立机制、玩法模式、研究与晋升规则。
 - [游戏设计原则](33-game-design-knowledge.md)：含赛车与铁路沙盒复盘的 11 条原则、适用范围和审核问题，已接入设计与生成提示。
 - [生成式游戏验收能力](generated-game-acceptance-capabilities.md)：验收服从确认方案的两层合同、`required | forbidden | not-applicable` 语义与迁移边界。
+- [游戏 UI 设计与验收方法](103-game-ui-design-methodology.md)：规划或评审游戏 UI、HUD、菜单、生成视觉资产与既有游戏改造前必读。
+- [OpenAI 图像提示与游戏素材映射](104-openai-image-prompting-study.md)：改动生图提示词、参考/编辑流程、透明处理或 Sprite Sheet 生成前必读。
+- [创作流程设计方法与生图约束落地](105-creation-pipeline-design-enforcement.md)：已实现的创作流程合同与仍需人工复核的边界。
 - [生成游戏失败台账与复盘](106-generated-game-failure-ledger.md)：记录重复失败签名、执行／标准／流程分类、修复证据与真实闭环状态；改质量门禁或重试前先查。
 - [制作安全与审核权限](92-production-safety-and-review.md)：修改生成的费用边界、图片检查点复用、`STUDIO_REVIEW_TOKEN` 正式审核与发布事务复核。
 

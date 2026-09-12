@@ -45,6 +45,13 @@ test("generated 单局 demo 的完整编排允许零图片 provider 并交付程
     const delivered = join(artifactRoot, build.versionId!);
     assert.equal(existsSync(join(delivered, "assets", "cover.png")), false);
     assert.equal(existsSync(join(delivered, "assets", "background.png")), false);
+    // 取消新手教学只针对生成游戏：交付物不得带教学计划、分层帮助计划或教学运行时（官方模板游戏仍保留）。
+    assert.equal(existsSync(join(delivered, "_studio", "ONBOARDING_PLAN.json")), false);
+    assert.equal(existsSync(join(delivered, "_studio", "ASSISTANCE_PLAN.json")), false);
+    const appScript = readFileSync(join(delivered, "app.js"), "utf8");
+    const styles = readFileSync(join(delivered, "styles.css"), "utf8");
+    assert.doesNotMatch(appScript, /__FORGE_ONBOARDING__|performOnboardingStep|signalOnboarding\(/);
+    assert.doesNotMatch(styles, /\.forge-onboarding|\.onboarding-coach|\.failure-assistance/);
   } finally {
     await database.close();
     const safeRoot = resolve(artifactRoot); if (safeRoot.startsWith(resolve(tmpdir()))) rmSync(safeRoot, { recursive: true, force: true });
