@@ -1,25 +1,74 @@
 import { beforeEach, expect, it, vi } from "vitest";
 import { BuildOrchestrator } from "./build-orchestrator";
-import { inspectGeneratedArtifact } from "./game-generator";
+import { inspectGeneratedArtifact, writeGeneratedArtifact } from "./game-generator";
 import { readGeneratedSource } from "./generated-source";
 import { ArtifactValidationFailure } from "./generation-budget";
 import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, rmSync } from "node:fs";
 import { sha256, writeRuleFidelity } from "./rule-audit-checkpoint";
+import { inspectLocalRepairCandidate } from "./local-repair-candidate";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 vi.mock("./generated-source", () => ({ readGeneratedSource: vi.fn().mockReturnValue(null) }));
+vi.mock("./local-repair-candidate", () => ({ inspectLocalRepairCandidate: vi.fn().mockReturnValue({ status: "absent" }) }));
 
 vi.mock("./game-generator", () => ({
   inspectGeneratedArtifact: vi.fn(), writeGeneratedArtifact: vi.fn(), stripPlatformSegments: (html: string) => html,
+  stripTutorialContract: function stripTutorialContract(value: unknown): unknown {
+    if (Array.isArray(value)) return value
+      .filter(entry => !(entry && typeof entry === "object" && ["onboarding", "assistance"].includes(String((entry as { kind?: unknown }).kind))))
+      .map(stripTutorialContract);
+    if (!value || typeof value !== "object") return value;
+    return Object.fromEntries(Object.entries(value as Record<string, unknown>)
+      .filter(([key]) => !key.toLowerCase().includes("onboarding") && key !== "assistance")
+      .map(([key, entry]) => [key, stripTutorialContract(entry)]));
+  },
 }));
 vi.mock("./browser-quality", async importOriginal => ({
   ...await importOriginal<typeof import("./browser-quality")>(), inspectGeneratedGameInBrowser: vi.fn(),
 }));
 
-beforeEach(() => vi.clearAllMocks());
+beforeEach(() => {
+  vi.clearAllMocks();
+  vi.mocked(inspectGeneratedArtifact).mockReset();
+  vi.mocked(writeGeneratedArtifact).mockReset();
+  vi.mocked(inspectLocalRepairCandidate).mockReset().mockReturnValue({ status: "absent" });
+});
 const project = { version: { id: "not-on-disk" }, spec: { designProfile: {} } };
 const first = { html: "<html>first failed playable version</html>", rounds: 1, designNotes: "first" };
 const repaired = { html: "<html>repaired version</html>", rounds: 1, designNotes: "fixed" };
+
+it("服务器本地修复候选规则失败时停止，不调用代码生成模型", async () => {
+  vi.mocked(inspectLocalRepairCandidate).mockReturnValue({ status: "ready",
+    html: first.html,
+    payload: "private-payload",
+    descriptor: { schemaVersion: "local-repair-candidate-v1", projectId: "same-project", contractHash: "a".repeat(64), payload: "id/payload", registeredAt: "2026-09-12T00:00:00.000Z" },
+  } as never);
+  const generate = vi.fn();
+  const auditRuleFidelity = vi.fn().mockResolvedValue([{ rule: "直接点击放行", implemented: false, evidence: "仍需额外按钮" }]);
+  const orchestrator = new BuildOrchestrator({ recentReusableBuilds: async () => [] } as never, "D:/private/data/artifacts-v1.1", {
+    codeGenerator: { generate } as never,
+    designContracts: { auditRuleFidelity } as never,
+  });
+  const root = mkdtempSync(join(tmpdir(), "local-repair-stop-"));
+  try {
+    await expect((orchestrator as any).generateExperimentalGame({ ...project, id: "same-project" }, root, [])).rejects.toThrow(/本地修复候选规则审核仍有 1 项/);
+    expect(generate).not.toHaveBeenCalled();
+    expect(inspectGeneratedArtifact).toHaveBeenCalled();
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
+it("服务器已有登记但合同不匹配时明确停止，不静默回退代码生成", async () => {
+  vi.mocked(inspectLocalRepairCandidate).mockReturnValue({ status: "invalid", reason: "登记合同哈希 old 与当前合同哈希 new 不一致" });
+  const generate = vi.fn();
+  const orchestrator = new BuildOrchestrator({ recentReusableBuilds: async () => [] } as never, "D:/private/data/artifacts-v1.1", {
+    codeGenerator: { generate } as never,
+  });
+  const root = mkdtempSync(join(tmpdir(), "local-repair-mismatch-"));
+  try {
+    await expect((orchestrator as any).generateExperimentalGame({ ...project, id: "same-project" }, root, [])).rejects.toThrow(/登记无效.*不会回退代码生成模型/);
+    expect(generate).not.toHaveBeenCalled();
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
 
 it("修订方案不可用时在规范化阶段停止，不写项目也不生成代码图片", async () => {
   const generate = vi.fn().mockResolvedValue(null);
@@ -91,6 +140,13 @@ it("安全子轮重新从1计数时仍显示第2次针对修正的外层阶段",
 });
 
 it("规则审核未落实时沿用当轮代码，只定向修正缺失规则", async () => {
+  const writeDeliveredFixture = (root: string) => {
+    mkdirSync(root, { recursive: true });
+    writeFileSync(join(root, "index.html"), '<script src="./app.js"></script>');
+    writeFileSync(join(root, "styles.css"), "canvas{display:block}");
+    writeFileSync(join(root, "app.js"), "window.__FORGE_SPRITES__={create(){}};/* generated */");
+  };
+  vi.mocked(writeGeneratedArtifact).mockImplementationOnce(writeDeliveredFixture).mockImplementationOnce(writeDeliveredFixture);
   const generate = vi.fn().mockResolvedValueOnce(first).mockResolvedValueOnce(repaired);
   const auditRuleFidelity = vi.fn().mockResolvedValueOnce([{ rule: "配对计分", implemented: false, evidence: "未增加分数" }]).mockResolvedValueOnce([{ rule: "配对计分", implemented: true, evidence: "已增加分数" }]);
   const orchestrator = new BuildOrchestrator({ recentReusableBuilds: async () => [] } as never, "missing-test-artifact-root", { codeGenerator: { generate } as never, designContracts: { auditRuleFidelity } as never });
@@ -99,6 +155,7 @@ it("规则审核未落实时沿用当轮代码，只定向修正缺失规则", a
   try { await (orchestrator as any).generateExperimentalGame(project, root, []); }
   finally { if (dirname(root) === tmpdir()) rmSync(root, { recursive: true, force: true }); }
   expect(generate.mock.calls[1][2].html).toBe(first.html);
+  expect(auditRuleFidelity.mock.calls[0][1]).toContain("window.__FORGE_SPRITES__");
   expect(generate.mock.calls[1][2].directions).toEqual(["规则审计判定未实现:配对计分——未增加分数"]);
 });
 
@@ -192,6 +249,56 @@ it("复用同一份代码且规则未变时，复用上一版已通过的规则�
   } finally { if (dirname(root) === tmpdir()) rmSync(root, { recursive: true, force: true }); }
 });
 
+it("合同只移除平台教学时先验收旧候选，通过则代码生成与规则审核均为零调用", async () => {
+  const currentContract = { id: "same-contract", knowledge: { capabilityIds: ["game-lifecycle"] }, acceptance: [{ kind: "progression", onboardingStepIds: [] }] };
+  const legacyContract = {
+    ...currentContract,
+    knowledge: { capabilityIds: ["game-lifecycle"] },
+    onboarding: [{ id: "old-platform-step" }],
+    assistance: { afterFailures: 3 },
+    acceptance: [{ kind: "onboarding", onboardingStepIds: ["old-platform-step"] }, { kind: "progression", onboardingStepIds: [] }],
+  };
+  const verdicts = auditRules.map(rule => ({ rule, implemented: true, evidence: "代码核对通过" }));
+  vi.mocked(readGeneratedSource).mockReturnValueOnce(first.html);
+  const root = mkdtempSync(join(tmpdir(), "studio-tutorial-migration-"));
+  prepareReusableBuild(root, legacyContract, sha256(first.html), verdicts);
+  const generate = vi.fn();
+  const auditRuleFidelity = vi.fn();
+  const repository = { recentReusableBuilds: async () => [{ id: "old-build" }], buildById: async () => ({ error: null }) };
+  try {
+    const orchestrator = new BuildOrchestrator(repository as never, root, { codeGenerator: { generate } as never, designContracts: { auditRuleFidelity } as never });
+    const result = await (orchestrator as any).generateExperimentalGame({ ...project, id: "same-project", spec: { designProfile: auditProfile, designContract: currentContract } }, join(root, "new-build"), []);
+    expect(generate).not.toHaveBeenCalled();
+    expect(auditRuleFidelity).not.toHaveBeenCalled();
+    expect(result.auditReusedFrom).toBe("old-build");
+  } finally { if (dirname(root) === tmpdir()) rmSync(root, { recursive: true, force: true }); }
+});
+
+it("最新匹配候选验收失败时改验较早候选，不先调用代码生成模型", async () => {
+  const contract = { id: "same-contract" };
+  const older = { ...first, html: "<html>older passing candidate</html>" };
+  const verdicts = auditRules.map(rule => ({ rule, implemented: true, evidence: "代码核对通过" }));
+  vi.mocked(readGeneratedSource).mockReturnValueOnce(first.html).mockReturnValueOnce(older.html);
+  vi.mocked(inspectGeneratedArtifact).mockImplementationOnce(() => { throw new ArtifactValidationFailure("单帧动画"); });
+  const root = mkdtempSync(join(tmpdir(), "studio-candidate-scan-"));
+  prepareReusableBuild(root, contract, sha256(first.html), verdicts);
+  const olderMetadata = join(root, "older-build", "_studio");
+  mkdirSync(olderMetadata, { recursive: true });
+  writeFileSync(join(olderMetadata, "GAME_DESIGN_CONTRACT.json"), JSON.stringify(contract));
+  writeFileSync(join(olderMetadata, "GENERATED_CODE.json"), JSON.stringify({ rounds: 1 }));
+  writeRuleFidelity(join(root, "older-build"), { verdicts, sourceSha256: sha256(older.html) });
+  const generate = vi.fn();
+  const auditRuleFidelity = vi.fn();
+  const repository = { recentReusableBuilds: async () => [{ id: "old-build" }, { id: "older-build" }], buildById: async () => ({ error: null }) };
+  try {
+    const orchestrator = new BuildOrchestrator(repository as never, root, { codeGenerator: { generate } as never, designContracts: { auditRuleFidelity } as never });
+    const result = await (orchestrator as any).generateExperimentalGame({ ...project, id: "same-project", spec: { designProfile: auditProfile, designContract: contract } }, join(root, "new-build"), []);
+    expect(generate).not.toHaveBeenCalled();
+    expect(auditRuleFidelity).not.toHaveBeenCalled();
+    expect(result.auditReusedFrom).toBe("older-build");
+  } finally { if (dirname(root) === tmpdir()) rmSync(root, { recursive: true, force: true }); }
+});
+
 it("上一版规则审核对应另一份代码时照常调用审核模型", async () => {
   const contract = { id: "same-contract" };
   vi.mocked(readGeneratedSource).mockReturnValueOnce(first.html);
@@ -206,6 +313,41 @@ it("上一版规则审核对应另一份代码时照常调用审核模型", asyn
     expect(result.auditReusedFrom).toBeNull();
     const written = JSON.parse(readFileSync(join(root, "new-build", "_studio", "RULE_FIDELITY.json"), "utf8"));
     expect(written.schemaVersion).toBe(2);
+    expect(written.reusedFromBuildId).toBeUndefined();
+  } finally { if (dirname(root) === tmpdir()) rmSync(root, { recursive: true, force: true }); }
+});
+
+it("候选通过静态与浏览器但没有规则回执时，只审核旧代码一次，不先重新生成HTML", async () => {
+  const contract = { id: "same-contract" };
+  vi.mocked(readGeneratedSource).mockReturnValueOnce(first.html);
+  const root = mkdtempSync(join(tmpdir(), "studio-candidate-audit-only-"));
+  const metadata = join(root, "old-build", "_studio");
+  mkdirSync(metadata, { recursive: true });
+  writeFileSync(join(metadata, "GAME_DESIGN_CONTRACT.json"), JSON.stringify(contract));
+  writeFileSync(join(metadata, "GENERATED_CODE.json"), JSON.stringify({ rounds: 1, designNotes: "existing" }));
+  mkdirSync(join(root, "new-build", "_studio"), { recursive: true });
+  const verdicts = auditRules.map(rule => ({ rule, implemented: true, evidence: "本次审核通过" }));
+  const generate = vi.fn();
+  const auditRuleFidelity = vi.fn().mockResolvedValue(verdicts);
+  vi.mocked(writeGeneratedArtifact).mockImplementation((targetRoot: string) => {
+    mkdirSync(targetRoot, { recursive: true });
+    writeFileSync(join(targetRoot, "index.html"), '<script src="./app.js"></script>');
+    writeFileSync(join(targetRoot, "styles.css"), "canvas{display:block}");
+    writeFileSync(join(targetRoot, "app.js"), "window.__FORGE_SPRITES__={create(){}};/* generated */");
+  });
+  const repository = { recentReusableBuilds: async () => [{ id: "old-build" }], buildById: async () => ({ error: null }) };
+  try {
+    const orchestrator = new BuildOrchestrator(repository as never, root, { codeGenerator: { generate } as never, designContracts: { auditRuleFidelity } as never });
+    const result = await (orchestrator as any).generateExperimentalGame({ ...project, id: "same-project", spec: { designProfile: auditProfile, designContract: contract } }, join(root, "new-build"), []);
+    expect(generate).not.toHaveBeenCalled();
+    expect(auditRuleFidelity).toHaveBeenCalledTimes(1);
+    expect(auditRuleFidelity.mock.calls[0][0]).toBe(auditProfile);
+    expect(auditRuleFidelity.mock.calls[0][1]).toContain("window.__FORGE_SPRITES__");
+    expect(result.generation.html).toBe(first.html);
+    expect(result.audit).toEqual(verdicts);
+    expect(result.auditReusedFrom).toBeNull();
+    const written = JSON.parse(readFileSync(join(root, "new-build", "_studio", "RULE_FIDELITY.json"), "utf8"));
+    expect(written.implemented).toBe(verdicts.length);
     expect(written.reusedFromBuildId).toBeUndefined();
   } finally { if (dirname(root) === tmpdir()) rmSync(root, { recursive: true, force: true }); }
 });

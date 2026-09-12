@@ -36,7 +36,7 @@ for (const mode of ["normal", "freeze", "dedupe", "accepted", "animated", "occlu
       if (mode === "occluded") await page.addStyleTag({ content: '#board::after{content:"";position:fixed;inset:30px 0 0;background:#fff;z-index:99}' });
       if (broken) await assert.rejects(() => inspectMemoryMatchNaturalActions(page), /2秒内没有自动盖回/);
       else if (mode === "occluded") await assert.rejects(() => inspectMemoryMatchNaturalActions(page), /遮挡/);
-      else if (mode === "dedupe") await assert.rejects(() => inspectMemoryMatchNaturalActions(page, true), /教学未推进/);
+      // 生成游戏已取消教学信号，dedupe 只验证乱序真实操作后仍能自然配对。
       else await inspectMemoryMatchNaturalActions(page, outOfOrder);
     } finally { await browser.close(); }
   });

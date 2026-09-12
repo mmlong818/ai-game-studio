@@ -41,6 +41,88 @@ it("确认前直接展示真实关数和无失败规则，并原样提交", asyn
   expect(confirm.mock.calls[0][0]).toContain("共 7 关；不会失败");
 });
 
+it("输入复刻 URL 时先按参考获取送审，不依赖预先存在的 dossier", async () => {
+  const referenceProfile = { ...profile, creationMode: "reference-replica" as const };
+  vi.mocked(generateDesignPreview).mockResolvedValue(referenceProfile);
+  const referenced = { ...draft, newGameBrief: "复制 https://www.crazygames.com/game/arrow-escape-puzzle", referenceDossier: null };
+  render(<LiveDesignReview draft={referenced} onBack={vi.fn()} onConfirm={vi.fn()} />);
+  expect(screen.getByRole("heading", { name: "参考游戏机制提炼" })).toBeInTheDocument();
+  expect(screen.queryByRole("heading", { name: "新游戏机制方案" })).not.toBeInTheDocument();
+  expect(await screen.findByText(/只制作有证据支持的核心机制 demo/)).toBeInTheDocument();
+  expect(screen.queryByText(/这轮先制作一局完整 demo/)).not.toBeInTheDocument();
+  expect(generateDesignPreview).toHaveBeenCalledWith(expect.objectContaining({ creationMode: "reference-replica" }), expect.any(AbortSignal), expect.any(Function), expect.any(Function), expect.any(Function));
+});
+
+it("原创描述保持 original-demo，不因内部玩法资料误判为参考复刻", async () => {
+  vi.mocked(generateDesignPreview).mockResolvedValue(profile);
+  const original = { ...draft, referenceDossier: { references: [{ title: "内部玩法资料", url: "internal://mechanic" }] } } as any;
+  render(<LiveDesignReview draft={original} onBack={vi.fn()} onConfirm={vi.fn()} />);
+  expect(screen.getByRole("heading", { name: "新游戏机制方案" })).toBeInTheDocument();
+  await screen.findByText(profile.playerFantasy);
+  expect(generateDesignPreview).toHaveBeenCalledWith(expect.objectContaining({ creationMode: "original-demo" }), expect.any(AbortSignal), expect.any(Function), expect.any(Function), expect.any(Function));
+});
+
+it("参考资料不足时只在用户明确同意后按玩法描述请求原创单局", async () => {
+  const missing = new StudioApiError("暂未取得足够的公开玩法资料。", [{
+    stage: "design", category: "validation", code: "REFERENCE_GAMEPLAY_UNVERIFIED",
+    message: "尚未确认参考游戏的实际玩法。", nextStep: "请描述玩法后明确选择是否改为原创单局。", retryable: false,
+  }], { method: "public-browser", gameplayStatus: "runtime-viewed", runtimeStatus: "visible", canClaimPlayable: false, limitations: ["尚未执行实际玩法操作，不能确认胜负流程。"] });
+  const originalProfile = { ...profile, creationMode: "original-demo" as const };
+  vi.mocked(generateDesignPreview).mockRejectedValueOnce(missing).mockResolvedValueOnce(originalProfile);
+  const referenced = { ...draft, newGameBrief: "复制 https://example.com/reference-game", referenceDossier: null };
+  const confirm = vi.fn();
+  render(<LiveDesignReview draft={referenced} onBack={vi.fn()} onConfirm={confirm} />);
+  expect(await screen.findByRole("heading", { name: "尚未确认实际玩法" }, { timeout: 3000 })).toBeInTheDocument();
+  expect(screen.queryByText("本次未能完成")).not.toBeInTheDocument();
+  expect(screen.queryByText(/返回内容无效/)).not.toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "重新生成方案" })).not.toBeInTheDocument();
+  expect(await screen.findByLabelText("你了解到的玩法", {}, { timeout: 3000 })).toBeInTheDocument();
+  await userEvent.type(screen.getByLabelText("你了解到的玩法"), "https://example.com/only-link");
+  expect(screen.getByRole("button", { name: "按我的描述制作单局 demo" })).toBeDisabled();
+  await userEvent.clear(screen.getByLabelText("你了解到的玩法"));
+  const description = "点击气球得分";
+  await userEvent.type(screen.getByLabelText("你了解到的玩法"), description);
+  expect(generateDesignPreview).toHaveBeenCalledTimes(1);
+  await userEvent.click(screen.getByRole("button", { name: "按我的描述制作单局 demo" }));
+  await screen.findByText(originalProfile.playerFantasy);
+  expect(generateDesignPreview).toHaveBeenLastCalledWith(expect.objectContaining({
+    creationMode: "original-demo",
+    idea: referenced.newGameBrief,
+    referenceFallback: { decision: "user-approved-original-demo", gameplayDescription: description },
+  }), expect.any(AbortSignal), expect.any(Function), expect.any(Function), expect.any(Function));
+  await userEvent.click(screen.getByRole("button", { name: "确认方案，开始制作" }));
+  expect(confirm.mock.calls[0][3]).toEqual({ decision: "user-approved-original-demo", gameplayDescription: description });
+});
+
+it("参考资料不足也进入中性协商，不显示返回内容错误", async () => {
+  vi.mocked(generateDesignPreview).mockRejectedValue(new StudioApiError("参考资料不足。", [{
+    stage: "design", category: "invalid-response", code: "REFERENCE_EVIDENCE_REQUIRED",
+    message: "参考资料不足。", nextStep: "请描述玩法后明确选择。", retryable: true,
+  }]));
+  render(<LiveDesignReview draft={{ ...draft, newGameBrief: "复制 https://example.com/game", referenceDossier: null }} onBack={vi.fn()} onConfirm={vi.fn()} />);
+  expect(await screen.findByRole("heading", { name: "参考资料不足" }, { timeout: 3000 })).toBeInTheDocument();
+  expect(screen.getByText("已读取：没有取得足够的公开玩法资料")).toBeInTheDocument();
+  expect(screen.getByLabelText("你了解到的玩法")).toBeInTheDocument();
+  expect(screen.queryByText("本次未能完成")).not.toBeInTheDocument();
+  expect(screen.queryByText(/返回内容无效/)).not.toBeInTheDocument();
+});
+
+it("参考方案分开说明已读取、已查看与尚未验证的能力边界", async () => {
+  vi.mocked(generateDesignPreview).mockResolvedValue({
+    ...profile,
+    creationMode: "reference-replica",
+    referenceInspection: {
+      method: "public-browser", gameplayStatus: "runtime-viewed", runtimeStatus: "visible", canClaimPlayable: false,
+      limitations: ["尚未执行实际玩法操作，不能确认完整交互、胜负或关卡结构。"],
+    },
+    referenceEvidence: [{ status: "observed", basis: "gameplay-text", claim: "公开规则说明", source: "https://example.com/game" }],
+  });
+  render(<LiveDesignReview draft={{ ...draft, newGameBrief: "复制 https://example.com/game", referenceDossier: null }} onBack={vi.fn()} onConfirm={vi.fn()} />);
+  expect(await screen.findByText(/已读取：公开页面中的规则说明/)).toBeInTheDocument();
+  expect(screen.getByText(/已查看：游戏运行页面/)).toBeInTheDocument();
+  expect(screen.getByText(/尚未确认：实际操作、胜负流程和完整关卡结构/)).toBeInTheDocument();
+});
+
 it("已有游戏方案明确限制在所选范围并保留原玩法操作", async () => {
   vi.mocked(generateDesignPreview).mockResolvedValue(profile);
   const remix = {

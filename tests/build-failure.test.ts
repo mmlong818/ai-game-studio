@@ -29,6 +29,15 @@ test("超时可从递归原因识别，并保留受限请求元数据", () => {
   assert.equal(detail.code, "TIMEOUT"); assert.equal(detail.retryable, true); assert.equal(detail.attempt, 2); assert.equal(detail.httpStatus, 504); assert.equal(detail.requestId, "req_safe-1");
 });
 
+test("浏览器整体验收超时使用独立错误码并提示资源已回收", () => {
+  const error = Object.assign(new Error("真实浏览器整体验收超时。"), { name: "BrowserTimeoutError", code: "BROWSER_TIMEOUT" });
+  const detail = safeFailure("browser", error);
+  assert.equal(detail.code, "BROWSER_TIMEOUT");
+  assert.equal(detail.category, "timeout");
+  assert.equal(detail.retryable, true);
+  assert.match(detail.message, /浏览器验收.*回收/);
+});
+
 test("文本 JSON 或模式解析失败归为无效响应，不冒充图片解码错误", () => {
   for (const error of [new Error("模型返回的内容不是有效的 JSON。"), Object.assign(new Error("schema mismatch"), { name: "ZodError" })]) {
     const detail = safeFailure("design", error);
@@ -36,6 +45,12 @@ test("文本 JSON 或模式解析失败归为无效响应，不冒充图片解�
     assert.equal(detail.code, "INVALID_RESPONSE");
     assert.equal(detail.message, "服务返回内容格式无效，无法继续制作。");
   }
+});
+
+test("规则审核提到真实关卡配置时仍归为验收失败，不误报服务配置", () => {
+  const detail = safeFailure("code", new Error("服务器本地修复候选规则审核仍有 1 项未落实：玩法属性必须在真实关卡配置中生效。"));
+  assert.equal(detail.code, "VALIDATION");
+  assert.equal(detail.category, "validation");
 });
 
 test("参考编辑未完整返回目标会保留可信的资源清单", () => {
@@ -53,7 +68,16 @@ test("可信 Sprite Sheet 本地门禁保留具体且安全的失败原因", () 
   assert.deepEqual(detail, {
     stage: "asset", category: "invalid-image", code: "SPRITE_FRAME_EDGE",
     message: "动画帧主体触碰了草稿格边缘，可能与相邻帧串格。",
-    nextStep: "按提示调整动画帧的透明背景、主体留白或图集合同后，再由你明确重新制作。",
+    nextStep: "该资源的图集合同或来源结构无效，系统不会把它标记为成功。",
     retryable: false, resource: { file: "assets/monk-tang.png", label: "唐僧" }, operation: "sprite-sheet-edit",
   });
+});
+
+test("只有已耗尽自动质量修复预算的资源才提供结构化续作入口", () => {
+  const exhausted = Object.assign(new SpriteSheetValidationError("SPRITE_FRAME_SUBJECT", "第 1 帧没有可见主体。"), { autoRepairExhausted: true });
+  const detail = safeFailure("asset", exhausted, { resource: { file: "assets/hero.png", label: "主角" }, operation: "sprite-sheet-edit" });
+  assert.deepEqual(detail.continuation, { kind: "regenerate-resource", resourceFile: "assets/hero.png" });
+  const hard = safeFailure("asset", new SpriteSheetValidationError("SPRITE_ANCHOR", "锚点无效。"), { resource: { file: "assets/hero.png", label: "主角" } });
+  assert.equal(hard.continuation, undefined);
+  assert.equal(safeFailure("asset", new Error("图像服务额度不足。"), { resource: { file: "assets/hero.png", label: "主角" } }).continuation, undefined);
 });

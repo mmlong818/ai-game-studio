@@ -30,7 +30,9 @@ export function ReviewScreen({
         <div>
           <span className="eyebrow">方案已形成</span>
           <h1>{template ? `${draft.sourceGame?.title ?? template.name}改造方案` : "新游戏机制方案"}</h1>
-          <p>先看看玩家会怎样玩。符合你的想法就点“继续”，不合适就返回修改。下面是制作前的建议方案，并非已完成的游戏。</p>
+          <p>{draft.referenceDossier?.references.length
+            ? "先确认基础复刻是否准确。系统会保留参考中已经核实的关卡和局制，不会擅自改玩法；不合适就返回修改。"
+            : "先看看这一局玩家会怎样玩。符合你的想法就继续制作单局 demo，不合适就返回修改；不会默认增加关卡、等级或教学系统。"}</p>
         </div>
         <span className="ready-stamp">方案草案 · 待制作验证</span>
       </div>
@@ -101,8 +103,8 @@ export function ReviewScreen({
           <h2 id="evidence-heading">制作时需要完成的检查</h2>
           <ul className="gate-list">
             <li><span>待验证</span> 核心玩法与胜负规则</li>
-            <li><span>待验证</span> 新手帮助与操作反馈</li>
-            <li><span>待验证</span> 难度递进与单局节奏</li>
+            <li><span>待验证</span> 操作反馈是否清楚</li>
+            <li><span>待验证</span> {draft.referenceDossier?.references.length ? "参考中的关卡与局制" : "单局节奏"}</li>
             <li><span>待验证</span> 图像资源与胜利结算</li>
             <li><span>待验证</span> 桌面、触控与运行流畅度</li>
           </ul>

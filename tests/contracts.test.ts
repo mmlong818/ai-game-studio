@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { gameSpecSchema, generateGameSpec, projectInputSchema, visualStyleOptions, type GameTemplate } from "../src/shared/contracts";
+import { explicitAspectProjectInputSchema, gameSpecSchema, generateGameSpec, projectInputSchema, visualStyleOptions, type GameTemplate } from "../src/shared/contracts";
 import { campaignTierSize, createCampaignLevels, minimumCampaignLevelCount } from "../src/shared/level-progression";
 
 test("玩法合同能够从中文描述识别 3D、视角、机制和硬约束", () => {
@@ -22,6 +22,18 @@ test("玩法合同能够从中文描述识别 3D、视角、机制和硬约束",
 test("玩法合同拒绝过短的模糊输入", () => {
   const result = projectInputSchema.safeParse({ idea: "做个游戏", dimensions: "auto" });
   assert.equal(result.success, false);
+});
+
+test("公开新建入口要求用户明确选择画幅，改造输入仍由来源项目保留画幅", () => {
+  const idea = "制作一个收集星星并躲避障碍，集满十颗后获胜的小游戏。";
+  assert.equal(explicitAspectProjectInputSchema.safeParse({ idea }).success, false);
+  assert.equal(explicitAspectProjectInputSchema.safeParse({ idea, aspectRatio: "auto" }).success, false);
+  assert.equal(explicitAspectProjectInputSchema.safeParse({ idea, aspectRatio: "4:3" }).success, false);
+  assert.equal(explicitAspectProjectInputSchema.safeParse({ idea, aspectRatio: "16:9" }).success, true);
+  assert.equal(explicitAspectProjectInputSchema.safeParse({ idea, sourceProjectId: "a84e32e5-921b-4fc1-879a-bc598549f10b", revisionScope: "gameplay" }).success, true);
+  const portrait = generateGameSpec({ idea, aspectRatio: "9:16" });
+  const landscape = generateGameSpec({ idea, aspectRatio: "16:9" });
+  assert.deepEqual(portrait.inputModes, landscape.inputModes, "画幅选择不能暗中改变输入方式");
 });
 
 test("六种画面风格都会写入正式合同，默认新项目使用软萌风格", () => {

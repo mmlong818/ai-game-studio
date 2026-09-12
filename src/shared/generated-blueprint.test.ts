@@ -26,6 +26,14 @@ describe("生成式游戏知识蓝图", () => {
     const plan = generatedBlueprintSchema.parse(valid);
     expect(blueprintSpriteFiles(plan)).toEqual(["assets/shell-scallop.png", "assets/basket.png"]);
     expect(blueprintSpriteFiles(null)).toEqual([]);
+    expect(plan.sprites[0].presentation).toMatchObject({ region: "playfield", fit: "contain", logicalSize: { min: 0.06, max: 0.3 } });
+  });
+
+  it("区分源像素与逻辑显示尺寸，并拒绝颠倒的显示范围", () => {
+    const presentation = { region: "hud", fit: "contain", logicalSize: { min: 0.05, max: 0.12 }, anchor: { x: 0.5, y: 1 }, safeInsetRatio: 0.1, minSourcePixels: 256 } as const;
+    const plan = generatedBlueprintSchema.parse({ ...valid, sprites: [{ ...valid.sprites[0], presentation }, valid.sprites[1]] });
+    expect(plan.sprites[0].presentation.minSourcePixels).toBe(256);
+    expect(() => generatedBlueprintSchema.parse({ ...valid, sprites: [{ ...valid.sprites[0], presentation: { ...presentation, logicalSize: { min: 0.4, max: 0.2 } } }, valid.sprites[1]] })).toThrow(/下限/);
   });
 
   it("接受row-major多动作图集并拒绝越界、重叠和短动作", () => {
@@ -60,17 +68,40 @@ describe("生成式游戏知识蓝图", () => {
     expect(() => generatedBlueprintSchema.parse({ ...valid, sprites: [valid.sprites[0]] })).toThrow();
   });
 
-  it("蓝图规则逐条进入审核，包含机制生产规则与位图接入要求", () => {
+  it("硬审核保留本游戏取舍与位图，不把知识分类的通用状态模型凌驾具体玩法", () => {
     const rules = blueprintRules(generatedBlueprintSchema.parse(valid));
     expect(rules.some(rule => rule.startsWith("玩家取舍:"))).toBe(true);
-    expect(rules.some(rule => rule.includes(MECHANIC_ATLAS[0].label))).toBe(true);
+    expect(rules.some(rule => rule.includes(MECHANIC_ATLAS[0].productionRule))).toBe(false);
+    expect(rules.some(rule => rule.startsWith("张力来源:") || rule.startsWith("熟练度体现:"))).toBe(false);
     expect(rules.some(rule => rule.includes("assets/shell-scallop.png"))).toBe(true);
     expect(blueprintRules(null)).toEqual([]);
+  });
+
+  it("箭头放行方案不会被通用移动和推理分类扩写成控制速度或提交候选", () => {
+    const arrowPlan = generatedBlueprintSchema.parse({
+      mechanicIds: ["direct-navigation", "deduce-constraints"],
+      modifierIds: ["square-grid", "recoverable-mistake"],
+      coreDecision: "每次先选哪支箭离场：能走的箭可腾出通道，点错会撞上同伴并消耗容错。",
+      tension: "每关容错有限，玩家需要观察直线路径。",
+      masterySignal: "熟练玩家以更少撞击和更短时间清空箭头。",
+      sprites: [
+        { file: "assets/escape-arrow.png", role: "逃离箭头", hint: "方向醒目的木质箭牌" },
+        { file: "assets/stone-block.png", role: "石块障碍", hint: "不能穿过的方形石砖" },
+      ],
+    });
+    const hardRules = blueprintRules(arrowPlan).join("\n");
+    expect(hardRules).toContain("先选哪支箭离场");
+    expect(hardRules).toContain("assets/escape-arrow.png");
+    expect(hardRules).not.toMatch(/位置与速度|抵达目标|线索、候选与标记|提交正确解|保留的箭堵死/);
+    const prompt = generatedBlueprintPrompt(arrowPlan);
+    expect(prompt).toContain("只用于帮助理解策划分类");
+    expect(prompt).toContain("不得用卡片里的通用角色、状态或结果替换");
   });
 
   it("代码提示要求绘制已生成位图并禁止程序化自绘主体", () => {
     const prompt = generatedBlueprintPrompt(generatedBlueprintSchema.parse(valid));
     expect(prompt).toContain("assets/basket.png");
+    expect(prompt).toContain("源文件像素尺寸与逻辑显示尺寸");
     expect(prompt).toContain("禁止用 canvas 路径");
     expect(generatedBlueprintPrompt(null)).toBe("");
   });
@@ -87,8 +118,8 @@ describe("生成式游戏知识蓝图", () => {
   it("策划提示给出候选菜单与反纯点选要求", () => {
     const prompt = blueprintPlanningPrompt("海边捡贝壳装满竹篮");
     expect(prompt).toContain("mechanic_ids 只能从这些 id 中选 1–3 个");
-    expect(prompt).toContain("纯点选玩法不可接受");
-    expect(prompt).toContain("difficulty_curve 至少有一条改变决策结构");
+    expect(prompt).toContain("“点到就得分”不是取舍");
+    expect(prompt).toContain("初次创建始终交付单局demo");
     expect(prompt).toContain(DESIGN_MODIFIERS[0].id);
   });
 });

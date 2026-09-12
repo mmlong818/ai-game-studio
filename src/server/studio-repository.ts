@@ -65,6 +65,7 @@ import {
   type RevisionPlan,
   type PlayActivity,
   type VersionQualityReport,
+  type DemoReview,
 } from "../shared/contracts.js";
 import { validateRevisionPlan } from "./revision-planner.js";
 
@@ -1993,6 +1994,27 @@ export class StudioRepository {
       id: string; sequence: number; previous_status: string; status: string; summary: string; reviewed_at: DateValue; reviewer_id: string | null;
     }>("SELECT id, sequence, previous_status, status, summary, reviewed_at, reviewer_id FROM version_art_reviews WHERE project_id = $1 AND version_id = $2 ORDER BY sequence DESC", [projectId, versionId])).rows;
     return rows.map(row => ({ id: row.id, projectId, versionId, sequence: row.sequence, previousStatus: row.previous_status, status: row.status, summary: row.summary, reviewedAt: iso(row.reviewed_at), reviewerId: row.reviewer_id, source: row.reviewer_id ? "operator-credential" as const : "manual-unverified" as const }));
+  }
+
+  async getDemoReview(projectId: string, versionId: string): Promise<DemoReview | null> {
+    const row = (await this.database.query<{ project_id: string; version_id: string; status: "approved"; reviewed_at: DateValue }>(
+      "SELECT project_id, version_id, status, reviewed_at FROM version_demo_reviews WHERE project_id = $1 AND version_id = $2",
+      [projectId, versionId],
+    )).rows[0];
+    return row ? { projectId: row.project_id, versionId: row.version_id, status: row.status, reviewedAt: iso(row.reviewed_at)! } : null;
+  }
+
+  async approveDemoReview(projectId: string, versionId: string): Promise<DemoReview> {
+    const project = await this.get(projectId);
+    if (!project || project.version.id !== versionId) throw new Error("只能验收当前试玩版本。");
+    if (project.archivedAt) throw new Error("归档项目不能验收，请先恢复项目。");
+    const reviewedAt = new Date().toISOString();
+    await this.database.query(
+      `INSERT INTO version_demo_reviews (project_id, version_id, status, reviewed_at) VALUES ($1, $2, 'approved', $3)
+       ON CONFLICT (version_id) DO UPDATE SET status = 'approved', reviewed_at = excluded.reviewed_at`,
+      [projectId, versionId, reviewedAt],
+    );
+    return { projectId, versionId, status: "approved", reviewedAt };
   }
 
   async reviewVersionArt(projectId: string, versionId: string, rawInput: unknown, reviewer?: { id: string }) {

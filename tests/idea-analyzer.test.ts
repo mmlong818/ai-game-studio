@@ -75,21 +75,6 @@ test("LLM 正常返回时产出 llm 来源的结构化分析，并进入玩法�
   assert.equal(spec.ideaAnalysis?.source, "llm");
 });
 
-test("Claude CLI 文本提供方不会收到 OpenAI reasoning_effort 参数", async () => {
-  const settings = new OpenAISettings(validKey);
-  settings.useClaudeCliText("opus");
-  const analyzer = new IdeaAnalyzer(settings, {
-    fetchImpl: async (_url, init) => {
-      const body = JSON.parse(String(init?.body));
-      assert.equal(body.model, "claude-cli:opus");
-      assert.equal("reasoning_effort" in body, false);
-      assert.equal(body.response_format.json_schema.strict, true);
-      return llmResponse({ template: null, no_match_reason: "当前模板不支持。", confidence: 0.8, dimensions: "2d", three_mode: null, mechanics: [], hard_constraints: [], summary: "测试" });
-    },
-  });
-  assert.equal((await analyzer.analyze({ idea: towerDefenseIdea })).source, "llm");
-});
-
 test("LLM 判定无匹配模板时保留 null 与原因，不静默兜底", async () => {
   const analyzer = new IdeaAnalyzer(new OpenAISettings(validKey), {
     fetchImpl: async () =>

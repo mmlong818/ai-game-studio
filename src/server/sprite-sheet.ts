@@ -19,6 +19,17 @@ export interface PackedSpriteSheet {
   bytes: Buffer;
   animation: SpriteSheetAnimation;
   providerFrames: SpriteFrameSourceMetadata[];
+  warnings: SpriteSheetWarning[];
+}
+
+export interface SpriteSheetWarning {
+  code: "SPRITE_FRAME_EDGE";
+  frame: number;
+  bounds: { left: number; top: number; width: number; height: number };
+  source: { width: number; height: number };
+  sides: Array<"left" | "top" | "right" | "bottom">;
+  recommendedMargin: number;
+  message: string;
 }
 
 export interface SpriteSheetDraftGrid { columns: number; rows: number; frameCount: number }
@@ -120,13 +131,35 @@ function sharedScale(frames: readonly DecodedFrame[], envelope: { width: number;
   return Math.min(1, envelope.width / maxWidth, envelope.height / maxHeight);
 }
 
-async function prepareFrame(decoded: DecodedFrame, animation: SpriteSheetAnimation, scale: number, frameIndex: number): Promise<{ cell: Buffer; source: SpriteFrameSourceMetadata; subject: { area: number; aspect: number } }> {
-  const edgeMargin = Math.max(1, Math.round(Math.min(decoded.width, decoded.height) * 0.01));
-  if (decoded.bounds.left < edgeMargin || decoded.bounds.top < edgeMargin
-    || decoded.bounds.left + decoded.bounds.width > decoded.width - edgeMargin
-    || decoded.bounds.top + decoded.bounds.height > decoded.height - edgeMargin) {
-    throw spriteFailure("SPRITE_FRAME_EDGE", `第 ${frameIndex + 1} 帧主体边界 ${decoded.bounds.left},${decoded.bounds.top},${decoded.bounds.width}×${decoded.bounds.height} 触碰草稿格边缘；要求至少保留 ${edgeMargin}px 留白。`);
+function assertMinimumSubjectPixels(frames: readonly DecodedFrame[], minimum: number) {
+  if (!Number.isInteger(minimum) || minimum < 1) return;
+  const undersized = frames.findIndex(frame => Math.min(frame.bounds.width, frame.bounds.height) < minimum);
+  if (undersized >= 0) {
+    const bounds = frames[undersized]!.bounds;
+    throw spriteFailure("SPRITE_FRAME_RESOLUTION", `第 ${undersized + 1} 帧主体有效源像素 ${bounds.width}×${bounds.height}，短边低于显示合同要求 ${minimum}px。`);
   }
+}
+
+async function prepareFrame(decoded: DecodedFrame, animation: SpriteSheetAnimation, scale: number, frameIndex: number): Promise<{ cell: Buffer; source: SpriteFrameSourceMetadata; subject: { area: number; aspect: number }; warnings: SpriteSheetWarning[] }> {
+  const edgeMargin = Math.max(1, Math.round(Math.min(decoded.width, decoded.height) * 0.01));
+  const sides: SpriteSheetWarning["sides"] = [];
+  if (decoded.bounds.left < edgeMargin) sides.push("left");
+  if (decoded.bounds.top < edgeMargin) sides.push("top");
+  if (decoded.bounds.left + decoded.bounds.width > decoded.width - edgeMargin) sides.push("right");
+  if (decoded.bounds.top + decoded.bounds.height > decoded.height - edgeMargin) sides.push("bottom");
+  // The provider draft edge is a visual-review heuristic: it may indicate that
+  // the model cropped artwork, but it does not violate the delivered sheet's
+  // runtime cell contract. Preserve all available pixels, normalize them into a
+  // transparent destination cell, and keep the uncertainty as review metadata.
+  const warnings: SpriteSheetWarning[] = sides.length ? [{
+    code: "SPRITE_FRAME_EDGE",
+    frame: frameIndex + 1,
+    bounds: { ...decoded.bounds },
+    source: { width: decoded.width, height: decoded.height },
+    sides,
+    recommendedMargin: edgeMargin,
+    message: `第 ${frameIndex + 1} 帧主体边界 ${decoded.bounds.left},${decoded.bounds.top},${decoded.bounds.width}×${decoded.bounds.height} 未保留建议的 ${edgeMargin}px 草稿留白（${sides.join("、")}）；现有像素已安全装入交付格，但原图可能在边界处被截断，试玩时继续检查边界观感。`,
+  }] : [];
   const { frameWidth, frameHeight, anchor } = animation;
   const targetWidth = Math.max(1, Math.round(decoded.bounds.width * scale));
   const targetHeight = Math.max(1, Math.round(decoded.bounds.height * scale));
@@ -144,7 +177,7 @@ async function prepareFrame(decoded: DecodedFrame, animation: SpriteSheetAnimati
     .composite([{ input: cropped, left, top }])
     .png({ compressionLevel: 9, adaptiveFiltering: true })
     .toBuffer();
-  return { cell, source: decoded.source, subject: { area: decoded.bounds.width * decoded.bounds.height, aspect: decoded.bounds.width / decoded.bounds.height } };
+  return { cell, source: decoded.source, subject: { area: decoded.bounds.width * decoded.bounds.height, aspect: decoded.bounds.width / decoded.bounds.height }, warnings };
 }
 
 function assertClipConsistency(animation: SpriteSheetAnimation, prepared: readonly Awaited<ReturnType<typeof prepareFrame>>[], frameOffset = 0) {
@@ -187,10 +220,11 @@ async function packCells(cells: readonly Buffer[], animation: SpriteSheetAnimati
 }
 
 /** Each input is adapted inside its own cell before row-major packing. */
-export async function packAnimationSpriteSheet(rawFrames: readonly Buffer[], rawAnimation: SpriteSheetAnimation): Promise<PackedSpriteSheet> {
+export async function packAnimationSpriteSheet(rawFrames: readonly Buffer[], rawAnimation: SpriteSheetAnimation, options: { minSourcePixels?: number } = {}): Promise<PackedSpriteSheet> {
   const animation = spriteSheetAnimationSchema.parse(rawAnimation);
   if (rawFrames.length !== animation.frameCount) throw spriteFailure("SPRITE_FRAME_COUNT", `Sprite Sheet 需要 ${animation.frameCount} 帧，实际收到 ${rawFrames.length} 帧。`);
   const decoded = await Promise.all(rawFrames.map((bytes, index) => decodeFrame(bytes, index)));
+  assertMinimumSubjectPixels(decoded, options.minSourcePixels ?? 1);
   const undersized = decoded.findIndex(frame => frame.width < animation.frameWidth || frame.height < animation.frameHeight);
   if (undersized >= 0) {
     const frame = decoded[undersized]!;
@@ -210,11 +244,12 @@ export async function packAnimationSpriteSheet(rawFrames: readonly Buffer[], raw
     bytes: await packCells(prepared.map(({ cell }) => cell), animation),
     animation,
     providerFrames: prepared.map(({ source }) => source),
+    warnings: prepared.flatMap(({ warnings }) => warnings),
   };
 }
 
 /** Replaces one clip while preserving every non-target cell byte-for-byte at pixel level. */
-export async function replaceAnimationSpriteClip(sourceSheet: Buffer, rawAnimation: SpriteSheetAnimation, clipId: SpriteAnimationClipId, replacementFrames: readonly Buffer[]): Promise<PackedSpriteSheet> {
+export async function replaceAnimationSpriteClip(sourceSheet: Buffer, rawAnimation: SpriteSheetAnimation, clipId: SpriteAnimationClipId, replacementFrames: readonly Buffer[], options: { minSourcePixels?: number } = {}): Promise<PackedSpriteSheet> {
   const animation = spriteSheetAnimationSchema.parse(rawAnimation);
   const clip = animation.clips.find(({ id }) => id === clipId);
   if (!clip) throw spriteFailure("SPRITE_SOURCE_CLIP", `来源 Sprite Sheet 不包含动作 ${clipId}。`);
@@ -235,6 +270,7 @@ export async function replaceAnimationSpriteClip(sourceSheet: Buffer, rawAnimati
     .png({ compressionLevel: 9, adaptiveFiltering: true })
     .toBuffer()));
   const decodedReplacement = await Promise.all(replacementFrames.map((bytes, index) => decodeFrame(bytes, index)));
+  assertMinimumSubjectPixels(decodedReplacement, options.minSourcePixels ?? 1);
   const undersized = decodedReplacement.findIndex(frame => frame.width < animation.frameWidth || frame.height < animation.frameHeight);
   if (undersized >= 0) {
     const frame = decodedReplacement[undersized]!;
@@ -253,5 +289,6 @@ export async function replaceAnimationSpriteClip(sourceSheet: Buffer, rawAnimati
     bytes: await packCells(cells, animation),
     animation,
     providerFrames: prepared.map(({ source }) => source),
+    warnings: prepared.flatMap(({ warnings }) => warnings),
   };
 }

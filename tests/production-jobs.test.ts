@@ -5,6 +5,19 @@ import { openTestDatabase } from "../src/server/database";
 import { ProductionJobs } from "../src/server/production-jobs";
 import { projectInputSchema } from "../src/shared/contracts";
 
+test("新制作任务在排队和模型调用前拒绝缺失或自动画幅", async () => {
+  const db = await openTestDatabase();
+  let calls = 0;
+  const jobs = new ProductionJobs(db, async () => { calls += 1; });
+  try {
+    await jobs.initialize();
+    const idea = "制作一个收集星星并躲避障碍，集满十颗后获胜的小游戏。";
+    await assert.rejects(jobs.submit({ idea }), /必须明确选择/);
+    await assert.rejects(jobs.submit({ idea, aspectRatio: "auto" }), /必须明确选择/);
+    assert.equal(calls, 0);
+  } finally { await db.close(); }
+});
+
 test("创建阶段最多并发两个任务，其余保持排队", async () => {
   const db = await openTestDatabase();
   let active = 0;
@@ -18,7 +31,7 @@ test("创建阶段最多并发两个任务，其余保持排队", async () => {
   try {
     await jobs.initialize();
     const receipts = [];
-    for (let n = 0; n < 3; n++) receipts.push(await jobs.submit({ idea: "一个花园记忆翻牌游戏，配对全部花朵即可获胜", requestId: randomUUID() }));
+    for (let n = 0; n < 3; n++) receipts.push(await jobs.submit({ idea: "一个花园记忆翻牌游戏，配对全部花朵即可获胜", requestId: randomUUID(), aspectRatio: "9:16" }));
     for (let n = 0; n < 100 && release.length < 2; n++) await new Promise(resolve => setTimeout(resolve, 5));
     assert.equal(release.length, 2);
     assert.equal((await jobs.get(receipts[2].id))?.status, "queued");
@@ -37,14 +50,18 @@ test("服务端先持久化接收记录，重复提交不重复执行，失败�
   const jobs = new ProductionJobs(db, async (_input, report) => { calls++; await report("正在细化游戏方案"); throw new Error("策划生成未成功"); });
   try {
     await jobs.initialize();
-    const input = { requestId: randomUUID(), idea: "一个在花园中收集星星并躲避障碍的游戏" };
+    const input = { requestId: randomUUID(), idea: "一个在花园中收集星星并躲避障碍的游戏", aspectRatio: "16:9" as const };
     const first = await jobs.submit(input);
     assert.equal(first.status, "queued");
     await jobs.submit(input);
     for (let n = 0; n < 100 && (await jobs.get(first.id))?.status !== "failed"; n++) await new Promise(done => setTimeout(done, 5));
     assert.equal(calls, 1);
     const restored = new ProductionJobs(db, async () => {});
-    assert.equal((await restored.get(first.id))?.error, "策划生成未成功");
+    const failed = await restored.get(first.id);
+    assert.equal(failed?.error, "构建遇到未分类错误，详细原因未安全记录。");
+    assert.deepEqual(failed?.failureDetails?.map(({ stage, category, code, retryable }) => ({ stage, category, code, retryable })), [
+      { stage: "planning", category: "unknown", code: "UNKNOWN", retryable: false },
+    ]);
     assert.equal((await restored.get(first.id))?.events?.[0].title, "正在细化游戏方案");
     await jobs.submit(input);
     assert.equal(calls, 1);
@@ -57,7 +74,7 @@ test("重启只恢复尚未执行的排队回执，不重试结果未知的创�
   const called: string[] = [];
   try {
     await new ProductionJobs(db, async () => {}).initialize();
-    const queued = projectInputSchema.parse({ requestId: randomUUID(), idea: "自由收集花朵，没有失败和最终目标" });
+    const queued = projectInputSchema.parse({ requestId: randomUUID(), idea: "自由收集花朵，没有失败和最终目标", aspectRatio: "1:1" });
     const uncertain = projectInputSchema.parse({ ...queued, requestId: randomUUID() });
     for (const [input, status] of [[queued, "queued"], [uncertain, "creating"]] as const) {
       await db.query("INSERT INTO production_jobs (id, input_json, status) VALUES ($1, $2, $3)", [input.requestId, JSON.stringify(input), status]);
@@ -98,7 +115,7 @@ test("创建阶段失败后可用同一份已确认方案重新制作，不重�
       onboarding: ["点一枚贝壳", "看篮子计数"], accessibility: ["大按钮", "无倒计时"], productionRisks: [],
     };
     const idea = "海边贝壳收集，点击贝壳装满篮子";
-    const first = await jobs.submit({ idea, requestId: randomUUID(), confirmedDesignProfile });
+    const first = await jobs.submit({ idea, requestId: randomUUID(), confirmedDesignProfile, aspectRatio: "9:16" });
     for (let n = 0; n < 100 && (await jobs.get(first.id))?.status !== "failed"; n++) await new Promise(done => setTimeout(done, 5));
     assert.equal((await jobs.get(first.id))?.status, "failed");
     await assert.rejects(jobs.resubmitFailed(first.id, async () => true), /已生成项目/);
@@ -110,7 +127,7 @@ test("创建阶段失败后可用同一份已确认方案重新制作，不重�
     assert.equal((await jobs.get(first.id))?.status, "failed");
     await assert.rejects(jobs.resubmitFailed(retried.id, async () => false), /只有已失败/);
     await assert.rejects(jobs.resubmitFailed(randomUUID(), async () => false), /找不到/);
-    const plain = await jobs.submit({ idea: "没有确认方案的旧式提交：玩家点星星，集满十颗算完成", requestId: randomUUID() });
+    const plain = await jobs.submit({ idea: "没有确认方案的旧式提交：玩家点星星，集满十颗算完成", requestId: randomUUID(), aspectRatio: "16:9" });
     for (let n = 0; n < 100 && (await jobs.get(plain.id))?.status !== "building"; n++) await new Promise(done => setTimeout(done, 5));
   } finally { await db.close(); }
 });
@@ -123,7 +140,7 @@ test("取消可先于同 requestId 的创建提交，迟到提交不会启动孤
   try {
     await jobs.initialize();
     assert.equal((await jobs.cancel(id)).status, "cancelled");
-    assert.equal((await jobs.submit({ requestId: id, idea: "在森林中寻找四枚发光种子的轻松小游戏" })).status, "cancelled");
+    assert.equal((await jobs.submit({ requestId: id, idea: "在森林中寻找四枚发光种子的轻松小游戏", aspectRatio: "9:16" })).status, "cancelled");
     await new Promise(resolve => setTimeout(resolve, 20));
     assert.equal(calls, 0);
   } finally { await db.close(); }
@@ -141,11 +158,31 @@ test("创建中取消会触发 AbortSignal，且取消后不进入下一阶段",
   });
   try {
     await jobs.initialize();
-    const receipt = await jobs.submit({ requestId: randomUUID(), idea: "经营一间夜间萤火虫花园并收集光点" });
+    const receipt = await jobs.submit({ requestId: randomUUID(), idea: "经营一间夜间萤火虫花园并收集光点", aspectRatio: "1:1" });
     await started;
     assert.equal((await jobs.cancel(receipt.id)).status, "cancelled");
     for (let n = 0; n < 50 && (await jobs.get(receipt.id))?.status !== "cancelled"; n++) await new Promise(resolve => setTimeout(resolve, 2));
     assert.equal((await jobs.get(receipt.id))?.status, "cancelled");
     assert.equal(laterProviderCalls, 0);
+  } finally { await db.close(); }
+});
+
+test("删除只接受终态任务，并只删除指定任务及其事件", async () => {
+  const db = await openTestDatabase();
+  const jobs = new ProductionJobs(db, async () => {});
+  const activeId = randomUUID(), targetId = randomUUID(), otherId = randomUUID();
+  try {
+    await jobs.initialize();
+    for (const [id, status] of [[activeId, "queued"], [targetId, "failed"], [otherId, "failed"]] as const) {
+      await db.query("INSERT INTO production_jobs (id, input_json, status) VALUES ($1, $2, $3)", [id, JSON.stringify({ requestId: id }), status]);
+      await db.query("INSERT INTO production_job_events (id, job_id, title, created_at) VALUES ($1, $2, $3, $4)", [randomUUID(), id, `event-${id}`, new Date().toISOString()]);
+    }
+    await assert.rejects(jobs.deleteTerminal(activeId), /仍在运行/);
+    assert.ok(await jobs.get(activeId));
+    assert.deepEqual(await jobs.deleteTerminal(targetId), { deleted: true });
+    assert.equal(await jobs.get(targetId), null);
+    assert.ok(await jobs.get(otherId));
+    assert.equal((await db.query("SELECT id FROM production_job_events WHERE job_id = $1", [targetId])).rowCount, 0);
+    assert.equal((await db.query("SELECT id FROM production_job_events WHERE job_id = $1", [otherId])).rowCount, 1);
   } finally { await db.close(); }
 });

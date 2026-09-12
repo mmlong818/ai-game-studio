@@ -88,6 +88,8 @@ export interface StudioDraft {
   revisionScope: RenovationScope;
   /** New-game preference only; existing games may only replace an advertised clip. */
   spriteAnimation: "auto" | "none";
+  /** New games require an explicit choice. Historical/remix drafts may leave this unset and retain their source ratio. */
+  aspectRatio?: "9:16" | "16:9" | "1:1";
   templateId: string | null;
   sourceGame?: SourceGame | null;
   selectedSuggestionIds: string[];

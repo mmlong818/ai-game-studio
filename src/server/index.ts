@@ -1,7 +1,7 @@
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { generateGameSpec, projectInputSchema, projectRevisionInputSchema } from "../shared/contracts.js";
+import { explicitAspectProjectInputSchema, generateGameSpec, projectInputSchema, projectRevisionInputSchema } from "../shared/contracts.js";
 import { PLATFORM_VERSION_INFO } from "../shared/platform-version.js";
 import { OFFICIAL_GAMES, OFFICIAL_SERVER_TEMPLATE_IDS } from "../shared/official-games/index.js";
 import { createDesignKnowledgeShadow } from "../shared/game-design-knowledge/shadow.js";
@@ -31,6 +31,8 @@ import { loadCuratedResourceLibrary } from "./resource-library.js";
 import { ensureV11FixtureArtifact } from "./v11-build-metadata.js";
 import { renderGameLobbyShell, resolveGameLobbyOrigin } from "./game-lobby-navigation.js";
 import { planProjectRevision, validateRevisionPlan } from "./revision-planner.js";
+import { requestsMajorExpansion } from "./demo-review.js";
+import { PlayerFirstHosting } from "./player-first-hosting.js";
 
 const port = Number.parseInt(process.env.PORT ?? "4312", 10);
 const gamePort = Number.parseInt(process.env.GAME_PORT ?? "4313", 10);
@@ -77,6 +79,13 @@ const orchestrator = new BuildOrchestrator(repository, artifactRoot, {
   maxConcurrentBuilds: Number.parseInt(process.env.BUILD_CONCURRENCY ?? "2", 10) || 2,
   // 质量问题自动修正的轮数上限；网络阻断与远端故障不受此数控制。
   maxRepairRounds: Number.parseInt(process.env.STUDIO_MAX_REPAIR_ROUNDS ?? "", 10) || DEFAULT_REPAIR_ROUNDS,
+});
+// 边玩边改页面的生图、真机预览与稳定网址；开发态 vite 只代理 /generated，不再自带实现。
+const playerFirstHosting = new PlayerFirstHosting({
+  hostedOrigin: publicGameOrigin,
+  generatedRoot: join(projectRoot, "public", "generated"),
+  releaseRoot: join(projectRoot, ".studio-data", "releases"),
+  images: coverArt,
 });
 const accessControl = new AccessControl(process.env.STUDIO_ACCESS_TOKEN?.trim() || null, undefined, process.env.STUDIO_REVIEW_TOKEN?.trim() || null);
 const researchPrototypes = new ResearchPrototypeService(repository, researchPrototypeRoot, publicGameOrigin, undefined, promotedResourceRoot);
@@ -126,6 +135,11 @@ function versionArtReviewFrom(pathname: string) {
   return match?.[1] && match[2] ? { projectId: match[1], versionId: match[2] } : null;
 }
 
+function versionDemoReviewFrom(pathname: string) {
+  const match = pathname.match(/^\/api\/projects\/([^/]+)\/versions\/([^/]+)\/demo-review$/);
+  return match?.[1] && match[2] ? { projectId: match[1], versionId: match[2] } : null;
+}
+
 function buildProjectIdFrom(pathname: string) {
   return pathname.match(/^\/api\/projects\/([^/]+)\/build$/)?.[1] ?? null;
 }
@@ -165,8 +179,9 @@ await productionJobs.initialize();
 await orchestrator.resumeQueuedBuilds();
 
 async function handleApi(request: IncomingMessage, response: ServerResponse, pathname: string) {
+  if (await playerFirstHosting.handleApi(request, response, pathname)) return true;
   if (request.method === "POST" && pathname === "/api/production-jobs") {
-    sendJson(response, 202, { job: await productionJobs.submit(projectInputSchema.parse(await readJson(request))) });
+    sendJson(response, 202, { job: await productionJobs.submit(explicitAspectProjectInputSchema.parse(await readJson(request))) });
     return true;
   }
   const cancelJobId = pathname.match(/^\/api\/production-jobs\/([^/]+)\/cancel$/)?.[1];
@@ -212,6 +227,10 @@ async function handleApi(request: IncomingMessage, response: ServerResponse, pat
   }
   if (request.method === "GET" && productionJobId) {
     sendJson(response, 200, { job: await productionJobs.get(decodeURIComponent(productionJobId)) });
+    return true;
+  }
+  if (request.method === "DELETE" && productionJobId) {
+    sendJson(response, 200, await productionJobs.deleteTerminal(decodeURIComponent(productionJobId)));
     return true;
   }
   if (request.method === "GET" && pathname === "/api/health") {
@@ -409,12 +428,12 @@ async function handleApi(request: IncomingMessage, response: ServerResponse, pat
     return true;
   }
   if (request.method === "POST" && pathname === "/api/design-preview") {
-    const input = await prepareRenovationInput(projectInputSchema.parse(await readJson(request)), id => repository.get(id));
+    const input = await prepareRenovationInput(explicitAspectProjectInputSchema.parse(await readJson(request)), id => repository.get(id));
     await serveDesignPreview(request, response, input, previewDesignContracts);
     return true;
   }
   if (request.method === "POST" && pathname === "/api/projects") {
-    const rawInput = projectInputSchema.parse(await readJson(request));
+    const rawInput = explicitAspectProjectInputSchema.parse(await readJson(request));
     if (rawInput.requestId) {
       const existing = await repository.get(rawInput.requestId);
       if (existing) {
@@ -452,20 +471,30 @@ async function handleApi(request: IncomingMessage, response: ServerResponse, pat
     const project = await repository.get(decodeURIComponent(revisionPlanRoute[1]));
     if (!project) { sendJson(response, 404, { error: "项目不存在。" }); return true; }
     const raw = await readJson(request) as { content?: unknown };
+    const revisionContent = typeof raw.content === "string" ? raw.content : "";
+    if (requestsMajorExpansion(revisionContent) && !(await repository.getDemoReview(project.id, project.version.id))) {
+      sendJson(response, 403, { error: "请先试玩并验收当前版本，再明确提交关卡、难度或等级扩展。" });
+      return true;
+    }
     const sourceRoot = join(artifactRoot, project.version.id);
-    const result = planProjectRevision(project, typeof raw.content === "string" ? raw.content : "", sourceRoot);
+    const result = planProjectRevision(project, revisionContent, sourceRoot);
     sendJson(response, result.status === "ready" ? 200 : 409, result);
     return true;
   }
   const revisionRoute = pathname.match(/^\/api\/projects\/([^/]+)\/revisions(?:\/([^/]+))?$/);
   if (revisionRoute && request.method === "POST" && !revisionRoute[2]) {
     const input = projectRevisionInputSchema.parse(await readJson(request));
+    const revisionProjectId = decodeURIComponent(revisionRoute[1]);
+    const project = await repository.get(revisionProjectId);
+    if (!project) { sendJson(response, 404, { error: "项目不存在。" }); return true; }
+    if (requestsMajorExpansion(input.content) && !(await repository.getDemoReview(revisionProjectId, project.version.id))) {
+      sendJson(response, 403, { error: "请先试玩并验收当前版本，再明确提交关卡、难度或等级扩展。" });
+      return true;
+    }
     if (input.revisionPlan) {
-      const project = await repository.get(decodeURIComponent(revisionRoute[1]));
-      if (!project) { sendJson(response, 404, { error: "项目不存在。" }); return true; }
       validateRevisionPlan(project, input.revisionPlan, input.content);
     }
-    sendJson(response, 202, { build: await orchestrator.start(decodeURIComponent(revisionRoute[1]), input) });
+    sendJson(response, 202, { build: await orchestrator.start(revisionProjectId, input) });
     return true;
   }
   if (revisionRoute && request.method === "GET" && revisionRoute[2]) {
@@ -519,6 +548,16 @@ async function handleApi(request: IncomingMessage, response: ServerResponse, pat
     sendJson(response, 200, { reviews: await repository.listVersionArtReviews(
       decodeURIComponent(versionArtReview.projectId), decodeURIComponent(versionArtReview.versionId),
     ) });
+    return true;
+  }
+
+  const versionDemoReview = versionDemoReviewFrom(pathname);
+  if (request.method === "GET" && versionDemoReview) {
+    sendJson(response, 200, { review: await repository.getDemoReview(decodeURIComponent(versionDemoReview.projectId), decodeURIComponent(versionDemoReview.versionId)) });
+    return true;
+  }
+  if (request.method === "POST" && versionDemoReview) {
+    sendJson(response, 200, { review: await repository.approveDemoReview(decodeURIComponent(versionDemoReview.projectId), decodeURIComponent(versionDemoReview.versionId)) });
     return true;
   }
   if (request.method === "POST" && versionArtReview) {
@@ -672,11 +711,13 @@ const server = createServer(async (request, response) => {
     }
     if (request.method === "GET" && (url.pathname.startsWith("/play/") || url.pathname.startsWith("/version/"))) {
       if (await handleGame(response, url.pathname, url.searchParams.get("__studio_game_raw") === "1", url.searchParams)) return;
+      if (await playerFirstHosting.handleStatic(response, url.pathname)) return;
       sendJson(response, 404, { error: "游戏版本不存在。" });
       return;
     }
     if (request.method === "GET" && url.pathname.startsWith("/research-prototype/") && handleResearchPrototype(response, url.pathname)) return;
     if (request.method === "GET" && handleTemplateArt(response, url.pathname)) return;
+    if (request.method === "GET" && await playerFirstHosting.handleStatic(response, url.pathname)) return;
     if (request.method === "GET" && handleWorkbench(response, url.pathname)) return;
     sendJson(response, 404, { error: "页面不存在。" });
   } catch (error) {
@@ -700,11 +741,13 @@ const gameServer = createServer(async (request, response) => {
     }
     if (request.method === "GET" && (url.pathname.startsWith("/play/") || url.pathname.startsWith("/version/"))) {
       if (await handleGame(response, url.pathname, url.searchParams.get("__studio_game_raw") === "1", url.searchParams)) return;
+      if (await playerFirstHosting.handleStatic(response, url.pathname)) return;
       sendJson(response, 404, { error: "游戏版本不存在。" });
       return;
     }
     if (request.method === "GET" && url.pathname.startsWith("/research-prototype/") && handleResearchPrototype(response, url.pathname)) return;
     if (request.method === "GET" && handleTemplateArt(response, url.pathname)) return;
+    if (request.method === "GET" && await playerFirstHosting.handleStatic(response, url.pathname)) return;
     sendJson(response, 404, { error: "页面不存在。" });
   } catch (error) {
     sendError(response, error);

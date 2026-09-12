@@ -127,6 +127,11 @@ export const revisionPlanResponseSchema = z.object({
 export const projectInputSchema = z.object({
   requestId: z.string().uuid().optional(),
   sourceProjectId: z.string().uuid().optional(),
+  creationMode: z.enum(["reference-replica", "original-demo"]).optional(),
+  referenceFallback: z.object({
+    decision: z.literal("user-approved-original-demo"),
+    gameplayDescription: z.string().trim().min(1, "请先描述玩法。").max(2_000),
+  }).optional(),
   revisionScope: renovationScopeSchema.optional(),
   revisionPlan: revisionPlanSchema.optional(),
   spriteAnimation: z.enum(["auto", "none"]).default("auto"),
@@ -152,11 +157,25 @@ export const projectInputSchema = z.object({
     .regex(/^data:image\/jpeg;base64,[A-Za-z0-9+/=]+$/, "自定义拼图图片格式不正确。")
     .optional(),
 }).superRefine((input, context) => {
-  if (Boolean(input.sourceProjectId) !== Boolean(input.revisionScope || input.revisionPlan)) {
+  if (input.referenceFallback) {
+    const content = input.referenceFallback.gameplayDescription.replace(/https?:\/\/\S+/gi, "").trim();
+    if (!content || /^(?:我想|请)?(?:复制|复刻|参考|照着|仿照)(?:这个|该)?(?:游戏|作品)?[。！!，,\s]*$/.test(content)) {
+      context.addIssue({ code: "custom", path: ["referenceFallback", "gameplayDescription"], message: "请描述要制作的玩法，不能只重复参考链接或复刻请求。" });
+    }
+  }
+  const sourceOnlyReference = Boolean(input.sourceProjectId) && input.creationMode === "reference-replica" && !input.revisionScope && !input.revisionPlan;
+  if (!sourceOnlyReference && Boolean(input.sourceProjectId) !== Boolean(input.revisionScope || input.revisionPlan)) {
     context.addIssue({ code: "custom", path: [input.sourceProjectId ? "revisionScope" : "sourceProjectId"], message: "已有游戏改造必须同时提供来源游戏和改造范围。" });
   }
   if (input.revisionPlan && input.revisionPlan.sourceProjectId !== input.sourceProjectId) context.addIssue({ code: "custom", path: ["revisionPlan", "sourceProjectId"], message: "修改计划与来源游戏不一致。" });
   if (input.revisionPlan && input.revisionPlan.operations.length === 0) context.addIssue({ code: "custom", path: ["revisionPlan", "operations"], message: "请先选择这次要执行的修改。" });
+});
+
+/** Public creation endpoints use this stricter schema. Stored historical inputs keep parsing through projectInputSchema. */
+export const explicitAspectProjectInputSchema = projectInputSchema.superRefine((input, context) => {
+  if (!input.sourceProjectId && !(["9:16", "16:9", "1:1"] as const).includes(input.aspectRatio as "9:16" | "16:9" | "1:1")) {
+    context.addIssue({ code: "custom", path: ["aspectRatio"], message: "创建新游戏前必须明确选择 9:16、16:9 或 1:1 画幅。" });
+  }
 });
 
 export const acceptanceCriterionSchema = z.object({
@@ -179,26 +198,37 @@ export const templateSourceSchema = z.object({
 });
 
 export const gameDesignProfileSchema = z.object({
+  creationMode: z.enum(["reference-replica", "original-demo"]).default("original-demo"),
+  referenceInspection: z.object({
+    method: z.enum(["public-text", "public-browser", "source-contract", "none"]),
+    gameplayStatus: z.enum(["description-read", "runtime-viewed", "gameplay-verified", "unknown"]),
+    runtimeStatus: z.enum(["visible", "not-observed", "blocked"]),
+    canClaimPlayable: z.boolean(),
+    limitations: z.array(z.string().trim().min(1).max(240)).max(8),
+  }).default({ method: "none", gameplayStatus: "unknown", runtimeStatus: "not-observed", canClaimPlayable: false, limitations: ["尚未执行实际玩法操作，不能确认完整交互、胜负或关卡结构。"] }),
+  referenceEvidence: z.array(z.object({ status: z.enum(["observed", "inferred", "unknown"]), basis: z.enum(["page-shell", "resource-index", "gameplay-text", "gameplay-source", "source-contract"]).optional(), claim: z.string().trim().min(1).max(240), source: z.string().trim().min(1).max(500) })).max(30).default([]),
   genre: z.string().min(1),
   targetPlayer: z.string().min(1),
   playerFantasy: z.string().min(1),
   sessionLength: z.string().min(1),
-  coreLoop: z.array(z.string().min(1)).min(3).max(6),
+  coreLoop: z.array(z.string().min(1)).min(1).max(6),
   winCondition: z.string().min(1),
   failCondition: z.string().min(1),
-  progression: z.array(z.string().min(1)).min(1).max(6),
-  difficultyCurve: z.array(z.string().min(1)).min(2).max(6),
-  gameFeel: z.array(z.string().min(1)).min(2).max(8),
-  onboarding: z.array(z.string().min(1)).min(2).max(6),
-  accessibility: z.array(z.string().min(1)).min(2).max(6),
+  progression: z.array(z.string().min(1)).max(6),
+  difficultyCurve: z.array(z.string().min(1)).max(6),
+  gameFeel: z.array(z.string().min(1)).max(8),
+  // Legacy projects may still contain onboarding text. New production strips it
+  // to an empty list and no longer creates a tutorial runtime.
+  onboarding: z.array(z.string().min(1)).max(6).default([]),
+  accessibility: z.array(z.string().min(1)).max(6),
   productionRisks: z.array(z.string().min(1)).max(6),
-  generatedCampaign: generatedCampaignSchema.optional(),
+  generatedCampaign: generatedCampaignSchema.nullable().optional(),
   /** 无模板生成游戏的知识蓝图：机制、修饰器、玩法取舍与局内美术清单。 */
   generatedBlueprint: generatedBlueprintSchema.optional(),
 });
 
 export const levelProgressionSchema = z.object({
-  levelCount: z.number().int().min(20).default(20),
+  levelCount: z.number().int().min(1).default(20),
   curve: z.literal("stepped").default("stepped"),
   tierSize: z.number().int().min(2).max(10).default(4),
   unlockMode: z.literal("sequential").default("sequential"),
@@ -206,6 +236,9 @@ export const levelProgressionSchema = z.object({
 });
 
 const legacyDesignProfile = {
+  creationMode: "original-demo" as const,
+  referenceInspection: { method: "none" as const, gameplayStatus: "unknown" as const, runtimeStatus: "not-observed" as const, canClaimPlayable: false, limitations: ["尚未执行实际玩法操作，不能确认完整交互、胜负或关卡结构。"] },
+  referenceEvidence: [],
   genre: "未分类小游戏",
   targetPlayer: "希望快速开始并在一局内理解规则的浏览器玩家",
   playerFantasy: "通过清晰操作完成一段可验证的挑战",
@@ -303,8 +336,8 @@ export const gameSpecSchema = z.object({
   }).nullable().default(null),
 }).superRefine((spec, ctx) => {
   const campaign = spec.template === "generated" ? spec.designProfile.generatedCampaign : undefined;
-  if (campaign ? spec.levelProgression.levelCount !== campaign.levelCount : spec.levelProgression.levelCount < 20) {
-    ctx.addIssue({ code: "custom", path: ["levelProgression", "levelCount"], message: campaign ? "关卡总数必须与确认方案一致。" : "旧版本与官方模板保留至少二十关协议。" });
+  if (campaign ? spec.levelProgression.levelCount !== campaign.levelCount : spec.template !== "generated" && spec.levelProgression.levelCount < 20) {
+    ctx.addIssue({ code: "custom", path: ["levelProgression", "levelCount"], message: campaign ? "关卡总数必须与确认方案一致。" : "官方模板保留至少二十关协议。" });
   }
 });
 
@@ -399,6 +432,15 @@ export const artReviewHistoryResponseSchema = z.object({
     summary: z.string(), reviewedAt: z.string().datetime(), source: z.enum(["manual-unverified", "operator-credential"]), reviewerId: z.string().nullable().optional(),
   })),
 });
+
+export const demoReviewSchema = z.object({
+  projectId: z.string().uuid(),
+  versionId: z.string().uuid(),
+  status: z.literal("approved"),
+  reviewedAt: z.string().datetime(),
+});
+export const demoReviewResponseSchema = z.object({ review: demoReviewSchema.nullable() });
+export type DemoReview = z.infer<typeof demoReviewSchema>;
 export type ArtReviewHistoryEntry = z.infer<typeof artReviewHistoryResponseSchema>["reviews"][number];
 
 export const projectsResponseSchema = z.object({
@@ -469,6 +511,10 @@ export const buildSchema = z.object({
     message: z.string().min(1).max(500),
     nextStep: z.string().min(1).max(500),
     retryable: z.boolean(),
+    continuation: z.object({
+      kind: z.literal("regenerate-resource"),
+      resourceFile: z.string().min(1).max(300),
+    }).optional(),
     resource: z.object({ file: z.string().min(1).max(300), label: z.string().min(1).max(120) }).optional(),
     operation: z.string().min(1).max(80).optional(),
     attempt: z.number().int().positive().max(20).optional(),
@@ -753,7 +799,7 @@ function createHardConstraints(input: ParsedProjectInput, template: GameTemplate
   ].slice(0, 10);
 }
 
-const designBlueprints: Record<GameTemplate, Omit<z.infer<typeof gameDesignProfileSchema>, "difficultyCurve">> = {
+const designBlueprints: Record<GameTemplate, Omit<z.infer<typeof gameDesignProfileSchema>, "difficultyCurve" | "creationMode" | "referenceEvidence" | "referenceInspection">> = {
   "signal-hunt": {
     genre: "限时反应与搜寻",
     targetPlayer: "希望在一分钟内理解规则、完成短局挑战的玩家",
@@ -949,10 +995,12 @@ function createDifficultyCurve(template: GameTemplate, difficulty: ParsedProject
 }
 
 export function createDesignProfile(template: GameTemplate, difficulty: ParsedProjectInput["difficulty"]): z.infer<typeof gameDesignProfileSchema> {
-  return {
+  return gameDesignProfileSchema.parse({
     ...designBlueprints[template],
     difficultyCurve: createDifficultyCurve(template, difficulty),
-  };
+    // 取消新手教学只针对生成游戏；官方模板保留登记表里的教学要点。
+    ...(template === "generated" ? { onboarding: [] } : {}),
+  });
 }
 
 export function resolveGameTemplate(rawInput: ProjectInput, analysis: IdeaAnalysis | null = null): GameTemplate {
@@ -986,6 +1034,7 @@ export function generateGameSpec(
   const dimensions = input.dimensions !== "auto" ? input.dimensions : analysis?.dimensions ?? inferDimensions(input);
   const template = input.template !== "auto" ? input.template : analysis?.template ?? inferGameTemplate(input);
   const title = deriveTitle(input);
+  const creationMode = input.creationMode ?? (/https?:\/\/|参考(?:游戏|作品|链接|页面)?|复刻|照着|仿照/.test(input.idea) ? "reference-replica" : "original-demo");
   const aspectRatio = input.aspectRatio === "auto" ? recommendedAspectRatio(template, dimensions) : input.aspectRatio;
   const cameraMode = input.cameraMode === "auto" ? recommendedCameraMode(template, dimensions) : input.cameraMode;
   // 模板 3D 才有 collector/arena 两种模式合同;generated 3D 的规则完全由设计合同定义。
@@ -1002,10 +1051,16 @@ export function generateGameSpec(
     perspective: inferPerspective(input.idea, dimensions, template),
     template,
     templateSource: createTemplateSource(template),
-    designProfile: designProfile ?? createDesignProfile(template, input.difficulty),
+    designProfile: {
+      ...(designProfile ?? createDesignProfile(template, input.difficulty)),
+      ...(template === "generated" && !designProfile?.generatedCampaign ? { generatedCampaign: null } : {}),
+      creationMode,
+      referenceEvidence: designProfile?.referenceEvidence ?? (creationMode === "reference-replica" ? [{ status: "unknown" as const, claim: "参考玩法细节尚未由公开页面、实际交互或已授权代码证据确认。", source: input.idea.match(/https?:\/\/[^\s]+/i)?.[0] ?? "用户提供的参考描述" }] : []),
+      ...(template === "generated" ? { onboarding: [] } : {}),
+    },
     designSource: designProfile ? "llm" : "template",
-    levelProgression: template === "generated" && designProfile?.generatedCampaign
-      ? { ...defaultLevelProgression, levelCount: designProfile.generatedCampaign.levelCount }
+    levelProgression: template === "generated"
+      ? { ...defaultLevelProgression, levelCount: designProfile?.generatedCampaign?.levelCount ?? 1, persistProgress: Boolean(designProfile?.generatedCampaign) }
       : defaultLevelProgression,
     artStyle: input.artStyle === "auto" ? templateDefaults[template].style : input.artStyle,
     visualStyle: input.visualStyle,

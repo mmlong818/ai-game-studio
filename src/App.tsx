@@ -16,6 +16,8 @@ import type { GameDesignProfile } from "./shared/contracts";
 import type { RevisionPlan } from "./shared/contracts";
 import { RevisionPlanPicker } from "./web/RevisionPlanPicker";
 import { SpriteAnimationChoice, type SpriteAnimationPreference } from "./components/SpriteAnimationControl";
+import { AspectRatioChoice, type NewGameAspectRatio } from "./components/AspectRatioChoice";
+import { resolveCreationModeIntent } from "./shared/generated-blueprint";
 
 type Stage = "compose" | "review" | "produce";
 type ComposeStep = "choose" | "pick-game" | "describe";
@@ -194,6 +196,8 @@ function NewGameDescribeStep({
   onSpriteAnimationChange,
   validation,
   onContinue,
+  aspectRatio,
+  onAspectRatioChange,
 }: {
   value: string;
   onChange: (value: string) => void;
@@ -201,6 +205,8 @@ function NewGameDescribeStep({
   onSpriteAnimationChange: (value: SpriteAnimationPreference) => void;
   validation: ValidationResult;
   onContinue: (explicit?: boolean) => void;
+  aspectRatio: NewGameAspectRatio | null;
+  onAspectRatioChange: (value: NewGameAspectRatio) => void;
 }) {
   const ready = value.trim().length >= 12;
   const mechanics = ready ? recommendMechanics(value).slice(0, 2) : [];
@@ -220,8 +226,9 @@ function NewGameDescribeStep({
           <span>{mechanics.map((item) => item.name).join("、")}</span>
         </div>
       )}
+      <AspectRatioChoice value={aspectRatio} onChange={onAspectRatioChange} />
       <SpriteAnimationChoice value={spriteAnimation} onChange={onSpriteAnimationChange} />
-      <button type="button" className="primary-action" onClick={() => onContinue(true)} disabled={!validation.valid}>
+      <button type="button" className="primary-action" onClick={() => onContinue(true)} disabled={!validation.valid || !aspectRatio}>
         提交，生成方案 <span aria-hidden="true">→</span>
       </button>
       <p className="action-footnote">
@@ -237,6 +244,7 @@ export function AdvancedStudioApp() {
   const [confirmedPlan, setConfirmedPlan] = useState<string>();
   const [confirmedDesignProfile, setConfirmedDesignProfile] = useState<GameDesignProfile>();
   const [originalIdea, setOriginalIdea] = useState<string>();
+  const [confirmedReferenceFallback, setConfirmedReferenceFallback] = useState<{ decision: "user-approved-original-demo"; gameplayDescription: string }>();
   const [revisionPlan, setRevisionPlan] = useState<RevisionPlan>();
   const [reviewScrollRequest, setReviewScrollRequest] = useState(0);
   const completedReviewScroll = useRef(0);
@@ -278,6 +286,9 @@ export function AdvancedStudioApp() {
   // 界面不再让用户挑选建议或机制：改动级别由文字判定，新游戏机制由描述推荐。
   const finalizedDraft = useMemo<StudioDraft>(() => {
     if (draft.creationMode === "mechanic-composition") {
+      if (resolveCreationModeIntent({ idea: draft.newGameBrief }) === "reference-replica") {
+        return { ...draft, selectedSuggestionIds: [], selectedMechanicIds: [], changeLevel: "R3", referenceDossier: null };
+      }
       const selectedMechanicIds = recommendMechanics(draft.newGameBrief).slice(0, 2).map((item) => item.id);
       const dossier = createReferenceDossier(draft.newGameBrief, selectedMechanicIds);
       return { ...draft, selectedSuggestionIds: [], selectedMechanicIds, changeLevel: "R3", referenceDossier: dossier };
@@ -327,7 +338,7 @@ export function AdvancedStudioApp() {
     const inspiration = draft.sourceGame?.title ?? template?.name;
     const combinedBrief = [inspiration ? `以「${inspiration}」为灵感` : "", draft.freeRequest].filter(Boolean).join("，");
     setRevisionPlan(undefined);
-    updateDraft({ creationMode: "mechanic-composition", newGameBrief: combinedBrief, changeLevel: "R3" });
+    updateDraft({ creationMode: "mechanic-composition", templateId: null, sourceGame: null, newGameBrief: combinedBrief, changeLevel: "R3", aspectRatio: undefined });
     setStep("describe");
     scrollTop();
   };
@@ -341,7 +352,7 @@ export function AdvancedStudioApp() {
   if (stage === "produce") {
     return (
       <div className="app-shell studio-app">
-        <AutomaticProduction draft={finalizedDraft} confirmedPlan={confirmedPlan} confirmedDesignProfile={confirmedDesignProfile} originalIdea={originalIdea} revisionPlan={revisionPlan} />
+        <AutomaticProduction draft={finalizedDraft} confirmedPlan={confirmedPlan} confirmedDesignProfile={confirmedDesignProfile} originalIdea={originalIdea} referenceFallback={confirmedReferenceFallback} revisionPlan={revisionPlan} />
       </div>
     );
   }
@@ -379,6 +390,17 @@ export function AdvancedStudioApp() {
             errors={creationErrors}
             onChange={newGameBrief => { setCreationErrors([]); updateDraft({ newGameBrief, creationMode: "mechanic-composition", templateId: null, sourceGame: null }); }}
             onContinue={(explicit = false) => {
+              if (!draft.aspectRatio) { setCreationErrors(["请先选择游戏画幅。"]); return; }
+              const intent = resolveCreationModeIntent({ idea: draft.newGameBrief });
+              if (intent === "reference-replica") {
+                const next: StudioDraft = { ...draft, creationMode: "mechanic-composition", templateId: null, sourceGame: null, selectedSuggestionIds: [], selectedMechanicIds: [], changeLevel: "R3", referenceDossier: null };
+                const check = validateDraft(next);
+                setCreationErrors(check.errors);
+                if (!check.valid) return;
+                setDraft(next); setStage("review");
+                if (explicit) setReviewScrollRequest(value => value + 1);
+                return;
+              }
               const selectedMechanicIds = recommendMechanics(draft.newGameBrief).slice(0, 2).map(item => item.id);
               const next: StudioDraft = { ...draft, creationMode: "mechanic-composition", templateId: null, sourceGame: null, selectedSuggestionIds: [], selectedMechanicIds, changeLevel: "R3", referenceDossier: createReferenceDossier(draft.newGameBrief, selectedMechanicIds) };
               const check = validateDraft(next);
@@ -386,7 +408,8 @@ export function AdvancedStudioApp() {
               if (!check.valid) return;
               setDraft(next); setStage("review");
               if (explicit) setReviewScrollRequest(value => value + 1);
-            }} onRemix={() => choose("template-remix")} spriteAnimation={draft.spriteAnimation} onSpriteAnimationChange={spriteAnimation => updateDraft({ spriteAnimation })} />}
+            }} onRemix={() => choose("template-remix")} spriteAnimation={draft.spriteAnimation} onSpriteAnimationChange={spriteAnimation => updateDraft({ spriteAnimation })}
+            aspectRatio={draft.aspectRatio ?? null} onAspectRatioChange={aspectRatio => { setCreationErrors([]); updateDraft({ aspectRatio }); }} />}
           {step === "pick-game" && <PickGameStep games={games} onPick={pickGame} />}
           {step === "describe" && isRemix && template && (
             <RemixDescribeStep
@@ -409,6 +432,8 @@ export function AdvancedStudioApp() {
               onSpriteAnimationChange={(spriteAnimation) => updateDraft({ spriteAnimation })}
               validation={validation}
               onContinue={startReview}
+              aspectRatio={draft.aspectRatio ?? null}
+              onAspectRatioChange={aspectRatio => updateDraft({ aspectRatio })}
             />
           )}
           </main>
@@ -416,7 +441,7 @@ export function AdvancedStudioApp() {
       )}
       {stage === "review" && validation.valid && (
         <div className="review-stage">
-          <LiveDesignReview draft={finalizedDraft} revisionPlan={revisionPlan} onBack={() => { setStage("compose"); document.querySelector<HTMLTextAreaElement>("textarea")?.focus(); }} onConfirm={(text, profile, idea) => { if (validation.valid) { setConfirmedPlan(text); setConfirmedDesignProfile(profile); setOriginalIdea(idea); setStage("produce"); scrollTop(); } }} />
+          <LiveDesignReview draft={finalizedDraft} revisionPlan={revisionPlan} onBack={() => { setStage("compose"); document.querySelector<HTMLTextAreaElement>("textarea")?.focus(); }} onConfirm={(text, profile, idea, fallback) => { if (validation.valid) { setConfirmedPlan(text); setConfirmedDesignProfile(profile); setOriginalIdea(idea); setConfirmedReferenceFallback(fallback); setStage("produce"); scrollTop(); } }} />
         </div>
       )}
       <footer className="app-footer">

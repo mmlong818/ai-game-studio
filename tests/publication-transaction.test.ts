@@ -10,6 +10,7 @@ async function fixture(db: StudioDatabase) {
   const project = await repo.create({ idea: "花园记忆翻牌小游戏，配对所有花朵即可完成关卡", template: "generated" });
   const complete = async () => {
     const build = await repo.createBuild(project.id);
+    await repo.markBuildRunning(build.id);
     await repo.completeBuild(build.id, undefined, quality);
     await repo.reviewVersionArt(project.id, build.id, { status: "passed", summary: "测试用人工检查说明，不代表真实游戏验收。" });
     return build.id;

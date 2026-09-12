@@ -1,5 +1,6 @@
 import { getTemplate, getGameplayBundle } from "./templates";
 import type { StudioDraft, ValidationResult } from "./types";
+import { resolveCreationModeIntent } from "../shared/generated-blueprint";
 
 export function validateDraft(draft: StudioDraft): ValidationResult {
   const errors: string[] = [];
@@ -34,13 +35,14 @@ export function validateDraft(draft: StudioDraft): ValidationResult {
     if (draft.newGameBrief.trim().length < 12) {
       errors.push("请用至少一句完整描述说明玩家反复做什么以及为什么有趣。");
     }
-    if (draft.selectedMechanicIds.length === 0) {
+    const referenceReplica = resolveCreationModeIntent({ idea: draft.newGameBrief }) === "reference-replica";
+    if (!referenceReplica && draft.selectedMechanicIds.length === 0) {
       errors.push("至少选择一个已经验证的玩法要素。");
     }
     if (draft.selectedMechanicIds.length > 2) {
       warnings.push("首版同时使用超过两种主要机制，原型失败风险较高。");
     }
-    if (!draft.referenceDossier || draft.referenceDossier.references.length < 2) {
+    if (!referenceReplica && (!draft.referenceDossier || draft.referenceDossier.references.length < 2)) {
       errors.push("新游戏至少需要两个真实来源：玩法规则和跨设备控制。 ");
     }
   }

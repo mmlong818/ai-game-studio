@@ -38,6 +38,8 @@ import {
   getProject,
   getProjectMessages,
   getProjectVersions,
+  getDemoReview,
+  approveDemoReview,
   publishProject,
   publishProjectVersion,
   restoreProject,
@@ -516,6 +518,30 @@ function DirectionLog({ messages }: { messages: ProjectMessage[] }) {
   );
 }
 
+function DemoReviewGate({ project }: { project: ProjectDetail }) {
+  const [approved, setApproved] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  useEffect(() => {
+    let active = true;
+    void getDemoReview(project.id, project.version.id).then(review => { if (active) setApproved(Boolean(review)); }).catch(() => { if (active) setError("暂时无法读取试玩验收状态。"); });
+    return () => { active = false; };
+  }, [project.id, project.version.id]);
+  const approve = async () => {
+    setBusy(true); setError("");
+    try { await approveDemoReview(project.id, project.version.id); setApproved(true); }
+    catch { setError("试玩验收没有保存，请稍后重试。"); }
+    finally { setBusy(false); }
+  };
+  return <section className="workspace-summary" aria-label="试玩验收状态">
+    <strong>{approved ? "当前试玩版已验收" : "请先试玩当前版本"}</strong>
+    {approved
+      ? <p>你现在可以在下方明确提出一项可选调整，例如风格、底图、色调、难度或增加关卡。系统不会自动执行建议。</p>
+      : <><p>可以直接反馈错误或复刻差异。增加关卡、难度、等级等扩展，需要你先试玩并明确验收当前版本。</p><button type="button" className="workbench-button button-primary" disabled={busy} onClick={() => void approve()}>{busy ? "正在保存验收…" : "我已试玩，验收通过"}</button></>}
+    {error && <p role="alert">{error}</p>}
+  </section>;
+}
+
 type WorkbenchPanelProps = {
   project: ProjectDetail;
   build: Build | null;
@@ -559,6 +585,7 @@ function WorkbenchPanel({ project, build, messages, loading, sending, archived, 
           <p>只在上方原因明确可重试时提供此操作；会开始一轮新的制作并使用模型用量。</p>
         </div> : null}
         {(build?.status === "queued" || build?.status === "running") && <div className="review-actions"><button type="button" className="workbench-button button-secondary stop-action" disabled={stopping} onClick={() => void onCancelBuild()}>{stopping ? "正在停止…" : "停止制作"}</button></div>}
+        {project.status !== "contract_ready" && <DemoReviewGate project={project} />}
         <RevisionComposer key={project.id} projectId={project.id} disabled={archived || busy || sending || loading || stopping || !canStartBuild} working={build?.status === "running" || build?.status === "queued"} onConfirm={onSend} />
         {!!messages.filter(message => message.role === "user").length && <details className="workspace-details"><summary>最近的修改意见</summary><DirectionLog messages={messages.filter(message => message.role === "user").slice(-3)} /></details>}
         <details className="workspace-details"><summary>查看完整方案、制作与审核记录</summary><p>以下为专业制作详情。实际审核仍按原有标准执行，不以展开或关闭记录代替审核。</p>

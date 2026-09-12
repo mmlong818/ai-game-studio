@@ -70,12 +70,16 @@ test("Sprite Sheet 检查点缺失或篡改动画元数据时不能恢复", asyn
   const animation = { frameWidth: 32, frameHeight: 32, columns: 4, rows: 1, frameCount: 4, anchor: { x: 16, y: 30 }, clips: [{ id: "idle" as const, startFrame: 0, frameCount: 4, fps: 8, loop: true }] };
   const spriteBytes = await sharp({ create: { width: 128, height: 32, channels: 4, background: "#55aa88ff" } }).png().toBuffer();
   const spriteIdentity: ArtCheckpointIdentity = { ...identity, group: "dynamic", plan: [{ file: "assets/hero.png", role: "主角", prompt: "四帧待机", expectedSpriteSheet: animation }] };
-  const image = { providerSource: { width: 128, height: 32, hasAlpha: true, hasTransparency: false }, delivered: { width: 128, height: 32, fit: "sprite-sheet" as const }, spriteSheet: animation };
+  const image = { providerSource: { width: 128, height: 32, hasAlpha: true, hasTransparency: false }, delivered: { width: 128, height: 32, fit: "sprite-sheet" as const }, spriteSheet: animation,
+    warnings: [{ code: "SPRITE_FRAME_EDGE" as const, frame: 2, bounds: { left: 8, top: 4, width: 24, height: 20 }, source: { width: 32, height: 32 }, sides: ["right" as const], recommendedMargin: 1, message: "第 2 帧右侧贴近草稿边界，建议试玩检查并重置该资源。" }],
+  };
   let calls = 0;
   const generate = async () => { calls += 1; return [{ ...spriteIdentity.plan[0], bytes: spriteBytes, image }]; };
   try {
     await getOrGenerateArtCheckpoint(root, spriteIdentity, generate);
-    assert.equal((await getOrGenerateArtCheckpoint(root, spriteIdentity, generate)).cacheHit, true);
+    const recovered = await getOrGenerateArtCheckpoint(root, spriteIdentity, generate);
+    assert.equal(recovered.cacheHit, true);
+    assert.deepEqual(recovered.entries[0]!.image?.warnings, image.warnings);
     const path = join(root, readdirSync(root)[0]);
     const saved = JSON.parse(readFileSync(path, "utf8"));
     delete saved.entries[0].image.spriteSheet;

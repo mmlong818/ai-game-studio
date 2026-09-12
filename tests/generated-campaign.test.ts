@@ -60,3 +60,12 @@ test("新方案提示允许难度维度递减（半径、间隔），只要求�
   assert.doesNotMatch(modern, /逐关不下降/);
   assert.match(generatedCampaignPrompt(undefined), /逐关不下降/);
 });
+
+test("确认固定三次容错优先于自动难度键，里程碑不禁止普通关数值变化", () => {
+  const plan = { mode: "campaign", failurePolicy: "required", levelCount: 18, milestones: [1, 6, 12, 18], difficultyKeys: ["arrowCount", "mistakeLimit"], rationale: "逐步增加箭头，并保持三次撞击容错。" };
+  const prompt = generatedCampaignPrompt(plan, { confirmedRules: ["箭头撞上另一支箭头，累计3次撞击后本关失败。"] });
+  assert.match(prompt, /动态维度 arrowCount/);
+  assert.doesNotMatch(prompt, /动态维度[^。]*mistakeLimit/);
+  assert.match(prompt, /mistakeLimit 定为固定规则/);
+  assert.match(prompt, /不表示其他关的普通数值只能在这些关变化/);
+});

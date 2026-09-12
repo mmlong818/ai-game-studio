@@ -32,14 +32,27 @@ it("普通输入回归不能冒充手感评审", () => {
   }finally {rmSync(root,{recursive:true,force:true});}
 });
 
-it("设计验收把四类合同承诺绑定到真实运行时证据并归档", () => {
+it("设计验收忽略旧教学承诺并归档仍有效的运行时证据", () => {
   const root = mkdtempSync(join(tmpdir(), "design-acceptance-"));
   try {
-    const check = writeDesignAcceptanceReport(root, merge2048DesignSample, completeChecks);
+    const check = writeDesignAcceptanceReport(root, merge2048DesignSample, completeChecks, { tutorialRequired: false });
     expect(check.id).toBe("DESIGN-ACCEPTANCE");
     const report = JSON.parse(readFileSync(join(root, "_studio", "DESIGN_ACCEPTANCE_REPORT.json"), "utf8"));
     expect(report.passed).toBe(true);
+    expect(report.criteria).toHaveLength(2);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+it("官方模板游戏保留教学与分层帮助验收，缺少对应证据即阻断", () => {
+  const root = mkdtempSync(join(tmpdir(), "design-acceptance-template-"));
+  try {
+    expect(writeDesignAcceptanceReport(root, merge2048DesignSample, completeChecks).status).toBe("passed");
+    const report = JSON.parse(readFileSync(join(root, "_studio", "DESIGN_ACCEPTANCE_REPORT.json"), "utf8"));
     expect(report.criteria).toHaveLength(4);
+    expect(() => writeDesignAcceptanceReport(root, merge2048DesignSample, completeChecks.filter(({ id }) => id !== "ASSISTANCE-RUNTIME"))).toThrow(/未闭环/);
+    expect(() => writeDesignAcceptanceReport(root, merge2048DesignSample, completeChecks.filter(({ id }) => id !== "ONBOARDING-MERGE-2048"))).toThrow(/未闭环/);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
@@ -62,10 +75,11 @@ it("规则、视口与资源承诺必须分别绑定对应的浏览器证据", (
   }
 });
 
-it("设计验收缺少任一运行时证据时阻断，而不是写成通过", () => {
+it("旧教学证据缺失不再阻断，仍有效的递进证据缺失才阻断", () => {
   const root = mkdtempSync(join(tmpdir(), "design-acceptance-missing-"));
   try {
-    expect(() => writeDesignAcceptanceReport(root, merge2048DesignSample, completeChecks.filter(({ id }) => id !== "ASSISTANCE-RUNTIME"))).toThrow(/未闭环/);
+    expect(writeDesignAcceptanceReport(root, merge2048DesignSample, completeChecks.filter(({ id }) => id !== "ASSISTANCE-RUNTIME"), { tutorialRequired: false }).status).toBe("passed");
+    expect(() => writeDesignAcceptanceReport(root, merge2048DesignSample, completeChecks.filter(({ id }) => id !== "PROGRESSION-RUNTIME"), { tutorialRequired: false })).toThrow(/未闭环/);
     expect(existsSync(join(root, "_studio", "DESIGN_ACCEPTANCE_REPORT.json"))).toBe(true);
     const report = JSON.parse(readFileSync(join(root, "_studio", "DESIGN_ACCEPTANCE_REPORT.json"), "utf8"));
     expect(report.passed).toBe(false);

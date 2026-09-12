@@ -23,10 +23,10 @@
 
 ## 已执行自动证据
 
-- `npm run typecheck`：2026-09-08 通过。
-- `npm run test:platform`：2026-09-08 共 87 个测试文件、397 项测试通过。
-- `npm run test:legacy`：2026-09-08 旧游戏与服务端套件 286 项全部通过。
-- `npm run build`：2026-09-08 生产构建通过。
+- `npm run typecheck`：2026-09-12 通过（当前未提交工作树）。
+- `npm run test:platform`：2026-09-12 共 95 个测试文件、478 项测试通过。
+- `npm run test:legacy`：2026-09-12 共 394 项全部通过，含 13 款官方游戏的真实浏览器构建与教学验收。同日删除了仍按旧"生成游戏必须有教学"合同断言的三个生成侧浏览器用例文件（`generated-onboarding-browser`、`f6-generated-onboarding-browser`、`sprite-sheet-generated-browser`，共 12 项）；生成游戏的浏览器验收目前只剩 `generated-build-onboarding`、`minimal-creation-golden`、`three-design-build` 等用例覆盖，取消教学后的无教学交付尚无专门浏览器用例。2026-09-08 的"286 项全部通过"为历史记录。
+- `npm run build`：2026-09-12 `vite build` 通过（服务端 tsc 由 typecheck 覆盖）。
 - 三浏览器与实体手机结果属于具体发布批次证据；历史执行结果保留在对应阶段完成报告，不在本页写成永久通过状态。
 - 两类完整流程均已覆盖：现有 2048 改造与全新虫虫游戏开发。
 - 有限 3D 测试确认三种浏览器均能创建真实 WebGL 上下文。

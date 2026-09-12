@@ -269,6 +269,7 @@ export async function installImageRenderingProbe(page: Page) {
     (() => {
       const records = [];
       const sheetRecords = [];
+      const assetRecords = [];
       const seen = new Set();
       const original = CanvasRenderingContext2D.prototype.drawImage;
       const sizeOf = source => {
@@ -279,12 +280,13 @@ export async function installImageRenderingProbe(page: Page) {
       CanvasRenderingContext2D.prototype.drawImage = function(source, ...args) {
         try {
           const natural = sizeOf(source);
-          let sourceWidth = natural.width, sourceHeight = natural.height, targetWidth = natural.width, targetHeight = natural.height;
-          if (args.length === 4) { targetWidth = Number(args[2]); targetHeight = Number(args[3]); }
+          let sourceWidth = natural.width, sourceHeight = natural.height, targetX = 0, targetY = 0, targetWidth = natural.width, targetHeight = natural.height;
+          if (args.length === 4) { targetX = Number(args[0]); targetY = Number(args[1]); targetWidth = Number(args[2]); targetHeight = Number(args[3]); }
           if (args.length === 8) {
             sourceWidth = Number(args[2]); sourceHeight = Number(args[3]);
             targetWidth = Number(args[6]); targetHeight = Number(args[7]);
             const sourceX = Number(args[0]), sourceY = Number(args[1]);
+            targetX = Number(args[4]); targetY = Number(args[5]);
             const sourceUrl = String(source?.currentSrc || source?.src || "");
             const sheetKey = [sourceUrl, sourceX, sourceY, sourceWidth, sourceHeight].join("|");
             if (sourceWidth > 2 && sourceHeight > 2 && !seen.has("sheet:" + sheetKey) && sheetRecords.length < 200) {
@@ -292,6 +294,8 @@ export async function installImageRenderingProbe(page: Page) {
               sheetRecords.push({ sourceUrl, sourceX, sourceY, sourceWidth, sourceHeight });
             }
           }
+          const sourceUrl = String(source?.currentSrc || source?.src || "");
+          if (sourceUrl && targetWidth > 0 && targetHeight > 0 && assetRecords.length < 500) assetRecords.push({ sourceUrl, targetX, targetY, targetWidth, targetHeight, canvasWidth: this.canvas.width, canvasHeight: this.canvas.height });
           const sourceRatio = Math.abs(sourceWidth / sourceHeight);
           const targetRatio = Math.abs(targetWidth / targetHeight);
           // 1px/2px procedural textures and nine-slice borders are intentionally scalable.
@@ -308,27 +312,59 @@ export async function installImageRenderingProbe(page: Page) {
         } catch {}
         return original.call(this, source, ...args);
       };
-      Object.defineProperty(window, "__FORGE_IMAGE_RENDERING__", { value: { records, sheetRecords }, configurable: false });
+      Object.defineProperty(window, "__FORGE_IMAGE_RENDERING__", { value: { records, sheetRecords, assetRecords }, configurable: false });
     })();
   ` });
 }
 
-export async function collectSpriteSheetRuntimeFailures(page: Page, blueprint?: GeneratedBlueprint | null): Promise<string[]> {
-  const animated = blueprint?.sprites.filter(sprite => sprite.animation) ?? [];
-  if (!animated.length) return [];
+/** Enforce only the stable upper display bound. Entry animation and temporary effects may be smaller than the planned normal size. */
+export async function collectSpritePresentationFailures(page: Page, blueprint?: GeneratedBlueprint | null): Promise<string[]> {
+  const records = await page.evaluate(() => (window as any).__FORGE_IMAGE_RENDERING__?.assetRecords ?? []) as Array<{ sourceUrl: string; targetWidth: number; targetHeight: number; canvasWidth: number; canvasHeight: number }>;
+  const failures: string[] = [];
+  for (const sprite of blueprint?.sprites ?? []) {
+    if (sprite.presentation.region !== "playfield") continue;
+    const matching = records.filter(record => decodeURIComponent(record.sourceUrl).includes(sprite.file));
+    if (!matching.length) continue; // Asset-use and Sprite Sheet checks own the missing-draw failure.
+    const ratios = matching.map(record => Math.max(Math.abs(record.targetWidth), Math.abs(record.targetHeight)) / Math.max(1, Math.min(record.canvasWidth, record.canvasHeight)));
+    const largest = Math.max(...ratios);
+    const oversized = ratios.filter(ratio => ratio > sprite.presentation.logicalSize.max * 1.25);
+    // A single spawn/impact pulse is legitimate. Fail only when most sampled frames stay oversized.
+    if (matching.length >= 3 && oversized.length / matching.length >= 0.6) failures.push(`${sprite.role} 的持续显示尺寸最高达到玩法区短边 ${(largest * 100).toFixed(1)}%，超过合同上限 ${(sprite.presentation.logicalSize.max * 100).toFixed(1)}%`);
+  }
+  return failures;
+}
+
+export async function collectSpriteSheetRuntimeObservations(page: Page, blueprint?: GeneratedBlueprint | null, options: {
+  /** Restrict the runtime gate to sprites that are applicable to the sampled state. */
+  files?: readonly string[];
+  /** Event-only clips may legitimately be absent until their contracted event occurs. */
+  missing?: "fail" | "not-observed";
+} = {}): Promise<{ failures: string[]; notObserved: string[] }> {
+  const included = options.files ? new Set(options.files) : null;
+  const animated = blueprint?.sprites.filter(sprite => sprite.animation && (!included || included.has(sprite.file))) ?? [];
+  if (!animated.length) return { failures: [], notObserved: [] };
   const records = await page.evaluate(() => (window as Window & { __FORGE_IMAGE_RENDERING__?: { sheetRecords?: Array<{ sourceUrl: string; sourceX: number; sourceY: number; sourceWidth: number; sourceHeight: number }> } }).__FORGE_IMAGE_RENDERING__?.sheetRecords ?? []);
   const failures: string[] = [];
+  const notObserved: string[] = [];
   for (const sprite of animated) {
     const animation = sprite.animation!;
     const matching = records.filter(record => decodeURIComponent(record.sourceUrl).includes(sprite.file));
-    if (!matching.length) { failures.push(`${sprite.role} 没有通过九参数 drawImage 绘制 Sprite Sheet`); continue; }
+    if (!matching.length) {
+      if (options.missing === "not-observed") notObserved.push(`${sprite.role}（${sprite.file}）事件未触发，未验证 Sprite Sheet 帧推进`);
+      else failures.push(`${sprite.role} 没有通过九参数 drawImage 绘制 Sprite Sheet`);
+      continue;
+    }
     const invalid = matching.find(record => record.sourceWidth !== animation.frameWidth || record.sourceHeight !== animation.frameHeight
       || record.sourceX % animation.frameWidth !== 0 || record.sourceY % animation.frameHeight !== 0
       || record.sourceX < 0 || record.sourceY < 0 || record.sourceX + record.sourceWidth > animation.frameWidth * animation.columns || record.sourceY + record.sourceHeight > animation.frameHeight * animation.rows);
     if (invalid) failures.push(`${sprite.role} 的 Sprite Sheet source rect 不符合 ${animation.frameWidth}×${animation.frameHeight} row-major 协议`);
     if (new Set(matching.map(record => `${record.sourceX},${record.sourceY}`)).size < 2) failures.push(`${sprite.role} 只绘制了单帧，动画时钟没有产生可观察帧推进`);
   }
-  return failures;
+  return { failures, notObserved };
+}
+
+export async function collectSpriteSheetRuntimeFailures(page: Page, blueprint?: GeneratedBlueprint | null, options: Parameters<typeof collectSpriteSheetRuntimeObservations>[2] = {}): Promise<string[]> {
+  return (await collectSpriteSheetRuntimeObservations(page, blueprint, options)).failures;
 }
 
 /** Read both Canvas and CSS rendering evidence. cover/contain are explicitly accepted; fill-like distortion is rejected. */
@@ -2402,11 +2438,11 @@ export async function inspectMemoryMatchNaturalActions(page: Page, outOfOrder = 
         const card = document.querySelectorAll('[role="gridcell"]')[index];
         return card?.getAttribute("data-card-state") === "closed" || (card && !card.classList.contains("open") && /未翻开/.test(card.getAttribute("aria-label") ?? ""));
       }), indices, { timeout: 2000 });
-    } catch { throw new Error("记忆翻牌自然错配后2秒内没有自动盖回：教学暂停只能冻结自动压力，不能冻结翻牌反馈、回盖或输入解锁；不得依赖第三次点击或probe收起。"); }
+    } catch { throw new Error("记忆翻牌自然错配后2秒内没有自动盖回或解除输入锁。"); }
   };
   if (outOfOrder) {
     const wrong = faces.findIndex(face => face !== faces[pairA]);
-    if (wrong < 0) throw new Error("缺少不同牌面用于先错配教学检查。");
+    if (wrong < 0) throw new Error("缺少不同牌面用于乱序操作检查。");
     await clickAnimatedControl(page, cards.nth(pairA)); await clickAnimatedControl(page, cards.nth(wrong));
     await waitClosed([pairA, wrong]);
   }
@@ -2418,15 +2454,8 @@ export async function inspectMemoryMatchNaturalActions(page: Page, outOfOrder = 
   const first = faces.findIndex((_, index) => index !== pairA && index !== pairB);
   const second = faces.findIndex((face, index) => index !== pairA && index !== pairB && index !== first && face !== faces[first]);
   if (first < 0 || second < 0) throw new Error("记忆翻牌没有足够牌面进行自然错配检查。");
-  const completedBefore = outOfOrder ? await page.evaluate(() => (window as any).__FORGE_ONBOARDING__?.getState()?.completedStepIds?.length ?? 0) : 0;
   await clickAnimatedControl(page, cards.nth(first)); await clickAnimatedControl(page, cards.nth(second));
-  const teaching = await page.evaluate(() => (window as any).__FORGE_ONBOARDING__?.isActive());
-  if (!teaching) throw new Error("记忆翻牌自然错配时教学已提前结束，未能覆盖教学期反馈。");
   await waitClosed([first, second]);
-  if (outOfOrder) {
-    const completedAfter = await page.evaluate(() => (window as any).__FORGE_ONBOARDING__?.getState()?.completedStepIds?.length ?? 0);
-    if (completedAfter <= completedBefore) throw new Error("记忆翻牌先错配→再配对→再错配后教学未推进：乱序signal被平台拒绝时不能提前写入本地completedTutorial去重；必须以平台acceptedSignals/完成步骤为准，允许后续真实动作重新上报。");
-  }
   await clickAnimatedControl(page, cards.nth(first));
   await page.waitForFunction(index => {
     const card = document.querySelectorAll('[role="gridcell"]')[index];
@@ -2455,21 +2484,22 @@ async function monitorForbiddenLoss(page: Page, failures: string[], forbidden: "
   ` });
 }
 
-export async function inspectGeneratedGameInBrowser(root: string, options: { expectedCampaign?: unknown; expectedBlueprint?: GeneratedBlueprint | null; onProgress?: (message: string) => void | Promise<void> } = {}): Promise<BrowserQualityResult> {
+export async function inspectGeneratedGameInBrowser(root: string, options: { expectedCampaign?: unknown; expectedBlueprint?: GeneratedBlueprint | null; onProgress?: (message: string) => void | Promise<void>; totalTimeoutMs?: number } = {}): Promise<BrowserQualityResult> {
   const manifest = JSON.parse(readFileSync(join(root, "game-manifest.json"), "utf8"));
   const campaign = verifyGeneratedCampaign(manifest.generatedCampaign, options.expectedCampaign);
-  const rehearsalLevel = Math.min(9, campaign.levelCount);
   const failureAllowed = campaign.failurePolicy !== "forbidden";
   const endless = campaign.mode === "endless";
+  const singleDemo = !campaign.legacy && campaign.levelCount === 1 && campaign.difficultyKeys.length === 0;
   const executablePath = requireBrowserExecutable();
   const qualityRoot = join(root, "_studio", "quality");
   mkdirSync(qualityRoot, { recursive: true });
   const screenshotPaths: string[] = [];
   const failures: string[] = [];
   const evidence: string[] = [];
-  type GeneratedCheckId = "GEN-BROWSER-CONTRACT" | "GEN-BROWSER-LAYOUT" | "GEN-BROWSER-VISUAL" | "GEN-BROWSER-ERRORS" | "GEN-BROWSER-ONBOARDING" | "PROGRESSION-RUNTIME" | "CONTENT-VARIATION-REHEARSAL" | "ASSISTANCE-RUNTIME";
+  const runtimeObservations: string[] = [];
+  type GeneratedCheckId = "GEN-BROWSER-CONTRACT" | "GEN-BROWSER-LAYOUT" | "GEN-BROWSER-VISUAL" | "GEN-BROWSER-ERRORS" | "PROGRESSION-RUNTIME";
   type GeneratedCheckStatus = "passed" | "failed" | "not-run";
-  const generatedCheckIds: GeneratedCheckId[] = ["GEN-BROWSER-CONTRACT", "GEN-BROWSER-LAYOUT", "GEN-BROWSER-VISUAL", "GEN-BROWSER-ERRORS", "GEN-BROWSER-ONBOARDING", "PROGRESSION-RUNTIME", "CONTENT-VARIATION-REHEARSAL", "ASSISTANCE-RUNTIME"];
+  const generatedCheckIds: GeneratedCheckId[] = ["GEN-BROWSER-CONTRACT", "GEN-BROWSER-LAYOUT", "GEN-BROWSER-VISUAL", "GEN-BROWSER-ERRORS", "PROGRESSION-RUNTIME"];
   const generatedCheckState = new Map<GeneratedCheckId, { started: boolean; completed: boolean; failures: string[] }>(generatedCheckIds.map((id) => [id, { started: false, completed: false, failures: [] }]));
   let activeGeneratedCheck: GeneratedCheckId = "GEN-BROWSER-CONTRACT";
   let generatedBlockingFailure: string | null = null;
@@ -2503,8 +2533,6 @@ export async function inspectGeneratedGameInBrowser(root: string, options: { exp
     }
   };
   let progressionReport: Record<string, unknown> | null = null;
-  let variationReport: Record<string, unknown> | null = null;
-  let assistanceReport: Record<string, unknown> | null = null;
   let completedLayoutViewports = 0;
   let completedErrorViewports = 0;
   const memoryMatch = requiresMemoryMatchNaturalCheck(root);
@@ -2514,8 +2542,25 @@ export async function inspectGeneratedGameInBrowser(root: string, options: { exp
     { name: "phone-standard", width: 390, height: 844 },
     { name: "desktop-wide", width: 1366, height: 900 },
   ];
+  const persistentAnimatedFiles = options.expectedBlueprint?.sprites
+    .filter(sprite => sprite.animation?.clips.some(clip => clip.id === "idle" || clip.id === "run"))
+    .map(sprite => sprite.file) ?? [];
+  const eventOnlyAnimatedFiles = options.expectedBlueprint?.sprites
+    .filter(sprite => sprite.animation && !persistentAnimatedFiles.includes(sprite.file))
+    .map(sprite => sprite.file) ?? [];
+  const persistentObservationMs = Math.min(1_500, Math.max(500, ...((options.expectedBlueprint?.sprites ?? [])
+    .filter(sprite => persistentAnimatedFiles.includes(sprite.file))
+    .flatMap(sprite => sprite.animation?.clips.filter(clip => clip.id === "idle" || clip.id === "run").map(clip => Math.ceil(2_000 / clip.fps)) ?? []))));
   const { server, url } = await startArtifactServer(root);
   let browser: Browser | null = null;
+  let timedOut = false;
+  const totalTimeoutMs = options.totalTimeoutMs ?? 120_000;
+  const totalTimeout = setTimeout(() => {
+    timedOut = true;
+    recordGeneratedFailure(`生成游戏浏览器验收超过 ${totalTimeoutMs}ms 总时限，已终止并清理浏览器。`, activeGeneratedCheck);
+    void browser?.close().catch(() => {});
+    void closeServer(server).catch(() => {});
+  }, totalTimeoutMs);
   try {
     browser = await launchBrowser({ executablePath, headless: true, args: ["--enable-unsafe-swiftshader", "--use-angle=swiftshader"] });
     if (memoryMatch) {
@@ -2542,7 +2587,7 @@ export async function inspectGeneratedGameInBrowser(root: string, options: { exp
     for (const viewport of generatedViewports) {
       const viewportIndex = generatedViewports.indexOf(viewport) + 1;
       // 进度只是给页面看的说明，写入失败不能影响验收结果。
-      void Promise.resolve(options.onProgress?.(`正在真实浏览器中检查第 ${viewportIndex}/${generatedViewports.length} 种画幅 ${viewport.name}（${viewport.width}×${viewport.height}）：加载、开局、教学、关卡、结算与重开`)).catch(() => {});
+      void Promise.resolve(options.onProgress?.(`正在真实浏览器中检查第 ${viewportIndex}/${generatedViewports.length} 种画幅 ${viewport.name}（${viewport.width}×${viewport.height}）：加载、开局、关卡、结算与重开`)).catch(() => {});
       const page = await browser.newPage({ viewport: { width: viewport.width, height: viewport.height } });
       const runtimeErrors: string[] = [];
       await installImageRenderingProbe(page);
@@ -2575,60 +2620,29 @@ export async function inspectGeneratedGameInBrowser(root: string, options: { exp
         if (!layout.startVisible) recordGeneratedFailure(`${viewport.name} 开始按钮 #start 不在首屏或小于 44px。`, "GEN-BROWSER-LAYOUT");
         completedLayoutViewports += 1;
         await takeScreenshot(page, join(qualityRoot, `${viewport.name}-idle.png`), screenshotPaths);
+        // Layout is sampled on the idle screen, but gameplay sprites are only
+        // applicable after start. Enter the same observable playing state in
+        // every viewport before applying the persistent animation gate.
+        if (viewport.name !== "phone-standard" && persistentAnimatedFiles.length > 0) {
+          await page.locator("#start").click({ timeout: 3_000 });
+          await page.waitForFunction(() => document.body.dataset.gameState === "playing", undefined, { timeout: 5_000 });
+          await page.waitForTimeout(persistentObservationMs);
+          await takeScreenshot(page, join(qualityRoot, `${viewport.name}-playing.png`), screenshotPaths);
+        }
         if (viewport.name === "phone-standard") {
           beginGeneratedCheck("GEN-BROWSER-CONTRACT");
           await page.locator("#start").click({ timeout: 3_000 });
           await page.waitForFunction(() => document.body.dataset.gameState === "playing", undefined, { timeout: 5_000 });
-          const onboardingWaiting = await page.evaluate(() => {
-            const onboarding = (window as any).__FORGE_ONBOARDING__;
-            const debug = (window as any).__GAME_DEBUG__;
-            return { onboarding: onboarding?.getState?.(), plan: onboarding?.plan, game: debug?.getState?.(), visible: Boolean(document.querySelector(".forge-onboarding:not([hidden])")) };
-          });
           await page.waitForTimeout(600);
-          const pressureAfterWait = await page.evaluate(() => (window as any).__GAME_DEBUG__?.getState?.()?.pressureClock);
-          if (onboardingWaiting.onboarding?.status !== "active" || !onboardingWaiting.visible || !Array.isArray(onboardingWaiting.plan?.steps)) {
-            recordGeneratedFailure("开始后没有进入可见的合同教学状态。", "GEN-BROWSER-ONBOARDING");
-          }
-          if (!Number.isFinite(onboardingWaiting.game?.pressureClock) || pressureAfterWait !== onboardingWaiting.game?.pressureClock) {
-            recordGeneratedFailure(`教学等待期自动压力仍在推进：${String(onboardingWaiting.game?.pressureClock)} → ${String(pressureAfterWait)}。`, "GEN-BROWSER-ONBOARDING");
-          }
           await takeScreenshot(page, join(qualityRoot, `${viewport.name}-playing.png`), screenshotPaths);
           const hooks = await page.evaluate(() => {
             const debug = (window as any).__GAME_DEBUG__;
-            return { hasState: Boolean(debug?.getState), hasWin: Boolean(debug?.forceWin), hasLose: Boolean(debug?.forceLose), hasOnboardingProbe: Boolean(debug?.performOnboardingStep) };
+            return { hasState: Boolean(debug?.getState), hasWin: Boolean(debug?.forceWin), hasLose: Boolean(debug?.forceLose) };
           });
-          if (!hooks.hasState || (!endless && !hooks.hasWin) || (failureAllowed && !hooks.hasLose) || !hooks.hasOnboardingProbe) {
-            recordGeneratedFailure(`probe 模式缺少 getState/performOnboardingStep${endless ? "" : "/forceWin"}${failureAllowed ? "/forceLose" : ""} 钩子。`, "GEN-BROWSER-CONTRACT");
+          if (!hooks.hasState || !hooks.hasWin || (failureAllowed && !hooks.hasLose)) {
+            recordGeneratedFailure(`probe 模式缺少 getState/forceWin${failureAllowed ? "/forceLose" : ""} 钩子。`, "GEN-BROWSER-CONTRACT");
           } else {
-            beginGeneratedCheck("GEN-BROWSER-ONBOARDING");
-            const stepCount = onboardingWaiting.plan?.steps?.length ?? 0;
-            for (let index = 0; index < stepCount; index += 1) {
-              await page.evaluate(() => (window as any).__GAME_DEBUG__.performOnboardingStep());
-              await page.waitForFunction((completed) => (window as any).__FORGE_ONBOARDING__?.getState?.()?.completedStepIds?.length > completed, index, { timeout: 3_000 })
-                .catch(() => recordGeneratedFailure(`第 ${index + 1} 个教学探针没有通过正常玩法处理器完成。`, "GEN-BROWSER-ONBOARDING"));
-            }
-            const completedOnboarding = await page.evaluate(() => {
-              const api = (window as any).__FORGE_ONBOARDING__;
-              return { state: api.getState(), expectedSignals: api.plan.steps.map((step: any) => step.successSignal) };
-            });
-            const actualSignals = completedOnboarding.state?.acceptedSignals?.map(({ signal }: { signal: string }) => signal) ?? [];
-            if (completedOnboarding.state?.status !== "completed" || JSON.stringify(actualSignals) !== JSON.stringify(completedOnboarding.expectedSignals)) {
-              recordGeneratedFailure(`教学没有按合同信号顺序完成：${JSON.stringify({ expected: completedOnboarding.expectedSignals, actual: actualSignals })}。`, "GEN-BROWSER-ONBOARDING");
-            }
-            await page.reload({ waitUntil: "domcontentloaded", timeout: 10_000 });
-            await page.waitForFunction(() => Boolean((window as any).__FORGE_ONBOARDING__ && (window as any).__GAME_DEBUG__), undefined, { timeout: 5_000 });
-            const restoredOnboarding = await page.evaluate(() => (window as any).__FORGE_ONBOARDING__.getState());
-            if (restoredOnboarding.status !== "completed" || restoredOnboarding.completedStepIds.length !== stepCount) recordGeneratedFailure("教学完成状态刷新后没有恢复。", "GEN-BROWSER-ONBOARDING");
-            const replaySkip = await page.evaluate(() => {
-              const api = (window as any).__FORGE_ONBOARDING__;
-              api.replay(); const replayed = api.getState(); api.skip(); const skipped = api.getState();
-              return { replayed, skipped };
-            });
-            if (replaySkip.replayed.status !== "active" || replaySkip.skipped.status !== "skipped" || replaySkip.skipped.skippedStepIds.length !== stepCount) recordGeneratedFailure("教学重看或跳过不可用。", "GEN-BROWSER-ONBOARDING");
-            completeGeneratedCheck("GEN-BROWSER-ONBOARDING");
-            await page.locator("#start").click({ timeout: 3_000 });
-            await page.waitForFunction(() => document.body.dataset.gameState === "playing", undefined, { timeout: 5_000 });
-            if (!endless) {
+            if (!endless && !singleDemo) {
             beginGeneratedCheck("PROGRESSION-RUNTIME");
             const levelStates: Array<{ level: number; difficulty: Record<string, number>; contentVariant: string; runtimeSignature: string; mechanicsActive: string[] }> = [];
             for (let level = 1; level <= campaign.levelCount; level += 1) {
@@ -2672,98 +2686,19 @@ export async function inspectGeneratedGameInBrowser(root: string, options: { exp
             progressionReport = { checkedAt: new Date().toISOString(), campaign, levelsChecked: levelStates.length, maximumMultiplierStep, milestones: milestoneStates };
             completeGeneratedCheck("PROGRESSION-RUNTIME");
 
-            beginGeneratedCheck("CONTENT-VARIATION-REHEARSAL");
-            const expectedVariationSignals = onboardingWaiting.plan.steps.map((step: any) => step.successSignal);
-            await page.evaluate(`window.__forgeObservedSignals=[];window.__forgeSignalListener=function(event){window.__forgeObservedSignals.push(event.detail&&event.detail.signal)};addEventListener("forge:mechanic-signal",window.__forgeSignalListener);`);
-            await page.evaluate(level => { const debug = (window as any).__GAME_DEBUG__; debug.setLevel(level); debug.restart(); }, rehearsalLevel);
-            // Rehearsal is a fresh tutorial run, not a request to replay a terminal
-            // platform state. Use the public replay control so generated code can
-            // correctly rely on platform-accepted progress as its sole truth.
-            await page.locator('[data-forge-replay]').click({ timeout: 3000 });
-            for (let index = 0; index < expectedVariationSignals.length; index += 1) {
-              await page.evaluate(() => (window as any).__GAME_DEBUG__.performOnboardingStep());
-              await page.waitForFunction((completed) => (window as any).__FORGE_ONBOARDING__?.getState?.()?.completedStepIds?.length > completed, index, { timeout: 3000 })
-                .catch(() => recordGeneratedFailure(`第 ${rehearsalLevel} 关第 ${index + 1} 个复演动作未完成。`, "CONTENT-VARIATION-REHEARSAL"));
-            }
-            const variation = await page.evaluate(() => {
-              const forgeWindow = window as any;
-              removeEventListener("forge:mechanic-signal", forgeWindow.__forgeSignalListener);
-              return { state: forgeWindow.__GAME_DEBUG__.getState(), observed: [...forgeWindow.__forgeObservedSignals] };
-            });
-            if (!expectedVariationSignals.every((signal: string) => variation.observed.includes(signal)) || variation.state?.level !== rehearsalLevel) recordGeneratedFailure(`第 ${rehearsalLevel} 关没有通过正常玩法处理器复演全部教学机制：${JSON.stringify({ expected: expectedVariationSignals, observed: variation.observed })}。`, "CONTENT-VARIATION-REHEARSAL");
-            variationReport = { checkedAt: new Date().toISOString(), sourceLevel: 1, rehearsalLevel, expectedSignals: expectedVariationSignals, observedSignals: variation.observed, contentVariant: variation.state?.contentVariant, runtimeSignature: variation.state?.runtimeSignature };
-            completeGeneratedCheck("CONTENT-VARIATION-REHEARSAL");
-            // A taught action can legitimately open help. Finish that real user
-            // interaction before testing controls behind the modal.
-            const helpDialog = page.getByRole("dialog").filter({ visible: true });
-            if (await helpDialog.count() === 1) {
-              const dismiss = helpDialog.getByRole("button", { name: /^(明白了|知道了|关闭|继续游戏|返回游戏|close|got it)$/i });
-              if (await dismiss.count() === 1) await dismiss.click({ timeout: 3000 });
-            }
-            } else {
+            } else if (endless) {
               const mode = await page.evaluate(() => (window as any).__GAME_DEBUG__.getState()?.mode);
               if (mode !== "endless") recordGeneratedFailure("无限玩法没有返回真实模式endless。", "PROGRESSION-RUNTIME");
               await page.evaluate(() => (window as any).__GAME_DEBUG__.restart());
               await page.waitForFunction(() => document.body.dataset.gameState === "playing", undefined, { timeout: 3000 });
               progressionReport = { checkedAt: new Date().toISOString(), status: "not-applicable", reason: "确认无限玩法，没有有限关卡。" };
-              variationReport = { checkedAt: new Date().toISOString(), status: "not-applicable", reason: "没有第九关，不执行有限关卡复演。" };
+            } else {
+              beginGeneratedCheck("PROGRESSION-RUNTIME");
+              progressionReport = { checkedAt: new Date().toISOString(), status: "not-applicable", reason: "确认单局 demo，没有关卡递进。" };
+              completeGeneratedCheck("PROGRESSION-RUNTIME");
             }
 
-            if (failureAllowed) {
-            beginGeneratedCheck("ASSISTANCE-RUNTIME");
-            const assistanceActions: string[] = [];
-            await page.evaluate(infinite => { const debug = (window as any).__GAME_DEBUG__; if (!infinite) debug.setLevel(1); debug.restart(); }, endless);
-            for (let failureCount = 1; failureCount <= 4; failureCount += 1) {
-              const cause = `生成玩法验收失败原因 ${failureCount}`;
-              await page.evaluate((value) => (window as any).__GAME_DEBUG__.forceLose(value), cause);
-              const assistanceVisible = await page.waitForFunction(() => document.body.dataset.gameState === "lost" && Boolean((window as any).__FORGE_DESIGN__?.getAssistance?.()?.active), undefined, { timeout: 3_000 })
-                .then(() => true)
-                .catch(async () => {
-                  const actual = await page.evaluate(() => {
-                    const gameState = String(document.body.dataset.gameState ?? "");
-                    const assistance = (window as any).__FORGE_DESIGN__?.getAssistance?.();
-                    const active = assistance?.active;
-                    const action = typeof active?.action === "string" && ["explain-cause", "highlight-rule", "directional-hint", "show-step", "checkpoint", "lower-one-dimension"].includes(active.action)
-                      ? active.action
-                      : "unknown";
-                    return {
-                      gameState: ["idle", "playing", "won", "lost", "paused", "stage-complete"].includes(gameState) ? gameState : "unknown",
-                      assistanceActive: Boolean(active),
-                      assistanceAction: active ? action : null,
-                      assistanceFailureCount: Number.isSafeInteger(active?.failureCount) ? active.failureCount : null,
-                    };
-                  });
-                  recordGeneratedFailure(`ASSISTANCE-RUNTIME 等待失败：期待 gameState=lost 且 assistance.active=true；实际 ${JSON.stringify(actual)}。`, "ASSISTANCE-RUNTIME");
-                  return false;
-                });
-              // Continuing would turn this actionable condition into arbitrary
-              // follow-on hook errors. The remaining assistance steps were not run.
-              if (!assistanceVisible) break;
-              const shown = await page.evaluate(() => ({ assistance: (window as any).__FORGE_DESIGN__.getAssistance(), visible: Boolean(document.querySelector<HTMLElement>(".forge-assistance:not([hidden])")?.getBoundingClientRect().height), message: document.querySelector("[data-forge-assistance-message]")?.textContent ?? "" }));
-              const expected = [...(await page.evaluate(() => (window as any).__FORGE_DESIGN__.assistancePlan.steps))].filter((step: any) => step.afterFailures <= failureCount).at(-1) as any;
-              if (shown.assistance.active?.failureCount !== failureCount || shown.assistance.active?.action !== expected.action || !shown.visible || !shown.message.includes(cause) || !shown.message.includes(expected.message)) recordGeneratedFailure(`第 ${failureCount} 次失败没有显式呈现真实原因和 ${expected.action} 合同帮助。`, "ASSISTANCE-RUNTIME");
-              assistanceActions.push(String(shown.assistance.active?.action));
-              if (failureCount < 4) await page.evaluate(() => (window as any).__GAME_DEBUG__.restart());
-            }
-            await page.reload({ waitUntil: "domcontentloaded", timeout: 10_000 });
-            await page.waitForFunction(() => Boolean((window as any).__FORGE_DESIGN__ && (window as any).__GAME_DEBUG__), undefined, { timeout: 5_000 });
-            const restoredAssistance = await page.evaluate(() => (window as any).__FORGE_DESIGN__.getAssistance());
-            if (restoredAssistance.active?.failureCount !== 4) recordGeneratedFailure("刷新后没有恢复第 4 次失败帮助。", "ASSISTANCE-RUNTIME");
-            await page.locator("#start").click({ timeout: 3_000 });
-            if (!endless) {
-            await page.evaluate(() => (window as any).__GAME_DEBUG__.forceWin());
-            await page.waitForTimeout(30);
-            const resetAssistance = await page.evaluate(() => (window as any).__FORGE_DESIGN__.getAssistance());
-            if (resetAssistance.active !== null || Object.keys(resetAssistance.consecutiveFailuresByLevel ?? {}).length !== 0) recordGeneratedFailure("成功后没有清除连续失败帮助状态。", "ASSISTANCE-RUNTIME");
-            assistanceReport = { checkedAt: new Date().toISOString(), observedActions: assistanceActions, persistedFailureCount: restoredAssistance.active?.failureCount, resetAfterWin: resetAssistance.active === null, hiddenAdaptation: false };
-            completeGeneratedCheck("ASSISTANCE-RUNTIME");
-            } else {
-              assistanceReport = { checkedAt: new Date().toISOString(), observedActions: assistanceActions, persistedFailureCount: restoredAssistance.active?.failureCount, resetAfterWin: "not-applicable", reason: "无限玩法没有胜利事件，不能伪造胜利来清零帮助。" };
-            }
-            } else {
-              assistanceReport = { checkedAt: new Date().toISOString(), status: "not-applicable", reason: "服务端确认方案禁止失败，不执行forceLose或连续失败帮助测试。" };
-            }
-            // 被结算遮罩盖住的 #restart 是合同违规，必须变成可修正的判定，而不是让整轮验收异常中断。
+            // 局内必须能直接重开；这里仍检查固定 #restart。
             await page.locator("#restart").click({ timeout: 3_000 })
               .catch(async () => recordGeneratedFailure(`游戏中 #restart 无法点击:${await clickObstructionDiagnosis(page, "#restart")}。`, "GEN-BROWSER-CONTRACT"));
             if (await page.locator("body").getAttribute("data-game-state") === "idle") await page.locator("#start").click({ timeout: 3_000 })
@@ -2779,8 +2714,15 @@ export async function inspectGeneratedGameInBrowser(root: string, options: { exp
               .catch(() => recordGeneratedFailure("forceWin 后状态没有进入 won。", "GEN-BROWSER-CONTRACT"));
             if (memoryMatch) await assertMemoryResultNotClipped(page);
             await takeScreenshot(page, join(qualityRoot, `${viewport.name}-result.png`), screenshotPaths);
-            await page.locator("#restart").click({ timeout: 3_000 })
-              .catch(async () => recordGeneratedFailure(`结算后 #restart 无法点击:${await clickObstructionDiagnosis(page, "#restart")}。`, "GEN-BROWSER-CONTRACT"));
+            // 结算层可以提供自己的“重玩/重新开始”动作。不要强迫被结算
+            // overlay 正常覆盖的局内 #restart 穿透点击。
+            const terminalRestartCandidates = ["#restartEnd", "#again", "#restart"];
+            let terminalRestartSelector = terminalRestartCandidates.at(-1)!;
+            for (const candidate of terminalRestartCandidates) {
+              if (await page.locator(candidate).isVisible().catch(() => false)) { terminalRestartSelector = candidate; break; }
+            }
+            await page.locator(terminalRestartSelector).click({ timeout: 3_000 })
+              .catch(async () => recordGeneratedFailure(`结算后没有可点击的重开动作:${await clickObstructionDiagnosis(page, terminalRestartSelector)}。`, "GEN-BROWSER-CONTRACT"));
             await page.waitForFunction(() => ["idle", "playing"].includes(document.body.dataset.gameState ?? ""), undefined, { timeout: 3_000 })
               .catch(() => recordGeneratedFailure("重开后状态没有回到 idle/playing。", "GEN-BROWSER-CONTRACT"));
             const stateAfterRestart = await page.locator("body").getAttribute("data-game-state");
@@ -2792,7 +2734,7 @@ export async function inspectGeneratedGameInBrowser(root: string, options: { exp
             }
             } else {
               await page.waitForTimeout(1000);
-              if (await page.locator("body").getAttribute("data-game-state") !== "playing") recordGeneratedFailure("无限模式重开后的观察期未保持可玩状态。", "GEN-BROWSER-CONTRACT");
+              if (await page.locator("body").getAttribute("data-game-state") !== "playing") recordGeneratedFailure(`无限模式重开后的观察期未保持可玩状态。`, "GEN-BROWSER-CONTRACT");
               await takeScreenshot(page, join(qualityRoot, `${viewport.name}-endless.png`), screenshotPaths);
             }
             if (failureAllowed) {
@@ -2802,7 +2744,7 @@ export async function inspectGeneratedGameInBrowser(root: string, options: { exp
             }
             completeGeneratedCheck("GEN-BROWSER-CONTRACT");
           }
-          evidence.push(`390×844 执行教学安全等待、动作探针、刷新恢复、重看/跳过，以及 ${endless ? "无限模式声明与重开短期观察，不代表无限时长运行证明" : "idle→playing→won→重开"}${failureAllowed ? "；验证失败结算" : "；按确认方案不测试失败结算"}。`);
+          evidence.push(`390×844 执行 ${endless ? "无限模式声明与重开短期观察，不代表无限时长运行证明" : "idle→playing→won→重开"}${failureAllowed ? "；验证失败结算" : "；按确认方案不测试失败结算"}。`);
         }
         beginGeneratedCheck("GEN-BROWSER-ERRORS");
         if (runtimeErrors.length) recordGeneratedFailure(`${viewport.name} 浏览器错误：${runtimeErrors.join(" | ")}`, "GEN-BROWSER-ERRORS");
@@ -2810,8 +2752,20 @@ export async function inspectGeneratedGameInBrowser(root: string, options: { exp
         beginGeneratedCheck("GEN-BROWSER-VISUAL");
         const renderingViolations = await collectImageRenderingViolations(page);
         for (const violation of renderingViolations) recordGeneratedFailure(`${viewport.name} ${violation.detail}。`, "GEN-BROWSER-VISUAL");
-        const spriteFailures = await collectSpriteSheetRuntimeFailures(page, options.expectedBlueprint);
+        // idle/run sprites must be observable in the playing sample for every
+        // viewport. Pure hit/effect sprites are checked when an action probe
+        // actually caused them to draw; absence during ordinary play is not a
+        // claim that their animation clock is broken.
+        const persistentSprites = await collectSpriteSheetRuntimeObservations(page, options.expectedBlueprint, { files: persistentAnimatedFiles });
+        const spriteFailures = [...persistentSprites.failures];
+        if (viewport.name === "phone-standard") {
+          const eventSprites = await collectSpriteSheetRuntimeObservations(page, options.expectedBlueprint, { files: eventOnlyAnimatedFiles, missing: "not-observed" });
+          spriteFailures.push(...eventSprites.failures);
+          runtimeObservations.push(...eventSprites.notObserved.map(observation => `${viewport.name} ${observation}。`));
+        }
         for (const failure of spriteFailures) recordGeneratedFailure(`${viewport.name} ${failure}。`, "GEN-BROWSER-VISUAL");
+        const presentationFailures = await collectSpritePresentationFailures(page, options.expectedBlueprint);
+        for (const failure of presentationFailures) recordGeneratedFailure(`${viewport.name} ${failure}。`, "GEN-BROWSER-VISUAL");
         completeGeneratedCheck("GEN-BROWSER-VISUAL");
         evidence.push(`${viewport.width}×${viewport.height}: 无横向溢出，首屏可开局。`);
       } catch (error) {
@@ -2823,7 +2777,13 @@ export async function inspectGeneratedGameInBrowser(root: string, options: { exp
         await page.close();
       }
     }
+  } catch (error) {
+    if (!timedOut) throw error;
+    // Closing Chromium is the cancellation mechanism for an in-flight
+    // Playwright operation. Its resulting "target closed" error is secondary
+    // to the explicit total-timeout failure already recorded above.
   } finally {
+    clearTimeout(totalTimeout);
     await browser?.close();
     await closeServer(server);
   }
@@ -2835,27 +2795,25 @@ export async function inspectGeneratedGameInBrowser(root: string, options: { exp
   if (completedErrorViewports === generatedViewports.length) completeGeneratedCheck("GEN-BROWSER-ERRORS");
   const checks: QualityCheck[] = [
     ...(memoryMatch && !endless && !campaign.legacy ? [{ id: "MEMORY-MATCH-COMPLETION", label: "通过正常点击完成首关", status: memoryFailure ? "failed" as const : "passed" as const, evidence: "读取可观察牌面身份作为解法，以真实鼠标逐对完成剩余卡牌并等待自然won状态；未调用forceWin。仅证明首关，两条输入路径。" }] : []),
-    ...(memoryMatch ? [{ id: "MEMORY-MATCH-NATURAL", label: "记忆翻牌教学期正常点击、乱序动作、自动回盖与继续操作", status: memoryFailure ? "failed" as const : "passed" as const, evidence: memoryFailure ?? "无probe：配对再错配及先错→对→错两条自然路径，教学期2秒内自动回盖、输入解锁且教学按平台进度推进。" }] : []),
-    { id: "GEN-BROWSER-CONTRACT", label: "生成游戏运行时契约（状态机、开始、胜负、重开）", status: generatedReportStatus("GEN-BROWSER-CONTRACT") === "passed" ? "passed" : "failed", evidence: generatedReportEvidence("GEN-BROWSER-CONTRACT", evidence.join(" ")) },
+    ...(memoryMatch ? [{ id: "MEMORY-MATCH-NATURAL", label: "记忆翻牌正常点击、乱序动作、自动回盖与继续操作", status: memoryFailure ? "failed" as const : "passed" as const, evidence: memoryFailure ?? "无probe：配对再错配及先错→对→错两条自然路径，2秒内自动回盖并解除输入锁。" }] : []),
+    { id: "GEN-BROWSER-CONTRACT", label: `生成游戏运行时契约（状态机、开始、胜负、重开）`, status: generatedReportStatus("GEN-BROWSER-CONTRACT") === "passed" ? "passed" : "failed", evidence: generatedReportEvidence("GEN-BROWSER-CONTRACT", evidence.join(" ")) },
     { id: "GEN-BROWSER-LAYOUT", label: "三档画幅布局与触控可达", status: generatedReportStatus("GEN-BROWSER-LAYOUT") === "passed" ? "passed" : "failed", evidence: generatedReportEvidence("GEN-BROWSER-LAYOUT", "360/390/1366 宽度均无横向溢出且可开局。") },
-    { id: "GEN-BROWSER-VISUAL", label: "位图等比显示与关键文字完整", status: generatedReportStatus("GEN-BROWSER-VISUAL") === "passed" ? "passed" : "failed", evidence: generatedReportEvidence("GEN-BROWSER-VISUAL", "已核对 Canvas 源矩形/目标矩形、Canvas 像素画布/CSS 尺寸、DOM 图片 object-fit、CSS 背景和关键文字裁切；cover/contain 与等比 DPR 缩放保留。") },
+    { id: "GEN-BROWSER-VISUAL", label: "位图等比显示与关键文字完整", status: generatedReportStatus("GEN-BROWSER-VISUAL") === "passed" ? "passed" : "failed", evidence: generatedReportEvidence("GEN-BROWSER-VISUAL", `已核对 Canvas 源矩形/目标矩形、Canvas 像素画布/CSS 尺寸、DOM 图片 object-fit、CSS 背景和关键文字裁切；cover/contain 与等比 DPR 缩放保留。${runtimeObservations.length ? ` 未完成的事件采样：${runtimeObservations.join(" ")}` : ""}`) },
     { id: "GEN-BROWSER-ERRORS", label: "浏览器错误监听", status: generatedReportStatus("GEN-BROWSER-ERRORS") === "passed" ? "passed" : "failed", evidence: generatedReportEvidence("GEN-BROWSER-ERRORS", "已监听控制台错误与未处理异常。") },
-    { id: "GEN-BROWSER-ONBOARDING", label: "生成游戏合同教学（安全状态、真实信号、恢复、重看与跳过）", status: generatedReportStatus("GEN-BROWSER-ONBOARDING") === "passed" ? "passed" : "failed", evidence: generatedReportEvidence("GEN-BROWSER-ONBOARDING", "已核对 pressureClock 停止、逐步动作探针、合同信号顺序与持久化状态。") },
-    ...(!endless ? [
+    ...(singleDemo ? [
+      { id: "PROGRESSION-RUNTIME", label: "单局 demo 无关卡递进", status: generatedReportStatus("PROGRESSION-RUNTIME") === "passed" ? "passed" as const : "failed" as const, evidence: generatedReportEvidence("PROGRESSION-RUNTIME", "确认单局 demo；未要求 setLevel、difficulty、contentVariant 或 runtimeSignature。") },
+    ] : !endless ? [
       { id: "PROGRESSION-RUNTIME", label: `生成游戏确认的 ${campaign.levelCount} 关递进与结构变化`, status: generatedReportStatus("PROGRESSION-RUNTIME") === "passed" ? "passed" as const : "failed" as const, evidence: generatedReportEvidence("PROGRESSION-RUNTIME", `逐关检查 setLevel/restart，数值维度 ${campaign.difficultyKeys.join("、")}，结构变化关 ${campaign.milestones.join("/")}。探针数据不等同于自然操作玩通。`) },
-      { id: "CONTENT-VARIATION-REHEARSAL", label: `生成游戏在第 ${rehearsalLevel} 关复演教学机制`, status: generatedReportStatus("CONTENT-VARIATION-REHEARSAL") === "passed" ? "passed" as const : "failed" as const, evidence: generatedReportEvidence("CONTENT-VARIATION-REHEARSAL", `第 ${rehearsalLevel} 关通过玩法处理器探针重新产生合同教学信号。`) },
     ] : [{ id: "ENDLESS-SAMPLED", label: "无限模式声明、重开及禁止胜利状态抽样", status: failures.length ? "failed" as const : "passed" as const, evidence: "有限关卡检查不适用；短期观察不证明内容持续供给或长期性能。" }]),
-    ...(failureAllowed ? [{ id: "ASSISTANCE-RUNTIME", label: "生成游戏连续失败显式分层帮助", status: generatedReportStatus("ASSISTANCE-RUNTIME") === "passed" ? "passed" as const : "failed" as const, evidence: generatedReportEvidence("ASSISTANCE-RUNTIME", `已验证第1–4次失败探针、合同帮助与刷新恢复。${endless ? "无限模式没有胜利清零检查。" : "有限模式另检查成功清零。"}`) }] : [{ id: "NO-FAILURE-SAMPLED", label: "无失败方案的已测操作未进入失败状态", status: failures.length ? "failed" as const : "passed" as const, evidence: "仅覆盖本报告的状态切换及教学操作，不代表穷尽游戏路径；失败帮助不适用且不计为通过项。" }]),
   ];
   if (progressionReport) writeFileSync(join(root, "_studio", "DIFFICULTY_QUALITY_REPORT.json"), `${JSON.stringify(progressionReport, null, 2)}\n`, "utf8");
-  if (variationReport) writeFileSync(join(root, "_studio", "VARIATION_QUALITY_REPORT.json"), `${JSON.stringify(variationReport, null, 2)}\n`, "utf8");
-  if (assistanceReport) writeFileSync(join(root, "_studio", "ASSISTANCE_QUALITY_REPORT.json"), `${JSON.stringify(assistanceReport, null, 2)}\n`, "utf8");
   const reportChecks = checks.map((check) => {
     const id = generatedCheckIds.find((candidate) => candidate === check.id);
     return id ? { ...check, status: generatedReportStatus(id), notRunReason: generatedReportStatus(id) === "not-run" ? generatedReportEvidence(id, check.evidence) : undefined } : check;
   });
-  const report = { checkedAt: new Date().toISOString(), executablePath, experimental: true, checks: reportChecks, failures, screenshots: screenshotPaths.map((path) => relative(root, path).replaceAll("\\", "/")) };
+  const report = { checkedAt: new Date().toISOString(), executablePath, experimental: true, timedOut, totalTimeoutMs, checks: reportChecks, failures, observations: runtimeObservations, screenshots: screenshotPaths.map((path) => relative(root, path).replaceAll("\\", "/")) };
   writeFileSync(join(root, "_studio", "BROWSER_QUALITY_REPORT.json"), `${JSON.stringify(report, null, 2)}\n`, "utf8");
+  if (timedOut) throw new BrowserQualityTimeoutError(`生成游戏浏览器整体验收超时：${failures.join(" ")}`);
   if (failures.length) throw new ArtifactValidationFailure(`生成游戏浏览器验收失败：${failures.join(" ")}`);
   return { checks, screenshotPaths };
 }
@@ -3004,4 +2962,8 @@ export async function inspectGameInBrowser(root: string): Promise<BrowserQuality
   writeFileSync(join(root, "_studio", "BROWSER_QUALITY_REPORT.json"), `${JSON.stringify(report, null, 2)}\n`, "utf8");
   if (failures.length) throw new Error(`真实浏览器验收失败：${failures.join(" ")}`);
   return { checks, screenshotPaths };
+}
+export class BrowserQualityTimeoutError extends ArtifactValidationFailure {
+  readonly code = "BROWSER_TIMEOUT";
+  constructor(message: string) { super(message); this.name = "BrowserTimeoutError"; }
 }

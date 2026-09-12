@@ -7,7 +7,7 @@ import { PreferencesProvider } from "./preferences.js";
 import * as api from "./api.js";
 
 vi.mock("./api.js", () => ({
-  archiveProject: vi.fn(), cancelBuild: vi.fn(), getArtReviewHistory: vi.fn(), getLatestBuild: vi.fn(), getPlayableBuild: vi.fn(), getProject: vi.fn(), getProjectMessages: vi.fn(), getProjectRevision: vi.fn(), getProjectVersions: vi.fn(), publishProject: vi.fn(), publishProjectVersion: vi.fn(), restoreProject: vi.fn(), startBuild: vi.fn(), submitProjectRevision: vi.fn(),
+  archiveProject: vi.fn(), approveDemoReview: vi.fn(), cancelBuild: vi.fn(), getArtReviewHistory: vi.fn(), getDemoReview: vi.fn(), getLatestBuild: vi.fn(), getPlayableBuild: vi.fn(), getProject: vi.fn(), getProjectMessages: vi.fn(), getProjectRevision: vi.fn(), getProjectVersions: vi.fn(), publishProject: vi.fn(), publishProjectVersion: vi.fn(), restoreProject: vi.fn(), startBuild: vi.fn(), submitProjectRevision: vi.fn(),
 }));
 
 describe("完整游戏设计确认卡", () => {
@@ -50,6 +50,7 @@ describe("制作停止", () => {
     vi.mocked(api.getPlayableBuild).mockResolvedValue(null);
     vi.mocked(api.getProjectMessages).mockResolvedValue([]);
     vi.mocked(api.getProjectVersions).mockResolvedValue([]);
+    vi.mocked(api.getDemoReview).mockResolvedValue(null);
   });
 
   it("停止构建时等待服务端确认，并以取消终态隔离迟到完成结果", async () => {

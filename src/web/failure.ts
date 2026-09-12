@@ -1,14 +1,16 @@
-import type { Build } from "../shared/contracts";
+import type { Build, GameDesignProfile } from "../shared/contracts";
 
 export type FailureDetail = NonNullable<Build["failureDetails"]>[number];
 
 export class StudioApiError extends Error {
   readonly failureDetails: FailureDetail[];
+  readonly referenceInspection?: GameDesignProfile["referenceInspection"];
 
-  constructor(message: string, failureDetails: FailureDetail[] = []) {
+  constructor(message: string, failureDetails: FailureDetail[] = [], referenceInspection?: GameDesignProfile["referenceInspection"]) {
     super(message);
     this.name = "StudioApiError";
     this.failureDetails = failureDetails;
+    this.referenceInspection = referenceInspection;
   }
 }
 

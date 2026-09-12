@@ -22,7 +22,7 @@ describe("GameDesignContractV1", () => {
     expect(JSON.parse(serializeGameDesignContractV1(sample))).toEqual(sample);
   });
 
-  it("发现未教学核心机制、悬空规则、难度突刺和缺失验收", () => {
+  it("发现悬空规则、难度突刺和旧合同中的悬空教学引用", () => {
     const broken = structuredClone(merge2048DesignSample);
     broken.mechanics[0].ruleIds = ["RULE-MISSING"];
     broken.onboarding = broken.onboarding.filter(({ teachesMechanicId }) => teachesMechanicId !== "MECHANIC-SLIDE");
@@ -30,17 +30,18 @@ describe("GameDesignContractV1", () => {
     broken.acceptance = broken.acceptance.filter(({ kind }) => kind !== "assistance");
     const result = auditGameDesignContract(projectFor(merge2048DesignSample), broken);
     expect(result.complete).toBe(false);
-    expect(result.gaps.map(({ code }) => code)).toEqual(expect.arrayContaining(["missing-rule", "core-mechanic-not-taught", "multi-dimension-spike", "missing-acceptance-kind"]));
+    expect(result.gaps.map(({ code }) => code)).toEqual(expect.arrayContaining(["missing-rule", "multi-dimension-spike", "acceptance-missing-step"]));
   });
 
-  it("拒绝首次失败不解释原因，以及首次高压引入机制", () => {
+  it("分层失败教学不再是合同要求，仍拒绝首次高压引入机制", () => {
     const broken = structuredClone(merge2048DesignSample);
     broken.assistance.steps[0].action = "directional-hint";
     broken.content.beats[1].pressure = "high";
     broken.content.beats[1].introducesMechanicIds = ["MECHANIC-SLIDE"];
     broken.content.beats[0].introducesMechanicIds = [];
     const result = auditGameDesignContract(projectFor(merge2048DesignSample), broken);
-    expect(result.gaps.map(({ code }) => code)).toEqual(expect.arrayContaining(["missing-failure-cause", "high-pressure-first-use"]));
+    expect(result.gaps.map(({ code }) => code)).toEqual(expect.arrayContaining(["high-pressure-first-use"]));
+    expect(result.gaps.map(({ code }) => code)).not.toContain("missing-failure-cause");
   });
 
   it("设计合同必须保留知识玩法依据，库外设计必须绑定研究任务", () => {
