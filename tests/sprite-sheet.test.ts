@@ -36,6 +36,17 @@ async function subjectFrame(red: number, width = 160, height = 120, radiusY = 44
   return sharp(pixels, { raw: { width, height, channels: 4 } }).png().toBuffer();
 }
 
+async function edgeFrame(side: "right" | "bottom"): Promise<Buffer> {
+  const width = 160, height = 120;
+  const pixels = Buffer.alloc(width * height * 4);
+  const box = side === "right" ? { left: 13, top: 20, right: 159, bottom: 99 } : { left: 20, top: 13, right: 139, bottom: 119 };
+  for (let y = box.top; y <= box.bottom; y += 1) for (let x = box.left; x <= box.right; x += 1) {
+    const offset = (y * width + x) * 4;
+    pixels[offset] = 255; pixels[offset + 1] = 90; pixels[offset + 2] = 20; pixels[offset + 3] = 255;
+  }
+  return sharp(pixels, { raw: { width, height, channels: 4 } }).png().toBuffer();
+}
+
 async function cellPixels(sheet: Buffer, index: number): Promise<Buffer> {
   return sharp(sheet).extract({
     left: (index % animation.columns) * animation.frameWidth,
@@ -117,6 +128,25 @@ test("hit 与 effect 允许有意义的面积变化，不把受击收缩或特�
   const frames = await Promise.all([14, 24, 34, 44, 10, 22, 34, 46].map(radius => subjectFrame(225, 160, 120, radius)));
   const packed = await packAnimationSpriteSheet(frames, impact);
   assert.deepEqual(await sharp(packed.bytes).metadata().then(({ width, height }) => ({ width, height })), { width: 256, height: 128 });
+});
+
+test("草稿帧零留白作为可追溯美术提醒交付，固定图集仍保持透明边界与运行合同", async () => {
+  const impact: SpriteSheetAnimation = {
+    frameWidth: 64, frameHeight: 64, columns: 4, rows: 1, frameCount: 4, anchor: { x: 32, y: 58 },
+    clips: [{ id: "effect", startFrame: 0, frameCount: 4, fps: 16, loop: false }],
+  };
+  const packed = await packAnimationSpriteSheet([await edgeFrame("right"), await edgeFrame("bottom"), await subjectFrame(220), await subjectFrame(225)], impact);
+  assert.deepEqual(packed.warnings.map(warning => ({ frame: warning.frame, sides: warning.sides })), [
+    { frame: 1, sides: ["right"] }, { frame: 2, sides: ["bottom"] },
+  ]);
+  assert.match(packed.warnings[0]!.message, /原图可能在边界处被截断/);
+  const metadata = await sharp(packed.bytes).metadata();
+  assert.deepEqual({ width: metadata.width, height: metadata.height }, { width: 256, height: 64 });
+  for (let index = 0; index < 4; index += 1) {
+    const raw = await sharp(packed.bytes).extract({ left: index * 64, top: 0, width: 64, height: 64 }).ensureAlpha().raw().toBuffer();
+    const bounds = alphaBounds(raw);
+    assert.ok(bounds.minX > 0 && bounds.maxX < 63 && bounds.minY > 0 && bounds.maxY < 63);
+  }
 });
 
 test("拒绝不透明帧与错误尺寸的来源sheet，不对整张网格cover或contain", async () => {

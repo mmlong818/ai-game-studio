@@ -1,9 +1,15 @@
 import { afterEach, expect, it, vi } from "vitest";
-import { generateDesignPreview, getLatestBuild, planProjectRevision } from "./api";
-import { INITIAL_DRAFT } from "../domain/storage";
+import { createProject, generateDesignPreview, getLatestBuild, planProjectRevision } from "./api";
 import { StudioApiError } from "./failure";
 
 afterEach(() => vi.unstubAllGlobals());
+
+it("新游戏未明确选择画幅时在发出网络请求前停止", async () => {
+  const request = vi.fn();
+  vi.stubGlobal("fetch", request);
+  await expect(createProject({ idea: "制作一个收集星星并躲避障碍，集满十颗后获胜的小游戏。" })).rejects.toThrow(/必须明确选择/);
+  expect(request).not.toHaveBeenCalled();
+});
 
 it("保留服务端安全失败详情，且不使用未受信任的 error 文本", async () => {
   vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
@@ -44,7 +50,7 @@ it("流式方案预览保留安全失败详情并丢弃未受信任错误文本"
     }),
   }));
   try {
-    await generateDesignPreview({ ...INITIAL_DRAFT, idea: "测试用的方案" }, new AbortController().signal, () => {});
+    await generateDesignPreview({ idea: "测试用的完整游戏方案，玩家收集星星后获胜", aspectRatio: "1:1" }, new AbortController().signal, () => {});
     throw new Error("expected request to fail");
   } catch (error) {
     expect(error).toBeInstanceOf(StudioApiError);
@@ -52,6 +58,27 @@ it("流式方案预览保留安全失败详情并丢弃未受信任错误文本"
     expect(failure.message).toBe("方案生成服务响应超时。");
     expect(failure.message).not.toContain("provider body");
     expect(failure.failureDetails).toEqual([expect.objectContaining({ code: "DESIGN_TIMEOUT", retryable: true })]);
+  }
+});
+
+it.each([
+  ["REFERENCE_EVIDENCE_REQUIRED", "暂未取得足够的公开玩法资料", "重新获取参考资料", true],
+  ["REFERENCE_GAMEPLAY_UNVERIFIED", "尚未确认参考游戏的实际玩法", "填写你了解的玩法", false],
+  ["DESIGN_PROFILE_INCOMPLETE", "参考方案整理未完成", "重新生成方案", true],
+])("流式方案错误 %s 映射为可操作说明且不泄露字段路径", async (code, message, nextStep, retryable) => {
+  vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(
+    JSON.stringify({ type: "error", code, error: "core_loop too_small path[0] provider output" }) + "\n",
+    { status: 200, headers: { "Content-Type": "application/x-ndjson" } },
+  )));
+  try {
+    await generateDesignPreview({ idea: "我想复制这个游戏 https://example.com/game", aspectRatio: "16:9" }, new AbortController().signal, () => {});
+    throw new Error("expected request to fail");
+  } catch (error) {
+    expect(error).toBeInstanceOf(StudioApiError);
+    const failure = error as StudioApiError;
+    expect(failure.message).toContain(message);
+    expect(failure.message).not.toContain("core_loop");
+    expect(failure.failureDetails).toEqual([expect.objectContaining({ code, nextStep: expect.stringContaining(nextStep), retryable })]);
   }
 });
 

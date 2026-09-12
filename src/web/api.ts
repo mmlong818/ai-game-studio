@@ -1,6 +1,7 @@
 import {
   artReviewHistoryResponseSchema,
   buildSchema,
+  demoReviewResponseSchema,
   gameDesignProfileSchema,
   openAISettingsStatusSchema,
   playActivitiesResponseSchema,
@@ -10,6 +11,7 @@ import {
   projectsResponseSchema,
   publishedGamesResponseSchema,
   type Build,
+  type DemoReview,
   type OpenAISettingsStatus,
   type ProjectDetail,
   type ProjectInput,
@@ -20,6 +22,8 @@ import {
   type RenovationScope,
   type RevisionPlan,
 } from "../shared/contracts";
+import { resolveCreationModeIntent } from "../shared/generated-blueprint";
+import { explicitAspectProjectInputSchema } from "../shared/contracts";
 import type { SpriteAnimationClipId } from "../shared/generated-blueprint";
 import { streamLines } from "../shared/stream-lines";
 import { StudioApiError, apiFailureFallback, type FailureDetail } from "./failure";
@@ -73,6 +77,27 @@ function safeFailureDetails(payload: unknown): FailureDetail[] {
     && typeof (value as FailureDetail).stage === "string" && typeof (value as FailureDetail).category === "string"
     && typeof (value as FailureDetail).code === "string" && typeof (value as FailureDetail).message === "string"
     && typeof (value as FailureDetail).nextStep === "string" && typeof (value as FailureDetail).retryable === "boolean");
+}
+
+function safeDesignStreamFailure(payload: unknown, referenceReplica = false): FailureDetail | null {
+  if (!payload || typeof payload !== "object") return null;
+  const code = (payload as { code?: unknown }).code;
+  if (code === "REFERENCE_EVIDENCE_REQUIRED") return {
+    stage: "design", category: "invalid-response", code,
+    message: "暂未取得足够的公开玩法资料，尚不能形成可靠的复刻方案。",
+    nextStep: "请稍后重新获取参考资料；当前输入和画幅会保留。", retryable: true,
+  };
+  if (code === "REFERENCE_GAMEPLAY_UNVERIFIED") return {
+    stage: "design", category: "validation", code,
+    message: "尚未确认参考游戏的实际玩法。",
+    nextStep: "请填写你了解的玩法，并明确选择是否按描述制作原创单局 demo。", retryable: false,
+  };
+  if (code === "DESIGN_PROFILE_INCOMPLETE") return {
+    stage: "design", category: "invalid-response", code,
+    message: `${referenceReplica ? "参考" : "游戏"}方案整理未完成，系统尚不能开始制作。`,
+    nextStep: "请重新生成方案；当前输入和画幅会保留。", retryable: true,
+  };
+  return null;
 }
 
 function serviceConnectionFailure(stage: FailureDetail["stage"] = "unknown") {
@@ -176,6 +201,7 @@ export async function getProject(projectId: string): Promise<ProjectDetail> {
 }
 
 export async function createProject(input: ProjectInput): Promise<ProjectDetail> {
+  explicitAspectProjectInputSchema.parse(input);
   const payload = (await apiRequest("/api/projects", {
     method: "POST",
     body: JSON.stringify(input),
@@ -185,6 +211,7 @@ export async function createProject(input: ProjectInput): Promise<ProjectDetail>
 
 export type ProductionJob = { id: string; status: "queued" | "creating" | "building" | "succeeded" | "failed" | "cancelled"; error: string | null; failureDetails?: Build["failureDetails"]; events?: { title: string; createdAt: string }[] };
 export async function submitProduction(input: ProjectInput): Promise<ProductionJob> {
+  explicitAspectProjectInputSchema.parse(input);
   const payload = await apiRequest("/api/production-jobs", { method: "POST", body: JSON.stringify(input) });
   return payload.job as ProductionJob;
 }
@@ -239,9 +266,10 @@ export async function getLatestBuild(projectId: string): Promise<Build | null> {
   return payload.build === null ? null : buildSchema.parse(payload.build);
 }
 
-export type DesignPreviewPhase = "submitted" | "receiving" | "checking";
+export type DesignPreviewPhase = "submitted" | "reference-acquiring" | "reference-ready" | "receiving" | "checking";
 
 export async function generateDesignPreview(input: ProjectInput, signal?: AbortSignal, onDelta?: (text: string) => void, onReset?: () => void, onStatus?: (phase: DesignPreviewPhase) => void) {
+  explicitAspectProjectInputSchema.parse(input);
   if (onDelta) {
     const token = accessToken();
     let response: Response;
@@ -263,12 +291,14 @@ export async function generateDesignPreview(input: ProjectInput, signal?: AbortS
     for await (const line of streamLines(response.body)) {
       if (!line.trim()) continue;
       const event = JSON.parse(line);
-      if (event.type === "status" && (event.phase === "submitted" || event.phase === "receiving" || event.phase === "checking")) onStatus?.(event.phase);
+      if (event.type === "status" && (["submitted", "reference-acquiring", "reference-ready", "receiving", "checking"] as const).includes(event.phase)) onStatus?.(event.phase);
       if (event.type === "delta" && typeof event.text === "string") onDelta(event.text);
       if (event.type === "reset") onReset?.();
       if (event.type === "error") {
         const details = safeFailureDetails(event);
-        throw new StudioApiError(details[0]?.message ?? "方案生成中断，未收到可用结果。", details);
+        const mapped = details[0] ?? safeDesignStreamFailure(event, resolveCreationModeIntent(input) === "reference-replica");
+        const inspection = gameDesignProfileSchema.shape.referenceInspection.safeParse(event.referenceInspection);
+        throw new StudioApiError(mapped?.message ?? "方案生成中断，未收到可用结果。", mapped ? [mapped] : [], inspection.success ? inspection.data : undefined);
       }
       if (event.type === "done") return gameDesignProfileSchema.parse(event.profile);
     }
@@ -348,6 +378,16 @@ export async function reviewVersionArt(projectId: string, versionId: string, sta
     `/api/projects/${encodeURIComponent(projectId)}/versions/${encodeURIComponent(versionId)}/art-review`,
     { method: "POST", body: JSON.stringify({ status, summary }) },
   )).versions;
+}
+
+export async function getDemoReview(projectId: string, versionId: string): Promise<DemoReview | null> {
+  return demoReviewResponseSchema.parse(await apiRequest(`/api/projects/${encodeURIComponent(projectId)}/versions/${encodeURIComponent(versionId)}/demo-review`)).review;
+}
+
+export async function approveDemoReview(projectId: string, versionId: string): Promise<DemoReview> {
+  const result = demoReviewResponseSchema.parse(await apiRequest(`/api/projects/${encodeURIComponent(projectId)}/versions/${encodeURIComponent(versionId)}/demo-review`, { method: "POST" }));
+  if (!result.review) throw new Error("试玩验收没有保存。");
+  return result.review;
 }
 
 export async function getProjectMessages(projectId: string): Promise<ProjectMessage[]> {

@@ -1,6 +1,6 @@
 # 开发文档导航
 
-更新时间：2026-09-08。
+更新时间：2026-09-11。
 
 最新接手进展：[Codex 接手记录](102-codex-takeover.md)。
 
@@ -16,6 +16,7 @@
 - [游戏设计知识系统](63-game-design-knowledge-system.md)：独立机制、玩法模式、研究与晋升规则。
 - [游戏设计原则](33-game-design-knowledge.md)：含赛车与铁路沙盒复盘的 11 条原则、适用范围和审核问题，已接入设计与生成提示。
 - [生成式游戏验收能力](generated-game-acceptance-capabilities.md)：验收服从确认方案的两层合同、`required | forbidden | not-applicable` 语义与迁移边界。
+- [生成游戏失败台账与复盘](106-generated-game-failure-ledger.md)：记录重复失败签名、执行／标准／流程分类、修复证据与真实闭环状态；改质量门禁或重试前先查。
 - [制作安全与审核权限](92-production-safety-and-review.md)：修改生成的费用边界、图片检查点复用、`STUDIO_REVIEW_TOKEN` 正式审核与发布事务复核。
 
 ## 操作手册与工程说明
@@ -27,6 +28,7 @@
 - [知识蓝图、图先行与玩法深度](96-knowledge-blueprint-and-art-first.md)：生成游戏必须从机制图谱选机制、写清取舍，并在代码之前先生成局内美术位图。
 - [文本模型接入本机 Claude Code CLI](94-claude-cli-text-provider.md)：`STUDIO_TEXT_PROVIDER=claude-cli` 时策划、审核与代码生成走 CLI 订阅额度，图片仍用 OpenAI。
 - [本机后台服务](local-background-services.md)：Windows 下以隐藏 Node 进程启动 4311/4312/4313，重启前核对活动制作任务。
+- [边玩边改接口迁入 API 服务](107-player-first-hosting-api.md)：`/api/image-generation`、`/api/previews`、`/api/releases` 从 vite 开发中间件迁入 `src/server`，修复正式部署 404。
 - [PostgreSQL 发布并发验证](87-postgres-publication-concurrency.md)：`npm run test:publication-postgres` 的隔离真实数据库测试。
 
 ## 当前实施计划
@@ -71,3 +73,4 @@
 3. 官方游戏数量和状态由 `src/shared/official-games/` 派生，禁止文档自行宣布上线。
 4. 中途进度被完成报告取代后删除；具有研究、许可、测试或决策证据的记录归入历史证据。
 5. 临时环境状态（当前是否配置密钥、服务是否启动、本机端口）不写成长期事实。
+6. 生成链路、质量门禁或重试修复必须更新 [失败台账](106-generated-game-failure-ledger.md)，并分别记录实现、自动测试、真实构建和未闭环状态；未提交工作树不得写成已发布。

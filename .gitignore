@@ -26,3 +26,8 @@ npm-debug.log*
 /assets/source-packs/kenney/*.zip
 /assets/source-packs/kenney/car-kit/
 /assets/source-packs/kenney/nature-kit/
+
+# Codex 运行目录与 build-orchestrator-repair 测试的相对路径落盘产物
+.codex-runtime/
+/root/
+/unused-root/

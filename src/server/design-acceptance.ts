@@ -33,8 +33,12 @@ export type DesignAcceptanceReport = {
   }>;
 };
 
-export function writeDesignAcceptanceReport(root: string, contract: GameDesignContractV1, checks: QualityCheck[]): QualityCheck {
-  const criteria = contract.acceptance.map((criterion) => {
+export function writeDesignAcceptanceReport(root: string, contract: GameDesignContractV1, checks: QualityCheck[], options: { tutorialRequired?: boolean } = {}): QualityCheck {
+  // 取消新手教学只针对生成游戏：调用方传 tutorialRequired=false 时，合同里旧的教学/分层帮助承诺
+  // 仍可读取但不再是交付要求；官方模板游戏（缺省 true）照常以 ONBOARDING-*/ASSISTANCE-RUNTIME 证据闭合。
+  const tutorialRequired = options.tutorialRequired ?? true;
+  const activeAcceptance = tutorialRequired ? contract.acceptance : contract.acceptance.filter(({ kind }) => kind !== "onboarding" && kind !== "assistance");
+  const criteria = activeAcceptance.map((criterion) => {
     const evidence = checks.filter((check) => evidenceIds[criterion.kind](check.id));
     return {
       id: criterion.id,

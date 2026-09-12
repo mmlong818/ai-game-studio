@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { randomUUID } from "node:crypto";
-import { createDesignProfile, gameSpecSchema, generateGameSpec, type IdeaAnalysis } from "../src/shared/contracts";
+import { createDesignProfile, gameDesignProfileSchema, gameSpecSchema, generateGameSpec, type IdeaAnalysis } from "../src/shared/contracts";
 import { contractRules, DesignContractGenerator } from "../src/server/design-contract";
 import { DESIGN_MODIFIERS, MECHANIC_ATLAS } from "../src/shared/game-design-knowledge/mechanic-atlas";
 import { OpenAISettings } from "../src/server/openai-settings";
@@ -33,13 +33,13 @@ test("已取消的方案不启动任何模型调用", async () => {
   assert.equal(calls, 0);
 });
 
-test("模型明确的七关无失败协议进入方案，不能影响官方模板", async () => {
+test("初次创作即使提到七关也先收敛为单局demo，不能影响官方模板", async () => {
   const campaign = { mode: "campaign", failurePolicy: "forbidden", levelCount: 7, milestones: [1, 4, 7], difficultyKeys: ["pairCount"], rationale: "七关花朵配对，操作错误可以继续。" };
   const generator = new DesignContractGenerator(new OpenAISettings(validKey), {
     fetchImpl: async () => llmResponse({ ...themedAnswer, generated_campaign: campaign }),
   });
   const generated = await generator.generate({ idea: "七关花朵配对小游戏，配对全部花朵即可获胜", template: "generated" });
-  assert.deepEqual(generated?.generatedCampaign, campaign);
+  assert.equal(generated?.generatedCampaign, null);
   const official = await generator.generate({ idea: snakeIdea, template: "snake" }, snakeAnalysis);
   assert.equal(official?.generatedCampaign, undefined);
 });
@@ -296,16 +296,16 @@ test("接口持续失败时重试一次后返回 null 回退模板设计", async
   assert.equal(profile, null);
 });
 
-test("LLM 返回非法内容或缺字段时回退而不是崩溃", async () => {
+test("LLM 非JSON回退，结构化合同缺字段返回安全错误码", async () => {
   const invalidJson = new DesignContractGenerator(new OpenAISettings(validKey), {
     fetchImpl: async () => new Response(JSON.stringify({ choices: [{ message: { content: "不是 JSON" } }] }), { status: 200 }),
   });
   assert.equal(await invalidJson.generate({ idea: snakeIdea }, snakeAnalysis), null);
 
   const missingFields = new DesignContractGenerator(new OpenAISettings(validKey), {
-    fetchImpl: async () => llmResponse({ ...themedAnswer, core_loop: ["只有一步"] }),
+    fetchImpl: async () => llmResponse({ ...themedAnswer, win_condition: "" }),
   });
-  assert.equal(await missingFields.generate({ idea: snakeIdea }, snakeAnalysis), null);
+  await assert.rejects(missingFields.generate({ idea: snakeIdea }, snakeAnalysis), (error: unknown) => (error as { code?: string }).code === "DESIGN_PROFILE_INCOMPLETE");
 });
 
 test("对话式重建:创作意见按时间顺序进入提示词,产出的修订合同可用", async () => {
@@ -330,6 +330,7 @@ test("对话式重建:创作意见按时间顺序进入提示词,产出的修订
 test("已有游戏资源改造:范围进入模型提示且本地恢复来源玩法合同", async () => {
   let userPrompt = "";
   const baseline = createDesignProfile("snake", "standard");
+  const sourceProjectId = randomUUID();
   const generator = new DesignContractGenerator(new OpenAISettings(validKey), {
     fetchImpl: async (_url, init) => {
       const body = JSON.parse(String(init?.body)) as { messages: Array<{ role: string; content: string }> };
@@ -340,7 +341,7 @@ test("已有游戏资源改造:范围进入模型提示且本地恢复来源玩�
   const profile = await generator.generate({
     idea: "只把游戏里的桂花糕换成莲子图片，其余保持原样",
     template: "snake",
-    sourceProjectId: randomUUID(),
+    sourceProjectId,
     revisionScope: "assets",
     confirmedDesignProfile: baseline,
   }, snakeAnalysis);
@@ -404,6 +405,10 @@ test("规则正确性审计:规则清单=核心循环+胜负,逐条判定并保�
   const generator = new DesignContractGenerator(routedSettings, {
     fetchImpl: async (_url, init) => {
       assert.equal(JSON.parse(String(init?.body)).model, "gpt-5.6-terra");
+      const body = JSON.parse(String(init?.body));
+      const system = body.messages.find((message: { role: string }) => message.role === "system")?.content ?? "";
+      assert.match(system, /单局时长范围是体验节奏估计/);
+      assert.match(system, /明确要求“限时”“倒计时”/);
       return llmResponse(auditAnswer);
     },
   });
@@ -479,8 +484,8 @@ test("生成游戏必须从知识库选机制并写清取舍；库外机制让�
     tension: "篮子格位有限，顺序错了稀有贝壳会被浪带走。",
     mastery_signal: "熟练玩家先清临浪区再凑色，用更少步数装满。",
     sprites: [
-      { file: "assets/shell-scallop.png", role: "大扇贝", hint: "粉橙扇形贝壳，放射纹清晰" },
-      { file: "assets/basket.png", role: "竹篮", hint: "浅色编织竹篮，正面开口" },
+      { file: "assets/shell-scallop.png", role: "大扇贝", hint: "粉橙扇形贝壳，放射纹清晰", presentation: { region: "playfield", fit: "contain", logicalSize: { min: 0.08, max: 0.2 }, anchor: { x: 0.5, y: 0.5 }, safeInsetRatio: 0.08, minSourcePixels: 64 } },
+      { file: "assets/basket.png", role: "竹篮", hint: "浅色编织竹篮，正面开口", presentation: { region: "playfield", fit: "contain", logicalSize: { min: 0.16, max: 0.3 }, anchor: { x: 0.5, y: 0.5 }, safeInsetRatio: 0.08, minSourcePixels: 64 } },
     ],
   };
   const prompts: string[] = [];
@@ -495,7 +500,7 @@ test("生成游戏必须从知识库选机制并写清取舍；库外机制让�
   assert.deepEqual(profile.generatedBlueprint.mechanicIds, [MECHANIC_ATLAS[0].id]);
   assert.equal(profile.generatedBlueprint.sprites.length, 2);
   assert.match(prompts[0], /mechanic_ids 只能从这些 id 中选/, "策划提示必须给出知识库候选菜单");
-  assert.match(prompts[0], /纯点选玩法不可接受/);
+  assert.match(prompts[0], /单局demo/);
   assert.ok(contractRules(profile).some(rule => rule.startsWith("玩家取舍:")), "取舍与位图要求必须逐条进入规则审核");
 
   const animatedBlueprint = { ...blueprint, sprites: [{ ...blueprint.sprites[0], animation: { frameWidth: 128, frameHeight: 128, columns: 4, rows: 1, frameCount: 4, anchor: { x: 64, y: 116 }, clips: [{ id: "idle", startFrame: 0, frameCount: 4, fps: 6, loop: true }] } }, blueprint.sprites[1]] };
@@ -508,7 +513,7 @@ test("生成游戏必须从知识库选机制并写清取舍；库外机制让�
   const offLibrary = new DesignContractGenerator(new OpenAISettings(validKey), {
     fetchImpl: async () => llmResponse({ ...themedAnswer, generated_blueprint: { ...blueprint, mechanic_ids: ["click-anything"] } }),
   });
-  assert.equal(await offLibrary.generate({ idea: "海边捡贝壳装满竹篮，五关数量递增，不会失败。", template: "generated" }, null), null);
+  await assert.rejects(offLibrary.generate({ idea: "海边捡贝壳装满竹篮，五关数量递增，不会失败。", template: "generated" }, null), (error: unknown) => (error as { code?: string }).code === "DESIGN_PROFILE_INCOMPLETE");
 
   // 官方模板不接收蓝图，避免与模板运行时冲突。
   const templateGenerator = new DesignContractGenerator(new OpenAISettings(validKey), {
@@ -516,4 +521,126 @@ test("生成游戏必须从知识库选机制并写清取舍；库外机制让�
   });
   const templateProfile = await templateGenerator.generate({ idea: snakeIdea, template: "snake" }, snakeAnalysis);
   assert.equal(templateProfile?.generatedBlueprint, undefined);
+});
+
+test("参考游戏默认忠实复刻，知识候选不得扩成新机制或关卡", async () => {
+  let request = "";
+  const order: string[] = [];
+  const confirmedCampaign = { mode: "campaign" as const, failurePolicy: "required" as const, levelCount: 6, milestones: [1, 6], difficultyKeys: ["arrowCount"], rationale: "已确认的原参考六关。" };
+  const sourceProfile = gameDesignProfileSchema.parse({ ...createDesignProfile("generated", "standard"), creationMode: "reference-replica", generatedCampaign: confirmedCampaign });
+  const sourceProjectId = randomUUID();
+  const sourceAnswer = { ...themedAnswer };
+  const generator = new DesignContractGenerator(new OpenAISettings(validKey), {
+    fetchImpl: async (_url, init) => { order.push("planner"); request = String(init?.body); return llmResponse(sourceAnswer); },
+  });
+  const profile = await generator.generate({ idea: "忠实复刻来源游戏，只把背景改成夜晚", template: "generated", creationMode: "reference-replica", sourceProjectId, confirmedDesignProfile: sourceProfile }, null, [], undefined, undefined, undefined, {
+    onReferenceAcquiring: () => order.push("reference-acquiring"),
+    onReferenceReady: () => order.push("reference-ready"),
+  });
+  assert.deepEqual(order, ["reference-acquiring", "reference-ready", "planner"], "可信来源合同必须先成为证据，再调用玩法规划");
+  assert.match(request, /默认忠实复刻参考的玩法、交互、胜负、关卡\/局制结构和视觉布局/);
+  assert.match(request, /不得自动增加教学、新机制、资源系统、关卡数量或递进/);
+  assert.match(request, /用户明确提出的新要求只局部修改相应部分/);
+  assert.match(request, /基础复刻阶段不得凭知识库另造机制/);
+  assert.equal(profile?.creationMode, "reference-replica");
+  assert.deepEqual(profile?.generatedCampaign, confirmedCampaign, "来源合同中已确认的原关卡必须保留");
+  assert.equal(profile?.generatedBlueprint, undefined, "基础复刻不能把知识蓝图推测变成生图和机制合同");
+  assert.ok(profile?.referenceEvidence.every(item => item.basis === "source-contract"));
+});
+
+test("参考取证失败时不调用原创玩法规划", async () => {
+  let plannerCalls = 0;
+  const generator = new DesignContractGenerator(new OpenAISettings(validKey), {
+    fetchImpl: async () => { plannerCalls += 1; return llmResponse(themedAnswer); },
+    referenceFetchImpl: async () => { throw new Error("reference unavailable"); },
+  });
+  await assert.rejects(generator.generate({ idea: "请复刻 https://example.com/unavailable", template: "generated", creationMode: "original-demo" }), (error: unknown) => (error as { code?: string }).code === "REFERENCE_EVIDENCE_REQUIRED" && /未进入原创机制规划/.test((error as Error).message));
+  assert.equal(plannerCalls, 0);
+});
+
+test("原创单局方案不因没有多关难度曲线而解析失败", async () => {
+  const singleDemoAnswer = { ...themedAnswer, core_loop: ["点击发光萤火虫"], difficulty_curve: [], game_feel: ["点中时玻璃瓶泛起柔光"], generated_campaign: null, generated_blueprint: null };
+  const generator = new DesignContractGenerator(new OpenAISettings(validKey), { fetchImpl: async () => llmResponse(singleDemoAnswer) });
+  const profile = await generator.generate({ idea: "点击萤火虫，把玻璃瓶点亮后完成这一局", template: "generated", creationMode: "original-demo" });
+  assert.deepEqual(profile?.coreLoop, ["点击发光萤火虫"]);
+  assert.deepEqual(profile?.difficultyCurve, []);
+  assert.equal(profile?.generatedCampaign, null);
+  assert.equal(profile?.generatedBlueprint, undefined);
+});
+
+test("公开正文完整描述核心动作、状态变化与目标时可进入机制 demo", async () => {
+  let plannerCalls = 0;
+  const shortReference = { ...themedAnswer, core_loop: ["拖动相同甜点合并升级", "完成顾客订单获得金币"], difficulty_curve: [], game_feel: [], generated_campaign: null, generated_blueprint: null };
+  const generator = new DesignContractGenerator(new OpenAISettings(validKey), {
+    referenceFetchImpl: async () => new Response("<html><body>Recently played Popular Games Action Games Puzzle Games How to Play Drag matching cakes together to merge them, complete customer orders, and earn coins. Controls Use the mouse to drag a cake.</body></html>", { status: 200, headers: { "content-type": "text/html" } }),
+    referenceBrowserInspectImpl: async () => ({ method: "public-browser", runtimeStatus: "not-observed", gameplayStatus: "description-read", canClaimPlayable: false, finalUrl: "https://example.com/documented-merge-game", title: "Documented Merge Game", canvasCount: 0, iframeUrls: ["https://games.example/game"], scriptUrls: [], visualChanged: false, consoleErrors: [], requestCount: 2, blockedRequestCount: 0, limitations: ["未执行实际玩法操作，不能确认完整交互、胜负或关卡。"] }),
+    fetchImpl: async () => { plannerCalls += 1; return llmResponse(shortReference); },
+  });
+  const idea = "我想复制这个游戏 https://example.com/documented-merge-game";
+  const profile = await generator.generate({ idea, template: "generated", creationMode: "original-demo" });
+  assert.equal(plannerCalls, 1);
+  assert.equal(profile?.creationMode, "reference-replica");
+  assert.equal(profile?.generatedCampaign, null);
+});
+
+test("原创描述中的参考配色和复制玩法动作不误入参考取证", async () => {
+  for (const idea of ["做一个参考秋日配色的原创收集游戏", "做一个复制方块并合并得分的原创游戏"]) {
+    let referenceCalls = 0;
+    const generator = new DesignContractGenerator(new OpenAISettings(validKey), {
+      fetchImpl: async () => llmResponse({ ...themedAnswer, generated_campaign: null, generated_blueprint: null }),
+      referenceFetchImpl: async () => { referenceCalls += 1; throw new Error("不应取证"); },
+    });
+    const profile = await generator.generate({ idea, template: "generated", creationMode: "original-demo" });
+    assert.equal(profile?.creationMode, "original-demo");
+    assert.equal(referenceCalls, 0);
+  }
+});
+
+for (const [label, html] of [
+  ["只有标题和资源入口", '<title>Arrow Game</title><script src="/shell.js"></script>'],
+  ["访问验证页", '<title>Just a moment...</title><body>Verify you are human to continue</body>'],
+] as const) test(`参考${label}不能放行玩法规划`, async () => {
+  let plannerCalls = 0;
+  const generator = new DesignContractGenerator(new OpenAISettings(validKey), {
+    fetchImpl: async () => { plannerCalls += 1; return llmResponse(themedAnswer); },
+    referenceFetchImpl: async (url) => String(url).endsWith("shell.js")
+      ? new Response("window.boot=true", { status: 200, headers: { "content-type": "application/javascript" } })
+      : new Response(html, { status: 200, headers: { "content-type": "text/html" } }),
+  });
+  await assert.rejects(generator.generate({ idea: "复刻 https://example.com/game", template: "generated" }), (error: unknown) => (error as { code?: string }).code === "REFERENCE_EVIDENCE_REQUIRED");
+  assert.equal(plannerCalls, 0);
+});
+
+test("无参考生成默认单局demo，不继承旧二十关进度", () => {
+  const spec = generateGameSpec({ idea: "做一个点击萤火虫点亮玻璃瓶的单局小游戏", template: "generated" });
+  assert.equal(spec.designProfile.creationMode, "original-demo");
+  assert.equal(spec.designProfile.generatedCampaign, null);
+  assert.equal(spec.levelProgression.levelCount, 1);
+  assert.equal(spec.levelProgression.persistProgress, false);
+});
+
+test("箭头放行的硬审核保留用户核心与胜负，不引入知识分类卡的另一套操作", () => {
+  const profile = gameDesignProfileSchema.parse({
+    ...createDesignProfile("generated", "standard"),
+    coreLoop: ["观察箭头方向、石块与出口", "点击一支箭头令其直线离场", "清出的格位改变其他箭的去路", "必要时撤销最后一次放行", "清空全部箭头并结算表现"],
+    winCondition: "全部逃离箭头都从对应方向的边界离场。",
+    failCondition: "箭头撞上另一支箭头，累计3次撞击后失败。",
+    generatedCampaign: { mode: "campaign", failurePolicy: "required", levelCount: 18, milestones: [1, 6, 12, 18], difficultyKeys: ["arrowCount", "mistakeLimit"], rationale: "逐步增加箭头，保持三次撞击容错。" },
+    generatedBlueprint: {
+      mechanicIds: ["direct-navigation", "deduce-constraints"], modifierIds: ["square-grid", "recoverable-mistake"],
+      coreDecision: "每次先选哪支箭离场：能走的箭可腾出通道，点错会撞上同伴并消耗容错。",
+      tension: "每关容错有限，玩家需要观察直线路径。", masterySignal: "熟练玩家以更少撞击和更短时间清空箭头。",
+      sprites: [{ file: "assets/escape-arrow.png", role: "逃离箭头", hint: "方向醒目的木质箭牌" }, { file: "assets/stone-block.png", role: "石块障碍", hint: "不能穿过的方形石砖" }],
+    },
+  });
+  const rules = contractRules(profile).join("\n");
+  assert.match(rules, /点击一支箭头令其直线离场/);
+  assert.match(rules, /全部逃离箭头都从对应方向的边界离场/);
+  assert.match(rules, /累计3次撞击后失败/);
+  assert.match(rules, /每次先选哪支箭离场/);
+  assert.match(rules, /结构里程碑，不表示其他关的普通数值不得变化/);
+  assert.match(rules, /动态难度维度arrowCount/);
+  assert.match(rules, /固定mistakeLimit/);
+  assert.doesNotMatch(rules, /动态难度维度[^\n]*mistakeLimit/);
+  assert.doesNotMatch(rules, /位置与速度|抵达目标|线索、候选与标记|提交正确解|保留的箭堵死/);
 });

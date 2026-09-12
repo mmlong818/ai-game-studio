@@ -16,10 +16,12 @@ import { inspectDifficultyProgressionInBrowser, inspectFailureAssistanceInBrowse
 import { writeDesignAcceptanceReport } from "./design-acceptance.js";
 import type { DesignContractGenerator } from "./design-contract.js";
 import { inspectGameArtifact, writeDesignDocuments, writeGameArtifact } from "./game-artifact.js";
-import { inspectGeneratedArtifact, stripPlatformSegments, writeGeneratedArtifact, type GameCodeGenerator, type GeneratedGame, type PreviousGeneration } from "./game-generator.js";
+import { inspectGeneratedArtifact, stripPlatformSegments, stripTutorialContract, writeGeneratedArtifact, type GameCodeGenerator, type GeneratedGame, type PreviousGeneration } from "./game-generator.js";
 import { assertRasterAiArt } from "./art-policy.js";
-import { coverPrompt, dynamicArtPlan, generatedImageDelivery, imageRequestFingerprint, readPngDimensions, resolveAssetRenovationTarget, type DynamicArtEntry, type CoverArtGenerator, type ImageDeliveryMetadata, type ImageOutputConstraint, type ImageRequestFingerprint } from "./image-generator.js";
+import { coverPrompt, dynamicArtPlan, generatedImageDelivery, imageOutputConstraintsForProject, imageRequestFingerprint, readPngDimensions, resolveAssetRenovationTarget, spritePresentationContracts, type DynamicArtEntry, type CoverArtGenerator, type ImageDeliveryMetadata, type ImageOutputConstraint, type ImageRepairAction, type ImageRequestFingerprint } from "./image-generator.js";
+import type { SpriteSheetWarning } from "./sprite-sheet.js";
 import { getOrGenerateArtCheckpoint } from "./art-checkpoint.js";
+import { runWithImageRepairProgress } from "./image-repair-progress.js";
 import { applyQualifiedProjectResources, writeQualifiedResourceProvenance } from "./golden-resource-bindings.js";
 import type { StudioRepository } from "./studio-repository.js";
 import { writeV11BuildMetadata } from "./v11-build-metadata.js";
@@ -32,9 +34,26 @@ import { blueprintSpriteFiles, spriteSheetAnimationSchema, type SpriteSheetAnima
 import { readReusableRuleAudit, safeContractRules, sha256, writeRuleFidelity } from "./rule-audit-checkpoint.js";
 import { runWithCancellation, throwIfCancellationRequested } from "./cancellation.js";
 import { BuildFailure, safeFailure } from "./build-failure.js";
+import { inspectLocalRepairCandidate } from "./local-repair-candidate.js";
 
+// 官方模板游戏保留新手教学、变化关复验与分层失败帮助的浏览器验收；生成游戏不走这些门禁。
+const realtimeOnboardingTemplates: readonly TemplateOnboardingQualityResult["template"][] = ["tetris", "breakout", "snake", "space-shooter"];
+const nonRealtimeOnboardingTemplates: readonly NonRealtimeOnboardingTemplate[] = ["klotski", "puzzle", "block-place", "polyomino-fit", "region-logic", "mahjong-roguelite"];
 const variationRehearsalTemplates: readonly VariationRehearsalTemplate[] = ["signal-hunt", "tetris", "breakout", "snake", "space-shooter", "merge-2048", "klotski", "puzzle", "block-place", "polyomino-fit", "region-logic", "mahjong-roguelite"];
 const failureAssistanceTemplates: readonly FailureAssistanceTemplate[] = ["tetris", "breakout", "snake", "space-shooter", ...variationRehearsalTemplates];
+
+function deliveredRuleAuditSource(root: string, generatedFallback: string) {
+  const indexPath = join(root, "index.html");
+  const stylesPath = join(root, "styles.css");
+  const appPath = join(root, "app.js");
+  if (![indexPath, stylesPath, appPath].every(existsSync)) return generatedFallback;
+  return [
+    "/* 平台交付事实：index.html 先加载 app.js；app.js 中 forge-platform 段由平台在游戏代码前安装 safeStorage 与 __FORGE_SPRITES__，不是缺失依赖。以下是浏览器实际执行的交付文件。 */",
+    `<!-- index.html -->\n${readFileSync(indexPath, "utf8")}`,
+    `/* styles.css */\n${readFileSync(stylesPath, "utf8")}`,
+    `/* app.js */\n${readFileSync(appPath, "utf8")}`,
+  ].join("\n\n");
+}
 
 const defaultRoleAnimation = (): SpriteSheetAnimation => spriteSheetAnimationSchema.parse({
   frameWidth: 128,
@@ -88,8 +107,6 @@ export function revisionPlanInstructions(revisionPlan: RevisionPlan) {
 export function selectedRevisionRequest(revisionPlan: RevisionPlan) {
   return revisionPlan.operations.map((operation) => selectedOperationContent(operation.scope, operation.content)).join("；");
 }
-const realtimeOnboardingTemplates: readonly TemplateOnboardingQualityResult["template"][] = ["tetris", "breakout", "snake", "space-shooter"];
-const nonRealtimeOnboardingTemplates: readonly NonRealtimeOnboardingTemplate[] = ["klotski", "puzzle", "block-place", "polyomino-fit", "region-logic", "mahjong-roguelite"];
 import type { ResourceFamily } from "../shared/resource-library/index.js";
 
 const wait = (milliseconds: number) => new Promise((resolve) => setTimeout(resolve, milliseconds));
@@ -222,7 +239,15 @@ export class BuildOrchestrator {
       this.cancellations.set(buildId, cancellation);
       this.enqueuedBuildIds.delete(buildId);
       this.activeBuildCount += 1;
-      void runWithCancellation(cancellation.signal, () => this.run(buildId, cancellation.signal)).finally(() => {
+      void runWithCancellation(cancellation.signal, () => runWithImageRepairProgress(async progress => {
+        try {
+          await this.repository.reportStepProgress(buildId, 2, `正在自动修复“${progress.resource.label}”（${progress.attempt}/${progress.maxAttempts}）：${progress.message}`);
+        } catch {
+          throwIfCancellationRequested();
+          // Progress text is best effort. A transient write failure must not
+          // discard a paid image result or consume another generation attempt.
+        }
+      }, () => this.run(buildId, cancellation.signal))).finally(() => {
         this.activeBuildCount -= 1;
         this.cancellations.delete(buildId);
         this.drainQueue();
@@ -246,7 +271,7 @@ export class BuildOrchestrator {
     let qualityChecks: QualityCheck[] = [];
     // 图片先于代码生成；结果留给代码步骤写入溯源并在模板资源之后回写。
     let artResult: {
-      cover: Buffer;
+      cover: Buffer | null;
       dynamicArt: DynamicArtEntry[];
       coverImage?: ImageDeliveryMetadata;
       reusedArt: ReturnType<typeof readReusableGeneratedArt>;
@@ -315,7 +340,13 @@ export class BuildOrchestrator {
           mkdirSync(provenanceRoot, { recursive: true });
           writeFileSync(join(provenanceRoot, "RESOURCE_PLAN.json"), JSON.stringify(resourcePlan, null, 2), "utf8");
         }
-        if (!this.options.coverArt) throw new Error("AI 生图服务未配置，构建已中断。请先配置 OpenAI API Key。");
+        const declaredArtPlan = dynamicArtPlan(project);
+        const zeroImageRoute = project.spec.template === "generated" && declaredArtPlan.length === 0 && !plannedAssetTargets.length;
+        if (zeroImageRoute) {
+          artResult = { cover: null, dynamicArt: [], reusedArt: null, imageReceipts: [] };
+          return "页面公开：当前确认方案未声明必须交付的位图，本次不调用图像模型；代码可用 CSS、Canvas 或内联 SVG 绘制玩法与界面。";
+        }
+        if (!this.options.coverArt) throw new Error("确认方案声明了位图资源，但图像服务未配置。请先配置 OpenAI API Key。");
         const resolvedAssetTarget = plannedAssetTargets.length
           ? { kind: plannedAssetTargets.length === 1 ? "single" as const : "set" as const, files: plannedAssetTargets.map((target) => target.file), label: plannedAssetTargets.map((target) => target.label).join("、") }
           : project.spec.renovation?.revisionScope === "assets" ? resolveAssetRenovationTarget(project) : null;
@@ -349,7 +380,15 @@ export class BuildOrchestrator {
         }
         await this.repository.reportStepProgress(buildId, sequence, reusedArt ? "图像要求未变，正在复用同项目已核验的封面与背景，不重复生图" : "正在并行生成封面与局内美术，完成后核查来源与实际接入");
         const imageReceipts: Array<{ group: string; cacheHit: boolean; generatedAt: string; request: ImageRequestFingerprint }> = [];
-        const generateGroup = async (group: "cover" | "dynamic", plan: Array<Omit<DynamicArtEntry, "bytes">>, generate: () => Promise<DynamicArtEntry[]>, request: ImageRequestFingerprint = imageRequestFingerprint()) => {
+        const plannedOutputs = imageOutputConstraintsForProject(project);
+        const plannedPresentations = spritePresentationContracts(project);
+        const requestForPlan = (plan: Array<Omit<DynamicArtEntry, "bytes">>, sources: Readonly<Record<string, Buffer>> = {}, clipId?: import("../shared/generated-blueprint.js").SpriteAnimationClipId, outputs: Readonly<Record<string, ImageOutputConstraint>> = plannedOutputs) => {
+          const files = new Set(plan.map(entry => entry.file));
+          return imageRequestFingerprint(sources,
+            Object.fromEntries(Object.entries(outputs).filter(([file]) => files.has(file))), clipId,
+            Object.fromEntries(Object.entries(plannedPresentations).filter(([file]) => files.has(file))));
+        };
+        const generateGroup = async (group: "cover" | "dynamic", plan: Array<Omit<DynamicArtEntry, "bytes">>, generate: () => Promise<DynamicArtEntry[]>, request: ImageRequestFingerprint = requestForPlan(plan)) => {
           if (project.spec.template !== "generated") return generate();
           const receipt = await getOrGenerateArtCheckpoint(join(this.artifactRoot, "_image-checkpoints", project.id), {
             projectId: project.id, model: this.options.coverArt!.model ?? "gpt-image-2", runtimeTarget: project.spec.runtimeTarget,
@@ -363,6 +402,10 @@ export class BuildOrchestrator {
         const targetFiles = new Set(assetTarget?.files ?? []);
         const targetDynamicPlan = dynamicArtPlan(project).filter(entry => targetFiles.has(entry.file));
         const targetOutputs = assetTarget ? await sourceImageOutputConstraints(root, assetTarget.files) : {};
+        for (const [file, presentation] of Object.entries(plannedPresentations)) if (targetOutputs[file]) targetOutputs[file] = {
+          ...targetOutputs[file], fit: "contain", anchor: presentation.anchor, safeInsetRatio: presentation.safeInsetRatio,
+          minSourcePixels: presentation.minSourcePixels, requireAlpha: true,
+        };
         const targetReferences = assetTarget ? await sourceImageReferences(root, assetTarget.files) : {};
         let coverImage: ImageDeliveryMetadata | undefined;
         // Only identical, verified assets may be reused. Missing assets never become placeholders.
@@ -374,7 +417,7 @@ export class BuildOrchestrator {
                   ? generateGroup("cover", [coverPlan], async () => {
                       const bytes = await this.options.coverArt!.generate(project, targetOutputs["assets/cover.png"], targetReferences["assets/cover.png"]);
                       return bytes ? [{ ...coverPlan, bytes, image: generatedImageDelivery(bytes) ?? undefined }] : [];
-                    }, imageRequestFingerprint({ "assets/cover.png": targetReferences["assets/cover.png"]! }, { "assets/cover.png": targetOutputs["assets/cover.png"]! })).then(entries => { coverImage = entries[0]?.image; return entries[0]?.bytes ?? null; })
+                    }, requestForPlan([coverPlan], { "assets/cover.png": targetReferences["assets/cover.png"]! }, undefined, targetOutputs)).then(entries => { coverImage = entries[0]?.image; return entries[0]?.bytes ?? null; })
                   : Promise.resolve(existsSync(join(root, "assets", "cover.png")) ? readFileSync(join(root, "assets", "cover.png")) : null),
                 targetDynamicPlan.length
                   ? assetTarget.clipId
@@ -387,7 +430,7 @@ export class BuildOrchestrator {
                         if (!generated) throw new Error(`动画动作 ${clipId} 生成或逐帧校验失败，已停止替换并保留来源版本。`);
                         return [generated];
                       })()
-                    : generateGroup("dynamic", targetDynamicPlan, () => this.options.coverArt!.generateDynamicArt(project, assetTarget.files, targetOutputs, targetReferences), imageRequestFingerprint(targetReferences, targetOutputs, assetTarget.clipId)).then(entries => {
+                    : generateGroup("dynamic", targetDynamicPlan, () => this.options.coverArt!.generateDynamicArt(project, assetTarget.files, targetOutputs, targetReferences), requestForPlan(targetDynamicPlan, targetReferences, assetTarget.clipId, targetOutputs)).then(entries => {
                         const expected = targetDynamicPlan.map(({ file }) => file);
                         const actual = entries.map(({ file }) => file);
                         if (entries.length !== targetDynamicPlan.length || actual.some((file, index) => file !== expected[index])) {
@@ -399,10 +442,10 @@ export class BuildOrchestrator {
               ])
             : await Promise.all([
                 generateGroup("cover", [coverPlan], async () => {
-                  const bytes = await this.options.coverArt!.generate(project);
+                  const bytes = await this.options.coverArt!.generate(project, plannedOutputs["assets/cover.png"]);
                   return bytes ? [{ ...coverPlan, bytes, image: generatedImageDelivery(bytes) ?? undefined }] : [];
                 }).then(entries => { coverImage = entries[0]?.image; return entries[0]?.bytes ?? null; }),
-                generateGroup("dynamic", dynamicArtPlan(project), () => this.options.coverArt!.generateDynamicArt(project)),
+                generateGroup("dynamic", dynamicArtPlan(project), () => this.options.coverArt!.generateDynamicArt(project, undefined, plannedOutputs)),
               ]);
         if (!cover) throw new Error("AI 封面生成失败，构建已中断；不会使用占位图替代。");
         const background = dynamicArt.find((entry) => entry.role === "局内背景" && entry.file === "assets/background.png");
@@ -435,7 +478,15 @@ export class BuildOrchestrator {
         if (deliveredLayout.length) project.spec.hardConstraints = [...project.spec.hardConstraints, `实际图片交付槽位:${deliveredLayout.join("；")}。代码必须按各槽位角色和 fit 等比显示，以运行时 naturalWidth/naturalHeight 为准。`];
         artResult = { cover, dynamicArt, ...(coverImage ? { coverImage } : {}), reusedArt, imageReceipts };
         const planningSummary = resourcePlan ? `生成前已检索 ${resourcePlan.decisions.length} 个资源需求：${resourcePlan.summary.needsReview} 个候选待复核，${resourcePlan.summary.needsGeneration} 个需生成或补状态。` : "旧项目没有资源规划记录。";
-        return `页面公开：${reusedArt ? "图像要求未变，已复用同项目核验过的位图，本次未再次生图；" : ""}封面、局内背景${plannedSprites.length ? `与 ${plannedSprites.length} 张局内主体位图（${plannedSprites.join("、")}）` : ""}均由 ${this.options.coverArt.model ?? 'gpt-image-2'} 在代码生成之前完成并落盘；${planningSummary}后续代码只能加载并绘制这些位图，不得程序化自绘主体。`;
+        const warningEntries = dynamicArt.filter(entry => entry.image?.warnings?.length);
+        const repairedEntries = [{ file: "assets/cover.png", role: "封面", image: coverImage }, ...dynamicArt].filter(entry => entry.image?.repairs?.length);
+        const repairSummary = repairedEntries.length
+          ? ` 系统已自动修复：${repairedEntries.map(entry => `${entry.role}（${entry.file}）${entry.image!.repairs!.map((repair: ImageRepairAction) => repair.code).join("、")}`).join("；")}；每项只重新生成对应资源，未重复生成已通过资源。`
+          : "";
+        const warningSummary = warningEntries.length
+          ? ` 美术提醒：${warningEntries.map(entry => `${entry.role}（${entry.file}）${entry.image!.warnings!.map((warning: SpriteSheetWarning) => `第 ${warning.frame} 帧${warning.sides.join("/")}侧贴近草稿边界`).join("、")}`).join("；")}；不影响图集运行合同，系统已记录供后续试玩验收。`
+          : "";
+        return `页面公开：${reusedArt ? "图像要求未变，已复用同项目核验过的位图，本次未再次生图；" : ""}封面、局内背景${plannedSprites.length ? `与 ${plannedSprites.length} 张局内主体位图（${plannedSprites.join("、")}）` : ""}均由 ${this.options.coverArt.model ?? 'gpt-image-2'} 在代码生成之前完成并落盘；${planningSummary}后续代码只能加载并绘制这些位图，不得程序化自绘主体。${repairSummary}${warningSummary}`;
       });
       sequence += 1;
       await this.step(buildId, sequence, async () => {
@@ -461,7 +512,7 @@ export class BuildOrchestrator {
               ? `；规则审计 ${experimental.audit.filter((verdict) => verdict.implemented).length}/${experimental.audit.length} 条经代码核对已实现${experimental.auditReusedFrom ? `（代码与规则未变，复用构建 ${experimental.auditReusedFrom} 的审核结果，本次未调用审核模型）` : ""}，逐条判定见 RULE_FIDELITY.json`
               : "；规则审计本次不可用，未逐条核对（如实记录）";
             const runtimeNote = project.spec.runtimeTarget === "web-3d" ? "基于本地 three.js 模块的 3D " : "";
-            return `页面公开：实验通道——已由 ${experimental.generation.model ?? '所选文本模型'} 按设计合同${modeNote}独有${runtimeNote}单文件代码（${experimental.generation.rounds} 轮生成，安全扫描通过，禁网络/禁外链/禁存储偷渡）；新手教学逐项接入真实玩法动作，教学期自动压力暂停${auditNote}。实现说明与哈希归档于 GENERATED_CODE.json。`;
+            return `页面公开：实验通道——已由 ${experimental.generation.model ?? '所选文本模型'} 按设计合同${modeNote}独有${runtimeNote}单文件代码（${experimental.generation.rounds} 轮生成，安全扫描通过，禁网络/禁外链/禁存储偷渡）；开始后直接进入完整玩法，不注入新手教学${auditNote}。实现说明与哈希归档于 GENERATED_CODE.json。`;
           }
           const sourceRuntimeBuildId = project.spec.renovation?.revisionScope === "visual-style"
             ? await this.reuseSourceRuntime(project, root)
@@ -480,7 +531,7 @@ export class BuildOrchestrator {
         })();
         // 模板资源可能与 AI 位图同名：先写代码产物，再回写 AI 位图，保证最终游戏用的是 AI 美术。
         mkdirSync(join(root, "assets"), { recursive: true });
-        writeFileSync(join(root, "assets", "cover.png"), art.cover);
+        if (art.cover) writeFileSync(join(root, "assets", "cover.png"), art.cover);
         for (const entry of art.dynamicArt) {
           const target = join(root, entry.file);
           mkdirSync(dirname(target), { recursive: true });
@@ -492,7 +543,7 @@ export class BuildOrchestrator {
         const curatedResources = appliedAssetTarget ? null : applyQualifiedProjectResources(root, project);
         const curatedTargets = new Set(curatedResources?.assets.map(({ target }) => target.replaceAll("\\", "/").toLowerCase()) ?? []);
         if (appliedAssetTarget) {
-          if (appliedAssetTarget.files.includes("assets/cover.png")) writeFileSync(join(root, "assets", "cover.png"), art.cover);
+          if (art.cover && appliedAssetTarget.files.includes("assets/cover.png")) writeFileSync(join(root, "assets", "cover.png"), art.cover);
           for (const entry of art.dynamicArt) {
             const target = join(root, entry.file);
             mkdirSync(dirname(target), { recursive: true });
@@ -505,7 +556,7 @@ export class BuildOrchestrator {
         mkdirSync(provenanceRoot, { recursive: true });
         if (art.imageReceipts.length) writeFileSync(join(provenanceRoot, "IMAGE_GENERATION_RECEIPTS.json"), JSON.stringify(art.imageReceipts, null, 2), "utf8");
         const entries = [
-          { file: "assets/cover.png", role: "封面", bytes: art.cover.length, prompt: coverPrompt(project), ...(art.coverImage ? { image: art.coverImage } : {}) },
+          ...(art.cover ? [{ file: "assets/cover.png", role: "封面", bytes: art.cover.length, prompt: coverPrompt(project), ...(art.coverImage ? { image: art.coverImage } : {}) }] : []),
           ...writtenDynamicArt.map((entry) => ({ file: entry.file, role: entry.role, bytes: entry.bytes.length, prompt: entry.prompt, ...(entry.image ? { image: entry.image } : {}) })),
         ];
         let assetRenovationProvenance: string | null = null;
@@ -532,6 +583,12 @@ export class BuildOrchestrator {
           generatedAt: art.imageReceipts.length ? art.imageReceipts.map(item => item.generatedAt).sort().at(-1) : new Date().toISOString(),
           entries,
         }, null, 2)), "utf8");
+        const artWarnings = entries.flatMap(entry => entry.image?.warnings?.map(warning => ({ file: entry.file, role: entry.role, warning })) ?? []);
+        if (artWarnings.length) {
+          const reviewPath = join(provenanceRoot, "ART_REVIEW.md");
+          const review = existsSync(reviewPath) ? readFileSync(reviewPath, "utf8").trimEnd() : "# 美术复核";
+          writeFileSync(reviewPath, `${review}\n\n## 需要试玩检查的资源\n\n${artWarnings.map(({ file, role, warning }) => `- ${role}（${file}）：${warning.message}`).join("\n")}\n\n这些提醒不阻断当前交付。若后续自动试玩发现边界确实影响观感，系统应只重新生成对应资源。\n`, "utf8");
+        }
         if (art.reusedArt) writeFileSync(join(provenanceRoot, "ART_REUSE.json"), JSON.stringify({ sourceBuildId: art.reusedArt.sourceBuildId, reusedAt: new Date().toISOString(), reason: "同项目模型、提示词、运行时和画幅一致；文件完整性复验通过；本次未调用生图模型" }, null, 2), "utf8");
         if (assetRenovationProvenance && assetSourceBuildId) writeFileSync(join(provenanceRoot, "ART_REUSE.json"), JSON.stringify({ sourceBuildId: assetSourceBuildId, reusedAt: new Date().toISOString(), reason: "部分资源替换仅生成目标槽位；其余图片及逐项溯源继承来源构建" }, null, 2), "utf8");
         if (curatedResources) writeQualifiedResourceProvenance(root, curatedResources);
@@ -545,15 +602,15 @@ export class BuildOrchestrator {
         const visualSource = ["index.html", "styles.css", "app.js"]
           .map((file) => readFileSync(join(root, file), "utf8"))
           .join("\n");
-        assertRasterAiArt(root, visualSource);
+        if (dynamicArtPlan(project).length > 0) assertRasterAiArt(root, visualSource);
         const v11Project = writeV11BuildMetadata(root, project, { directions, previousRoot: join(this.artifactRoot, project.version.id) });
         const curatedFamilies = curatedResources ? [...new Set(curatedResources.bindings.map(({ familyId }) => familyId))].join("、") : "";
         const curatedSummary = curatedResources ? `；${curatedResources.assets.length} 个运行时槽位使用 ${curatedFamilies} 精选资源，许可、哈希、需求与配方证据已归档` : "";
-        return `${codeSummary}${curatedSummary}；SVG 禁用门禁通过。${style.label}视觉系统已应用到页面编排、组件造型、字体层级、${style.detailLabel}、画布细节和反馈动效。1.1 工程清单已冻结（${v11Project.objects.length} 个对象、${v11Project.rules.length} 条规则）。`;
+        return `${codeSummary}${curatedSummary}；已按确认资源清单检查实际交付。${style.label}视觉系统已应用到页面编排、组件造型、字体层级、${style.detailLabel}、画布细节和反馈动效。1.1 工程清单已冻结（${v11Project.objects.length} 个对象、${v11Project.rules.length} 条规则）。`;
       });
       sequence += 1;
       await this.step(buildId, sequence, () => {
-        passedProbes = project.spec.template === "generated" ? inspectGeneratedArtifact(root, { expectedCampaign: project.spec.designProfile.generatedCampaign ?? null, expectedBlueprint: project.spec.designProfile.generatedBlueprint ?? null }) : inspectGameArtifact(root);
+        passedProbes = project.spec.template === "generated" ? inspectGeneratedArtifact(root, { requireAiArt: dynamicArtPlan(project).length > 0, expectedCampaign: project.spec.designProfile.generatedCampaign ?? null, expectedBlueprint: project.spec.designProfile.generatedBlueprint ?? null }) : inspectGameArtifact(root);
         qualityChecks = passedProbes.map((label, index) => ({
           id: `STATIC-${String(index + 1).padStart(2, "0")}`,
           label,
@@ -570,8 +627,8 @@ export class BuildOrchestrator {
         if (project.spec.template === "generated") {
           const generatedResult = await inspectGeneratedGameInBrowser(root, { expectedCampaign: project.spec.designProfile.generatedCampaign ?? null, expectedBlueprint: project.spec.designProfile.generatedBlueprint ?? null });
           qualityChecks.push(...generatedResult.checks);
-          if (project.spec.designContract) qualityChecks.push(writeDesignAcceptanceReport(root, project.spec.designContract, qualityChecks));
-          return `页面公开：真实浏览器已按运行时契约验证生成代码——教学安全等待、20 关平滑递进、第 9 关真实机制复演、连续失败显式帮助、完成状态恢复、重看和跳过均通过，同时验证 idle→开始→playing→won→重开→lost 完整状态环、3 档画幅布局与错误监听；保存 ${generatedResult.screenshotPaths.length} 张验收截图。实验性作品：通过自动验收，但玩法深度仍以真人试玩为准。`;
+          if (project.spec.designContract) qualityChecks.push(writeDesignAcceptanceReport(root, project.spec.designContract, qualityChecks, { tutorialRequired: false }));
+          return `页面公开：真实浏览器已按运行时契约验证生成代码——关卡递进、开始、胜负与重开、3 档画幅布局与错误监听均通过；保存 ${generatedResult.screenshotPaths.length} 张验收截图。实验性作品：通过自动验收，但玩法深度仍以真人试玩为准。`;
         }
         const browserResult = await inspectGameInBrowser(root);
         qualityChecks.push(...browserResult.checks);
@@ -737,6 +794,8 @@ export class BuildOrchestrator {
     let previous: PreviousGeneration | null = null;
     let reusable: GeneratedGame | null = null;
     let reusableSourceBuildId: string | null = null;
+    let localRepair = false;
+    const reusableCandidates: Array<{ generation: GeneratedGame; buildId: string }> = [];
     const reusableProjectIds = [...new Set([project.id, project.spec.renovation?.sourceProjectId].filter(Boolean))] as string[];
     const preferredBuildId = project.spec.renovation?.revisionPlan?.sourceVersionId;
     const recentCandidates = (await Promise.all(reusableProjectIds.map(projectId => this.repository.recentReusableBuilds(projectId, basename(root))))).flat();
@@ -745,20 +804,33 @@ export class BuildOrchestrator {
       const html = readGeneratedSource(join(this.artifactRoot, candidate.id));
       if (!html) continue;
       const priorBuild = await this.repository.buildById(candidate.id);
-      previous = { html, directions: [...directions, ...(priorBuild.error ? [`上一版验收问题：${priorBuild.error}`] : []), "保留已实现玩法；以本次确认方案与教学合同为准修正，不保留旧占位教学。"] };
+      previous ??= { html, directions: [...directions, ...(priorBuild.error ? [`上一版验收问题：${priorBuild.error}`] : []), "保留已实现玩法；以本次确认方案为准修正，并删除旧版教学覆盖层、教学进度与教学钩子。"] };
       if (directions.length === 0 && project.spec.designContract) {
         try {
           const previousContract = JSON.parse(readFileSync(join(this.artifactRoot, candidate.id, "_studio", "GAME_DESIGN_CONTRACT.json"), "utf8"));
           const metadata = JSON.parse(readFileSync(join(this.artifactRoot, candidate.id, "_studio", "GENERATED_CODE.json"), "utf8"));
-          if (JSON.stringify(previousContract) === JSON.stringify(project.spec.designContract)) {
-            reusable = { html, designNotes: `复用构建 ${candidate.id} 的代码并重新验收。${typeof metadata.designNotes === "string" ? metadata.designNotes : ""}`, rounds: Number.isInteger(metadata.rounds) ? metadata.rounds : 1, ...(typeof metadata.model === "string" ? { model: metadata.model } : {}) };
-            reusableSourceBuildId = candidate.id;
+          if (JSON.stringify(stripTutorialContract(previousContract)) === JSON.stringify(stripTutorialContract(project.spec.designContract))) {
+            reusableCandidates.push({
+              generation: { html, designNotes: `复用构建 ${candidate.id} 的代码并重新验收。${typeof metadata.designNotes === "string" ? metadata.designNotes : ""}`, rounds: Number.isInteger(metadata.rounds) ? metadata.rounds : 1, ...(typeof metadata.model === "string" ? { model: metadata.model } : {}) },
+              buildId: candidate.id,
+            });
           }
         } catch { /* Missing or obsolete metadata requires normal targeted generation. */ }
       }
-      await report("已恢复上一版完整游戏代码，将针对已发现问题修正，不从头制作");
-      break;
     }
+    const registeredRepair = directions.length === 0 && !project.spec.renovation
+      ? inspectLocalRepairCandidate(join(dirname(this.artifactRoot), "local-repair-candidates"), project)
+      : { status: "absent" as const };
+    if (registeredRepair.status === "invalid") throw new Error(`服务器本地修复候选登记无效，已停止且不会回退代码生成模型：${registeredRepair.reason}`);
+    if (registeredRepair.status === "ready") {
+      reusable = { html: registeredRepair.html, designNotes: `服务器登记的本地修复候选 ${registeredRepair.descriptor.registeredAt}；仍需完整验收。`, rounds: 0, model: "local-repair" };
+      localRepair = true;
+      await report("已读取与当前项目及合同哈希匹配的服务器本地修复候选；只验收，不调用代码生成模型");
+    } else {
+      const firstReusable = reusableCandidates.shift();
+      if (firstReusable) ({ generation: reusable, buildId: reusableSourceBuildId } = firstReusable);
+    }
+    if (previous) await report("已恢复上一版完整游戏代码，将针对已发现问题修正，不从头制作");
     if (!previous) {
       const html = readGeneratedSource(join(this.artifactRoot, project.version.id));
       if (html) previous = { html, directions };
@@ -784,7 +856,7 @@ export class BuildOrchestrator {
         await report(`第 ${round} 次制作：正在检查生成产物与运行契约`);
         inspectGeneratedArtifact(root, { requireAiArt: false, expectedCampaign: project.spec.designProfile.generatedCampaign ?? null, expectedBlueprint: project.spec.designProfile.generatedBlueprint ?? null });
         if (this.options.browserAudit !== false) {
-          await report(`第 ${round} 次制作：正在真实浏览器中检查操作、教学、关卡与结算`);
+          await report(`第 ${round} 次制作：正在真实浏览器中检查操作、关卡与结算`);
           await inspectGeneratedGameInBrowser(root, {
             expectedCampaign: project.spec.designProfile.generatedCampaign ?? null,
             expectedBlueprint: project.spec.designProfile.generatedBlueprint ?? null,
@@ -795,6 +867,18 @@ export class BuildOrchestrator {
         const reason = error instanceof Error ? error.message : String(error);
         recordAttempt(round, error instanceof ArtifactValidationFailure ? "artifact-rejected" : "infrastructure-error", [reason]);
         if (!(error instanceof ArtifactValidationFailure)) throw new Error(`验收服务未能完成检查，已停止自动付费修复：${reason}`);
+        if (localRepair) throw new Error(`服务器本地修复候选未通过现行产物或浏览器验收，已停止且未调用代码生成模型：${reason}`);
+        const nextReusable = reusableCandidates.shift();
+        if (nextReusable) {
+          const rejectedBuildId = reusableSourceBuildId;
+          generation = nextReusable.generation;
+          reusable = nextReusable.generation;
+          reusableSourceBuildId = nextReusable.buildId;
+          await report(`候选 ${rejectedBuildId ?? "上一版"} 未通过现行验收，改验同项目候选 ${nextReusable.buildId}，不调用代码生成模型`);
+          writeGeneratedArtifact(root, project, generation);
+          round -= 1;
+          continue;
+        }
         // 质量问题不是停下的理由：带着验收原因继续修，直到通过或达到本次制作的消耗上限。
         if (round >= maxRounds) throw new Error(`连续 ${round} 轮生成代码均未通过产物契约验收，已达本次制作的修正上限，停止以免无限消耗：${reason}`);
         await report(`第 ${round} 次验收发现问题，正在进行第 ${round + 1} 次针对性修复（最多 ${maxRounds} 次）`);
@@ -807,17 +891,19 @@ export class BuildOrchestrator {
       await report(`第 ${round} 次制作：正在逐条核对${ruleCount ? ` ${ruleCount} 条` : ""}方案规则是否在代码中实现（模型审核，通常需要 1–3 分钟）`);
       // 复用代码且规则清单未变时，同一份源码的已通过审核回执可以复用；审核模型只在代码或规则变化时付费调用。
       const rules = this.options.designContracts ? safeContractRules(project.spec.designProfile) : null;
+      const auditSource = deliveredRuleAuditSource(root, generation.html);
       const reusedAudit = reusable && round === 1 && reusableSourceBuildId && rules && generation.html === reusable.html
-        ? readReusableRuleAudit(join(this.artifactRoot, reusableSourceBuildId), { rules, sourceSha256: sha256(generation.html) })
+        ? readReusableRuleAudit(join(this.artifactRoot, reusableSourceBuildId), { rules, sourceSha256: sha256(auditSource) })
         : null;
       const reusedAuditFrom = reusedAudit ? reusableSourceBuildId : null;
       if (reusedAudit) await report(`代码与规则清单均与构建 ${reusedAuditFrom} 一致，复用其已通过的逐条规则审核，本次不调用审核模型`);
       const audit = reusedAudit ?? (this.options.designContracts
-        ? await this.options.designContracts.auditRuleFidelity(project.spec.designProfile, generation.html)
+        ? await this.options.designContracts.auditRuleFidelity(project.spec.designProfile, auditSource)
         : null);
       const missing = audit?.filter((verdict) => !verdict.implemented) ?? [];
       recordAttempt(round, reusedAudit ? "rule-audit-reused" : audit ? "rule-audit" : "rule-audit-unavailable", reusedAudit ? [`复用构建 ${reusedAuditFrom} 的规则审核`] : missing.map(verdict => `${verdict.rule}：${verdict.evidence}`));
       if (this.options.designContracts && (!audit || !audit.length)) throw new Error("规则审核未返回完整结果，已保留代码并停止后续生图及交付；不会因审核服务故障自动重新生成代码。");
+      if (localRepair && missing.length) throw new Error(`服务器本地修复候选规则审核仍有 ${missing.length} 项未落实，已停止且未调用代码生成模型：${missing.map(item => item.rule).join("；")}`);
       if (missing.length > 0 && round < maxRounds) {
         feedback = missing.map((verdict) => `规则审计判定未实现:${verdict.rule}——${verdict.evidence}`);
         await report(`规则审核发现 ${missing.length} 项待修复，正在进行第 ${round + 1} 次针对性修复（最多 ${maxRounds} 次）`);
@@ -827,8 +913,7 @@ export class BuildOrchestrator {
       }
       if (audit) {
         // 记录被审核源码的可复原哈希；后续同项目复用同一份代码时可据此复用通过的审核，不能复用未通过或不完整的审核。
-        const reconstructed = existsSync(root) ? readGeneratedSource(root) : null;
-        writeRuleFidelity(root, { verdicts: audit, ...(reconstructed ? { sourceSha256: sha256(reconstructed) } : {}), ...(reusedAuditFrom ? { reusedFromBuildId: reusedAuditFrom } : {}) });
+        writeRuleFidelity(root, { verdicts: audit, sourceSha256: sha256(auditSource), ...(reusedAuditFrom ? { reusedFromBuildId: reusedAuditFrom } : {}) });
       }
       if (missing.length) throw new Error(`${round} 轮修正后规则审核仍有 ${missing.length} 项未落实，已达本次制作的修正上限，停止后续生图及交付：${missing.map(item => item.rule).join("；")}`);
       return { generation, audit, iterated: previous !== null, auditReusedFrom: reusedAuditFrom };

@@ -1,34 +1,41 @@
 import { visualStyleOptions, type GameTemplate, type ProjectDetail, type RevisionAssetCandidate } from "../shared/contracts.js";
 import type { SpriteAnimationClipId, SpriteSheetAnimation } from "../shared/generated-blueprint.js";
 import { type OpenAISettings } from "./openai-settings.js";
-import { packAnimationSpriteSheet, replaceAnimationSpriteClip, splitSpriteSheetDraft, type SpriteFrameSourceMetadata } from "./sprite-sheet.js";
+import { packAnimationSpriteSheet, replaceAnimationSpriteClip, splitSpriteSheetDraft, SpriteSheetValidationError, type SpriteFrameSourceMetadata, type SpriteSheetWarning } from "./sprite-sheet.js";
 import { createHash } from "node:crypto";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join, relative } from "node:path";
 import sharp from "sharp";
 import { cancellationSignal, withTimeoutSignal } from "./cancellation.js";
 import { BuildFailure, safeFailure } from "./build-failure.js";
+import { reportImageRepair } from "./image-repair-progress.js";
 
 const DEFAULT_ENDPOINT = "https://api.openai.com/v1/images/generations";
 const DEFAULT_EDIT_ENDPOINT = "https://api.openai.com/v1/images/edits";
 const DEFAULT_TIMEOUT_MS = 90_000;
-const MAX_ATTEMPTS = 2;
+const MAX_PROVIDER_ATTEMPTS_PER_RESOURCE = 3;
 const PNG_SIGNATURE = Buffer.from([0x89, 0x50, 0x4e, 0x47]);
 const MAX_IMAGE_PIXELS = 20_000_000;
 const MIN_COVER_AXIS_RETENTION = 0.65;
+export const IMAGE_TRANSFORM_VERSION = "deterministic-layout-v2" as const;
 
 type ImageSize = "1024x1024" | "1536x1024" | "1024x1536";
 const IMAGE_QUALITY = "high" as const;
 const IMAGE_OUTPUT_FORMAT = "png" as const;
-export const IMAGE_PROMPT_VERSION = "game-assets-2026-09-11";
+export const IMAGE_PROMPT_VERSION = "game-assets-2026-09-11-auto-repair-1";
+
+interface ImageAttemptBudget { used: number; max: number }
+export interface ImageRepairAction { attempt: number; code: string; message: string }
 
 export interface ImageRequestFingerprint {
   promptVersion: typeof IMAGE_PROMPT_VERSION;
   quality: typeof IMAGE_QUALITY;
   outputFormat: typeof IMAGE_OUTPUT_FORMAT;
   sizeStrategy: "standard-aspect-v1";
+  transformVersion: typeof IMAGE_TRANSFORM_VERSION;
   sourceSha256: Record<string, string>;
   outputs: Readonly<Record<string, ImageOutputConstraint>>;
+  presentations: Readonly<Record<string, Pick<SpritePresentationContract, "fit" | "anchor" | "safeInsetRatio" | "minSourcePixels">>>;
   clipId?: SpriteAnimationClipId;
 }
 
@@ -36,25 +43,67 @@ export function imageRequestFingerprint(
   sources: Readonly<Record<string, Buffer>> = {},
   outputs: Readonly<Record<string, ImageOutputConstraint>> = {},
   clipId?: SpriteAnimationClipId,
+  presentations: Readonly<Record<string, SpritePresentationContract>> = {},
 ): ImageRequestFingerprint {
   return {
     promptVersion: IMAGE_PROMPT_VERSION,
     quality: IMAGE_QUALITY,
     outputFormat: IMAGE_OUTPUT_FORMAT,
     sizeStrategy: "standard-aspect-v1",
+    transformVersion: IMAGE_TRANSFORM_VERSION,
     sourceSha256: Object.fromEntries(Object.entries(sources).sort(([a], [b]) => a.localeCompare(b)).map(([file, bytes]) => [file, createHash("sha256").update(bytes).digest("hex")])),
     outputs: Object.fromEntries(Object.entries(outputs).sort(([a], [b]) => a.localeCompare(b))),
+    // region/logicalSize affect runtime placement only. Excluding them prevents a
+    // layout-only edit from spending another image request.
+    presentations: Object.fromEntries(Object.entries(presentations).sort(([a], [b]) => a.localeCompare(b)).map(([file, presentation]) => [file, {
+      fit: presentation.fit, anchor: presentation.anchor, safeInsetRatio: presentation.safeInsetRatio, minSourcePixels: presentation.minSourcePixels,
+    }])),
     ...(clipId ? { clipId } : {}),
   };
 }
 
 export type ImageFit = "cover" | "contain";
-export interface ImageOutputConstraint { width: number; height: number; fit: ImageFit }
+export interface SpritePresentationContract {
+  region: "playfield" | "hud" | "overlay";
+  fit: "contain";
+  logicalSize: { min: number; max: number };
+  anchor: { x: number; y: number };
+  safeInsetRatio: number;
+  minSourcePixels: number;
+}
+export interface ImageOutputConstraint {
+  width: number;
+  height: number;
+  fit: ImageFit;
+  /** Normalized focal point for cover, or alignment within the safe area for contain. */
+  anchor?: { x: number; y: number };
+  /** Transparent inset reserved on every side for contained subjects. */
+  safeInsetRatio?: number;
+  /** Minimum useful source pixels on either axis; transparent subjects use their alpha bounds. */
+  minSourcePixels?: number;
+  requireAlpha?: boolean;
+}
+export interface ImageTransformMetadata {
+  version: typeof IMAGE_TRANSFORM_VERSION;
+  sourceSha256: string;
+  anchor: { x: number; y: number };
+  safeInsetRatio: number;
+  minSourcePixels: number;
+  requireAlpha: boolean;
+  sourceContentBounds?: { left: number; top: number; width: number; height: number };
+  resized: { width: number; height: number };
+  placement: { left: number; top: number };
+  crop?: { left: number; top: number; width: number; height: number };
+}
 export interface ImageDeliveryMetadata {
   providerSource: { width: number; height: number; hasAlpha: boolean; hasTransparency: boolean };
   providerFrames?: SpriteFrameSourceMetadata[];
   delivered: { width: number; height: number; fit: ImageFit | "sprite-sheet" };
   spriteSheet?: SpriteSheetAnimation;
+  warnings?: SpriteSheetWarning[];
+  repairs?: ImageRepairAction[];
+  transform?: ImageTransformMetadata;
+  presentation?: SpritePresentationContract;
 }
 
 const outputByAspect: Record<ProjectDetail["spec"]["aspectRatio"], ImageOutputConstraint> = {
@@ -65,12 +114,32 @@ const outputByAspect: Record<ProjectDetail["spec"]["aspectRatio"], ImageOutputCo
 };
 const generatedMetadata = new WeakMap<Buffer, ImageDeliveryMetadata>();
 
-function checkedConstraint(value: ImageOutputConstraint): ImageOutputConstraint {
+function checkedConstraint(value: ImageOutputConstraint): Required<ImageOutputConstraint> {
   const { width, height, fit } = value;
   if (!Number.isInteger(width) || !Number.isInteger(height) || width < 1 || height < 1 || width > 4096 || height > 4096 || width * height > MAX_IMAGE_PIXELS) {
     throw new Error(`图片交付尺寸无效：${width}×${height}。`);
   }
-  return { width, height, fit };
+  if (fit !== "cover" && fit !== "contain") throw new Error(`图片交付 fit 无效：${String(fit)}。`);
+  const anchor = value.anchor ?? { x: 0.5, y: 0.5 };
+  const safeInsetRatio = value.safeInsetRatio ?? 0;
+  const minSourcePixels = value.minSourcePixels ?? 1;
+  const requireAlpha = value.requireAlpha ?? false;
+  if (![anchor.x, anchor.y].every(number => Number.isFinite(number) && number >= 0 && number <= 1)) throw new Error("图片锚点必须位于 0 到 1 之间。");
+  if (!Number.isFinite(safeInsetRatio) || safeInsetRatio < 0 || safeInsetRatio > 0.25) throw new Error("图片安全留白比例必须位于 0 到 0.25 之间。");
+  if (!Number.isInteger(minSourcePixels) || minSourcePixels < 1 || minSourcePixels > 4096) throw new Error("图片最低源像素必须是 1 到 4096 的整数。");
+  if (fit === "cover" && safeInsetRatio > 0) throw new Error("cover 会裁切画面，不能同时声明透明安全留白。");
+  return { width, height, fit, anchor, safeInsetRatio, minSourcePixels, requireAlpha };
+}
+
+async function alphaContentBounds(bytes: Buffer, source: Awaited<ReturnType<typeof readPngDimensions>>) {
+  if (!source.hasTransparency) return undefined;
+  const { data, info } = await sharp(bytes, { failOn: "error", limitInputPixels: MAX_IMAGE_PIXELS }).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
+  let left = info.width, top = info.height, right = -1, bottom = -1;
+  for (let y = 0; y < info.height; y += 1) for (let x = 0; x < info.width; x += 1) {
+    if (data[(y * info.width + x) * 4 + 3] === 0) continue;
+    left = Math.min(left, x); top = Math.min(top, y); right = Math.max(right, x); bottom = Math.max(bottom, y);
+  }
+  return right < left ? undefined : { left, top, width: right - left + 1, height: bottom - top + 1 };
 }
 
 export async function readPngDimensions(bytes: Buffer): Promise<{ width: number; height: number; hasAlpha: boolean; hasTransparency: boolean }> {
@@ -92,6 +161,15 @@ export function generatedImageDelivery(bytes: Buffer): ImageDeliveryMetadata | n
 export async function adaptGeneratedPng(bytes: Buffer, rawConstraint: ImageOutputConstraint): Promise<{ bytes: Buffer; metadata: ImageDeliveryMetadata }> {
   const constraint = checkedConstraint(rawConstraint);
   const providerSource = await readPngDimensions(bytes);
+  if (constraint.requireAlpha && !providerSource.hasTransparency) throw new Error("生图结果没有真实透明区域，不能满足透明主体交付合同。");
+  const sourceContentBounds = await alphaContentBounds(bytes, providerSource);
+  const usefulWidth = sourceContentBounds?.width ?? providerSource.width;
+  const usefulHeight = sourceContentBounds?.height ?? providerSource.height;
+  if (Math.min(usefulWidth, usefulHeight) < constraint.minSourcePixels) throw new Error(`生图主体有效源像素只有 ${usefulWidth}×${usefulHeight}，低于最低要求 ${constraint.minSourcePixels}px。`);
+  let resizedWidth: number;
+  let resizedHeight: number;
+  let placement = { left: 0, top: 0 };
+  let crop: ImageTransformMetadata["crop"];
   if (constraint.fit === "cover") {
     const scale = Math.max(constraint.width / providerSource.width, constraint.height / providerSource.height);
     if (scale > 1.0001) throw new Error(`生图结果只有 ${providerSource.width}×${providerSource.height}，不足以无损适配 ${constraint.width}×${constraint.height}。`);
@@ -101,19 +179,29 @@ export async function adaptGeneratedPng(bytes: Buffer, rawConstraint: ImageOutpu
       const retainedPercent = Math.round(Math.min(visibleWidthRatio, visibleHeightRatio) * 100);
       throw new Error(`生图结果比例 ${providerSource.width}:${providerSource.height} 与目标 ${constraint.width}:${constraint.height} 不符，等比裁切只能保留较短轴 ${retainedPercent}% 的画面（最低要求 ${MIN_COVER_AXIS_RETENTION * 100}%）；请按接近目标的画幅重新生成。`);
     }
+    resizedWidth = Math.max(constraint.width, Math.round(providerSource.width * scale));
+    resizedHeight = Math.max(constraint.height, Math.round(providerSource.height * scale));
+    const overflowX = resizedWidth - constraint.width;
+    const overflowY = resizedHeight - constraint.height;
+    crop = { left: Math.round(overflowX * constraint.anchor.x), top: Math.round(overflowY * constraint.anchor.y), width: constraint.width, height: constraint.height };
+  } else {
+    const insetX = Math.round(constraint.width * constraint.safeInsetRatio);
+    const insetY = Math.round(constraint.height * constraint.safeInsetRatio);
+    const availableWidth = constraint.width - insetX * 2;
+    const availableHeight = constraint.height - insetY * 2;
+    const scale = Math.min(1, availableWidth / providerSource.width, availableHeight / providerSource.height);
+    resizedWidth = Math.max(1, Math.round(providerSource.width * scale));
+    resizedHeight = Math.max(1, Math.round(providerSource.height * scale));
+    placement = {
+      left: insetX + Math.round((availableWidth - resizedWidth) * constraint.anchor.x),
+      top: insetY + Math.round((availableHeight - resizedHeight) * constraint.anchor.y),
+    };
   }
-  const pipeline = sharp(bytes, { failOn: "error", limitInputPixels: MAX_IMAGE_PIXELS })
-    .resize({
-      width: constraint.width,
-      height: constraint.height,
-      fit: constraint.fit,
-      position: "centre",
-      kernel: sharp.kernel.lanczos3,
-      withoutEnlargement: constraint.fit === "contain",
-      background: { r: 0, g: 0, b: 0, alpha: 0 },
-    })
-    .png({ compressionLevel: 9, adaptiveFiltering: true });
-  const deliveredBytes = await pipeline.toBuffer();
+  const resized = await sharp(bytes, { failOn: "error", limitInputPixels: MAX_IMAGE_PIXELS }).resize({ width: resizedWidth, height: resizedHeight, fit: "fill", kernel: sharp.kernel.lanczos3 }).png().toBuffer();
+  const pipeline = constraint.fit === "cover"
+    ? sharp(resized).extract(crop!)
+    : sharp({ create: { width: constraint.width, height: constraint.height, channels: 4, background: { r: 0, g: 0, b: 0, alpha: 0 } } }).composite([{ input: resized, ...placement }]);
+  const deliveredBytes = await pipeline.png({ compressionLevel: 9, adaptiveFiltering: true }).toBuffer();
   const delivered = await readPngDimensions(deliveredBytes);
   if (delivered.width !== constraint.width || delivered.height !== constraint.height) {
     throw new Error(`图片适配后尺寸为 ${delivered.width}×${delivered.height}，不符合目标 ${constraint.width}×${constraint.height}。`);
@@ -121,6 +209,18 @@ export async function adaptGeneratedPng(bytes: Buffer, rawConstraint: ImageOutpu
   const metadata: ImageDeliveryMetadata = {
     providerSource,
     delivered: { width: delivered.width, height: delivered.height, fit: constraint.fit },
+    transform: {
+      version: IMAGE_TRANSFORM_VERSION,
+      sourceSha256: createHash("sha256").update(bytes).digest("hex"),
+      anchor: constraint.anchor,
+      safeInsetRatio: constraint.safeInsetRatio,
+      minSourcePixels: constraint.minSourcePixels,
+      requireAlpha: constraint.requireAlpha,
+      ...(sourceContentBounds ? { sourceContentBounds } : {}),
+      resized: { width: resizedWidth, height: resizedHeight },
+      placement,
+      ...(crop ? { crop } : {}),
+    },
   };
   generatedMetadata.set(deliveredBytes, metadata);
   return { bytes: deliveredBytes, metadata };
@@ -131,12 +231,44 @@ function providerSizeFor(constraint: ImageOutputConstraint): ImageSize {
   return ratio > 1.2 ? "1536x1024" : ratio < 1 / 1.2 ? "1024x1536" : "1024x1024";
 }
 
+const spriteOutputRepairCodes = new Set([
+  "SPRITE_FRAME_FORMAT", "SPRITE_FRAME_SUBJECT", "SPRITE_FRAME_TRANSPARENCY", "SPRITE_SHEET_FORMAT",
+  "SPRITE_FRAME_RESOLUTION", "SPRITE_CLIP_AREA", "SPRITE_CLIP_ASPECT",
+]);
+
+function outputRepair(error: unknown): { code: string; feedback: string; message: string } | null {
+  if (error instanceof SpriteSheetValidationError) {
+    if (!spriteOutputRepairCodes.has(error.code)) return null;
+    const feedback = error.code === "SPRITE_FRAME_SUBJECT" ? "每个网格都必须包含一个清晰可见的完整角色帧，不能有空格。"
+      : error.code === "SPRITE_FRAME_TRANSPARENCY" || error.code === "SPRITE_SHEET_FORMAT" ? "输出必须是带真实透明背景的 PNG；不要绘制底色、棋盘格、格线或伪透明背景。"
+        : error.code === "SPRITE_CLIP_AREA" || error.code === "SPRITE_CLIP_ASPECT" ? "保持同一角色在各帧中的身体比例和共同尺度稳定，只通过姿势变化表达动作。"
+          : error.code === "SPRITE_FRAME_RESOLUTION" ? "每个网格中的角色帧必须有足够像素尺寸，完整占据网格主体区域并保留透明安全边。"
+            : "严格输出可解码的透明 PNG Sprite Sheet，并保持每个网格边界清楚、内容完整。";
+    return { code: error.code, feedback, message: `检测到动画草稿质量异常（${error.code}），系统已保留角色、画风、动作、网格和尺寸意图并重新生成该资源。` };
+  }
+  const message = error instanceof Error ? error.message : "";
+  if (/交付尺寸无效/.test(message)) return null;
+  if (/没有真实透明|透明区域|不足以无损适配|比例 .* 与目标 .* 不符|不是可解码的 PNG/.test(message)) {
+    const feedback = /透明/.test(message)
+      ? "输出必须是带真实 alpha 的透明 PNG；主体完整居中，四周保留透明安全边，不能绘制底色或棋盘格。"
+      : "保持原有主体、画风和构图意图，按要求画幅输出足够分辨率的完整 PNG，并为等比适配保留安全裁切区域。";
+    return { code: /透明/.test(message) ? "INVALID_ALPHA" : "INVALID_IMAGE_LAYOUT", feedback, message: "检测到图片透明度、分辨率或画幅不符合交付要求，系统已保留原有内容和画风意图并重新生成该资源。" };
+  }
+  return null;
+}
+
+function repairPrompt(original: string, repair: { code: string; feedback: string }, attempt: number): string {
+  return [original, `自动纠错（第 ${attempt} 次交付尝试）：上一结果未通过 ${repair.code} 检查。`, repair.feedback,
+    "必须保持：用户要求的角色身份、辨识特征、玩法用途、美术风格、目标画幅与尺寸意图；只纠正上述交付问题，不新增对象、文字、Logo 或水印。"].join("\n");
+}
+
 /** 单个可动态主题化的角色位图:只收方向无关、不承担成套结构的角色,避免与规则表意冲突。 */
 export interface RoleArtSpec {
   file: string;
   role: string;
   hint: string;
   animation?: SpriteSheetAnimation;
+  presentation?: SpritePresentationContract;
 }
 
 // Phase 1 的角色动态生图计划。成套块面(2048 数字块、俄罗斯方块、砖块三态)不在此列——
@@ -278,8 +410,25 @@ export function blueprintSpriteSet(project: ProjectDetail): SpriteSetSpec | null
   if (!blueprint) return null;
   return {
     anchor: `这是同一款游戏的一套局内主体位图之一，共 ${blueprint.sprites.length} 张：全部共用相同的笔触、描边语言、光照方向与配色体系，彼此并排出现时必须像同一位美术在同一天画的；每张只画本条描述的单一主体`,
-    entries: blueprint.sprites.map(({ file, role, hint, animation }) => ({ file, role, hint, ...(animation ? { animation } : {}) })),
+    entries: blueprint.sprites.map(({ file, role, hint, animation, presentation }) => ({ file, role, hint, presentation, ...(animation ? { animation } : {}) })),
   };
+}
+
+export function spritePresentationContracts(project: ProjectDetail): Record<string, SpritePresentationContract> {
+  return Object.fromEntries((blueprintSpriteSet(project)?.entries ?? []).filter(spec => spec.presentation).map(spec => [spec.file, spec.presentation!]));
+}
+
+export function imageOutputConstraintsForProject(project: ProjectDetail): Record<string, ImageOutputConstraint> {
+  const outputs: Record<string, ImageOutputConstraint> = {
+    "assets/cover.png": outputByAspect[project.spec.aspectRatio],
+    "assets/background.png": outputByAspect[project.spec.aspectRatio],
+  };
+  for (const spec of [...roleArtPlanFor(project.spec.template), ...(spriteSetPlanFor(project.spec.template)?.entries ?? []), ...(blueprintSpriteSet(project)?.entries ?? [])]) {
+    if (spec.animation) continue;
+    outputs[spec.file] = { width: 1024, height: 1024, fit: "contain", requireAlpha: true,
+      ...(spec.presentation ? { anchor: spec.presentation.anchor, safeInsetRatio: spec.presentation.safeInsetRatio, minSourcePixels: spec.presentation.minSourcePixels } : {}) };
+  }
+  return outputs;
 }
 
 function blueprintSpritePlan(project: ProjectDetail): Array<Omit<DynamicArtEntry, "bytes">> {
@@ -289,6 +438,9 @@ function blueprintSpritePlan(project: ProjectDetail): Array<Omit<DynamicArtEntry
 }
 
 export function dynamicArtPlan(project: ProjectDetail): Array<Omit<DynamicArtEntry, "bytes">> {
+  if (project.spec.template === "generated" && ["reference-replica", "original-demo"].includes(project.spec.designProfile.creationMode)) {
+    return blueprintSpritePlan(project);
+  }
   const set = spriteSetPlanFor(project.spec.template);
   return [
     { file: "assets/background.png", role: "局内背景", prompt: backgroundPrompt(project) },
@@ -469,14 +621,17 @@ export class CoverArtGenerator {
   /** 透明底角色位图;失败返回 null 保留模板角色。 */
   async generateRoleBitmap(project: ProjectDetail, spec: RoleArtSpec, setAnchor: string | null = null, output: ImageOutputConstraint = { width: 1024, height: 1024, fit: "contain" }, sourceImage?: Buffer): Promise<Buffer | null> {
     this.requireRenovationReference(project, sourceImage, spec.role);
-    return this.tryImage(`角色位图(${spec.role})`, {
+    const bytes = await this.tryImage(`角色位图(${spec.role})`, {
       prompt: roleBitmapPrompt(project, spec, setAnchor),
       size: providerSizeFor(output),
       transparent: true,
-      output: { ...output, fit: "contain" },
+      output: { ...output, fit: "contain", requireAlpha: true },
       resource: { file: spec.file, label: spec.role },
       ...(sourceImage ? { sourceImage } : {}),
     });
+    const metadata = bytes ? generatedImageDelivery(bytes) : null;
+    if (metadata && spec.presentation) metadata.presentation = spec.presentation;
+    return bytes;
   }
 
   /**
@@ -499,28 +654,39 @@ export class CoverArtGenerator {
     const columns = selectedClip ? Math.min(4, frameCount) : spec.animation.columns;
     const rows = selectedClip ? Math.ceil(frameCount / columns) : spec.animation.rows;
     const prompt = animationSheetPrompt(project, spec, options.clipId);
+    const budget: ImageAttemptBudget = { used: 0, max: MAX_PROVIDER_ATTEMPTS_PER_RESOURCE };
+    const repairs: ImageRepairAction[] = [];
     try {
-      const draft = await this.requestImage({
-        prompt,
-        size: providerSizeFor({ width: spec.animation.frameWidth * columns, height: spec.animation.frameHeight * rows, fit: "contain" }),
-        transparent: true,
-        ...(options.sourceSheet ? { sourceImage: options.sourceSheet } : {}),
-      }, apiKey);
-      const providerSource = await readPngDimensions(draft);
-      if (!providerSource.hasTransparency) throw new Error("Sprite Sheet 草稿没有真实透明区域。");
-      const frames = await splitSpriteSheetDraft(draft, { columns, rows, frameCount });
-      const packed = options.sourceSheet && options.clipId
-        ? await replaceAnimationSpriteClip(options.sourceSheet, spec.animation, options.clipId, frames)
-        : await packAnimationSpriteSheet(frames, spec.animation);
-      const delivered = await readPngDimensions(packed.bytes);
-      const image: ImageDeliveryMetadata = {
-        providerSource,
-        providerFrames: packed.providerFrames,
-        delivered: { width: delivered.width, height: delivered.height, fit: "sprite-sheet" },
-        spriteSheet: packed.animation,
-      };
-      generatedMetadata.set(packed.bytes, image);
-      return { file: spec.file, role: spec.role, bytes: packed.bytes, prompt, image };
+      let nextPrompt = prompt;
+      while (budget.used < budget.max) {
+        try {
+          const draft = await this.requestImage({ prompt: nextPrompt,
+            size: providerSizeFor({ width: spec.animation.frameWidth * columns, height: spec.animation.frameHeight * rows, fit: "contain" }),
+            transparent: true, ...(options.sourceSheet ? { sourceImage: options.sourceSheet } : {}) }, apiKey, budget);
+          const providerSource = await readPngDimensions(draft);
+          if (!providerSource.hasTransparency) throw new Error("Sprite Sheet 草稿没有真实透明区域。");
+          const frames = await splitSpriteSheetDraft(draft, { columns, rows, frameCount });
+          const packed = options.sourceSheet && options.clipId
+            ? await replaceAnimationSpriteClip(options.sourceSheet, spec.animation, options.clipId, frames, { minSourcePixels: spec.presentation?.minSourcePixels })
+            : await packAnimationSpriteSheet(frames, spec.animation, { minSourcePixels: spec.presentation?.minSourcePixels });
+          const delivered = await readPngDimensions(packed.bytes);
+          const image: ImageDeliveryMetadata = { providerSource, providerFrames: packed.providerFrames,
+            delivered: { width: delivered.width, height: delivered.height, fit: "sprite-sheet" }, spriteSheet: packed.animation,
+            ...(spec.presentation ? { presentation: spec.presentation } : {}),
+            ...(packed.warnings.length ? { warnings: packed.warnings } : {}), ...(repairs.length ? { repairs } : {}) };
+          generatedMetadata.set(packed.bytes, image);
+          return { file: spec.file, role: spec.role, bytes: packed.bytes, prompt, image };
+        } catch (error) {
+          if (cancellationSignal()?.aborted) throw error;
+          const repair = outputRepair(error);
+          if (!repair) throw error;
+          if (budget.used >= budget.max) throw Object.assign(error instanceof Error ? error : new Error("动画草稿未通过质量检查。"), { autoRepairExhausted: true });
+          repairs.push({ attempt: budget.used + 1, code: repair.code, message: repair.message });
+          await reportImageRepair({ resource: { file: spec.file, label: spec.role }, attempt: budget.used + 1, maxAttempts: budget.max, code: repair.code, message: repair.message });
+          nextPrompt = repairPrompt(prompt, repair, budget.used + 1);
+        }
+      }
+      throw new Error("动画资源自动修复请求预算已用尽。");
     } catch (error) {
       if (cancellationSignal()?.aborted) throw error;
       throw new BuildFailure(`角色动画“${spec.role}”未生成可用图集。`, [safeFailure("asset", error, {
@@ -555,6 +721,7 @@ export class CoverArtGenerator {
    */
   async generateDynamicArt(project: ProjectDetail, files?: readonly string[], outputs: Readonly<Record<string, ImageOutputConstraint>> = {}, sourceImages: Readonly<Record<string, Buffer>> = {}): Promise<DynamicArtEntry[]> {
     const completePlan = dynamicArtPlan(project);
+    if (completePlan.length === 0 && !files?.length) return [];
     const selectedFiles = files ? new Set(files) : null;
     if (selectedFiles) {
       const plannedFiles = new Set(completePlan.map(({ file }) => file));
@@ -573,11 +740,12 @@ export class CoverArtGenerator {
       throw this.missingImageConfiguration(planned.map(({ file, role }) => ({ file, label: role })), "image-generation");
     }
     const selected = (file: string) => !selectedFiles || selectedFiles.has(file);
+    const planned = new Set(completePlan.map(({ file }) => file));
     const jobs: Array<Promise<DynamicArtEntry | null>> = [
-      ...(selected("assets/background.png") ? [this.generateBackground(project, outputs["assets/background.png"], sourceImages["assets/background.png"]).then((bytes) => bytes
+      ...(planned.has("assets/background.png") && selected("assets/background.png") ? [this.generateBackground(project, outputs["assets/background.png"], sourceImages["assets/background.png"]).then((bytes) => bytes
         ? { file: "assets/background.png", role: "局内背景", bytes, prompt: backgroundPrompt(project), image: generatedImageDelivery(bytes) ?? undefined }
         : null)] : []),
-      ...roleArtPlanFor(project.spec.template).filter(({ file }) => selected(file)).map((spec) =>
+      ...roleArtPlanFor(project.spec.template).filter(({ file }) => planned.has(file) && selected(file)).map((spec) =>
         this.generateRoleBitmap(project, spec, null, outputs[spec.file], sourceImages[spec.file]).then((bytes) => bytes
           ? { file: spec.file, role: spec.role, bytes, prompt: roleBitmapPrompt(project, spec), image: generatedImageDelivery(bytes) ?? undefined }
           : null)),
@@ -597,7 +765,9 @@ export class CoverArtGenerator {
       blueprintSet
         ? Promise.allSettled(blueprintSet.entries.filter(({ file }) => selected(file)).map(async (spec) => {
             if (spec.animation) return this.generateAnimationSpriteSheet(project, spec as RoleArtSpec & { animation: SpriteSheetAnimation }, sourceImages[spec.file] ? { sourceSheet: sourceImages[spec.file] } : {});
-            const bytes = await this.generateRoleBitmap(project, spec, blueprintSet.anchor, outputs[spec.file], sourceImages[spec.file]);
+            const presentationOutput = spec.presentation ? { ...(outputs[spec.file] ?? { width: 1024, height: 1024, fit: "contain" as const }), fit: "contain" as const,
+              anchor: spec.presentation.anchor, safeInsetRatio: spec.presentation.safeInsetRatio, minSourcePixels: spec.presentation.minSourcePixels, requireAlpha: true } : outputs[spec.file];
+            const bytes = await this.generateRoleBitmap(project, spec, blueprintSet.anchor, presentationOutput, sourceImages[spec.file]);
             return bytes ? { file: spec.file, role: spec.role, bytes, prompt: roleBitmapPrompt(project, spec, blueprintSet.anchor), image: generatedImageDelivery(bytes) ?? undefined } : null;
           })).then(results => {
             if (cancellationSignal()?.aborted) throw cancellationSignal()!.reason;
@@ -627,6 +797,16 @@ export class CoverArtGenerator {
     ];
   }
 
+  /**
+   * 边玩边改（/player-first）单张素材：不依赖项目蓝图，只按提示词与交付约束生图。
+   * 与其它入口共用同一套提供方重试、透明校验与尺寸适配；没有密钥时抛 BuildFailure，不发起请求。
+   */
+  async generateAsset(label: string, request: { prompt: string; size?: ImageSize; transparent?: boolean; output: ImageOutputConstraint; resource: { file: string; label: string } }): Promise<Buffer> {
+    const bytes = await this.tryImage(label, { ...request, size: request.size ?? "1024x1024" });
+    if (!bytes) throw new BuildFailure(`${label}未生成可用图片。`, [safeFailure("asset", new Error("图像服务没有返回图片。"), { resource: request.resource, operation: "image-generation" })]);
+    return bytes;
+  }
+
   private requireRenovationReference(project: ProjectDetail, sourceImage: Buffer | undefined, label: string) {
     if (project.spec.renovation?.revisionScope === "assets" && !sourceImage) {
       throw new Error(`部分资源替换“${label}”缺少已校验的来源图片；已停止制作，不会退回无参考重画。`);
@@ -636,13 +816,28 @@ export class CoverArtGenerator {
   private async tryImage(label: string, request: { prompt: string; size: ImageSize; transparent?: boolean; output: ImageOutputConstraint; sourceImage?: Buffer; resource: { file: string; label: string } }): Promise<Buffer | null> {
     const apiKey = this.settings.getApiKey();
     if (!apiKey) throw this.missingImageConfiguration([request.resource], request.sourceImage ? "image-edit" : "image-generation");
+    const budget: ImageAttemptBudget = { used: 0, max: MAX_PROVIDER_ATTEMPTS_PER_RESOURCE };
+    const repairs: ImageRepairAction[] = [];
     try {
-      const providerBytes = await this.requestImage(request, apiKey);
-      const adapted = await adaptGeneratedPng(providerBytes, request.output);
-      if (request.transparent && !adapted.metadata.providerSource.hasTransparency) {
-        throw new Error("生图结果没有真实透明区域，不能作为透明底角色素材。请重新生成透明背景版本。");
+      let nextPrompt = request.prompt;
+      while (budget.used < budget.max) {
+        try {
+          const providerBytes = await this.requestImage({ ...request, prompt: nextPrompt }, apiKey, budget);
+          const adapted = await adaptGeneratedPng(providerBytes, request.output);
+          if (request.transparent && !adapted.metadata.providerSource.hasTransparency) throw new Error("生图结果没有真实透明区域，不能作为透明底角色素材。");
+          if (repairs.length) { adapted.metadata.repairs = repairs; generatedMetadata.set(adapted.bytes, adapted.metadata); }
+          return adapted.bytes;
+        } catch (error) {
+          if (cancellationSignal()?.aborted) throw error;
+          const repair = outputRepair(error);
+          if (!repair) throw error;
+          if (budget.used >= budget.max) throw Object.assign(error instanceof Error ? error : new Error("图片未通过质量检查。"), { autoRepairExhausted: true });
+          repairs.push({ attempt: budget.used + 1, code: repair.code, message: repair.message });
+          await reportImageRepair({ resource: request.resource, attempt: budget.used + 1, maxAttempts: budget.max, code: repair.code, message: repair.message });
+          nextPrompt = repairPrompt(request.prompt, repair, budget.used + 1);
+        }
       }
-      return adapted.bytes;
+      throw new Error("图片资源自动修复请求预算已用尽。");
     } catch (error) {
       if (cancellationSignal()?.aborted) throw error;
       throw new BuildFailure(`${label}未生成可用图片。`, [safeFailure("asset", error, { resource: request.resource, operation: request.sourceImage ? "image-edit" : "image-generation" })], error);
@@ -653,7 +848,7 @@ export class CoverArtGenerator {
     return new BuildFailure("图像服务未配置，未发起生成请求。", resources.map((resource) => safeFailure("asset", new Error("图像服务未配置。"), { resource, operation })));
   }
 
-  private async requestImage(request: { prompt: string; size: ImageSize; transparent?: boolean; sourceImage?: Buffer }, apiKey: string): Promise<Buffer> {
+  private async requestImage(request: { prompt: string; size: ImageSize; transparent?: boolean; sourceImage?: Buffer }, apiKey: string, budget: ImageAttemptBudget): Promise<Buffer> {
     if (request.sourceImage) {
       if (!this.editEndpoint) throw new Error("当前自定义图像服务没有配置兼容的 Image edits 地址，已停止参考编辑。");
       const source = await readPngDimensions(request.sourceImage);
@@ -661,7 +856,8 @@ export class CoverArtGenerator {
       if (request.transparent && !source.hasTransparency) throw new Error("透明主体的来源图片没有真实透明区域，已停止参考编辑。");
     }
     let lastError: unknown = null;
-    for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt += 1) {
+    while (budget.used < budget.max) {
+      const attempt = ++budget.used;
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), this.timeoutMs);
       try {
@@ -703,7 +899,7 @@ export class CoverArtGenerator {
             failureMeta: { attempt, httpStatus: response.status, requestId: response.headers.get("x-request-id") ?? response.headers.get("openai-request-id") ?? undefined },
           });
           const retryable = !quota && (response.status === 429 || response.status >= 500);
-          if (retryable && attempt < MAX_ATTEMPTS) {
+          if (retryable && budget.used < budget.max) {
             lastError = error;
             continue;
           }
@@ -714,10 +910,10 @@ export class CoverArtGenerator {
         if (cancellationSignal()?.aborted) throw error;
         if (error instanceof Error && error.name === "AbortError") {
           lastError = Object.assign(new Error(`生图接口在 ${this.timeoutMs}ms 内没有响应。`), { failureMeta: { attempt } });
-          if (attempt < MAX_ATTEMPTS) continue;
+          if (budget.used < budget.max) continue;
           throw lastError;
         }
-        if (attempt < MAX_ATTEMPTS && error instanceof TypeError) {
+        if (budget.used < budget.max && error instanceof TypeError) {
           lastError = error;
           continue;
         }

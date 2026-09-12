@@ -1,4 +1,4 @@
-export function generatedDesignHtml(onboardingSignal = "shot-fired") {
+export function generatedDesignHtml(_legacySignal = "shot-fired") {
   return `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>生成游戏设计验收样例</title><style>
 html,body{margin:0;min-height:100%;overflow-x:hidden;background:#101827;color:white}body{background-image:url("./assets/background.png");background-size:cover}button{min-width:88px;min-height:48px}#game-canvas{display:block;width:min(90vw,720px);height:auto;aspect-ratio:4/3;background:#17243a}
 </style></head><body><button id="start">开始</button><button id="restart">重新开始</button><canvas id="game-canvas" width="720" height="540"></canvas><script>
@@ -19,9 +19,9 @@ function rulesFor(level){
 }
 function applyLevel(level){currentRules=rulesFor(level);currentLevel=currentRules.level;shots=0;failureReason="";document.body.dataset.contentVariant=currentRules.contentVariant;}
 function setState(next){state=next;document.body.dataset.gameState=next;dispatchEvent(new CustomEvent("game:state-change",{detail:{state:next}}));}
-function fireShot(){shots+=currentRules.enemyPattern==="chain"?2:1;window.__FORGE_ONBOARDING__.signal("${onboardingSignal}");}
+function fireShot(){shots+=currentRules.enemyPattern==="chain"?2:1;}
 function restart(){applyLevel(currentLevel);setState("playing");}
-setInterval(()=>{if(state==="playing"&&!window.__FORGE_ONBOARDING__.isActive())pressureClock+=currentRules.speedMultiplier;},80);
+setInterval(()=>{if(state==="playing")pressureClock+=currentRules.speedMultiplier;},80);
 document.querySelector("#start").addEventListener("click",()=>{applyLevel(currentLevel);setState("playing");});
 document.querySelector("#restart").addEventListener("click",()=>setState("idle"));
 applyLevel(1);setState("idle");
@@ -30,7 +30,7 @@ if(new URLSearchParams(location.search).has("probe")){window.__GAME_DEBUG__={
   setLevel:(level)=>applyLevel(level),restart,
   forceWin:()=>setState("won"),
   forceLose:(cause="目标未完成")=>{failureReason=String(cause);setState("lost");},
-  performOnboardingStep:()=>fireShot()
+  fireShot
 };}
 safeStorage.setItem("generated-design-fixture","1");
 </script></body></html>`;

@@ -2,7 +2,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { existsSync, lstatSync, mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { spriteSheetAnimationSchema } from "../shared/generated-blueprint.js";
-import { readPngDimensions, type DynamicArtEntry, type ImageDeliveryMetadata, type ImageRequestFingerprint } from "./image-generator.js";
+import { IMAGE_TRANSFORM_VERSION, readPngDimensions, type DynamicArtEntry, type ImageDeliveryMetadata, type ImageRequestFingerprint } from "./image-generator.js";
 import { throwIfCancellationRequested } from "./cancellation.js";
 
 type Plan = Omit<DynamicArtEntry, "bytes">;
@@ -16,7 +16,26 @@ const isDelivery = (value: unknown, width: number, height: number): value is Ima
   const parsedSheet = image?.spriteSheet ? spriteSheetAnimationSchema.safeParse(image.spriteSheet) : null;
   const hasSheet = Boolean(image?.spriteSheet);
   const usesSheetFit = image?.delivered?.fit === "sprite-sheet";
-  return Boolean(image && Number.isInteger(image.providerSource?.width) && Number.isInteger(image.providerSource?.height)
+  const warningsValid = image?.warnings === undefined || (Array.isArray(image.warnings) && image.warnings.every(warning => warning.code === "SPRITE_FRAME_EDGE"
+    && Number.isInteger(warning.frame) && warning.frame > 0 && Number.isInteger(warning.recommendedMargin) && warning.recommendedMargin > 0
+    && Array.isArray(warning.sides) && warning.sides.length > 0 && warning.sides.every(side => ["left", "top", "right", "bottom"].includes(side))
+    && typeof warning.message === "string" && warning.message.length > 0));
+  const repairsValid = image?.repairs === undefined || (Array.isArray(image.repairs) && image.repairs.length <= 2 && image.repairs.every(repair =>
+    Number.isInteger(repair.attempt) && repair.attempt >= 2 && repair.attempt <= 3
+    && /^[A-Z0-9_]{1,60}$/.test(repair.code) && typeof repair.message === "string" && repair.message.length > 0 && repair.message.length <= 300));
+  const transformValid = image?.transform === undefined || Boolean(image.transform.version === IMAGE_TRANSFORM_VERSION
+    && /^[a-f0-9]{64}$/.test(image.transform.sourceSha256) && [image.transform.anchor.x, image.transform.anchor.y].every(value => Number.isFinite(value) && value >= 0 && value <= 1)
+    && Number.isFinite(image.transform.safeInsetRatio) && image.transform.safeInsetRatio >= 0 && image.transform.safeInsetRatio <= 0.25
+    && Number.isInteger(image.transform.minSourcePixels) && image.transform.minSourcePixels >= 1
+    && Number.isInteger(image.transform.resized.width) && image.transform.resized.width > 0 && Number.isInteger(image.transform.resized.height) && image.transform.resized.height > 0
+    && Number.isInteger(image.transform.placement.left) && Number.isInteger(image.transform.placement.top));
+  const presentationValid = image?.presentation === undefined || Boolean(image.presentation.fit === "contain"
+    && ["playfield", "hud", "overlay"].includes(image.presentation.region)
+    && image.presentation.logicalSize.min >= 0.02 && image.presentation.logicalSize.min <= image.presentation.logicalSize.max && image.presentation.logicalSize.max <= 0.8
+    && [image.presentation.anchor.x, image.presentation.anchor.y].every(value => Number.isFinite(value) && value >= 0 && value <= 1)
+    && image.presentation.safeInsetRatio >= 0 && image.presentation.safeInsetRatio <= 0.25
+    && Number.isInteger(image.presentation.minSourcePixels) && image.presentation.minSourcePixels >= 16 && image.presentation.minSourcePixels <= 2048);
+  return Boolean(image && warningsValid && repairsValid && transformValid && presentationValid && Number.isInteger(image.providerSource?.width) && Number.isInteger(image.providerSource?.height)
     && typeof image.providerSource?.hasAlpha === "boolean" && typeof image.providerSource?.hasTransparency === "boolean"
     && image.delivered?.width === width && image.delivered?.height === height && ["cover", "contain", "sprite-sheet"].includes(image.delivered?.fit)
     && hasSheet === usesSheetFit

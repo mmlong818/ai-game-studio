@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { projectInputSchema, type Build, type ProjectInput } from "../shared/contracts.js";
+import { explicitAspectProjectInputSchema, projectInputSchema, type Build, type ProjectInput } from "../shared/contracts.js";
 import type { StudioDatabase } from "./database.js";
 import { runWithCancellation } from "./cancellation.js";
 import { safeFailure } from "./build-failure.js";
@@ -20,7 +20,7 @@ export class ProductionJobs {
     const queued = (await this.db.query<{ id: string; input_json: string }>("SELECT id, input_json FROM production_jobs WHERE status = 'queued' ORDER BY id")).rows;
     for (const row of queued) {
       try {
-        const input = projectInputSchema.parse(JSON.parse(row.input_json));
+        const input = explicitAspectProjectInputSchema.parse(JSON.parse(row.input_json));
         if (input.requestId !== row.id) throw new Error("制作回执与方案编号不一致。");
         this.waiting.push({ id: row.id, input });
       } catch {
@@ -36,7 +36,7 @@ export class ProductionJobs {
     return { id: job.id, status: job.status, error: job.error, failureDetails: job.failure_details_json ? JSON.parse(job.failure_details_json) : null, events: events.map(event => ({ title: event.title, createdAt: event.created_at })) };
   }
   async submit(raw: ProjectInput): Promise<ProductionJob> {
-    const input = projectInputSchema.parse(raw);
+    const input = explicitAspectProjectInputSchema.parse(raw);
     const id = input.requestId ?? randomUUID();
     const payload = JSON.stringify({ ...input, requestId: id });
     const inserted = await this.db.query("INSERT INTO production_jobs (id, input_json, status) VALUES ($1, $2, 'queued') ON CONFLICT(id) DO NOTHING", [id, payload]);
@@ -74,6 +74,16 @@ export class ProductionJobs {
 
   async settle(id: string, status: "succeeded" | "failed") {
     await this.db.query("UPDATE production_jobs SET status = $2 WHERE id = $1 AND status = 'building'", [id, status]);
+  }
+  async deleteTerminal(id: string) {
+    const job = await this.get(id);
+    if (!job) return { deleted: false };
+    if (["queued", "creating", "building"].includes(job.status)) throw new Error("制作任务仍在运行，请先停止后再删除。");
+    await this.db.transaction(async database => {
+      await database.query("DELETE FROM production_job_events WHERE job_id = $1", [id]);
+      await database.query("DELETE FROM production_jobs WHERE id = $1", [id]);
+    });
+    return { deleted: true };
   }
   /**
    * 创建阶段失败（尚未生成项目）时，用同一份已确认方案开一张新回执重新制作，

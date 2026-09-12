@@ -10,7 +10,7 @@ test("正式发布要求最新审核由服务端验证凭据，输入不能自�
   try {
     const repo = new StudioRepository(db, "http://localhost:4312");
     const project = await repo.create({ idea: "花园翻牌小游戏，匹配花朵完成目标", template: "generated" });
-    const build = await repo.createBuild(project.id); await repo.completeBuild(build.id, undefined, quality);
+    const build = await repo.createBuild(project.id); await repo.markBuildRunning(build.id); await repo.completeBuild(build.id, undefined, quality);
     const input = { status: "passed", summary: "在手机和桌面完成实际画面检查。", reviewerId: "forged" };
     await repo.reviewVersionArt(project.id, build.id, input);
     await assert.rejects(repo.publish(project.id, build.id, true), /审核凭据/);
@@ -30,6 +30,7 @@ test("复核追加完整历史，绑定版本，失败结论阻止发布", async
     const repo = new StudioRepository(db, "http://localhost:4312");
     const project = await repo.create({ idea: "花园记忆翻牌小游戏，配对所有花朵即可完成关卡", template: "generated" });
     const build = await repo.createBuild(project.id);
+    await repo.markBuildRunning(build.id);
     await repo.completeBuild(build.id, undefined, quality);
     assert.deepEqual(await repo.listVersionArtReviews(project.id, build.id), []);
     await repo.reviewVersionArt(project.id, build.id, { status: "failed", summary: "手机画面结算按钮被文字遮挡。" });
@@ -51,6 +52,7 @@ test("审核状态更新失败时新增历史一并回滚", async () => {
     const repo = new StudioRepository(db, "http://localhost:4312");
     const project = await repo.create({ idea: "花园记忆翻牌小游戏，配对所有花朵即可完成关卡", template: "generated" });
     const build = await repo.createBuild(project.id);
+    await repo.markBuildRunning(build.id);
     await repo.completeBuild(build.id, undefined, quality);
     const failing: StudioDatabase = { ...db, transaction: action => db.transaction(tx => action(new Proxy(tx, {
       get(target, property) {

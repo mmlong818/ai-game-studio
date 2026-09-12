@@ -121,8 +121,6 @@ export function auditGameDesignContract(project: GameProjectV3, input: unknown):
 
   contract.mechanics.forEach((mechanic, index) => {
     mechanic.ruleIds.forEach((ruleId) => { if (!ruleIds.has(ruleId)) gaps.push({ code: "missing-rule", severity: "error", path: `mechanics.${index}.ruleIds`, message: `机制 ${mechanic.id} 引用了不存在的规则 ${ruleId}` }); });
-    const hasTeaching = contract.onboarding.some(({ teachesMechanicId }) => teachesMechanicId === mechanic.id);
-    if (mechanic.core && !hasTeaching && !mechanic.onboardingExemption) gaps.push({ code: "core-mechanic-not-taught", severity: "error", path: `mechanics.${index}`, message: `核心机制 ${mechanic.label} 没有新手教学或豁免理由` });
     if (mechanic.core && !mechanic.learningStages.includes("introduce")) gaps.push({ code: "missing-introduction", severity: "error", path: `mechanics.${index}.learningStages`, message: `核心机制 ${mechanic.label} 缺少 introduce 阶段` });
   });
   contract.onboarding.forEach((step, index) => {
@@ -145,7 +143,7 @@ export function auditGameDesignContract(project: GameProjectV3, input: unknown):
   if (new Set(failureThresholds).size !== failureThresholds.length || failureThresholds.some((value, index) => index > 0 && value <= failureThresholds[index - 1])) gaps.push({ code: "assistance-order", severity: "error", path: "assistance.steps", message: "失败辅助必须按连续失败次数严格递增" });
   if (contract.failurePolicy === "forbidden") {
     if (contract.assistance.steps.length) gaps.push({ code: "unexpected-failure-assistance", severity: "error", path: "assistance.steps", message: "无失败方案不能包含失败后触发的帮助" });
-  } else if (contract.assistance.steps[0]?.action !== "explain-cause") gaps.push({ code: "missing-failure-cause", severity: "error", path: "assistance.steps.0", message: "首次失败应先解释原因" });
+  }
 
   contract.acceptance.forEach((acceptance, index) => {
     acceptance.mechanicIds.forEach((value) => { if (!mechanicIds.has(value)) gaps.push({ code: "acceptance-missing-mechanic", severity: "error", path: `acceptance.${index}.mechanicIds`, message: `验收引用了不存在的机制 ${value}` }); });
@@ -153,7 +151,10 @@ export function auditGameDesignContract(project: GameProjectV3, input: unknown):
     acceptance.beatIds.forEach((value) => { if (!beatIds.has(value)) gaps.push({ code: "acceptance-missing-beat", severity: "error", path: `acceptance.${index}.beatIds`, message: `验收引用了不存在的内容阶段 ${value}` }); });
   });
   const acceptanceKinds = new Set(contract.acceptance.map(({ kind }) => kind));
-  const requiredKinds: GameDesignContractV1["acceptance"][number]["kind"][] = ["onboarding", contract.failurePolicy === "forbidden" ? "no-failure" : "assistance", ...(contract.content.mode === "endless" && contract.failurePolicy !== undefined ? ["endless-sampled" as const] : ["progression" as const, "content-variation" as const])];
+  const requiredKinds: GameDesignContractV1["acceptance"][number]["kind"][] = [
+    ...(contract.failurePolicy === "forbidden" ? ["no-failure" as const] : []),
+    ...(contract.content.mode === "endless" && contract.failurePolicy !== undefined ? ["endless-sampled" as const] : ["progression" as const, "content-variation" as const]),
+  ];
   requiredKinds.forEach((kind) => { if (!acceptanceKinds.has(kind)) gaps.push({ code: "missing-acceptance-kind", severity: "error", path: "acceptance", message: `缺少 ${kind} 设计验收` }); });
   return { contract, gaps, complete: !gaps.some(({ severity }) => severity === "error") };
 }

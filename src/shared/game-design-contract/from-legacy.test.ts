@@ -30,7 +30,8 @@ describe("普通项目完整设计合同编排", () => {
     const ids = contract.mechanics.map(({ id }) => id);
     expect(new Set(ids).size).toBe(ids.length);
     expect(ids.every(id => /[a-z]/.test(id))).toBe(true);
-    expect(contract.onboarding.map(({ teachesMechanicId }) => teachesMechanicId)).toEqual(ids);
+    // 生成游戏已取消新手教学；官方模板的教学合同见下方成熟模板与 3D 用例。
+    expect(contract.onboarding).toEqual([]);
   });
   it("把成熟模板编排为包含教学、递进、辅助和验收的可校验合同", () => {
     const spec = generateGameSpec({ idea: "滑动数字方块合并到目标数字。", template: "merge-2048", dimensions: "2d" });
@@ -89,6 +90,6 @@ describe("普通项目完整设计合同编排", () => {
     expect(contract.mechanics.map(({ id }) => id)).toEqual([mechanic.id]);
     expect(contract.mechanics[0].label).toBe(mechanic.label);
     expect(contract.mechanics.some(({ id }) => id.startsWith("core-mechanic-"))).toBe(false);
-    expect(contract.onboarding[0].teachesMechanicId).toBe(mechanic.id);
+    expect(contract.onboarding).toEqual([]);
   });
 });

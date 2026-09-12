@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { SpriteAnimationChoice, type SpriteAnimationPreference } from "./SpriteAnimationControl";
+import { AspectRatioChoice, type NewGameAspectRatio } from "./AspectRatioChoice";
 
 const ideas = [
   { name: "星光收集", text: "一只小龙在星空花园里自由移动，吃星星会变长，躲开巡逻障碍，操作简单，关卡难度逐步提升。" },
@@ -7,9 +8,10 @@ const ideas = [
   { name: "三分钟合成", text: "一个单手就能玩的水果合成小游戏，每局三到五分钟，有新手引导、连锁奖励和不限目标的无限玩法。" },
 ];
 
-export function CreationStart({ value, onChange, onContinue, onRemix, errors, spriteAnimation, onSpriteAnimationChange }: {
+export function CreationStart({ value, onChange, onContinue, onRemix, errors, spriteAnimation, onSpriteAnimationChange, aspectRatio, onAspectRatioChange }: {
   value: string; onChange: (value: string) => void; onContinue: (explicit?: boolean) => void; onRemix: () => void; errors: string[];
   spriteAnimation: SpriteAnimationPreference; onSpriteAnimationChange: (value: SpriteAnimationPreference) => void;
+  aspectRatio: NewGameAspectRatio | null; onAspectRatioChange: (value: NewGameAspectRatio) => void;
 }) {
   const [replacement, setReplacement] = useState<string | null>(null);
   const ready = value.trim().length >= 12;
@@ -24,9 +26,10 @@ export function CreationStart({ value, onChange, onContinue, onRemix, errors, sp
       <label id="creation-brief-label" htmlFor="creation-brief">你想做一个什么游戏？</label>
       <textarea id="creation-brief" value={value} onChange={event => update(event.target.value)} rows={5}
         aria-describedby="creation-brief-help" placeholder="比如：让一只小龙在花园里吃星星，越吃越长。轻松上手，也能一直玩下去。" />
+      <AspectRatioChoice value={aspectRatio} onChange={onAspectRatioChange} />
       <div className="creation-submit-row">
-        <p id="creation-brief-help" role="status">{ready ? "确认后会生成方案并使用文字模型额度；确认前不会生成图片或制作游戏。" : "写一句完整的话就好，不需要填写技术参数。确认查看方案时会使用文字模型额度。"}</p>
-        <button type="button" className="primary-action" disabled={!ready} onClick={() => onContinue(true)}>提交，生成方案 <span aria-hidden="true">→</span></button>
+        <p id="creation-brief-help" role="status">{ready && !aspectRatio ? "请选择画幅后提交。确认前不会生成方案或制作游戏。" : ready ? "确认后会生成方案并使用文字模型额度；确认前不会生成图片或制作游戏。" : "写一句完整的话，再选择游戏画幅。确认查看方案时会使用文字模型额度。"}</p>
+        <button type="button" className="primary-action" disabled={!ready || !aspectRatio} onClick={() => onContinue(true)}>提交，生成方案 <span aria-hidden="true">→</span></button>
       </div>
       <div className="creation-inspiration"><span>没想好？试试一个灵感</span>
         {ideas.map(idea => <button type="button" key={idea.name} onClick={() => useIdea(idea.text)}>{idea.name} ↗</button>)}

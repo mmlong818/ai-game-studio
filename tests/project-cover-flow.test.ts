@@ -15,6 +15,7 @@ test("封面随验收版本交付而非随发布交付，失败修改保留旧�
     const draft = await repo.create({ idea: "花园记忆翻牌，配对花朵完成关卡", template: "generated" });
     assert.equal(draft.coverUrl, null);
     const first = await repo.createBuild(draft.id);
+    await repo.markBuildRunning(first.id);
     assert.equal((await repo.get(draft.id))?.coverUrl, null);
     const delivered = await repo.completeBuild(first.id, undefined, quality);
     const firstCover = `http://localhost:4313/version/${first.id}/assets/cover.png`;
@@ -26,6 +27,7 @@ test("封面随验收版本交付而非随发布交付，失败修改保留旧�
     await repo.failBuild(failed.id, 0, "模拟修改失败");
     assert.equal((await repo.list())[0].coverUrl, firstCover);
     const next = await repo.createBuild(draft.id);
+    await repo.markBuildRunning(next.id);
     const revised = await repo.completeBuild(next.id, undefined, quality);
     assert.equal(revised.coverUrl, `http://localhost:4313/version/${next.id}/assets/cover.png`);
     assert.equal((await repo.getVersion(draft.id, first.id))?.coverUrl, firstCover);

@@ -9,9 +9,20 @@ type Dependencies = {
 
 export async function prepareRenovationInput(rawInput: ProjectInput, findProject: (id: string) => Promise<ProjectDetail | null>) {
   const input = projectInputSchema.parse(rawInput);
-  if (!input.sourceProjectId || (!input.revisionScope && !input.revisionPlan)) return input;
+  if (!input.sourceProjectId) return input;
+  const revision = Boolean(input.revisionScope || input.revisionPlan);
+  const referenceReplica = input.creationMode === "reference-replica";
+  if (!revision && !referenceReplica) return input;
   const source = await findProject(input.sourceProjectId);
   if (!source) throw new Error("找不到要改造的来源游戏，已停止制作；没有按新游戏继续生成。");
+  if (!revision) {
+    return projectInputSchema.parse({
+      ...input,
+      // The source repository is authoritative. A client-supplied profile must
+      // never manufacture "observed" reference facts for a source project.
+      confirmedDesignProfile: source.spec.designProfile,
+    });
+  }
   const revisionPlan = input.revisionPlan ? validateRevisionPlan(source, input.revisionPlan, input.revisionPlan.content) : null;
   const revisionScope = input.revisionScope
     ?? (revisionPlan!.operations.some((operation) => operation.scope === "gameplay")

@@ -4,6 +4,17 @@ import { createDesignProfile, type ProjectDetail } from "../shared/contracts";
 import { prepareRenovationInput } from "./creation-design";
 
 describe("prepareRenovationInput", () => {
+  it("hydrates the confirmed source contract for a first reference preview", async () => {
+    const sourceProjectId = randomUUID();
+    const baseline = createDesignProfile("generated", "standard");
+    baseline.generatedCampaign = { mode: "campaign", failurePolicy: "required", levelCount: 6, milestones: [1, 6], difficultyKeys: ["arrowCount"], rationale: "原作已确认六关。" };
+    const source = { id: sourceProjectId, dimensions: "2d", spec: { template: "generated", designProfile: baseline } } as ProjectDetail;
+    const forged = { ...baseline, winCondition: "客户端伪造的胜利规则" };
+    const prepared = await prepareRenovationInput({ idea: "忠实复刻来源游戏的玩法、关卡和操作", template: "generated", creationMode: "reference-replica", sourceProjectId, confirmedDesignProfile: forged }, async id => id === sourceProjectId ? source : null);
+    expect(prepared.confirmedDesignProfile).toEqual(baseline);
+    expect(prepared.confirmedDesignProfile).not.toEqual(forged);
+    expect(prepared.revisionScope).toBeUndefined();
+  });
   const sourceProjectId = randomUUID();
   const baseline = createDesignProfile("snake", "standard");
   const source = { id: sourceProjectId, dimensions: "2d", spec: { template: "snake", designProfile: baseline } } as ProjectDetail;

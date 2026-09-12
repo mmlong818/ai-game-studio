@@ -19,6 +19,7 @@ vi.mock("./web/api", async original => {
 import App from "./App";
 import { clearDesignPreviewCache } from "./domain/designPreviewCache";
 import type { ProjectSummary } from "./shared/contracts";
+import { StudioApiError } from "./web/failure";
 
 const publishedRemixGame = {
   id: "a84e32e5-921b-4fc1-879a-bc598549f10b",
@@ -48,6 +49,10 @@ async function chooseRemixOf(user: ReturnType<typeof userEvent.setup>, gameName:
   await user.click(screen.getByRole("button", { name: gameName }));
 }
 
+async function chooseNewGameAspect(user: ReturnType<typeof userEvent.setup>, ratio: "9:16" | "16:9" | "1:1" = "9:16") {
+  await user.click(screen.getByRole("radio", { name: new RegExp(ratio.replace(":", "\\:")) }));
+}
+
 describe("creation workbench", () => {
   beforeEach(() => {
     Object.defineProperty(Element.prototype, "scrollIntoView", { configurable: true, value: vi.fn() });
@@ -63,6 +68,7 @@ describe("creation workbench", () => {
     expect(screen.getByRole("button", { name: /改一个现有游戏/ })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /提交，生成方案/ })).toBeDisabled();
     expect(screen.getByRole("textbox")).toBeInTheDocument();
+    expect(screen.getAllByRole("radio", { name: /9:16|16:9|1:1/ }).every(radio => !(radio as HTMLInputElement).checked)).toBe(true);
     expect(screen.queryByRole("list", { name: "可以改造的游戏" })).not.toBeInTheDocument();
   });
 
@@ -101,6 +107,7 @@ describe("creation workbench", () => {
 
     expect(screen.getByRole("heading", { name: "你想做一个什么游戏？" })).toBeInTheDocument();
     expect(screen.getByLabelText("说说你想做的游戏")).toHaveValue("以「线上滑动合成」为灵感，我想改成多人联机开放世界");
+    await chooseNewGameAspect(user);
     await user.click(screen.getByRole("button", { name: /提交，生成方案/ }));
     expect(screen.getByRole("heading", { name: "新游戏机制方案" })).toBeInTheDocument();
     expect(screen.queryByText("滑动合成个性化方案")).not.toBeInTheDocument();
@@ -117,16 +124,57 @@ describe("creation workbench", () => {
       screen.getByRole("textbox", { name: "你想做一个什么游戏？" }),
       "控制一只小昆虫在树干上高速移动，收集露珠并躲开树脂，最后安全撤离",
     );
+    await chooseNewGameAspect(user, "16:9");
     await user.click(screen.getByRole("button", { name: /提交，生成方案/ }));
     expect(screen.getByRole("heading", { name: "新游戏机制方案" })).toBeInTheDocument();
     expect(await screen.findByText("方案草案 · 待制作验证", {}, { timeout: 3000 })).toBeInTheDocument();
+    const { generateDesignPreview } = await import("./web/api");
+    expect(vi.mocked(generateDesignPreview)).toHaveBeenCalledWith(expect.objectContaining({ aspectRatio: "16:9" }), expect.anything(), expect.anything(), expect.anything(), expect.anything());
     expect(screen.queryByText("通过")).not.toBeInTheDocument();
+  });
+
+  it("复制游戏 URL 先走参考取证请求，不先提交原创机制方案", async () => {
+    const user = userEvent.setup();
+    render(<App />);
+    const idea = "我想复制这个游戏 https://www.crazygames.com/game/piece-of-cake-merge-and-bake";
+    await user.type(screen.getByRole("textbox", { name: "你想做一个什么游戏？" }), idea);
+    await chooseNewGameAspect(user, "16:9");
+    const { generateDesignPreview } = await import("./web/api");
+    expect(vi.mocked(generateDesignPreview)).not.toHaveBeenCalled();
+    await user.click(screen.getByRole("button", { name: /提交，生成方案/ }));
+    expect(screen.getByRole("heading", { name: "参考游戏机制提炼" })).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "新游戏机制方案" })).not.toBeInTheDocument();
+    await waitFor(() => expect(vi.mocked(generateDesignPreview)).toHaveBeenCalledWith(
+      expect.objectContaining({ idea, creationMode: "reference-replica", aspectRatio: "16:9" }),
+      expect.anything(), expect.anything(), expect.anything(), expect.anything(),
+    ));
+  });
+
+  it("参考方案格式未完成时显示安全原因，返回后保留 URL 与画幅", async () => {
+    const user = userEvent.setup();
+    const { generateDesignPreview } = await import("./web/api");
+    vi.mocked(generateDesignPreview).mockRejectedValueOnce(new StudioApiError("参考方案格式未完成，尚不能开始制作。", [{
+      stage: "design", category: "invalid-response", code: "DESIGN_PROFILE_INCOMPLETE",
+      message: "参考方案格式未完成，尚不能开始制作。", nextStep: "请重新生成方案；当前输入和画幅会保留。", retryable: true,
+    }]));
+    render(<App />);
+    const idea = "我想复制这个游戏 https://www.crazygames.com/game/piece-of-cake-merge-and-bake";
+    await user.type(screen.getByRole("textbox", { name: "你想做一个什么游戏？" }), idea);
+    await chooseNewGameAspect(user, "16:9");
+    await user.click(screen.getByRole("button", { name: /提交，生成方案/ }));
+    expect(await screen.findByRole("alert", {}, { timeout: 3000 })).toHaveTextContent("参考方案格式未完成");
+    expect(screen.getByRole("button", { name: "确认方案，开始制作" })).toBeDisabled();
+    expect(screen.queryByText("方案草案 · 待制作验证")).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "返回修改" }));
+    expect(screen.getByRole("textbox", { name: "你想做一个什么游戏？" })).toHaveValue(idea);
+    expect(screen.getByRole("radio", { name: /16:9/ })).toBeChecked();
   });
 
   it("新游戏可选择静态资源，并在方案阶段透传动画偏好", async () => {
     const user = userEvent.setup();
     render(<App />);
     await user.click(screen.getByRole("radio", { name: /这次使用静态图片/ }));
+    await chooseNewGameAspect(user);
     expect(screen.queryByLabelText("Sprite Sheet 播放预览")).not.toBeInTheDocument();
     await user.type(screen.getByRole("textbox", { name: "你想做一个什么游戏？" }), "在雨林里驾驶小船收集萤火虫，避开漩涡后抵达营地");
     await user.click(screen.getByRole("button", { name: /提交，生成方案/ }));
@@ -146,6 +194,7 @@ describe("creation workbench", () => {
     expect(input).toHaveValue("保留我的想法");
     await user.click(screen.getByRole("button", { name: /午后拼图/ }));
     await user.click(screen.getByRole("button", { name: "替换描述" }));
+    await chooseNewGameAspect(user);
     await user.click(screen.getByRole("button", { name: /提交，生成方案/ }));
     expect(screen.getByRole("heading", { name: "新游戏机制方案" })).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "返回修改" }));
@@ -160,6 +209,7 @@ describe("creation workbench", () => {
     await user.type(input, "一个轻松的水果合成游戏，合成后获得积分，关卡逐步变难");
     fireEvent.compositionEnd(input);
     await user.click(screen.getByRole("radio", { name: /这次使用静态图片/ }));
+    await chooseNewGameAspect(user, "1:1");
     await new Promise(resolve => setTimeout(resolve, 1700));
     expect(screen.getByRole("textbox")).toHaveValue("一个轻松的水果合成游戏，合成后获得积分，关卡逐步变难");
     expect(screen.queryByRole("heading", { name: "新游戏机制方案" })).not.toBeInTheDocument();
@@ -238,6 +288,7 @@ describe("creation workbench", () => {
     const user = userEvent.setup();
     render(<App />);
     await user.type(screen.getByRole("textbox"), "一个轻松的水果合成游戏，合成后获得积分，关卡逐步变难");
+    await chooseNewGameAspect(user);
     await user.click(screen.getByRole("button", { name: /提交，生成方案/ }));
     await waitFor(() => expect(scroll).toHaveBeenCalledWith({ block: "start", behavior: "auto" }));
     expect(scroll.mock.contexts[0]).toBe(screen.getByRole("region", { name: "游戏方案" }));

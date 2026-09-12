@@ -15,7 +15,7 @@ test('所有游戏保留核心反馈与独立边界，3D 专项不强加到 2D',
 
 test('生成系统提示实际接入共享表现规则', () => {
   const source = readFileSync(new URL('../src/server/game-generator.ts', import.meta.url), 'utf8');
-  assert.match(source, /runtimeContract\(is3d,\s*project\.spec\.designProfile\.generatedCampaign,\s*project\.spec\.designProfile\.generatedBlueprint \?\? null\),/);
+  assert.match(source, /runtimeContract\(is3d,\s*project\.spec\.designProfile\.generatedCampaign,\s*project\.spec\.designProfile\.generatedBlueprint \?\? null,/);
   assert.match(source, /^\s+gamePresentationPolicy\(is3d\),/m);
 });
 

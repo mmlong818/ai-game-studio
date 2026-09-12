@@ -72,13 +72,17 @@ export function createGameDesignContractForLegacyProject(source: LegacyContractS
     ? ["match-combo", ...knowledge.plan.mechanicIds]
     : knowledge.plan.mechanicIds;
   const authoredGenerated = source.spec.template === "generated" && source.spec.designSource === "llm";
+  // 取消新手教学只针对玩家新建的生成游戏；官方模板游戏保留教学、分层失败帮助及其验收。
+  const tutorial = source.spec.template !== "generated";
   const campaign = source.spec.template === "generated" ? source.spec.designProfile.generatedCampaign : undefined;
   const noFailure = campaign?.failurePolicy === "forbidden";
   const endless = campaign?.mode === "endless";
   const catalogMechanics = [...new Set(authoredGenerated ? [] : plannedMechanicIds)]
     .map((id) => GAME_DESIGN_KNOWLEDGE_LIBRARY.mechanics.find((item) => item.id === id))
     .filter((item): item is (typeof GAME_DESIGN_KNOWLEDGE_LIBRARY.mechanics)[number] => Boolean(item));
-  const fallbackLabels = authoredGenerated ? source.spec.designProfile.onboarding : source.spec.mechanics.slice(0, 2);
+  const fallbackLabels = authoredGenerated && source.spec.designProfile.onboarding.length
+    ? source.spec.designProfile.onboarding
+    : source.spec.mechanics.slice(0, 2);
   // 中文标签经 stableId 归一后只剩数字或标点（如“收集3枚”→“3”），两条标签会撞成同一 ID；
   // 这类无辨识度或重复的 ID 一律改用位置回退 ID，避免设计合同因“ID 重复”整体失败。
   const usedMechanicIds = new Set<string>();
@@ -119,7 +123,7 @@ export function createGameDesignContractForLegacyProject(source: LegacyContractS
     playerVerb: mechanic.label,
     probeSignals: [`mechanic-${index + 1}-completed`],
   }))).map((mechanic) => [mechanic.id, mechanic]));
-  const onboarding = mechanics.filter(({ core }) => core).map((mechanic, index) => {
+  const onboarding = (tutorial ? mechanics.filter(({ core }) => core) : []).map((mechanic, index) => {
     const detail = mechanicDetails.get(mechanic.id)!;
     const requiredAction = source.spec.template === "klotski" && mechanic.id === "sliding-block"
       ? "拖动包裹到空位，给队长让路。"
@@ -150,7 +154,8 @@ export function createGameDesignContractForLegacyProject(source: LegacyContractS
       libraryVersion: "game-design-knowledge-v1",
       integrationStatus: knowledge.plan.status,
       patternIds: knowledge.plan.selectedPatternId ? [knowledge.plan.selectedPatternId] : [],
-      capabilityIds: knowledge.plan.capabilityIds.length ? knowledge.plan.capabilityIds : ["game-lifecycle", "unified-input", "onboarding", "difficulty-plan", "failure-assistance"],
+      capabilityIds: (knowledge.plan.capabilityIds.length ? knowledge.plan.capabilityIds : ["game-lifecycle", "unified-input", "onboarding", "difficulty-plan", "failure-assistance"])
+        .filter((id) => tutorial || (id !== "onboarding" && id !== "failure-assistance")),
       mechanicIds,
       researchTaskIds: knowledge.plan.status === "research-required" ? [`RESEARCH-${source.projectId}`] : [],
       evidenceUrls: knowledge.plan.evidenceUrls,
@@ -172,18 +177,20 @@ export function createGameDesignContractForLegacyProject(source: LegacyContractS
       { id: "BEAT-PRACTICE", label: "独立练习", pressure: "normal", introducesMechanicIds: [], practicesMechanicIds: mechanicIds, difficulty: practiceDifficulty, changeReason: short(source.spec.designProfile.difficultyCurve[0], "逐步加入决策压力"), expectedSeconds: Math.max(45, Math.round(totalSeconds * 0.35)) },
       { id: "BEAT-COMBINE", label: "组合掌握", pressure: "high", introducesMechanicIds: [], practicesMechanicIds: mechanicIds, difficulty: masteryDifficulty, changeReason: short(source.spec.designProfile.difficultyCurve.at(-1) ?? "组合已学机制形成后段挑战", "组合已学机制形成后段挑战"), expectedSeconds: Math.max(60, Math.round(totalSeconds * 0.5)) },
     ] },
-    assistance: { hiddenAdaptation: false, steps: noFailure ? [] : [
+    assistance: { hiddenAdaptation: false, steps: noFailure || !tutorial ? [] : [
       { afterFailures: 1, action: "explain-cause", message: short(`说明失败原因：${source.spec.designProfile.failCondition}`, "说明本次失败的直接原因"), explicitToPlayer: true },
       { afterFailures: 2, action: "highlight-rule", message: "突出与失败直接相关的规则和可改变动作。", explicitToPlayer: true },
       { afterFailures: 4, action: "directional-hint", message: "给出一个方向性建议，不替玩家自动完成。", explicitToPlayer: true },
     ] },
     acceptance: [
-      { id: "ACCEPT-ONBOARD", label: "新存档可真实完成全部核心动作教学", kind: "onboarding", mechanicIds, onboardingStepIds: onboarding.map(({ id }) => id), beatIds: ["BEAT-SAFE"] },
+      ...(tutorial ? [{ id: "ACCEPT-ONBOARD", label: "新存档可真实完成全部核心动作教学", kind: "onboarding" as const, mechanicIds, onboardingStepIds: onboarding.map(({ id }) => id), beatIds: ["BEAT-SAFE"] }] : []),
       ...(endless ? [{ id: "ACCEPT-ENDLESS", label: "无限模式重开正常且抽样期间没有通关终点（不证明长期内容供给）", kind: "endless-sampled", mechanicIds, onboardingStepIds: [], beatIds: [] }] : [
         { id: "ACCEPT-PROGRESSION", label: "难度从安全理解逐步进入组合挑战", kind: "progression", mechanicIds, onboardingStepIds: [], beatIds: ["BEAT-SAFE", "BEAT-PRACTICE", "BEAT-COMBINE"] },
         { id: "ACCEPT-VARIATION", label: "后续阶段改变决策结构而非只提高数值", kind: "content-variation", mechanicIds, onboardingStepIds: [], beatIds: ["BEAT-PRACTICE", "BEAT-COMBINE"] },
       ]),
-      { id: "ACCEPT-ASSISTANCE", label: noFailure ? "已测操作未进入失败状态（抽样检查）" : "失败后解释原因并逐级提供显式帮助", kind: noFailure ? "no-failure" : "assistance", mechanicIds: [], onboardingStepIds: [], beatIds: [] },
+      ...(tutorial
+        ? [{ id: "ACCEPT-ASSISTANCE", label: noFailure ? "已测操作未进入失败状态（抽样检查）" : "失败后解释原因并逐级提供显式帮助", kind: noFailure ? "no-failure" as const : "assistance" as const, mechanicIds: [], onboardingStepIds: [], beatIds: [] }]
+        : noFailure ? [{ id: "ACCEPT-NO-FAILURE", label: "已测操作未进入失败状态（抽样检查）", kind: "no-failure" as const, mechanicIds: [], onboardingStepIds: [], beatIds: [] }] : []),
     ],
   });
   const migrated = migrateLegacyProjectToV11({ id: source.projectId, title: source.title, createdAt: source.createdAt, spec: source.spec });

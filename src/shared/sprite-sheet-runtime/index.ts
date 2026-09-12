@@ -47,6 +47,19 @@ export function createSpriteSheetPlayer(animation: SpriteSheetAnimation, initial
 
 /** Self-contained browser runtime injected before generated game code. */
 export const spriteSheetRuntimeScript = String.raw`(() => {
+  const registered = window.__FORGE_SPRITE_SPECS__ || {};
+  const resolveAnimation = (image, candidate) => {
+    const complete = candidate && ["frameWidth", "frameHeight", "columns", "rows", "frameCount"].every(key => Number.isFinite(candidate[key]) && candidate[key] > 0)
+      && candidate.anchor && Number.isFinite(candidate.anchor.x) && Number.isFinite(candidate.anchor.y)
+      && Array.isArray(candidate.clips) && candidate.clips.length && candidate.clips.every(clip => clip && typeof clip.id === "string" && Number.isFinite(clip.startFrame) && Number.isFinite(clip.frameCount) && Number.isFinite(clip.fps));
+    if (complete) return candidate;
+    const rawSource = String(image?.currentSrc || image?.src || "");
+    let sourcePath = rawSource;
+    try { sourcePath = decodeURIComponent(new URL(rawSource, location.href).pathname); } catch {}
+    const file = Object.keys(registered).find(path => sourcePath === "/" + path || sourcePath.endsWith("/" + path));
+    if (!file) throw new Error("Sprite Sheet 缺少平台登记的动画合同。");
+    return registered[file];
+  };
   const frameAt = (animation, clipId, elapsedMs) => {
     const clip = animation.clips.find(candidate => candidate.id === clipId);
     if (!clip) throw new Error("Sprite Sheet 没有动作 " + clipId + "。");
@@ -57,6 +70,7 @@ export const spriteSheetRuntimeScript = String.raw`(() => {
   };
   window.__FORGE_SPRITES__ = Object.freeze({
     create(image, animation, initialClip) {
+      animation = resolveAnimation(image, animation);
       let clipId = initialClip || animation.clips[0].id;
       let clipStartedAt = performance.now();
       return {
@@ -75,3 +89,9 @@ export const spriteSheetRuntimeScript = String.raw`(() => {
     }
   });
 })();`;
+
+/** Register validated blueprint metadata before the player runtime. Generated code may pass it explicitly or let the platform recover it by image URL. */
+export function spriteSheetRuntimeWithRegistry(entries: Array<{ file: string; animation: SpriteSheetAnimation }>): string {
+  const registry = Object.fromEntries(entries.map(({ file, animation }) => [file, animation]));
+  return `window.__FORGE_SPRITE_SPECS__ = Object.freeze(${JSON.stringify(registry)});\n${spriteSheetRuntimeScript}`;
+}

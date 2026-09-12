@@ -82,6 +82,13 @@ const postgresSchema = `
 
   ALTER TABLE version_art_reviews ADD COLUMN IF NOT EXISTS reviewer_id TEXT;
 
+  CREATE TABLE IF NOT EXISTS version_demo_reviews (
+    project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    version_id TEXT PRIMARY KEY REFERENCES versions(id) ON DELETE CASCADE,
+    status TEXT NOT NULL CHECK (status IN ('approved')),
+    reviewed_at TIMESTAMPTZ NOT NULL
+  );
+
   CREATE TABLE IF NOT EXISTS publications (
     id TEXT PRIMARY KEY,
     project_id TEXT NOT NULL UNIQUE REFERENCES projects(id) ON DELETE CASCADE,
@@ -325,6 +332,11 @@ const sqliteSchema = `
     status TEXT NOT NULL CHECK (status IN ('passed', 'failed')),
     summary TEXT NOT NULL, reviewed_at TEXT NOT NULL, reviewer_id TEXT,
     UNIQUE(version_id, sequence)
+  );
+  CREATE TABLE version_demo_reviews (
+    project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    version_id TEXT PRIMARY KEY REFERENCES versions(id) ON DELETE CASCADE,
+    status TEXT NOT NULL CHECK (status IN ('approved')), reviewed_at TEXT NOT NULL
   );
   CREATE TABLE publications (
     id TEXT PRIMARY KEY, project_id TEXT NOT NULL UNIQUE REFERENCES projects(id) ON DELETE CASCADE,
