@@ -44,6 +44,22 @@ describe("普通项目完整设计合同编排", () => {
     expect(new Set(contract.acceptance.map(({ kind }) => kind))).toEqual(new Set(["onboarding", "progression", "assistance", "content-variation"]));
   });
 
+  it("单局 demo 方案的空递进、空难度曲线与单步核心循环不会让合同编排崩溃", () => {
+    // 2026-09-12 真实新建构建在"正在保存游戏项目"阶段以未分类错误失败：方案里 difficultyCurve 为空，short(undefined) 抛 TypeError。
+    const profile = gameDesignProfileSchema.parse({
+      ...createDesignProfile("generated", "standard"),
+      coreLoop: ["操控小螃蟹在潮池自由移动"], progression: [], difficultyCurve: [], gameFeel: [], accessibility: [], generatedCampaign: null,
+    });
+    const spec = generateGameSpec({ idea: "控制小螃蟹在潮池捡贝壳送回竹篮", template: "generated", aspectRatio: "9:16" }, null, profile);
+    const contract = createGameDesignContractForLegacyProject({ projectId: "project-tidepool", title: spec.title, idea: spec.vision, createdAt, spec });
+    expect(contract.loops.tactical.length).toBeGreaterThan(0);
+    expect(contract.content.beats.every(({ changeReason }) => changeReason.length > 0)).toBe(true);
+    expect(contract.onboarding).toEqual([]);
+    // 单局 demo 没有关卡递进：合同只有一个内容阶段，也不再承诺递进/变化验收（2026-09-13 真实复刻构建在 delivery 阶段因缺 content-variation 证据被拒）。
+    expect(contract.content.beats).toHaveLength(1);
+    expect(contract.acceptance.some(({ kind }) => kind === "progression" || kind === "content-variation")).toBe(false);
+  });
+
   it("库外实验玩法明确保留研究任务，而不伪装成已经匹配", () => {
     const idea = "玩家编织云团改变磁极，让漂浮岛屿产生新的路径。";
     const spec = generateGameSpec({ idea, template: "generated", dimensions: "2d" });

@@ -198,6 +198,19 @@ it("质量问题不交给用户重试：验收连续失败时带原因继续修�
   expect(report.mock.calls.map(call => call[0]).some((text: string) => text.includes("第 4 次针对性修复（最多 6 次）"))).toBe(true);
 });
 
+it("模型交出语法错误的代码按产物验收失败进入下一轮修复，不终止制作", async () => {
+  // 2026-09-13 真实复刻构建：第 3 次制作的 app.js 缺少右括号，写盘校验抛普通 Error 直接结束了整次制作。
+  vi.mocked(writeGeneratedArtifact)
+    .mockImplementationOnce(() => { throw new ArtifactValidationFailure("生成产物 app.js 语法校验失败：missing ) after argument list"); })
+    .mockImplementation(() => undefined as never);
+  const generate = vi.fn().mockResolvedValueOnce(first).mockResolvedValueOnce(repaired);
+  const orchestrator = new BuildOrchestrator({ recentReusableBuilds: async () => [] } as never, "missing-test-artifact-root", { browserAudit: false, codeGenerator: { generate } as never });
+  const result = await (orchestrator as any).generateExperimentalGame(project, scratchRoot, []);
+  expect(result.generation.html).toBe(repaired.html);
+  expect(generate).toHaveBeenCalledTimes(2);
+  expect(generate.mock.calls[1][1][0]).toContain("语法校验失败");
+});
+
 it("修正轮用尽仍未通过验收才停止，错误写明是上限而不是服务故障", async () => {
   vi.mocked(inspectGeneratedArtifact).mockImplementation(() => { throw new ArtifactValidationFailure("横向溢出"); });
   const generate = vi.fn().mockResolvedValue(first);

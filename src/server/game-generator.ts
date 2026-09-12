@@ -256,7 +256,8 @@ export class GameCodeGenerator {
    */
   async generate(project: ProjectDetail, feedback: string[] = [], previous: PreviousGeneration | null = null, report: (detail: string, excerpt?: string | null) => Promise<void> = async () => {}, budget = new GenerationBudget()): Promise<GeneratedGame> {
     throwIfCancellationRequested();
-    if (project.spec.template === "generated" && (isReferenceReplicationIdea(project.spec.vision) || project.spec.renovation) && !project.spec.designProfile.generatedCampaign) {
+    // generatedCampaign 的 null 是已确认的"单局 demo"合同（见 resolveGeneratedCampaign），只有 undefined 才会落到旧版二十关默认值。
+    if (project.spec.template === "generated" && (isReferenceReplicationIdea(project.spec.vision) || project.spec.renovation) && project.spec.designProfile.generatedCampaign === undefined) {
       throw new Error("参考复刻缺少已确认的关卡或局制合同，已停止制作，不能套用旧版二十关默认值。");
     }
     const apiKey = this.settings.getApiKey();
@@ -472,7 +473,8 @@ export function writeGeneratedArtifact(root: string, project: ProjectDetail, gen
       : appScript;
     void new Script(checkable, { filename: "app.js" });
   } catch (error) {
-    throw new Error(`生成产物 app.js 语法校验失败：${error instanceof Error ? error.message : String(error)}`);
+    // 模型交出的代码本身有语法错误属于质量问题：按产物验收失败进入下一轮针对性修复，而不是当作基础设施故障终止制作。
+    throw new ArtifactValidationFailure(`生成产物 app.js 语法校验失败：${error instanceof Error ? error.message : String(error)}`);
   }
   const deliveredStyles = styleBlocks.join("\n");
   writeFileSync(join(root, "styles.css"), deliveredStyles, "utf8");
@@ -542,7 +544,8 @@ export function inspectGeneratedArtifact(root: string, options: { requireAiArt?:
     .replace('<script src="_studio/runtime-inspector.js"></script>', "");
   const generatedScript = stripPlatformSegments(appScript);
   const generatedCode = `${markupForScan}\n${styles}\n${generatedScript}`;
-  const artFailures = inspectRasterAiArt(root, generatedCode);
+  // 生成游戏的位图只来自蓝图精灵；背景不在蓝图里，不能作为验收要求。
+  const artFailures = inspectRasterAiArt(root, generatedCode, { requireBackground: false });
   const aiFailures = artFailures.filter((failure) => !failure.includes("SVG"));
   const requiresPlannedBitmap = blueprintSpriteFiles(options.expectedBlueprint).length > 0;
   // 局内主体位图先于代码生成；代码必须真的引用它们，否则主体又会退回程序化自绘。

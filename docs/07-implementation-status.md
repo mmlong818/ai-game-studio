@@ -23,9 +23,10 @@
 
 ## 已执行自动证据
 
-- `npm run typecheck`：2026-09-12 通过（当前未提交工作树）。
-- `npm run test:platform`：2026-09-12 共 95 个测试文件、478 项测试通过。
-- `npm run test:legacy`：2026-09-12 共 394 项全部通过，含 13 款官方游戏的真实浏览器构建与教学验收。同日删除了仍按旧"生成游戏必须有教学"合同断言的三个生成侧浏览器用例文件（`generated-onboarding-browser`、`f6-generated-onboarding-browser`、`sprite-sheet-generated-browser`，共 12 项）；生成游戏的浏览器验收目前只剩 `generated-build-onboarding`、`minimal-creation-golden`、`three-design-build` 等用例覆盖，取消教学后的无教学交付尚无专门浏览器用例。2026-09-08 的"286 项全部通过"为历史记录。
+- `npm run typecheck`：2026-09-13 通过。
+- `npm run test:platform`：2026-09-13 共 95 个测试文件、480 项测试通过。
+- `npm run test:legacy`：2026-09-13 共 395 项全部通过，含 13 款官方游戏的真实浏览器构建与教学验收。
+- 真实构建（2026-09-13，本机 Claude CLI 文本 + OpenAI 图像）：官方游戏改造路径（数织矩阵 gameplay 改造，68 s，2 张图）与玩家新建路径（复刻数织矩阵单局 demo，55 s，零图）各交付一个版本；过程与边界见 docs/106。同日删除了仍按旧"生成游戏必须有教学"合同断言的三个生成侧浏览器用例文件（`generated-onboarding-browser`、`f6-generated-onboarding-browser`、`sprite-sheet-generated-browser`，共 12 项）；生成游戏的浏览器验收目前只剩 `generated-build-onboarding`、`minimal-creation-golden`、`three-design-build` 等用例覆盖，取消教学后的无教学交付尚无专门浏览器用例。2026-09-08 的"286 项全部通过"为历史记录。
 - `npm run build`：2026-09-12 `vite build` 通过（服务端 tsc 由 typecheck 覆盖）。
 - 三浏览器与实体手机结果属于具体发布批次证据；历史执行结果保留在对应阶段完成报告，不在本页写成永久通过状态。
 - 两类完整流程均已覆盖：现有 2048 改造与全新虫虫游戏开发。

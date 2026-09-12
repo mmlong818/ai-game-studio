@@ -153,7 +153,8 @@ export function auditGameDesignContract(project: GameProjectV3, input: unknown):
   const acceptanceKinds = new Set(contract.acceptance.map(({ kind }) => kind));
   const requiredKinds: GameDesignContractV1["acceptance"][number]["kind"][] = [
     ...(contract.failurePolicy === "forbidden" ? ["no-failure" as const] : []),
-    ...(contract.content.mode === "endless" && contract.failurePolicy !== undefined ? ["endless-sampled" as const] : ["progression" as const, "content-variation" as const]),
+    // 只有一个内容阶段的合同是单局 demo，没有递进与结构变化可验；多阶段合同才要求这两项。
+    ...(contract.content.mode === "endless" && contract.failurePolicy !== undefined ? ["endless-sampled" as const] : contract.content.beats.length > 1 ? ["progression" as const, "content-variation" as const] : []),
   ];
   requiredKinds.forEach((kind) => { if (!acceptanceKinds.has(kind)) gaps.push({ code: "missing-acceptance-kind", severity: "error", path: "acceptance", message: `缺少 ${kind} 设计验收` }); });
   return { contract, gaps, complete: !gaps.some(({ severity }) => severity === "error") };

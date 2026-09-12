@@ -627,7 +627,13 @@ export class DesignContractGenerator {
     } catch {
       throw new Error("模型返回的内容不是有效的 JSON。");
     }
-    const answer = llmDesignSchema.parse(raw);
+    const parsedAnswer = llmDesignSchema.safeParse(raw);
+    if (!parsedAnswer.success) {
+      // 只写服务端日志：方案格式不符时，运维需要看到模型实际返回了什么，但不把原文透给玩家界面。
+      console.warn(`设计合同模型输出未通过合同校验（${parsedAnswer.error.issues.slice(0, 6).map(issue => `${issue.path.join(".") || "root"}:${issue.code}`).join(",")}）；原文前 1500 字：${content.slice(0, 1500)}`);
+      throw parsedAnswer.error;
+    }
+    const answer = parsedAnswer.data;
     const clip = (value: string, max: number) => value.trim().slice(0, max);
     // 模型偶尔多给一两条（例如 7 条无障碍说明）；超出合同上限的条目直接截去，而不是让整个修改方案作废。
     const clipList = (values: string[], max: number, maxItems = 6) => values.map((item) => clip(item, max)).filter((item) => item.length > 0).slice(0, maxItems);
