@@ -522,3 +522,14 @@ test("流式进展片段：解码 JSON 转义并说明当前写到哪一部分",
 });
 
 
+
+test("参考复刻的单局 demo 合同（generatedCampaign 为 null）不会被误判为缺少关卡合同", async () => {
+  // 2026-09-13 真实复刻构建在 code 阶段失败：guard 把 null（已确认单局）当成 undefined（旧版二十关默认）。
+  const spec = generateGameSpec({ idea: "忠实复刻数织矩阵的滑动合并玩法", template: "generated", aspectRatio: "9:16", creationMode: "reference-replica" });
+  assert.equal(spec.designProfile.generatedCampaign, null);
+  const project = { id: "replica", title: "复刻", spec, version: { id: "v" } } as unknown as ProjectDetail;
+  const generator = new GameCodeGenerator(new OpenAISettings(null));
+  await assert.rejects(generator.generate(project), /需要配置 OpenAI 密钥/);
+  const legacy = { ...project, spec: { ...spec, designProfile: { ...spec.designProfile, generatedCampaign: undefined } } } as unknown as ProjectDetail;
+  await assert.rejects(generator.generate(legacy), /缺少已确认的关卡或局制合同/);
+});

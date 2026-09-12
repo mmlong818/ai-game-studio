@@ -41,13 +41,15 @@ function isInside(root: string, target: string) {
   return resolve(target).toLowerCase().startsWith(normalizedRoot);
 }
 
-export function inspectRasterAiArt(root: string, source = ""): string[] {
+export function inspectRasterAiArt(root: string, source = "", options: { requireBackground?: boolean } = {}): string[] {
+  // 官方模板与 3D 交付始终带 AI 背景；生成游戏的单局 demo 只在图片计划声明了背景时才要求它。
+  const requireBackground = options.requireBackground ?? true;
   const failures: string[] = [];
   const svgFiles = listFiles(root).filter((file) => extname(file).toLowerCase() === ".svg");
   if (svgFiles.length > 0 || /<svg\b|image\/svg\+xml|\.svg(?:[?#"')\s]|$)/i.test(source)) {
     failures.push("游戏产物不得包含或引用 SVG");
   }
-  if (!source.includes("./assets/background.png")) {
+  if (requireBackground && !source.includes("./assets/background.png")) {
     failures.push("游戏代码未实际加载 AI 局内背景 ./assets/background.png");
   }
 
@@ -80,7 +82,7 @@ export function inspectRasterAiArt(root: string, source = ""): string[] {
   if (!normalizedEntries.some((entry) => entry.role === "封面" && entry.normalizedFile === "assets/cover.png")) {
     failures.push("缺少 AI 生成的封面位图 assets/cover.png");
   }
-  if (!normalizedEntries.some((entry) => entry.role === "局内背景" && entry.normalizedFile === "assets/background.png")) {
+  if (requireBackground && !normalizedEntries.some((entry) => entry.role === "局内背景" && entry.normalizedFile === "assets/background.png")) {
     failures.push("缺少 AI 生成的局内背景位图 assets/background.png");
   }
 
@@ -105,7 +107,7 @@ export function inspectRasterAiArt(root: string, source = ""): string[] {
   return [...new Set(failures)];
 }
 
-export function assertRasterAiArt(root: string, source = "") {
-  const failures = inspectRasterAiArt(root, source);
+export function assertRasterAiArt(root: string, source = "", options: { requireBackground?: boolean } = {}) {
+  const failures = inspectRasterAiArt(root, source, options);
   if (failures.length > 0) throw new Error(`AI 位图美术门禁未通过:${failures.join(";")}`);
 }

@@ -199,6 +199,23 @@
 - **补漏（同日）**：`writeDesignDocuments` 回到 HEAD 后仍对任何带设计合同的项目写 `ASSISTANCE_PLAN.json`，生成游戏交付物里因此多出一份空的分层帮助计划；已按 `template !== "generated"` 关闭，并在 `tests/generated-build-onboarding.test.ts` 加入"生成交付物不含教学/帮助计划与教学运行时"的编排级断言（非浏览器）。`build-orchestrator-repair.test.ts` 改用临时目录，不再向仓库根写 `unused-root/`、`root/`。
 - **未闭环**：官方游戏改造（模板 + 用户修改意见）路径下，LLM 设计合同的 `onboarding` 文本现在沿用模板基线而非模型输出，运行时教学计划仍由机制推导；这一路径需要一次真实改造构建确认教学 coach 行为不变。生成游戏"无教学交付"仍缺浏览器级用例。
 
+### 2026-09-13 真实构建：玩家新建（生成游戏）路径首次在当前工作树跑通
+
+两条真实提交暴露了 2026-09-11 未提交改动里五个互相矛盾的合同，逐个修完后复刻数织矩阵的单局 demo 一次生成即交付。
+
+| 序 | 失败签名（真实构建） | 分类 | 修正 |
+| --- | --- | --- | --- |
+| 1 | 任务在"正在保存游戏项目"以未分类错误失败（潮池小螃蟹，`947db9b3…`） | 平台确定性缺陷 | `from-legacy.short()` 对空 `difficultyCurve/progression` 取首项得到 undefined 后 `.trim()` 崩溃；改为容错，回归用例 `from-legacy.test.ts` |
+| 2 | asset 阶段"AI 局内背景生成失败"（重试 `27150741…`，已付 5 张图：封面 + 4 精灵） | 合同冲突 | `dynamicArtPlan` 对生成 demo 只出蓝图精灵，但编排器与 `art-policy` 仍硬性要求 `assets/background.png`；改为计划含背景才要求（`requireBackground`） |
+| 3 | code 阶段"参考复刻缺少已确认的关卡或局制合同"（复刻数织矩阵，`3fa46558…`） | 合同冲突 | guard 把 `generatedCampaign === null`（已确认单局）与 `undefined`（旧版二十关默认）混为一谈；只对 undefined 抛错，回归用例 `tests/game-generator.test.ts` |
+| 4 | 第 3 次制作 `app.js 语法校验失败：missing )` 直接终止整次制作 | 流程规则缺失 | 语法错误是模型交付质量问题，改为 `ArtifactValidationFailure` 并把写盘校验放进修复循环，按原因进入下一轮；回归用例 `build-orchestrator-repair.test.ts` |
+| 5 | delivery 阶段"设计合同运行时验收未闭环：content-variation"（代码已过浏览器门禁与 6/6 规则审核） | 合同冲突 | 单局 demo 的合同仍承诺递进/变化两项验收；改为单阶段 `BEAT-SINGLE` + `ACCEPT-RULES`（绑定 `GEN-BROWSER-CONTRACT`），校验器只对多阶段合同要求这两项 |
+
+- **实现已改（当前未提交工作树）**：上表五处，另在 `design-contract.parseDesign` 加服务端日志——模型输出未过合同校验时写出前 1500 字原文（首次复刻方案返回了空的 target_player/player_fantasy/session_length，第二次正常；属模型随机性，日志用于下次抓现场）。
+- **自动测试过**：`typecheck` 通过；`test:platform`、`test:legacy` 结果见 [开发完成审计](07-implementation-status.md) 当次记录。
+- **真实成功验证（2026-09-13 02:36，玩家新建 · 参考复刻）**：以 `sourceProjectId=00adee1e…`（数织矩阵）、`creationMode: reference-replica`、`template: generated`、`9:16` 经 `POST /api/design-preview`（Claude CLI，4 s）→ `POST /api/production-jobs`。项目 `72147616-dc64-4a19-ae46-6279bf98e38a`，**55 s 一次生成即成功**，版本 `336ecf2d-6fcc-4942-b87b-f2825677f4a7`。零图片调用（方案无蓝图精灵，走程序绘制路线）；代码由 Claude CLI（回执标 `gpt-5.6-terra`）1 轮生成，规则审计 6/6，静态探针 14/14 含"无新手教学运行时、单局 demo 协议"，浏览器 `GEN-BROWSER-CONTRACT/LAYOUT/VISUAL/ERRORS`、`PROGRESSION-RUNTIME` 全过，`DESIGN-ACCEPTANCE` 以 `ACCEPT-RULES` 闭合。交付物无 `ONBOARDING_PLAN.json`/`ASSISTANCE_PLAN.json`，无 coach 样式与教学钩子；截图为 4×4 糖果色棋盘、目标 256、回溯/方向键、开始卡"开始编织"。前一项目 `3fa46558…` 在修 5 之前的第 3 轮也已过浏览器门禁与规则审核，证明失败集中在合同层而非模型能力。
+- **边界**：这是"复刻官方 2048 规则"的单局 demo，不含 AI 位图（质量标准第 1 条"图先行"在无蓝图精灵的复刻路线上不适用，但也意味着该作品没有任何 AI 美术）；未做真人试玩。潮池小螃蟹项目（`27150741…`，含 1 张动画精灵图集）在修 2 之后尚未重跑，其 5 张已付图片留在 `_image-checkpoints` 可复用。
+
 ### 2026-09-12：结算层重开控件状态错配
 
 - **证据**：正式构建 `8935080e…` 第 2/5 轮报告固定点击 `#restart`，但该按钮属于局内控制栏；`won` 结算 overlay 正常覆盖它。结算层已有可见 `#again` 与 `#restartEnd`，均调用真实 `restart(level)`。因此“后方 #restart 被遮挡”是验收选错状态控件，不是游戏缺少结算重开。

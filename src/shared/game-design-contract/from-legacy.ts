@@ -19,8 +19,9 @@ const zeroDifficulty: DifficultyVector = { cognition: 0, operation: 0, space: 0,
 const practiceDifficulty: DifficultyVector = { cognition: 1, operation: 1, space: 1, resources: 1, combination: 0, punishment: 0 };
 const masteryDifficulty: DifficultyVector = { cognition: 2, operation: 2, space: 2, resources: 2, combination: 1, punishment: 1 };
 
-function short(value: string, fallback: string) {
-  return (value.trim() || fallback).slice(0, 240);
+function short(value: string | undefined, fallback: string) {
+  // 生成游戏的单局 demo 方案允许 progression / difficultyCurve / gameFeel 为空数组，取首尾项可能是 undefined。
+  return ((value ?? "").trim() || fallback).slice(0, 240);
 }
 
 function stableId(value: string, fallback: string) {
@@ -77,6 +78,8 @@ export function createGameDesignContractForLegacyProject(source: LegacyContractS
   const campaign = source.spec.template === "generated" ? source.spec.designProfile.generatedCampaign : undefined;
   const noFailure = campaign?.failurePolicy === "forbidden";
   const endless = campaign?.mode === "endless";
+  // generatedCampaign 为 null 是已确认的"单局 demo"：没有关卡递进，也就没有递进/变化两项验收（见 resolveGeneratedCampaign）。
+  const singleDemo = source.spec.template === "generated" && campaign === null;
   const catalogMechanics = [...new Set(authoredGenerated ? [] : plannedMechanicIds)]
     .map((id) => GAME_DESIGN_KNOWLEDGE_LIBRARY.mechanics.find((item) => item.id === id))
     .filter((item): item is (typeof GAME_DESIGN_KNOWLEDGE_LIBRARY.mechanics)[number] => Boolean(item));
@@ -146,6 +149,7 @@ export function createGameDesignContractForLegacyProject(source: LegacyContractS
   });
   const mechanicIds = mechanics.map(({ id }) => id);
   const totalSeconds = Math.max(90, Math.round(sessionMinutes(source.spec.designProfile.sessionLength) * 60));
+  const singleBeat = { id: "BEAT-SINGLE", label: "单局完整挑战", pressure: "normal" as const, introducesMechanicIds: mechanicIds, practicesMechanicIds: mechanicIds, difficulty: practiceDifficulty, changeReason: "单局 demo；一局内完成全部核心动作，没有关卡递进", expectedSeconds: totalSeconds };
   const contract = gameDesignContractV1Schema.parse({
     schemaVersion: "game-design-contract-v1",
     id: `DESIGN-${source.projectId}`,
@@ -172,7 +176,7 @@ export function createGameDesignContractForLegacyProject(source: LegacyContractS
     mechanics,
     onboarding,
     ...(campaign ? { failurePolicy: campaign.failurePolicy } : {}),
-    content: { mode: endless ? "endless" : "finite-campaign", beats: [
+    content: { mode: endless ? "endless" : "finite-campaign", beats: singleDemo ? [singleBeat] : [
       { id: "BEAT-SAFE", label: "安全理解", pressure: "safe", introducesMechanicIds: mechanicIds, practicesMechanicIds: [], difficulty: zeroDifficulty, changeReason: "先让玩家在无惩罚环境中完成全部核心动作", expectedSeconds: Math.min(60, Math.round(totalSeconds * 0.15)) },
       { id: "BEAT-PRACTICE", label: "独立练习", pressure: "normal", introducesMechanicIds: [], practicesMechanicIds: mechanicIds, difficulty: practiceDifficulty, changeReason: short(source.spec.designProfile.difficultyCurve[0], "逐步加入决策压力"), expectedSeconds: Math.max(45, Math.round(totalSeconds * 0.35)) },
       { id: "BEAT-COMBINE", label: "组合掌握", pressure: "high", introducesMechanicIds: [], practicesMechanicIds: mechanicIds, difficulty: masteryDifficulty, changeReason: short(source.spec.designProfile.difficultyCurve.at(-1) ?? "组合已学机制形成后段挑战", "组合已学机制形成后段挑战"), expectedSeconds: Math.max(60, Math.round(totalSeconds * 0.5)) },
@@ -184,7 +188,7 @@ export function createGameDesignContractForLegacyProject(source: LegacyContractS
     ] },
     acceptance: [
       ...(tutorial ? [{ id: "ACCEPT-ONBOARD", label: "新存档可真实完成全部核心动作教学", kind: "onboarding" as const, mechanicIds, onboardingStepIds: onboarding.map(({ id }) => id), beatIds: ["BEAT-SAFE"] }] : []),
-      ...(endless ? [{ id: "ACCEPT-ENDLESS", label: "无限模式重开正常且抽样期间没有通关终点（不证明长期内容供给）", kind: "endless-sampled", mechanicIds, onboardingStepIds: [], beatIds: [] }] : [
+      ...(endless ? [{ id: "ACCEPT-ENDLESS", label: "无限模式重开正常且抽样期间没有通关终点（不证明长期内容供给）", kind: "endless-sampled", mechanicIds, onboardingStepIds: [], beatIds: [] }] : singleDemo ? [{ id: "ACCEPT-RULES", label: "单局核心规则在真实浏览器中按确认方案运行（开始、操作、胜负、重开）", kind: "rule" as const, mechanicIds, onboardingStepIds: [], beatIds: ["BEAT-SINGLE"] }] : [
         { id: "ACCEPT-PROGRESSION", label: "难度从安全理解逐步进入组合挑战", kind: "progression", mechanicIds, onboardingStepIds: [], beatIds: ["BEAT-SAFE", "BEAT-PRACTICE", "BEAT-COMBINE"] },
         { id: "ACCEPT-VARIATION", label: "后续阶段改变决策结构而非只提高数值", kind: "content-variation", mechanicIds, onboardingStepIds: [], beatIds: ["BEAT-PRACTICE", "BEAT-COMBINE"] },
       ]),

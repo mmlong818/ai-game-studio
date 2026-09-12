@@ -448,8 +448,10 @@ export class BuildOrchestrator {
                 generateGroup("dynamic", dynamicArtPlan(project), () => this.options.coverArt!.generateDynamicArt(project, undefined, plannedOutputs)),
               ]);
         if (!cover) throw new Error("AI 封面生成失败，构建已中断；不会使用占位图替代。");
+        // 生成游戏的单局 demo 只按知识蓝图声明的精灵生图，计划里没有背景时不得反过来要求背景位图。
         const background = dynamicArt.find((entry) => entry.role === "局内背景" && entry.file === "assets/background.png");
-        if (!background && !existsSync(join(root, "assets", "background.png"))) throw new Error("AI 局内背景生成失败，构建已中断；不会使用程序图或 SVG 替代。");
+        const backgroundPlanned = declaredArtPlan.some((entry) => entry.file === "assets/background.png");
+        if (backgroundPlanned && !background && !existsSync(join(root, "assets", "background.png"))) throw new Error("AI 局内背景生成失败，构建已中断；不会使用程序图或 SVG 替代。");
         // 确认方案声明的局内主体必须全部真实生成；缺图不能用程序化图形或占位图顶替。
         const plannedSprites = blueprintSpriteFiles(project.spec.template === "generated" ? project.spec.designProfile.generatedBlueprint : null);
         const missingSprites = plannedSprites.filter(file => !dynamicArt.some(entry => entry.file === file) && !existsSync(join(root, file)));
@@ -602,7 +604,7 @@ export class BuildOrchestrator {
         const visualSource = ["index.html", "styles.css", "app.js"]
           .map((file) => readFileSync(join(root, file), "utf8"))
           .join("\n");
-        if (dynamicArtPlan(project).length > 0) assertRasterAiArt(root, visualSource);
+        if (dynamicArtPlan(project).length > 0) assertRasterAiArt(root, visualSource, { requireBackground: dynamicArtPlan(project).some((entry) => entry.file === "assets/background.png") });
         const v11Project = writeV11BuildMetadata(root, project, { directions, previousRoot: join(this.artifactRoot, project.version.id) });
         const curatedFamilies = curatedResources ? [...new Set(curatedResources.bindings.map(({ familyId }) => familyId))].join("、") : "";
         const curatedSummary = curatedResources ? `；${curatedResources.assets.length} 个运行时槽位使用 ${curatedFamilies} 精选资源，许可、哈希、需求与配方证据已归档` : "";
@@ -849,9 +851,10 @@ export class BuildOrchestrator {
     };
     if (reusable) await report("确认方案未变，先重新验收已有代码；通过则不再调用代码生成模型");
     let generation = reusable ?? await generator.generate(project, feedback, previous, initialReport, requestBudget);
-    writeGeneratedArtifact(root, project, generation);
     for (let round = 1; ; round += 1) {
       try {
+        // 写盘时的 app.js 语法校验也是产物验收的一部分：模型交出坏代码要进入下一轮修复，而不是终止整次制作。
+        writeGeneratedArtifact(root, project, generation);
         // 代码阶段只检查结构、运行时与 AI 背景接入声明；真实位图和溯源在下一资产阶段落盘后统一验收。
         await report(`第 ${round} 次制作：正在检查生成产物与运行契约`);
         inspectGeneratedArtifact(root, { requireAiArt: false, expectedCampaign: project.spec.designProfile.generatedCampaign ?? null, expectedBlueprint: project.spec.designProfile.generatedBlueprint ?? null });
@@ -875,7 +878,6 @@ export class BuildOrchestrator {
           reusable = nextReusable.generation;
           reusableSourceBuildId = nextReusable.buildId;
           await report(`候选 ${rejectedBuildId ?? "上一版"} 未通过现行验收，改验同项目候选 ${nextReusable.buildId}，不调用代码生成模型`);
-          writeGeneratedArtifact(root, project, generation);
           round -= 1;
           continue;
         }
@@ -883,7 +885,6 @@ export class BuildOrchestrator {
         if (round >= maxRounds) throw new Error(`连续 ${round} 轮生成代码均未通过产物契约验收，已达本次制作的修正上限，停止以免无限消耗：${reason}`);
         await report(`第 ${round} 次验收发现问题，正在进行第 ${round + 1} 次针对性修复（最多 ${maxRounds} 次）`);
         generation = await generator.generate(project, [reason], { html: generation.html, directions: [...directions, reason] }, repairReport(round + 1), requestBudget);
-        writeGeneratedArtifact(root, project, generation);
         continue;
       }
       if (this.options.browserAudit === false) return { generation, audit: null, iterated: previous !== null };
