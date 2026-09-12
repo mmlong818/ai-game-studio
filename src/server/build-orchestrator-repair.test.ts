@@ -1,4 +1,4 @@
-import { beforeEach, expect, it, vi } from "vitest";
+import { afterAll, beforeEach, expect, it, vi } from "vitest";
 import { BuildOrchestrator } from "./build-orchestrator";
 import { inspectGeneratedArtifact, writeGeneratedArtifact } from "./game-generator";
 import { readGeneratedSource } from "./generated-source";
@@ -8,6 +8,10 @@ import { sha256, writeRuleFidelity } from "./rule-audit-checkpoint";
 import { inspectLocalRepairCandidate } from "./local-repair-candidate";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
+
+// 编排器按相对路径落盘；用临时目录承接，避免测试把产物写进仓库根目录。
+const scratchRoot = mkdtempSync(join(tmpdir(), "orchestrator-repair-scratch-"));
+afterAll(() => rmSync(scratchRoot, { recursive: true, force: true }));
 vi.mock("./generated-source", () => ({ readGeneratedSource: vi.fn().mockReturnValue(null) }));
 vi.mock("./local-repair-candidate", () => ({ inspectLocalRepairCandidate: vi.fn().mockReturnValue({ status: "absent" }) }));
 
@@ -73,7 +77,7 @@ it("服务器已有登记但合同不匹配时明确停止，不静默回退代�
 it("修订方案不可用时在规范化阶段停止，不写项目也不生成代码图片", async () => {
   const generate = vi.fn().mockResolvedValue(null);
   const code = vi.fn(); const images = vi.fn(); const update = vi.fn();
-  const orchestrator = new BuildOrchestrator({ update } as never, "unused-root", {
+  const orchestrator = new BuildOrchestrator({ update } as never, scratchRoot, {
     designContracts: { generate } as never, codeGenerator: { generate: code } as never,
     imageGenerator: { generate: images } as never,
   });
@@ -107,7 +111,7 @@ it("首次产物验收失败后将当前失败代码交给第二轮修复", asyn
   vi.mocked(inspectGeneratedArtifact).mockImplementationOnce(() => { throw new ArtifactValidationFailure("开始按钮被遮挡"); });
   const generate = vi.fn().mockResolvedValueOnce(first).mockResolvedValueOnce(repaired);
   const orchestrator = new BuildOrchestrator({ recentReusableBuilds: async () => [] } as never, "missing-test-artifact-root", { browserAudit: false, codeGenerator: { generate } as never });
-  await (orchestrator as any).generateExperimentalGame(project, "unused-root", ["保持花园主题"]);
+  await (orchestrator as any).generateExperimentalGame(project, scratchRoot, ["保持花园主题"]);
   expect(generate.mock.calls[0][2]).toBeNull();
   expect(generate.mock.calls[1][2]).toEqual({ html: first.html, directions: ["保持花园主题", "开始按钮被遮挡"] });
   expect(generate.mock.calls[1][1]).toEqual(["开始按钮被遮挡"]);
@@ -118,7 +122,7 @@ it("验收基础设施故障不授权额外付费生成", async () => {
   vi.mocked(inspectGeneratedArtifact).mockImplementationOnce(() => { throw new Error("测试磁盘不可读"); });
   const generate = vi.fn().mockResolvedValue(first);
   const orchestrator = new BuildOrchestrator({ recentReusableBuilds: async () => [] } as never, "missing-test-artifact-root", { browserAudit: false, codeGenerator: { generate } as never });
-  await expect((orchestrator as any).generateExperimentalGame(project, "unused-root", [])).rejects.toThrow("已停止自动付费修复");
+  await expect((orchestrator as any).generateExperimentalGame(project, scratchRoot, [])).rejects.toThrow("已停止自动付费修复");
   expect(generate).toHaveBeenCalledTimes(1);
 });
 
@@ -132,7 +136,7 @@ it("安全子轮重新从1计数时仍显示第2次针对修正的外层阶段",
     return ++calls === 1 ? first : repaired;
   });
   const orchestrator = new BuildOrchestrator({ recentReusableBuilds: async () => [] } as never, "missing-test-artifact-root", { browserAudit: false, codeGenerator: { generate } as never });
-  await (orchestrator as any).generateExperimentalGame(project, "unused-root", [], async (detail: string) => { reports.push(detail); });
+  await (orchestrator as any).generateExperimentalGame(project, scratchRoot, [], async (detail: string) => { reports.push(detail); });
   const generatorReports = reports.filter(detail => detail.includes("128 个字符") || detail.includes("代码安全检查"));
   expect(generatorReports.slice(0, 2).every(detail => detail.startsWith("第 1 次制作 · 初次生成"))).toBe(true);
   expect(generatorReports.slice(2).every(detail => detail.startsWith("第 2 次制作 · 针对验收问题修正"))).toBe(true);
@@ -162,8 +166,8 @@ it("规则审核未落实时沿用当轮代码，只定向修正缺失规则", a
 it("审核服务没有结果时停止交付，不重新付费生成代码", async () => {
   const generate = vi.fn().mockResolvedValue(first);
   const auditRuleFidelity = vi.fn().mockResolvedValue(null);
-  const orchestrator = new BuildOrchestrator({ recentReusableBuilds: async () => [] } as never, "unused-root", { codeGenerator: { generate } as never, designContracts: { auditRuleFidelity } as never });
-  await expect((orchestrator as any).generateExperimentalGame(project, "unused-root", [])).rejects.toThrow("停止后续生图及交付");
+  const orchestrator = new BuildOrchestrator({ recentReusableBuilds: async () => [] } as never, scratchRoot, { codeGenerator: { generate } as never, designContracts: { auditRuleFidelity } as never });
+  await expect((orchestrator as any).generateExperimentalGame(project, scratchRoot, [])).rejects.toThrow("停止后续生图及交付");
   expect(generate).toHaveBeenCalledTimes(1);
 });
 
@@ -187,7 +191,7 @@ it("质量问题不交给用户重试：验收连续失败时带原因继续修�
   const generate = vi.fn().mockResolvedValueOnce(first).mockResolvedValueOnce(first).mockResolvedValueOnce(first).mockResolvedValueOnce(repaired);
   const report = vi.fn().mockResolvedValue(undefined);
   const orchestrator = new BuildOrchestrator({ recentReusableBuilds: async () => [] } as never, "missing-test-artifact-root", { browserAudit: false, codeGenerator: { generate } as never });
-  const result = await (orchestrator as any).generateExperimentalGame(project, "unused-root", [], report);
+  const result = await (orchestrator as any).generateExperimentalGame(project, scratchRoot, [], report);
   expect(result.generation.html).toBe(repaired.html);
   expect(generate).toHaveBeenCalledTimes(4);
   expect(generate.mock.calls[3][1]).toEqual(["教学第二步未完成"]);
@@ -198,7 +202,7 @@ it("修正轮用尽仍未通过验收才停止，错误写明是上限而不是�
   vi.mocked(inspectGeneratedArtifact).mockImplementation(() => { throw new ArtifactValidationFailure("横向溢出"); });
   const generate = vi.fn().mockResolvedValue(first);
   const orchestrator = new BuildOrchestrator({ recentReusableBuilds: async () => [] } as never, "missing-test-artifact-root", { browserAudit: false, codeGenerator: { generate }, maxRepairRounds: 3 } as never);
-  await expect((orchestrator as any).generateExperimentalGame(project, "unused-root", [])).rejects.toThrow("连续 3 轮生成代码均未通过产物契约验收，已达本次制作的修正上限");
+  await expect((orchestrator as any).generateExperimentalGame(project, scratchRoot, [])).rejects.toThrow("连续 3 轮生成代码均未通过产物契约验收，已达本次制作的修正上限");
   expect(generate).toHaveBeenCalledTimes(3);
   vi.mocked(inspectGeneratedArtifact).mockReset();
 });
@@ -208,8 +212,8 @@ it("恢复同项目失败构建的完整代码与错误，不重新从空白制�
   const generate = vi.fn().mockResolvedValue(repaired);
   const recentReusableBuilds = vi.fn().mockResolvedValue([{ id: "previous-failed" }]);
   const repository = { recentReusableBuilds, buildById: async () => ({ error: "旧教学信号未接入" }) };
-  const orchestrator = new BuildOrchestrator(repository as never, "root", { browserAudit: false, codeGenerator: { generate } as never });
-  await (orchestrator as any).generateExperimentalGame({ ...project, id: "same-project" }, "root/current-build", []);
+  const orchestrator = new BuildOrchestrator(repository as never, scratchRoot, { browserAudit: false, codeGenerator: { generate } as never });
+  await (orchestrator as any).generateExperimentalGame({ ...project, id: "same-project" }, join(scratchRoot, "current-build"), []);
   expect(recentReusableBuilds).toHaveBeenCalledWith("same-project", "current-build");
   expect(generate.mock.calls[0][2].html).toBe(first.html);
   expect(generate.mock.calls[0][2].directions).toContain("上一版验收问题：旧教学信号未接入");

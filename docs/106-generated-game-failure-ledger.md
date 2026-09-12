@@ -196,7 +196,8 @@
 - **连带修正**：`completeBuild` 的"仅 running 构建可生成版本"守卫在 HEAD 已存在，但 `art-review-history`/`publication-transaction`/`project-cover-flow` 7 个夹具仍对 queued 构建直接调用，已补 `markBuildRunning`；`idea-analyzer` 里引用已删除方法 `useClaudeCliText` 的过时用例删除；`src/server/reference-*.test.ts` 用 node:test 写在 vitest 目录下从未执行，移到 `tests/`；生成侧过时断言（教学计划、`纯点选` 提示文案、`runtimeContract` 第四参数、无蓝图时动态美术为空）按当前规则改写。
 - **自动测试过**：`npm run typecheck` 通过；`npm run test:platform` 95 文件 478/478；`test:legacy` 全量 394/394，官方游戏用例全绿。原 406 项中 12 个失败全部是生成游戏侧仍按旧教学合同断言的浏览器用例（`generated-onboarding-browser` 10、`f6-generated-onboarding-browser` 1、`sprite-sheet-generated-browser` 1），按产品决定（2026-09-12）整文件删除，而非改写；这意味着"生成游戏无教学交付"目前没有专门的浏览器用例，需要在生成侧改写时补回。
 - **真实成功验证**：无。官方游戏与生成游戏都还没有在这套工作树上跑过付费真实构建。
-- **未闭环**：官方游戏改造（模板 + 用户修改意见）路径下，LLM 设计合同的 `onboarding` 文本现在沿用模板基线而非模型输出，运行时教学计划仍由机制推导；这一路径需要一次真实改造构建确认教学 coach 行为不变。
+- **补漏（同日）**：`writeDesignDocuments` 回到 HEAD 后仍对任何带设计合同的项目写 `ASSISTANCE_PLAN.json`，生成游戏交付物里因此多出一份空的分层帮助计划；已按 `template !== "generated"` 关闭，并在 `tests/generated-build-onboarding.test.ts` 加入"生成交付物不含教学/帮助计划与教学运行时"的编排级断言（非浏览器）。`build-orchestrator-repair.test.ts` 改用临时目录，不再向仓库根写 `unused-root/`、`root/`。
+- **未闭环**：官方游戏改造（模板 + 用户修改意见）路径下，LLM 设计合同的 `onboarding` 文本现在沿用模板基线而非模型输出，运行时教学计划仍由机制推导；这一路径需要一次真实改造构建确认教学 coach 行为不变。生成游戏"无教学交付"仍缺浏览器级用例。
 
 ### 2026-09-12：结算层重开控件状态错配
 
