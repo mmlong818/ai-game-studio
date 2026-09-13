@@ -45,7 +45,8 @@ export function constrainRenovationProfile(candidate: GameDesignProfile, baselin
     onboarding: baseline.onboarding,
     accessibility: baseline.accessibility,
     productionRisks: baseline.productionRisks,
-    generatedCampaign: baseline.generatedCampaign,
+    // 玩法改造允许修订关卡协议本身（关数、里程碑、难度参数与说明）——关卡尺寸、数量这类改动就是玩法；资源/视觉改造仍锁定。
+    generatedCampaign: candidate.generatedCampaign ?? baseline.generatedCampaign,
     generatedBlueprint: baseline.generatedBlueprint,
   };
 }

@@ -352,7 +352,8 @@ export class DesignContractGenerator {
       : directions;
     try {
       const spriteAnimation = input.spriteAnimation === "none" || input.dimensions === "3d" || analysis?.dimensions === "3d" ? "none" : "auto";
-      const referenceReplica = resolveCreationModeIntent(input) === "reference-replica";
+      // 修订已确认的复刻方案时，来源就是本项目：沿用已确认的机制档案，不重新抓取分析。
+      const referenceReplica = resolveCreationModeIntent(input) === "reference-replica" || baseline.creationMode === "reference-replica";
       const planningIdea = input.referenceFallback
         ? `用户已明确同意改按其描述制作原创单局 demo：${input.referenceFallback.gameplayDescription}`
         : referenceReplica && !isReferenceReplicationIdea(input.idea) ? `参考复刻：${input.idea}` : input.idea;
@@ -367,8 +368,8 @@ export class DesignContractGenerator {
         : [];
       // 核心玩法分析：读取公开页面实际交付给浏览器的客户端脚本，提炼规则档案（不复用代码与资源）。
       // 只读页面文字会把 How to Play 里明写的胜负写成“未知”，几百关的游戏也无法靠真人逐关试玩取证；档案给出规则、公式与关卡生成规律。
-      let referenceMechanics: ReferenceMechanics | null = null;
-      const referencePageUrl = referenceReplica && !(input.sourceProjectId && input.confirmedDesignProfile) ? planningIdea.match(/https?:\/\/[^\s]+/i)?.[0] ?? null : null;
+      let referenceMechanics: ReferenceMechanics | null = baseline.referenceMechanics ?? null;
+      const referencePageUrl = referenceReplica && !referenceMechanics && !(input.sourceProjectId && input.confirmedDesignProfile) ? planningIdea.match(/https?:\/\/[^\s]+/i)?.[0] ?? null : null;
       if (referencePageUrl) {
         try {
           const source = await collectReferenceMechanicsSource(referencePageUrl, this.referenceFetchImpl);
@@ -670,7 +671,7 @@ export class DesignContractGenerator {
     const sourceContract = referenceEvidence.some(item => item.basis === "source-contract");
     const referenceInspection = referenceReplica ? {
       method: sourceContract ? "source-contract" as const : "public-text" as const,
-      gameplayStatus: sourceContract ? "description-read" as const : referenceMechanics ? "source-analyzed" as const : "description-read" as const,
+      gameplayStatus: referenceMechanics ? "source-analyzed" as const : "description-read" as const,
       runtimeStatus: "not-observed" as const,
       canClaimPlayable: sourceContract,
       limitations: [sourceContract
