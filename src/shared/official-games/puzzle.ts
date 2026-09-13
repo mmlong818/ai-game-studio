@@ -6,7 +6,7 @@ export const puzzle = defineOfficialGame({
   title: "植光拼图",
   kind: "template",
   serverTemplate: "puzzle",
-  lobbyRank: 2,
+  lobbyRank: 3,
   lobbyCover: "assets/library/covers/puzzle-v1.webp",
   cover: "assets/templates/packs/puzzle/cover.png",
   referenceDoc: "docs/46-puzzle-best-template-reference.md",

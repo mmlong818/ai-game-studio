@@ -52,7 +52,21 @@ function acceptedFreecellSpec() {
   });
 }
 
+const arrowEscapeIdea = "抽象细线箭头逻辑解谜：点击前方通道全空的箭头让它沿自身折线滑出棋盘，被挡则扣心；固定种子生成 20 关可解盘面，第 2 关起按箭头数计时。";
+
 export const fixtureSpecBuilders: Record<string, FixtureSpecBuilder> = {
+  'arrow-escape': {
+    input: { title: '箭头逃脱', dimensions: '2d', template: 'generated', aspectRatio: '9:16', idea: arrowEscapeIdea },
+    spec: () => {
+      const spec = generateGameSpec({ title: '箭头逃脱', dimensions: '2d', template: 'generated', aspectRatio: '9:16', idea: arrowEscapeIdea });
+      return gameSpecSchema.parse({ ...spec, template: 'generated', inputModes: ['pointer', 'keyboard', 'touch-buttons'], acceptanceCriteria: [
+        { id: 'AC-ARROW-RAY', priority: 'P0', statement: '点击箭头沿朝向逐格检查到边缘，全空才滑出并清空所占格子；被挡原地不动并扣心，同一箭头连点不重复扣', probeType: 'state', status: 'passed' },
+        { id: 'AC-ARROW-SOLVABLE', priority: 'P0', statement: '20 关盘面由固定种子生成，剥离验证全部可解，真实点击可自动清空', probeType: 'state', status: 'passed' },
+        { id: 'AC-ARROW-TIMER', priority: 'P0', statement: '第 1 关不计时，第 2 关起时限为向上取整到 5 的倍数(max(4×箭头数,120)) 秒；4 心扣光或归零中断并可重试', probeType: 'state', status: 'passed' },
+        { id: 'AC-ARROW-QUALITY', priority: 'P0', statement: '真人确认弯折互锁带来的阻碍与解开爽感、抽象线条表现与原作一致', probeType: 'state', status: 'pending' },
+      ] });
+    },
+  },
   'meadow-railway': {
     input: { title: '牧野小火车', dimensions: '3d', template: 'generated', idea: '自由搭建木制铁路玩具，无目标无时限，点击自动接续，火车沿线路运行，支持撤销和本地保存。' },
     spec: () => {

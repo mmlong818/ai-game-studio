@@ -1,0 +1,123 @@
+{
+  "checkedAt": "2026-09-13T23:05:07.059Z",
+  "campaign": {
+    "mode": "campaign",
+    "failurePolicy": "required",
+    "levelCount": 20,
+    "milestones": [
+      1,
+      2,
+      3,
+      4,
+      10,
+      20
+    ],
+    "difficultyKeys": [
+      "boardWidth",
+      "boardHeight",
+      "arrowCount",
+      "timeLimitSeconds"
+    ],
+    "rationale": "原作关卡没有上限，本次先交付前 20 关，尺寸按原作内置关卡表的规律给出。第 1 关 15 列 20 行、45 支箭，不计时；第 2 关 17×23、55 支，从这一关开始每关开局有倒计时；第 3 关 20×26、65 支，并按正方形规则取宽高中较小的一边；第 4 关起约 24×31、85 支，此后每关宽和高各增加 0 到 1，箭头增加 1 到 2 支；第 10 关是大关，35×49、158 支；第 11 到 19 关回到 25 到 26 列、32 到 34 行，箭头数从 92 逐步增加到 108；第 20 关是大关，36×50、166 支。倒计时秒数取箭头数量的 4 倍与 120 秒中较大的一个，再向上取整到 5 的倍数。扣完 4 颗心或时间归零会中断本关，可以从本关开局重新开始。本次只修正盘面生成的可靠性：同一关号在快机慢机上都生成完全相同的盘面，生成过程改用按格子总数换算的固定步数上",
+    "legacy": false
+  },
+  "levelsChecked": 20,
+  "maximumMultiplierStep": 265,
+  "milestones": [
+    {
+      "level": 1,
+      "difficulty": {
+        "boardWidth": 15,
+        "boardHeight": 20,
+        "arrowCount": 45,
+        "timeLimitSeconds": 0
+      },
+      "contentVariant": "intro-rect-untimed",
+      "runtimeSignature": "L1|15x20|a45|t0|rect|untimed",
+      "mechanicsActive": [
+        "core-mechanic-1",
+        "core-mechanic-2"
+      ]
+    },
+    {
+      "level": 2,
+      "difficulty": {
+        "boardWidth": 17,
+        "boardHeight": 23,
+        "arrowCount": 55,
+        "timeLimitSeconds": 220
+      },
+      "contentVariant": "countdown-rect",
+      "runtimeSignature": "L2|17x23|a55|t220|rect|timed",
+      "mechanicsActive": [
+        "core-mechanic-1",
+        "core-mechanic-2",
+        "countdown"
+      ]
+    },
+    {
+      "level": 3,
+      "difficulty": {
+        "boardWidth": 20,
+        "boardHeight": 20,
+        "arrowCount": 65,
+        "timeLimitSeconds": 260
+      },
+      "contentVariant": "countdown-square-board",
+      "runtimeSignature": "L3|20x20|a65|t260|square|timed",
+      "mechanicsActive": [
+        "core-mechanic-1",
+        "core-mechanic-2",
+        "countdown"
+      ]
+    },
+    {
+      "level": 4,
+      "difficulty": {
+        "boardWidth": 24,
+        "boardHeight": 31,
+        "arrowCount": 85,
+        "timeLimitSeconds": 340
+      },
+      "contentVariant": "countdown-ellipse-dots",
+      "runtimeSignature": "L4|24x31|a85|t340|ellipse|timed",
+      "mechanicsActive": [
+        "core-mechanic-1",
+        "core-mechanic-2",
+        "countdown"
+      ]
+    },
+    {
+      "level": 10,
+      "difficulty": {
+        "boardWidth": 35,
+        "boardHeight": 49,
+        "arrowCount": 158,
+        "timeLimitSeconds": 635
+      },
+      "contentVariant": "milestone-wide-rect",
+      "runtimeSignature": "L10|35x49|a158|t635|rect|milestone",
+      "mechanicsActive": [
+        "core-mechanic-1",
+        "core-mechanic-2",
+        "countdown"
+      ]
+    },
+    {
+      "level": 20,
+      "difficulty": {
+        "boardWidth": 36,
+        "boardHeight": 50,
+        "arrowCount": 166,
+        "timeLimitSeconds": 665
+      },
+      "contentVariant": "milestone-final-wide-rect",
+      "runtimeSignature": "L20|36x50|a166|t665|rect|milestone",
+      "mechanicsActive": [
+        "core-mechanic-1",
+        "core-mechanic-2",
+        "countdown"
+      ]
+    }
+  ]
+}

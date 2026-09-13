@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<link rel="stylesheet" href="./styles.css">
+
+
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>箭头逃脱</title>
+
+</head>
+<body data-game-state="idle" data-theme="light">
+<div id="app">
+  <header id="hud">
+    <span id="lvl">第 1 关</span>
+    <span id="time">—</span>
+    <span id="hearts" aria-label="生命"></span>
+    <span id="streak" class="hide">连胜×0</span>
+    <span class="spacer"></span>
+    <button id="restart" class="sk" type="button" title="重开本关">重来</button>
+    <button id="gear" class="sk" type="button" title="设置">设置</button>
+  </header>
+  <main id="stage">
+    <canvas id="game-canvas" tabindex="0" aria-label="箭头棋盘"></canvas>
+    <canvas id="fx"></canvas>
+    <div id="zoom">
+      <button id="zin" class="sk" type="button" aria-label="放大">＋</button>
+      <button id="zout" class="sk" type="button" aria-label="缩小">－</button>
+    </div>
+    <div id="banner"><b></b><i></i></div>
+  </main>
+  <section id="home">
+    <h1>箭头逃脱</h1>
+    <p class="rule">让每支箭头依次射出棋盘。点一支箭头：它头部正前方一路到边界都空着就沿自己的折线滑出去；被别的箭头挡住会闪红、变深并扣掉一颗心。拖动可平移，双指或 ＋/－ 可缩放；键盘方向键移动光标、回车发射。</p>
+    <button id="start" class="sk" type="button">开始 第 1 关</button>
+    <h2>选择关卡（共 20 关）</h2>
+    <div id="levels"></div>
+    <div id="saveinfo"></div>
+  </section>
+  <div id="overlay"><div class="panel" id="ovpanel"></div></div>
+  <div id="settings"><div class="panel">
+    <div class="head"><h3>设置</h3><button id="sclose" class="sk" type="button" aria-label="关闭">×</button></div>
+    <div class="row">
+      <button id="t-sfx" class="sk" type="button" aria-pressed="true">音效</button>
+      <button id="t-mus" class="sk" type="button" aria-pressed="false">音乐</button>
+      <button id="t-vib" class="sk" type="button" aria-pressed="true">震动</button>
+    </div>
+    <div class="row">
+      <button id="t-thm" class="sk" type="button">主题：明亮</button>
+      <button id="t-wid" class="sk" type="button" aria-pressed="false">粗线条</button>
+    </div>
+    <div class="row">
+      <button id="s-retry" class="sk" type="button">重开本关</button>
+      <button id="s-wipe" class="sk" type="button">清空进度</button>
+    </div>
+    <button id="s-resume" class="sk" type="button">继续游戏</button>
+  </div></div>
+</div>
+
+
+
+<script src="./app.js"></script>
+<script src="_studio/runtime-inspector.js"></script></body>
+</html>

@@ -654,6 +654,11 @@ export class DesignContractGenerator {
     } catch {
       throw new Error("模型返回的内容不是有效的 JSON。");
     }
+    // 关卡说明是面向玩家的解释文字；模型写长了只截断，不让整份方案作废（2026-09-14 修订因 rationale 超 400 字失败）。
+    if (raw && typeof raw === "object" && (raw as { generated_campaign?: { rationale?: unknown } }).generated_campaign && typeof (raw as { generated_campaign: { rationale?: unknown } }).generated_campaign.rationale === "string") {
+      const campaign = (raw as { generated_campaign: { rationale: string } }).generated_campaign;
+      campaign.rationale = campaign.rationale.trim().slice(0, 400);
+    }
     const parsedAnswer = llmDesignSchema.safeParse(raw);
     if (!parsedAnswer.success) {
       // 只写服务端日志：方案格式不符时，运维需要看到模型实际返回了什么，但不把原文透给玩家界面。

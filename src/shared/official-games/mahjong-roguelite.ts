@@ -6,7 +6,7 @@ export const mahjongRoguelite = defineOfficialGame({
   title: "月港雀旅",
   kind: "template",
   serverTemplate: "mahjong-roguelite",
-  lobbyRank: 3,
+  lobbyRank: 4,
   cover: "assets/templates/packs/mahjong-roguelite/cover.png",
   referenceDoc: "docs/36-mahjong-hierarchy-reference.md",
   knowledge: { patternId: "tile-route-roguelite", mechanicIds: ["route-relic-synergy"], rationale: "局部消除承载路线与遗物构筑。" },

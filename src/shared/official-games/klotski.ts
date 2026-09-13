@@ -6,7 +6,7 @@ export const klotski = defineOfficialGame({
   title: "朱门华容",
   kind: "template",
   serverTemplate: "klotski",
-  lobbyRank: 11,
+  lobbyRank: 12,
   cover: "assets/templates/packs/klotski/cover.png",
   referenceDoc: "docs/43-klotski-best-template-reference.md",
   knowledge: { patternId: "sliding-block-escape", mechanicIds: ["sliding-block"], rationale: "合法移块与可解出口是核心约束。" },

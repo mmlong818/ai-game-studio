@@ -6,7 +6,7 @@ export const freecell = defineOfficialGame({
   title: "空档接龙",
   kind: "fixture",
   fixtureKind: "freecell",
-  lobbyRank: 4,
+  lobbyRank: 5,
   cover: "fixtures/freecell/assets/cover.png",
   referenceDoc: "docs/53-freecell-best-template-reference.md",
   knowledge: { patternId: "freecell-solitaire", mechanicIds: ["tableau-solitaire"], rationale: "牌列、空档、超级移动和收牌构成确定性规划。" },

@@ -1,0 +1,52 @@
+{
+  "title": "箭头逃脱",
+  "template": "generated",
+  "experimental": false,
+  "runtimeTarget": "web-2d",
+  "naturalInteractionChecks": [],
+  "generator": "claude-cli:opus",
+  "generationRounds": 1,
+  "difficulty": "standard",
+  "visualStyle": "line-art",
+  "aspectRatio": "9:16",
+  "inputModes": [
+    "pointer",
+    "keyboard",
+    "touch-buttons"
+  ],
+  "levelProgression": {
+    "levelCount": 20,
+    "curve": "stepped",
+    "tierSize": 4,
+    "unlockMode": "sequential",
+    "persistProgress": true
+  },
+  "generatedCampaign": {
+    "mode": "campaign",
+    "failurePolicy": "required",
+    "levelCount": 20,
+    "milestones": [
+      1,
+      2,
+      3,
+      4,
+      10,
+      20
+    ],
+    "difficultyKeys": [
+      "boardWidth",
+      "boardHeight",
+      "arrowCount",
+      "timeLimitSeconds"
+    ],
+    "rationale": "原作关卡没有上限，本次先交付前 20 关，尺寸按原作内置关卡表的规律给出。第 1 关 15 列 20 行、45 支箭，不计时；第 2 关 17×23、55 支，从这一关开始每关开局有倒计时；第 3 关 20×26、65 支，并按正方形规则取宽高中较小的一边；第 4 关起约 24×31、85 支，此后每关宽和高各增加 0 到 1，箭头增加 1 到 2 支；第 10 关是大关，35×49、158 支；第 11 到 19 关回到 25 到 26 列、32 到 34 行，箭头数从 92 逐步增加到 108；第 20 关是大关，36×50、166 支。倒计时秒数取箭头数量的 4 倍与 120 秒中较大的一个，再向上取整到 5 的倍数。扣完 4 颗心或时间归零会中断本关，可以从本关开局重新开始。本次只修正盘面生成的可靠性：同一关号在快机慢机上都生成完全相同的盘面，生成过程改用按格子总数换算的固定步数上"
+  },
+  "generatedAt": "2026-09-13T23:04:06.474Z",
+  "fixtureKind": "arrow-escape",
+  "resourceProvenance": "./_studio/ART_PROVENANCE.md",
+  "sourceProject": {
+    "projectId": "98d0a327-d3ca-4fed-a027-ab320f6b99f1",
+    "versionId": "45661744-3154-44ce-a791-65387d95d288",
+    "promotedAt": "2026-09-14"
+  }
+}

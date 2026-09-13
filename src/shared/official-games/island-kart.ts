@@ -2,7 +2,7 @@ import { commonSuggestions } from './suggestions.js';
 import { defineOfficialGame } from './types.js';
 
 export const islandKart = defineOfficialGame({
-  id: 'island-kart', title: '椰风海岛', kind: 'fixture', stage: 'live', remixable: false, fixtureKind: 'island-kart', lobbyRank: 14,
+  id: 'island-kart', title: '椰风海岛', kind: 'fixture', stage: 'live', remixable: false, fixtureKind: 'island-kart', lobbyRank: 15,
   lobbyCover: 'assets/library/covers/island-kart-v1.webp',
   cover: 'fixtures/island-kart/assets/cover.png', referenceDoc: 'docs/71-island-kart-video-remake.md',
   knowledge: { patternId: 'assisted-circuit-racing', mechanicIds: ['continuous-kart-steering', 'circuit-lap-progress', 'energy-speed-burst', 'collect-charge'], rationale: '将转向、计圈和能量冲刺作为独立机制组合，视频只提供视觉与体验参考，规则由本地确定性测试验证。' },

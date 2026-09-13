@@ -6,7 +6,7 @@ export const regionLogic = defineOfficialGame({
   title: "星灵巡格",
   kind: "template",
   serverTemplate: "region-logic",
-  lobbyRank: 7,
+  lobbyRank: 8,
   cover: "assets/templates/packs/region-logic/cover.png",
   referenceDoc: "docs/49-region-logic-best-template-reference.md",
   knowledge: { patternId: "constraint-logic", mechanicIds: ["constraint-deduction"], rationale: "先观察约束区域，再按需展开排除依据；保留玩家亲自落子，不用答案代打。双星只在配额满足后整行、整列和整区排除。" },

@@ -21,6 +21,7 @@ import { starDreamDuel } from "./star-dream-duel.js";
 import { tetris } from "./tetris.js";
 import { islandKart } from "./island-kart.js";
 import { meadowRailway } from "./meadow-railway.js";
+import { arrowEscape } from "./arrow-escape.js";
 import type { OfficialGameDefinition, ServerTemplatesOf } from "./types.js";
 
 export * from "./types.js";
@@ -46,6 +47,7 @@ export const OFFICIAL_GAMES = [
   freecell,
   islandKart,
   meadowRailway,
+  arrowEscape,
   // @scaffold:insert — 脚手架会把新登记追加在这一行之上
 ] as const satisfies readonly OfficialGameDefinition[];
 

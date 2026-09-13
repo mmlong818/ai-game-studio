@@ -8,7 +8,7 @@ export const starDreamDuel = defineOfficialGame({
   fixtureKind: "star-dream-duel",
   // 星梦对决的 spec 由 generateGameSpec 落到 "signal-hunt"（平台默认服务端模板）。
   serverTemplate: "signal-hunt",
-  lobbyRank: 1,
+  lobbyRank: 2,
   cover: "fixtures/star-dream-duel/assets/cover.png",
   referenceDoc: "docs/50-star-dream-duel-best-template-reference.md",
   knowledge: { patternId: "turn-match3-duel", mechanicIds: ["match-combo"], rationale: "回合、对手与三消结果共同驱动资源变化。" },
