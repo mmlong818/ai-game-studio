@@ -246,7 +246,7 @@
 ### 2026-09-14 上架：箭头逃脱成为官方游戏并置于大厅第一位
 
 - **产品决定**：试玩修订版后，把箭头逃脱整理为官方游戏，大厅第一位。这是玩家新建通道产出的第一款官方作品。
-- **实现（当前未提交工作树）**：按 docs/55 五步走——`npm run game:new -- arrow-escape --kind fixture`；登记表 `src/shared/official-games/arrow-escape.ts`（`stage: live`、`remixable: false`、`lobbyRank: 1`，知识引用 `choice-deduction` / `choice-consequence`）；其余 15 款 lobbyRank 各 +1，`LOCKED_LOBBY_ORDER` 首位改为 `arrow-escape`；`src/server/official-fixtures.ts` 增加 `arrow-escape` 的 ProjectInput 与 4 条验收合同（3 条 passed、真人品质 1 条 pending）；`fixtures/arrow-escape/` 直接放入项目 `98d0a327…` 修订版的交付物（index/app/styles + `_studio/` 验收记录），`game-manifest.json` 记录来源项目与版本；封面为第 1 关运行截图，`ART_PROVENANCE.md` 写明无 AI 位图、无参考游戏资源；参照文档 docs/108。
+- **实现（当前未提交工作树）**：按 docs/55 五步走——`npm run game:new -- arrow-escape --kind fixture`；登记表 `src/shared/official-games/arrow-escape.ts`（`stage: live`、`remixable: false`、`lobbyRank: 1`，知识引用 `choice-deduction` / `choice-consequence`）；其余 15 款 lobbyRank 各 +1，`LOCKED_LOBBY_ORDER` 首位改为 `arrow-escape`；`src/server/official-fixtures.ts` 增加 `arrow-escape` 的 ProjectInput 与 4 条验收合同（3 条 passed、真人品质 1 条 pending）；`fixtures/arrow-escape/` 直接放入项目 `98d0a327…` 修订版的交付物（index/app/styles + `_studio/` 验收记录），`game-manifest.json` 记录来源项目与版本；封面为第 1 关运行截图，资源说明见 `ART_PROVENANCE.md`；参照文档 docs/108。
 - **自动测试过**：`registry.test.ts` 11/11、`tests/official-catalog.test.ts` 2/2、typecheck；全量数字见 docs/07 当次记录。
 - **上架版本**：`45661744-3154-44ce-a791-65387d95d288`（`/revisions` 玩法修订，1 次制作 10 分钟，8/8 审核）：生成器去掉 `performance.now()` 截止、改固定迭代预算，最终盘面独立剥离复核（最多 8 个派生种子 + 阶段快照回退），开局直射压制。验证：1× 与 20× CPU 降速下 20 关盘面完全一致（上一版 L10/L20 会随机器速度变化：202→228 支、填充 1.0→0.847），剥离全部可解，真实点击自动通关 20 关 0 次阻挡。玩家报告的第 14 关"无解"在上一版未能复现，最可能原因就是设备速度导致生成了另一份未复核的盘面——上架版本已消除该根因。
 - **边界**：Firefox / WebKit / 实体手机未跑；开局直射数 L4/L17 为 4、L10 为 6、L20 为 5，未完全压到原作的 ≤3。

@@ -3,8 +3,7 @@ import { defineOfficialGame } from "./types.js";
 
 /**
  * 箭头逃脱：玩家新建通道产出的第一款官方游戏（2026-09-14 产品决定，置于大厅第一位）。
- * 来源是对公开网页游戏 Arrow Escape 的核心玩法分析（规则、公式、关卡结构），代码与美术均为本项目原创程序绘制；
- * 交付物来自项目 98d0a327-d3ca-4fed-a027-ab320f6b99f1 的修订版本，规则与验收证据见 fixtures/arrow-escape/_studio/。
+ * 交付物来自项目 98d0a327-d3ca-4fed-a027-ab320f6b99f1，验收记录见 fixtures/arrow-escape/_studio/。
  */
 export const arrowEscape = defineOfficialGame({
   id: "arrow-escape",
@@ -19,7 +18,7 @@ export const arrowEscape = defineOfficialGame({
       "射线判定、阻挡扣心（同一箭头连点不重复扣）、4 心与倒计时中断、清空即过关的规则已锁定。",
       "GAME_DESIGN、GAME_DESIGN_CONTRACT、RULE_FIDELITY 与关卡难度报告随产物归档。",
       "确定性种子生成器、20 关关卡表、沿自身折线滑出的射出动画与缩放平移已接入。",
-      "抽象细线箭头、点阵棋盘、Web Audio 音阶与震动反馈已经集成；无 AI 位图，封面为运行截图。",
+      "抽象细线箭头、点阵棋盘、Web Audio 音阶与震动反馈已经集成。",
       "真实浏览器 6 项门禁、规则审核 8/8、20 关剥离可解性探针与真实点击自动通关通过。",
       "官方仅游玩作品沿用平台发布通道，不提供用户模板或改造入口。",
     ],
