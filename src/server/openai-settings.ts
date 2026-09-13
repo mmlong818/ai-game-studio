@@ -63,14 +63,26 @@ export class OpenAISettings {
   private sessionKey: string | null = null;
   private readonly fileKey: string | null;
   private readonly environmentKey: string | null;
+  /** STUDIO_TEXT_PROVIDER=claude-cli 时文本调用改走本机 Claude CLI；图片模型与 Key 逻辑不变。 */
+  private textProvider: { kind: "claude-cli"; model: string } | null = null;
 
   constructor(environmentKey: string | null | undefined = process.env.OPENAI_API_KEY, keyFilePath: string | null = null) {
     this.environmentKey = environmentKey?.trim() || null;
     this.fileKey = keyFilePath ? readKeyFile(keyFilePath) : null;
   }
 
+  useClaudeCliText(model: string) {
+    this.textProvider = { kind: "claude-cli", model };
+  }
+
+  /** 当前文本模型标识：CLI 模式下是 claude-cli:<model>，用于回执与状态展示。 */
+  textModelLabel(): string {
+    return this.textProvider ? `claude-cli:${this.textProvider.model}` : OPENAI_TEXT_MODEL;
+  }
+
   private textRouting(): NonNullable<OpenAISettingsStatus["textRouting"]> {
-    return { planner: OPENAI_TEXT_MODEL, executor: OPENAI_TEXT_MODEL, reviewer: OPENAI_TEXT_MODEL, mode: "same-model", reason: "provider-fixed" };
+    const model = this.textModelLabel();
+    return { planner: model, executor: model, reviewer: model, mode: "same-model", reason: "provider-fixed" };
   }
 
   status(): OpenAISettingsStatus {
@@ -78,7 +90,8 @@ export class OpenAISettings {
       provider: "openai",
       configured: Boolean(this.sessionKey ?? this.fileKey ?? this.environmentKey),
       source: this.sessionKey ? "session" : this.fileKey ? "file" : this.environmentKey ? "environment" : null,
-      models: { text: OPENAI_TEXT_MODEL, image: OPENAI_IMAGE_MODEL },
+      models: { text: this.textModelLabel(), image: OPENAI_IMAGE_MODEL },
+      ...(this.textProvider ? { textProvider: { ...this.textProvider } } : {}),
       textRouting: this.textRouting(),
     };
   }
@@ -102,6 +115,8 @@ export class OpenAISettings {
 
   /** Provider-aware options shared by native OpenAI text requests. */
   textRequestOptions(_role: TextRole = "planner"): OpenAITextRequestOptions {
+    // Claude CLI 适配器不认识 reasoning_effort；OpenAI 路径保持低推理档。
+    if (this.textProvider) return { model: this.textModelLabel() };
     return { model: OPENAI_TEXT_MODEL, reasoning_effort: "low" };
   }
 

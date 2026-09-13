@@ -216,6 +216,18 @@
 - **真实成功验证（2026-09-13 02:36，玩家新建 · 参考复刻）**：以 `sourceProjectId=00adee1e…`（数织矩阵）、`creationMode: reference-replica`、`template: generated`、`9:16` 经 `POST /api/design-preview`（Claude CLI，4 s）→ `POST /api/production-jobs`。项目 `72147616-dc64-4a19-ae46-6279bf98e38a`，**55 s 一次生成即成功**，版本 `336ecf2d-6fcc-4942-b87b-f2825677f4a7`。零图片调用（方案无蓝图精灵，走程序绘制路线）；代码由 Claude CLI（回执标 `gpt-5.6-terra`）1 轮生成，规则审计 6/6，静态探针 14/14 含"无新手教学运行时、单局 demo 协议"，浏览器 `GEN-BROWSER-CONTRACT/LAYOUT/VISUAL/ERRORS`、`PROGRESSION-RUNTIME` 全过，`DESIGN-ACCEPTANCE` 以 `ACCEPT-RULES` 闭合。交付物无 `ONBOARDING_PLAN.json`/`ASSISTANCE_PLAN.json`，无 coach 样式与教学钩子；截图为 4×4 糖果色棋盘、目标 256、回溯/方向键、开始卡"开始编织"。前一项目 `3fa46558…` 在修 5 之前的第 3 轮也已过浏览器门禁与规则审核，证明失败集中在合同层而非模型能力。
 - **边界**：这是"复刻官方 2048 规则"的单局 demo，不含 AI 位图（质量标准第 1 条"图先行"在无蓝图精灵的复刻路线上不适用，但也意味着该作品没有任何 AI 美术）；未做真人试玩。潮池小螃蟹项目（`27150741…`，含 1 张动画精灵图集）在修 2 之后尚未重跑，其 5 张已付图片留在 `_image-checkpoints` 可复用。
 
+### 2026-09-14 真实构建：外部参考游戏（Arrow Escape）以"核心玩法分析"复刻交付
+
+- **产品决定**：参考复刻的标准做法是分析对方游戏的核心玩法（规则、数值、公式、关卡结构），美术/音频只作参照；不复用对方代码与资源。真人逐关试玩几百关不可行，只读落地页文字又会把 How to Play 里明写的胜负写成"未知"——09-14 首次构建 `9f57ce48…` 六轮全部卡在规则审核"胜利条件：未知"上，正是这个原因。
+- **实现已改（当前未提交工作树）**：
+  - `src/server/reference-mechanics.ts` + `src/shared/reference-mechanics.ts`：读落地页 HTML 找同源游戏入口（iframe/`/games/<slug>/index.html`），取入口文档的内联脚本与同源脚本文件（跳过广告/统计脚本，640 KB 上限），交文本模型只提炼规则层事实（操作阈值、阻挡、胜负、计时公式、生命、关卡表与程序化生成阶段、计分、几何、HUD、反馈时机）；系统提示禁止输出任何原代码、标识符、资源名、URL；产物 `referenceMechanics` 持久化在设计方案里，`referenceInspection.gameplayStatus = source-analyzed`。
+  - 策划提示：档案是复刻依据，只有档案 unknowns 才允许"未知"；有关卡结构时 `generated_campaign` 按档案填写（无上限时先交付 20 关）；广告/内购续命不写进 fail_condition。代码生成提示带完整档案。`contractRules` 不再把"未知"的胜负条件送审。
+  - 生成侧浏览器验收新增 `GEN-BROWSER-VARIATION`（里程碑关卡的 contentVariant/runtimeSignature 互不相同），作为多关生成游戏 content-variation 验收的证据源——原证据源是教学复演，09-11 取消教学时被删，多关生成合同因此在 delivery 必失败（`d45804ea…` 即卡在此）。
+  - **费用接线修复**：`e6d2a14` 删掉了 `STUDIO_TEXT_PROVIDER=claude-cli` 的接线，`.env.local` 被静默忽略，09-12/13 所有真实构建的文本调用实际走了 OpenAI `gpt-5.6-terra` 计费（回执里的模型名即证据）。已恢复 `OpenAISettings.useClaudeCliText` 与 `index.ts` 接线；`/api/settings/openai` 现返回 `claude-cli:opus`。
+- **自动测试过**：`tests/reference-mechanics.test.ts` 7 项（假 fetch，不访问真实网站、不调模型）；typecheck、相关套件见 [开发完成审计](07-implementation-status.md) 当次记录。
+- **真实成功验证（2026-09-14 01:31）**：`https://arrowescape.io/arrow-escape/` → 入口 `/games/arrow-escape/index.html`（4 段内联脚本，41 KB）→ 机制档案（Claude CLI，约 130 s）→ 方案（胜利=清空全盘箭头；失败=4 心扣光或倒计时归零；时限 240–720 s；20 关，难度参数 boardWidth/boardHeight/arrowCount/longArrowRatio/timeLimitSeconds）→ 项目 `3ce61a1f-74b3-4871-926c-7320c74c8de3`。第一次构建 `d45804ea…`：代码第 2 次制作过浏览器 5 项门禁、规则审核 9/9、20 关递进，delivery 因 content-variation 无证据源失败；补 `GEN-BROWSER-VARIATION` 后重建 `b996d7d3-3b58-459c-b7cf-de43b9fe9696` **48 s 成功**（复验上一版代码 + 局部迭代）。文本全部走 Claude CLI，**零图片、零 OpenAI 文本费用**。交付物：蛇形多格箭头、4 心、第 1 关不计时、第 20 关 12:00、缩放/居中/选关控件、无教学运行时；6 个里程碑关的尺寸 4×5 → 9×12、箭头 4 → 28、长箭头占比 0 → 0.5、时限 0 → 720 s。
+- **边界**：复刻的是规则与结构规律，不是原作数值——原作前 100 关棋盘 15×20 起、44×58 止，本次 20 关按档案规律缩放到 4×5 → 9×12，时限也按方案区间取值而非原公式 max(4×箭头数,120)；未真人试玩，未验证每关确有解的生成器质量。首版方案在"不写广告机制"提示加入之前生成，fail_condition 带了"看广告续命"，代码因此实现了一个 5 秒程序化"广告"面板——这属于要在下一次重新策划时去掉的内容。真人玩过原作的对比评审仍未做。
+
 ### 2026-09-12：结算层重开控件状态错配
 
 - **证据**：正式构建 `8935080e…` 第 2/5 轮报告固定点击 `#restart`，但该按钮属于局内控制栏；`won` 结算 overlay 正常覆盖它。结算层已有可见 `#again` 与 `#restartEnd`，均调用真实 `restart(level)`。因此“后方 #restart 被遮挡”是验收选错状态控件，不是游戏缺少结算重开。

@@ -2497,9 +2497,9 @@ export async function inspectGeneratedGameInBrowser(root: string, options: { exp
   const failures: string[] = [];
   const evidence: string[] = [];
   const runtimeObservations: string[] = [];
-  type GeneratedCheckId = "GEN-BROWSER-CONTRACT" | "GEN-BROWSER-LAYOUT" | "GEN-BROWSER-VISUAL" | "GEN-BROWSER-ERRORS" | "PROGRESSION-RUNTIME";
+  type GeneratedCheckId = "GEN-BROWSER-CONTRACT" | "GEN-BROWSER-LAYOUT" | "GEN-BROWSER-VISUAL" | "GEN-BROWSER-ERRORS" | "PROGRESSION-RUNTIME" | "GEN-BROWSER-VARIATION";
   type GeneratedCheckStatus = "passed" | "failed" | "not-run";
-  const generatedCheckIds: GeneratedCheckId[] = ["GEN-BROWSER-CONTRACT", "GEN-BROWSER-LAYOUT", "GEN-BROWSER-VISUAL", "GEN-BROWSER-ERRORS", "PROGRESSION-RUNTIME"];
+  const generatedCheckIds: GeneratedCheckId[] = ["GEN-BROWSER-CONTRACT", "GEN-BROWSER-LAYOUT", "GEN-BROWSER-VISUAL", "GEN-BROWSER-ERRORS", "PROGRESSION-RUNTIME", "GEN-BROWSER-VARIATION"];
   const generatedCheckState = new Map<GeneratedCheckId, { started: boolean; completed: boolean; failures: string[] }>(generatedCheckIds.map((id) => [id, { started: false, completed: false, failures: [] }]));
   let activeGeneratedCheck: GeneratedCheckId = "GEN-BROWSER-CONTRACT";
   let generatedBlockingFailure: string | null = null;
@@ -2682,7 +2682,10 @@ export async function inspectGeneratedGameInBrowser(root: string, options: { exp
               if (!campaign.legacy && activeSteps.some(step => step > 0) && activeSteps.some(step => step < 0)) recordGeneratedFailure(`${key} 在启用后的各关之间既上升又下降（${active.join("→")}），不是确认方案中方向一致的难度递进。`, "PROGRESSION-RUNTIME");
             }
             const milestoneStates = campaign.milestones.map((level) => levelStates[level - 1]);
-            if (new Set(milestoneStates.map(({ contentVariant }) => contentVariant)).size !== campaign.milestones.length || new Set(milestoneStates.map(({ runtimeSignature }) => runtimeSignature)).size !== campaign.milestones.length) recordGeneratedFailure(`第 ${campaign.milestones.join("/")} 关没有形成合同要求的不同运行结构。`, "PROGRESSION-RUNTIME");
+            // 里程碑关卡的结构变体互不相同，是设计合同 content-variation 验收在生成游戏上的证据来源。
+            beginGeneratedCheck("GEN-BROWSER-VARIATION");
+            if (new Set(milestoneStates.map(({ contentVariant }) => contentVariant)).size !== campaign.milestones.length || new Set(milestoneStates.map(({ runtimeSignature }) => runtimeSignature)).size !== campaign.milestones.length) recordGeneratedFailure(`第 ${campaign.milestones.join("/")} 关没有形成合同要求的不同运行结构。`, "GEN-BROWSER-VARIATION");
+            completeGeneratedCheck("GEN-BROWSER-VARIATION");
             progressionReport = { checkedAt: new Date().toISOString(), campaign, levelsChecked: levelStates.length, maximumMultiplierStep, milestones: milestoneStates };
             completeGeneratedCheck("PROGRESSION-RUNTIME");
 
@@ -2804,6 +2807,7 @@ export async function inspectGeneratedGameInBrowser(root: string, options: { exp
       { id: "PROGRESSION-RUNTIME", label: "单局 demo 无关卡递进", status: generatedReportStatus("PROGRESSION-RUNTIME") === "passed" ? "passed" as const : "failed" as const, evidence: generatedReportEvidence("PROGRESSION-RUNTIME", "确认单局 demo；未要求 setLevel、difficulty、contentVariant 或 runtimeSignature。") },
     ] : !endless ? [
       { id: "PROGRESSION-RUNTIME", label: `生成游戏确认的 ${campaign.levelCount} 关递进与结构变化`, status: generatedReportStatus("PROGRESSION-RUNTIME") === "passed" ? "passed" as const : "failed" as const, evidence: generatedReportEvidence("PROGRESSION-RUNTIME", `逐关检查 setLevel/restart，数值维度 ${campaign.difficultyKeys.join("、")}，结构变化关 ${campaign.milestones.join("/")}。探针数据不等同于自然操作玩通。`) },
+      { id: "GEN-BROWSER-VARIATION", label: `里程碑关卡 ${campaign.milestones.join("/")} 的结构变体互不相同`, status: generatedReportStatus("GEN-BROWSER-VARIATION") === "passed" ? "passed" as const : "failed" as const, evidence: generatedReportEvidence("GEN-BROWSER-VARIATION", `里程碑关的 contentVariant 与 runtimeSignature 各不相同（${campaign.milestones.length} 个里程碑）。`) },
     ] : [{ id: "ENDLESS-SAMPLED", label: "无限模式声明、重开及禁止胜利状态抽样", status: failures.length ? "failed" as const : "passed" as const, evidence: "有限关卡检查不适用；短期观察不证明内容持续供给或长期性能。" }]),
   ];
   if (progressionReport) writeFileSync(join(root, "_studio", "DIFFICULTY_QUALITY_REPORT.json"), `${JSON.stringify(progressionReport, null, 2)}\n`, "utf8");

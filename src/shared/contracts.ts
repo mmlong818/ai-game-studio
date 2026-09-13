@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { referenceMechanicsSchema } from "./reference-mechanics.js";
 import { generatedCampaignSchema } from "./generated-campaign.js";
 import { generatedBlueprintSchema, spriteAnimationClipIds } from "./generated-blueprint.js";
 import { getOpenSourceTemplateReference } from "./open-source-templates.js";
@@ -201,12 +202,15 @@ export const gameDesignProfileSchema = z.object({
   creationMode: z.enum(["reference-replica", "original-demo"]).default("original-demo"),
   referenceInspection: z.object({
     method: z.enum(["public-text", "public-browser", "source-contract", "none"]),
-    gameplayStatus: z.enum(["description-read", "runtime-viewed", "gameplay-verified", "unknown"]),
+    // source-analyzed：已从公开客户端行为分析出规则档案（见 referenceMechanics），仍未由真人/自动操作验证可玩。
+    gameplayStatus: z.enum(["description-read", "runtime-viewed", "source-analyzed", "gameplay-verified", "unknown"]),
     runtimeStatus: z.enum(["visible", "not-observed", "blocked"]),
     canClaimPlayable: z.boolean(),
     limitations: z.array(z.string().trim().min(1).max(240)).max(8),
   }).default({ method: "none", gameplayStatus: "unknown", runtimeStatus: "not-observed", canClaimPlayable: false, limitations: ["尚未执行实际玩法操作，不能确认完整交互、胜负或关卡结构。"] }),
   referenceEvidence: z.array(z.object({ status: z.enum(["observed", "inferred", "unknown"]), basis: z.enum(["page-shell", "resource-index", "gameplay-text", "gameplay-source", "source-contract"]).optional(), claim: z.string().trim().min(1).max(240), source: z.string().trim().min(1).max(500) })).max(30).default([]),
+  /** 参考复刻时从公开客户端行为分析出的规则档案；原创方案为 null/缺省。 */
+  referenceMechanics: referenceMechanicsSchema.nullable().optional(),
   genre: z.string().min(1),
   targetPlayer: z.string().min(1),
   playerFantasy: z.string().min(1),

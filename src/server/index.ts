@@ -33,6 +33,7 @@ import { renderGameLobbyShell, resolveGameLobbyOrigin } from "./game-lobby-navig
 import { planProjectRevision, validateRevisionPlan } from "./revision-planner.js";
 import { requestsMajorExpansion } from "./demo-review.js";
 import { PlayerFirstHosting } from "./player-first-hosting.js";
+import { createClaudeCliFetch, DEFAULT_CLAUDE_CLI_MODEL } from "./claude-cli-text-provider.js";
 
 const port = Number.parseInt(process.env.PORT ?? "4312", 10);
 const gamePort = Number.parseInt(process.env.GAME_PORT ?? "4313", 10);
@@ -64,13 +65,22 @@ const artifactRoot = join(projectRoot, "data", "artifacts-v1.1");
 const researchPrototypeRoot = join(projectRoot, "data", "research-prototypes");
 const openAIKeyFile = process.env.OPENAI_API_KEY_FILE ?? join(projectRoot, "data", "secrets", "openai-api-key.txt");
 const openAISettings = new OpenAISettings(process.env.OPENAI_API_KEY, openAIKeyFile);
+// STUDIO_TEXT_PROVIDER=claude-cli：策划、机制分析、规则审核与代码生成改走本机 Claude Code CLI 的订阅额度；
+// 图片仍由 OpenAI 生成。2026-09-11 的模型固定改动曾把这条接线删掉，导致 .env.local 的配置被静默忽略、文本全部计费。
+const claudeCliText = process.env.STUDIO_TEXT_PROVIDER === "claude-cli"
+  ? { fetchImpl: createClaudeCliFetch({ executable: process.env.STUDIO_CLAUDE_CLI ?? "claude", model: process.env.STUDIO_CLAUDE_MODEL ?? DEFAULT_CLAUDE_CLI_MODEL }) }
+  : null;
+if (claudeCliText) {
+  openAISettings.useClaudeCliText(process.env.STUDIO_CLAUDE_MODEL ?? DEFAULT_CLAUDE_CLI_MODEL);
+  console.log(`文本模型使用本机 Claude CLI（${process.env.STUDIO_CLAUDE_MODEL ?? DEFAULT_CLAUDE_CLI_MODEL}），图片模型继续使用 OpenAI。`);
+}
 // configureOutboundProxy 已在任何模型请求前为全局 fetch 安装显式 dispatcher；
 // 不依赖调用者是否额外传入 --use-env-proxy。
-const ideaAnalyzer = new IdeaAnalyzer(openAISettings);
-const designContracts = new DesignContractGenerator(openAISettings);
-const previewDesignContracts = new DesignContractGenerator(openAISettings, { maxAttempts: 1 });
+const ideaAnalyzer = new IdeaAnalyzer(openAISettings, claudeCliText ? { ...claudeCliText, timeoutMs: 90_000 } : {});
+const designContracts = new DesignContractGenerator(openAISettings, claudeCliText ? { ...claudeCliText, timeoutMs: 300_000 } : {});
+const previewDesignContracts = new DesignContractGenerator(openAISettings, { maxAttempts: 1, ...(claudeCliText ? { ...claudeCliText, timeoutMs: 300_000 } : {}) });
 const coverArt = new CoverArtGenerator(openAISettings);
-const codeGenerator = new GameCodeGenerator(openAISettings);
+const codeGenerator = new GameCodeGenerator(openAISettings, claudeCliText ? { ...claudeCliText, timeoutMs: 1_200_000 } : {});
 const orchestrator = new BuildOrchestrator(repository, artifactRoot, {
   designContracts,
   coverArt,

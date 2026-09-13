@@ -9,7 +9,8 @@ const evidenceIds = {
   onboarding: (id: string) => id.startsWith("ONBOARDING-") || id === "GEN-BROWSER-ONBOARDING",
   progression: (id: string) => id === "PROGRESSION-RUNTIME",
   assistance: (id: string) => id === "ASSISTANCE-RUNTIME",
-  "content-variation": (id: string) => id === "CONTENT-VARIATION-REHEARSAL",
+  // 官方模板由教学机制在变化关的真实复演作证；生成游戏由里程碑关卡的结构变体（contentVariant/runtimeSignature 互不相同）作证。
+  "content-variation": (id: string) => id === "CONTENT-VARIATION-REHEARSAL" || id === "GEN-BROWSER-VARIATION",
   solvability: (id: string) => id === "SOLVABILITY-RUNTIME",
   rule: (id: string) => id === "GEN-BROWSER-CONTRACT" || id === "BROWSER-INTERACTION",
   viewport: (id: string) => id === "BROWSER-VIEWPORTS" || id === "GEN-BROWSER-LAYOUT",
