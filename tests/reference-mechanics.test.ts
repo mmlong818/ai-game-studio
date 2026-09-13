@@ -93,3 +93,20 @@ test("方案里写成“未知”的胜负条件不进入规则审核清单", ()
   assert.equal(isUnknownRuleText("未知。"), true);
   assert.equal(isUnknownRuleText("清空全部箭头"), false);
 });
+
+test("站点壳的框架水合脚本再多也不会压过真正的游戏文档", async () => {
+  const shellPayload = `self.__next_f.push([1,"${"x".repeat(200)}"]);\n`.repeat(400);
+  const shellSite: Record<string, { body: string; type: string }> = {
+    "https://example.com/shell/": { type: "text/html", body: `<html><body><script>${shellPayload}</script><script>self.__next_f.push(["src\\":\\"/games/tiny/index.html\\""])</script></body></html>` },
+    "https://example.com/games/tiny/index.html": { type: "text/html", body: `<html><body><canvas id="c"></canvas><script>const ctx=document.getElementById("c").getContext("2d");function loop(){requestAnimationFrame(loop);}\n${"function rule(){return 1;}\n".repeat(80)}addEventListener("pointerdown",()=>{});</script></body></html>` },
+  };
+  const shellFetch: typeof fetch = async (input) => {
+    const hit = shellSite[String(input instanceof Request ? input.url : input)];
+    return hit ? new Response(hit.body, { status: 200, headers: { "content-type": hit.type } }) : new Response("nf", { status: 404 });
+  };
+  const source = await collectReferenceMechanicsSource("https://example.com/shell/", shellFetch);
+  assert.ok(source);
+  assert.equal(source.entryUrl, "https://example.com/games/tiny/index.html");
+  assert.ok(source.gameSignals >= 3, `game signals ${source.gameSignals}`);
+  assert.ok(!source.code.includes("__next_f"));
+});

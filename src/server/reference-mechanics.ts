@@ -8,6 +8,8 @@ import { parseReferenceMechanics, referenceMechanicsJsonSchema, type ReferenceMe
 
 export type ReferenceClientSource = {
   entryUrl: string;
+  /** 命中的游戏信号数量（渲染循环、画布、输入监听）；用于在候选之间选出真正的游戏文档。 */
+  gameSignals: number;
   /** 去掉脚本与样式后的页面骨架，用来理解 HUD/控件结构。 */
   markup: string;
   /** 内联脚本 + 同源脚本文件拼接后的客户端代码（只在分析时使用，不落盘）。 */
@@ -23,6 +25,11 @@ export const DEFAULT_REFERENCE_SOURCE_LIMITS: ReferenceSourceLimits = { document
 
 // 广告、统计与验证脚本不是游戏逻辑，也不该进入分析上下文。
 const thirdPartyScript = /(?:googlesyndication|googletagmanager|google-analytics|googleadservices|doubleclick|gstatic\.com\/recaptcha|clarity\.ms|cloudflareinsights|cdn-cgi\/|hotjar|segment\.(?:io|com)|sentry|newrelic|facebook\.net|connect\.facebook|adsbygoogle|analytics|gtag|pagead|beacon\.min\.js)/i;
+
+// 框架水合载荷（Next.js RSC、webpack 运行时、__NEXT_DATA__）不是游戏逻辑；把它们算进代码量会让站点壳压过真正的游戏文档。
+const frameworkPayload = /self\.__next_f\s*\.push|__NEXT_DATA__|webpackChunk|webpackJsonp|__webpack_require__|window\.__NUXT__|__INITIAL_STATE__/;
+// 游戏文档的典型信号：真实渲染与输入循环。
+const gameSignals = [/requestAnimationFrame/, /getContext\(\s*["'](?:2d|webgl)/, /addEventListener\(\s*["'](?:pointer|touch|mouse|key)/, /<canvas/i];
 
 const stripToMarkup = (html: string) => html
   .replace(/<script[\s\S]*?<\/script>/gi, " ")
@@ -48,7 +55,7 @@ async function collectFromDocument(entry: URL, fetchImpl: typeof fetch, limits: 
   const html = document.text;
   const inline = [...html.matchAll(/<script(?![^>]*\bsrc=)[^>]*>([\s\S]*?)<\/script>/gi)]
     .map(match => match[1]!.trim())
-    .filter(code => code.length > 0 && !/^\s*\{[\s\S]*\}\s*$/.test(code) || /function|=>|const |let |var /.test(code));
+    .filter(code => code.length > 0 && !frameworkPayload.test(code) && (!/^\s*\{[\s\S]*\}\s*$/.test(code) || /function|=>|const |let |var /.test(code)));
   const externalSources = [...html.matchAll(/<script\b[^>]*\bsrc=["']([^"']+)["']/gi)].map(match => match[1]!);
   const skipped: string[] = [];
   const files: string[] = [];
@@ -69,7 +76,8 @@ async function collectFromDocument(entry: URL, fetchImpl: typeof fetch, limits: 
   }
   const code = [...inline.map((script, index) => `/* ---- 内联脚本 ${index + 1} ---- */\n${script}`), ...files].join("\n\n").slice(0, limits.totalScriptBytes);
   if (code.length < limits.minCodeChars) return null;
-  return { entryUrl: entry.toString(), markup: stripToMarkup(html), code, inlineScripts: inline.length, scriptFiles: files.length, bytes: code.length, skipped };
+  const signals = gameSignals.filter(pattern => pattern.test(code) || pattern.test(html)).length;
+  return { entryUrl: entry.toString(), gameSignals: signals, markup: stripToMarkup(html), code, inlineScripts: inline.length, scriptFiles: files.length, bytes: code.length, skipped };
 }
 
 /**
@@ -87,7 +95,8 @@ export async function collectReferenceClientSource(candidates: readonly (string 
     seen.add(url.toString());
     try {
       const source = await collectFromDocument(url, fetchImpl, limits);
-      if (source && (!best || source.bytes > best.bytes)) best = source;
+      // 先比游戏信号，再比代码量：站点壳的框架脚本再多，也不该压过真正的游戏文档。
+      if (source && (!best || source.gameSignals > best.gameSignals || (source.gameSignals === best.gameSignals && source.bytes > best.bytes))) best = source;
     } catch { /* 候选不可读取时继续尝试下一个 */ }
   }
   return best;

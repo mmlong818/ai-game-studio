@@ -168,7 +168,9 @@ function buildSystemPrompt(project: ProjectDetail, iterating: boolean): string {
     ...(project.spec.designProfile.referenceMechanics ? [
       "== 参考机制档案(复刻依据；只复刻规则、数值与结构，用自己的代码与程序图形实现，不得照搬任何原代码、标识符、美术或音频资源) ==",
       referenceMechanicsPrompt(project.spec.designProfile.referenceMechanics),
-      "档案中的操作判定、阻挡规则、计时公式、生命扣减、关卡尺寸/数量公式与生成阶段都是硬性要求；关卡生成器必须保证每关有解（例如用“反复剥离可直接离场对象”的方式验证）。",
+      "档案中的操作判定、阻挡规则、计时公式、生命扣减、关卡尺寸/数量公式与生成阶段都是硬性要求：尺寸、数量、时限按档案原值实现，不得缩小或简化；关卡生成器必须逐阶段实现档案描述的算法（长对象覆盖比与长度区间、拐弯上限、可直接离场对象上限、合并/延伸/填满等阶段、每步可解性验证），并保证每关有解；大棋盘要支持缩放与平移。",
+      "视觉遵循档案的几何描述（线宽与格边长比例、圆角端、箭头三角比例、空格点阵、配色索引），用抽象线条与克制的色彩表达，不要把对象改成短粗卡通体、不要加入与参考无关的装饰；平台画面风格只用于 HUD/面板等外围界面。",
+      "运行时约束：__GAME_DEBUG__.setLevel(n) 与 restart() 必须在主线程同步完成关卡生成并立刻进入 playing（不得用 Worker、setTimeout 或 Promise 延后落盘）；生成器要用固定种子的确定性随机数，给每个阶段设置尝试上限，保证 20 关中最大的一关也能在 1 秒内生成完毕；getState().difficulty 里合同要求的每个维度都必须是非负有限数值，形状/模式等类别放在 contentVariant 字符串里。",
     ] : []),
     ...(project.spec.designProfile.generatedBlueprint ? [
       "== 玩法深度与知识蓝图(逐条硬性要求) ==",

@@ -627,7 +627,7 @@ export class BuildOrchestrator {
           return "页面公开：测试环境跳过浏览器验收；成功构建将冻结为不可变版本。";
         }
         if (project.spec.template === "generated") {
-          const generatedResult = await inspectGeneratedGameInBrowser(root, { expectedCampaign: project.spec.designProfile.generatedCampaign ?? null, expectedBlueprint: project.spec.designProfile.generatedBlueprint ?? null });
+          const generatedResult = await inspectGeneratedGameInBrowser(root, { expectedCampaign: project.spec.designProfile.generatedCampaign ?? null, expectedBlueprint: project.spec.designProfile.generatedBlueprint ?? null, referenceReplica: Boolean(project.spec.designProfile.referenceMechanics) });
           qualityChecks.push(...generatedResult.checks);
           if (project.spec.designContract) qualityChecks.push(writeDesignAcceptanceReport(root, project.spec.designContract, qualityChecks, { tutorialRequired: false }));
           return `页面公开：真实浏览器已按运行时契约验证生成代码——关卡递进、开始、胜负与重开、3 档画幅布局与错误监听均通过；保存 ${generatedResult.screenshotPaths.length} 张验收截图。实验性作品：通过自动验收，但玩法深度仍以真人试玩为准。`;
@@ -861,6 +861,7 @@ export class BuildOrchestrator {
         if (this.options.browserAudit !== false) {
           await report(`第 ${round} 次制作：正在真实浏览器中检查操作、关卡与结算`);
           await inspectGeneratedGameInBrowser(root, {
+            referenceReplica: Boolean(project.spec.designProfile.referenceMechanics),
             expectedCampaign: project.spec.designProfile.generatedCampaign ?? null,
             expectedBlueprint: project.spec.designProfile.generatedBlueprint ?? null,
             onProgress: message => report(`第 ${round} 次制作：${message}`),

@@ -2484,7 +2484,7 @@ async function monitorForbiddenLoss(page: Page, failures: string[], forbidden: "
   ` });
 }
 
-export async function inspectGeneratedGameInBrowser(root: string, options: { expectedCampaign?: unknown; expectedBlueprint?: GeneratedBlueprint | null; onProgress?: (message: string) => void | Promise<void>; totalTimeoutMs?: number } = {}): Promise<BrowserQualityResult> {
+export async function inspectGeneratedGameInBrowser(root: string, options: { expectedCampaign?: unknown; expectedBlueprint?: GeneratedBlueprint | null; onProgress?: (message: string) => void | Promise<void>; totalTimeoutMs?: number; /** 参考复刻：难度参数按原作规律走，允许非单调（如每 10 关的大关）。 */ referenceReplica?: boolean } = {}): Promise<BrowserQualityResult> {
   const manifest = JSON.parse(readFileSync(join(root, "game-manifest.json"), "utf8"));
   const campaign = verifyGeneratedCampaign(manifest.generatedCampaign, options.expectedCampaign);
   const failureAllowed = campaign.failurePolicy !== "forbidden";
@@ -2656,7 +2656,9 @@ export async function inspectGeneratedGameInBrowser(root: string, options: { exp
               // documented difficulty object; neither representation is proof of
               // gameplay on its own, and both still undergo the same checks.
               const difficulty = state?.difficulty && typeof state.difficulty === "object" ? state.difficulty : state;
-              if (!campaign.difficultyKeys.every(key => Number.isFinite(difficulty?.[key]) && difficulty[key] >= 0)) recordGeneratedFailure(`第 ${level} 关缺少合同要求的真实难度数值：${campaign.difficultyKeys.join("、")}。`, "PROGRESSION-RUNTIME");
+              // 只点名真正缺失或非数值的键：模型拿到“全部缺失”的反馈会反复改错地方（2026-09-14 复刻构建连续 4 轮）。
+              const invalidDifficultyKeys = campaign.difficultyKeys.filter(key => !(Number.isFinite(difficulty?.[key]) && difficulty[key] >= 0));
+              if (invalidDifficultyKeys.length) recordGeneratedFailure(`第 ${level} 关 getState().difficulty 缺少或不是非负有限数值：${invalidDifficultyKeys.map(key => `${key}=${JSON.stringify(difficulty?.[key])}`).join("、")}（合同要求的难度维度全部必须是数值；形状等类别用 contentVariant 字符串表达）。`, "PROGRESSION-RUNTIME");
               if (!state?.contentVariant || !state?.runtimeSignature || !Array.isArray(state?.mechanicsActive) || state.mechanicsActive.length === 0) recordGeneratedFailure(`第 ${level} 关缺少结构变化证据。`, "PROGRESSION-RUNTIME");
               levelStates.push({ level, difficulty, contentVariant: state?.contentVariant, runtimeSignature: state?.runtimeSignature, mechanicsActive: state?.mechanicsActive });
             }
@@ -2679,7 +2681,7 @@ export async function inspectGeneratedGameInBrowser(root: string, options: { exp
               // 0 表示该规则在这些关尚未启用（例如第 3 关才引入退潮）；方向一致性只看规则启用后的各关。
               const active = levelStates.map(state => Number(state.difficulty?.[key])).filter(value => Number.isFinite(value) && value !== 0);
               const activeSteps = active.slice(1).map((value, index) => Number((value - active[index]).toFixed(3)));
-              if (!campaign.legacy && activeSteps.some(step => step > 0) && activeSteps.some(step => step < 0)) recordGeneratedFailure(`${key} 在启用后的各关之间既上升又下降（${active.join("→")}），不是确认方案中方向一致的难度递进。`, "PROGRESSION-RUNTIME");
+              if (!campaign.legacy && !options.referenceReplica && activeSteps.some(step => step > 0) && activeSteps.some(step => step < 0)) recordGeneratedFailure(`${key} 在启用后的各关之间既上升又下降（${active.join("→")}），不是确认方案中方向一致的难度递进。`, "PROGRESSION-RUNTIME");
             }
             const milestoneStates = campaign.milestones.map((level) => levelStates[level - 1]);
             // 里程碑关卡的结构变体互不相同，是设计合同 content-variation 验收在生成游戏上的证据来源。
