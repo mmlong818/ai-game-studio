@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<link rel="stylesheet" href="./styles.css">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>箭头魔方 · 100 关战役</title>
+
+</head>
+<body data-game-state="idle">
+<div id="app">
+  <header id="topbar">
+    <div class="titlechip"><span class="dot"></span>箭头魔方 · 100 关战役<span class="dot b"></span></div>
+  </header>
+
+  <div id="stage">
+    <div id="board">
+      <canvas id="game-canvas"></canvas>
+
+      <div id="fx">
+        <div id="fxTrail"></div>
+        <div id="fxBlocked"><i></i><i></i></div>
+      </div>
+
+      <div id="goalToast"></div>
+      <div id="stuckHint">看得见的方块都推不动了 · 点「重开本关」</div>
+
+      <div id="hud">
+        <div id="badgeWrap">
+          <div id="badgeFace" aria-hidden="true"></div>
+          <span id="remain" aria-label="剩余方块">4</span>
+        </div>
+        <div id="stats">第 1/100 关 · 步数 0 · 无效 0</div>
+        <button id="restart" type="button" class="hidden">重开本关</button>
+      </div>
+
+      <div class="overlay" id="startScreen">
+        <div class="panel">
+          <div class="pscroll">
+            <h1>把魔方一路推空</h1>
+            <p>点一个小方块，它沿着面上箭头的方向直线滑动：<b>前方一路空</b>就滑出去消失；被挡住则贴着障碍停下，变成新的障碍。</p>
+            <p>推空当前一关进入下一关，共 100 关，最后是 5×5×5 的巨方。拖动画面或 <span class="kbd">方向键/WASD</span> 转视角，<span class="kbd">回正</span> 复位，<span class="kbd">空格</span> 换一块，<span class="kbd">回车</span> 推出。</p>
+            <div class="tagline"><span class="tag">无倒计时</span><span class="tag">顺序即解法</span><span class="tag">卡死可秒重开</span></div>
+          </div>
+          <button id="start" class="bigbtn" type="button">开 始</button>
+        </div>
+      </div>
+
+      <div class="overlay hidden" id="resultScreen">
+        <div class="panel">
+          <div class="pscroll">
+            <h2 id="resTitle">全部清空啦！</h2>
+            <p id="resReason">—</p>
+            <p id="resStats">—</p>
+          </div>
+          <div class="btnrow">
+            <button id="next" class="bigbtn blue sm" type="button">下一关</button>
+            <button id="again" class="bigbtn sm" type="button">重玩本关</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <nav id="pad" aria-label="操作按键">
+    <div class="padrow">
+      <button class="pbtn" id="bLeft" type="button" aria-label="视角左转">←</button>
+      <button class="pbtn" id="bUp" type="button" aria-label="视角上转">↑</button>
+      <button class="pbtn" id="bDown" type="button" aria-label="视角下转">↓</button>
+      <button class="pbtn" id="bRight" type="button" aria-label="视角右转">→</button>
+      <button class="pbtn home" id="bHome" type="button" aria-label="回正视角">回正</button>
+    </div>
+    <div class="padrow">
+      <button class="pbtn wide sel" id="bCycle" type="button" aria-label="切换选中的方块">换一块</button>
+      <button class="pbtn wide act" id="bGo" type="button" aria-label="推动选中的方块">推 出</button>
+    </div>
+  </nav>
+</div>
+
+
+<script type="module" src="./app.js"></script>
+<script src="_studio/runtime-inspector.js"></script></body>
+</html>

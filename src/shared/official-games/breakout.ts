@@ -6,7 +6,7 @@ export const breakout = defineOfficialGame({
   title: "漆海碎星",
   kind: "template",
   serverTemplate: "breakout",
-  lobbyRank: 13,
+  lobbyRank: 14,
   cover: "assets/templates/packs/breakout/cover.png",
   referenceDoc: "docs/39-breakout-best-template-reference.md",
   knowledge: { patternId: "ricochet-breakout", mechanicIds: ["paddle-trajectory"], rationale: "挡板位置改变反弹轨迹；落点与同源回球预告让控角可读，少量剩余砖时自动提供收尾导航。五章按控角、潮盾、宽板、穿透和组合顺序学习，不增加操作按钮。" },

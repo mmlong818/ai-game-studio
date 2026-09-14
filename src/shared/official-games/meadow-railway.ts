@@ -2,7 +2,7 @@ import { commonSuggestions } from './suggestions.js';
 import { defineOfficialGame } from './types.js';
 
 export const meadowRailway = defineOfficialGame({
-  id: 'meadow-railway', title: '牧野小火车', kind: 'fixture', stage: 'live', remixable: false, fixtureKind: 'meadow-railway', lobbyRank: 16,
+  id: 'meadow-railway', title: '牧野小火车', kind: 'fixture', stage: 'live', remixable: false, fixtureKind: 'meadow-railway', lobbyRank: 17,
   lobbyCover: 'assets/library/covers/meadow-railway-v1.webp',
   cover: 'fixtures/meadow-railway/assets/cover.png', referenceDoc: 'docs/72-meadow-railway-reference.md',
   knowledge: { patternId: 'toy-railway-sandbox', mechanicIds: ['endpoint-track-assembly', 'path-bound-vehicle'], rationale: '端点衔接构筑与沿路径运行分别建卡，组合成无目标的铁路玩具沙盒。' },

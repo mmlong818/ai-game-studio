@@ -1,0 +1,211 @@
+{
+  "checkedAt": "2026-09-14T15:03:44.383Z",
+  "campaign": {
+    "mode": "campaign",
+    "failurePolicy": "required",
+    "levelCount": 100,
+    "milestones": [
+      1,
+      4,
+      5,
+      6,
+      8,
+      10,
+      15,
+      20,
+      30,
+      40,
+      50,
+      60,
+      70,
+      80,
+      90,
+      100
+    ],
+    "difficultyKeys": [
+      "blockCount"
+    ],
+    "rationale": "共 100 关，唯一变化的还是方块数量，逐关严格变多：第 1–8 关保持原样，从 4 块单层一路到 27 块的完整立方体；第 9 关起继续加块，第 9–20 关的摆放范围不超过 4×4×3，第 21–50 关不超过 4×4×4，第 51–100 关不超过 5×5×5，最后一关约 120 块。每关按关号生成固定题目并用逐块放置保证一定有解，保留原有的可见性要求和“任何一条直线上不能有 3 个紧挨着的同向方块”。关卡样式按完整长方体、单层或多层异形、缺角镂空三类循环出现，结构真正发生变化的第 1、4、5、6、8、10、15、20、30、40、50、60、70、80、90、100 关作为节点关，每个节点关的样式与题面各不相同。界面上方显示“第 n/100 关”。清空当前关即进入下一关，打通第 100 关为最终胜利；卡死判负，可重开本关。",
+    "legacy": false
+  },
+  "levelsChecked": 100,
+  "maximumMultiplierStep": 5,
+  "milestones": [
+    {
+      "level": 1,
+      "difficulty": {
+        "blockCount": 4
+      },
+      "contentVariant": "single-layer-grid",
+      "runtimeSignature": "lv1-single-layer-grid-2x1x2-b4-s1034165137",
+      "mechanicsActive": [
+        "perspective-align"
+      ]
+    },
+    {
+      "level": 4,
+      "difficulty": {
+        "blockCount": 12
+      },
+      "contentVariant": "dual-layer-grid",
+      "runtimeSignature": "lv4-dual-layer-grid-3x2x2-b12-s4075877806",
+      "mechanicsActive": [
+        "perspective-align"
+      ]
+    },
+    {
+      "level": 5,
+      "difficulty": {
+        "blockCount": 13
+      },
+      "contentVariant": "single-layer-cross",
+      "runtimeSignature": "lv5-single-layer-cross-5x1x5-b13-s794814733",
+      "mechanicsActive": [
+        "perspective-align"
+      ]
+    },
+    {
+      "level": 6,
+      "difficulty": {
+        "blockCount": 18
+      },
+      "contentVariant": "dual-layer-wide",
+      "runtimeSignature": "lv6-dual-layer-wide-3x2x3-b18-s1808718956",
+      "mechanicsActive": [
+        "perspective-align"
+      ]
+    },
+    {
+      "level": 8,
+      "difficulty": {
+        "blockCount": 27
+      },
+      "contentVariant": "full-cube",
+      "runtimeSignature": "lv8-full-cube-3x3x3-b27-s3836527402",
+      "mechanicsActive": [
+        "perspective-align"
+      ]
+    },
+    {
+      "level": 10,
+      "difficulty": {
+        "blockCount": 29
+      },
+      "contentVariant": "terrace-slab",
+      "runtimeSignature": "lv10-terrace-slab-4x3x4-b29-s1569368552",
+      "mechanicsActive": [
+        "perspective-align"
+      ]
+    },
+    {
+      "level": 15,
+      "difficulty": {
+        "blockCount": 34
+      },
+      "contentVariant": "hollow-ring",
+      "runtimeSignature": "lv15-hollow-ring-4x3x4-b34-s2343922371",
+      "mechanicsActive": [
+        "perspective-align"
+      ]
+    },
+    {
+      "level": 20,
+      "difficulty": {
+        "blockCount": 39
+      },
+      "contentVariant": "stacked-tower",
+      "runtimeSignature": "lv20-stacked-tower-4x3x4-b39-s3118476190",
+      "mechanicsActive": [
+        "perspective-align"
+      ]
+    },
+    {
+      "level": 30,
+      "difficulty": {
+        "blockCount": 49
+      },
+      "contentVariant": "cross-vault",
+      "runtimeSignature": "lv30-cross-vault-4x4x4-b49-s372616532",
+      "mechanicsActive": [
+        "perspective-align"
+      ]
+    },
+    {
+      "level": 40,
+      "difficulty": {
+        "blockCount": 59
+      },
+      "contentVariant": "pillared-hall",
+      "runtimeSignature": "lv40-pillared-hall-4x4x4-b59-s1921724170",
+      "mechanicsActive": [
+        "perspective-align"
+      ]
+    },
+    {
+      "level": 50,
+      "difficulty": {
+        "blockCount": 69
+      },
+      "contentVariant": "quad-slab-445",
+      "runtimeSignature": "lv50-quad-slab-445-4x4x5-b69-s3470831808",
+      "mechanicsActive": [
+        "perspective-align"
+      ]
+    },
+    {
+      "level": 60,
+      "difficulty": {
+        "blockCount": 79
+      },
+      "contentVariant": "spiral-terrace",
+      "runtimeSignature": "lv60-spiral-terrace-5x5x5-b79-s724972150",
+      "mechanicsActive": [
+        "perspective-align"
+      ]
+    },
+    {
+      "level": 70,
+      "difficulty": {
+        "blockCount": 89
+      },
+      "contentVariant": "hollow-core",
+      "runtimeSignature": "lv70-hollow-core-5x5x5-b89-s2274079788",
+      "mechanicsActive": [
+        "perspective-align"
+      ]
+    },
+    {
+      "level": 80,
+      "difficulty": {
+        "blockCount": 99
+      },
+      "contentVariant": "grand-slab",
+      "runtimeSignature": "lv80-grand-slab-5x5x5-b99-s3823187426",
+      "mechanicsActive": [
+        "perspective-align"
+      ]
+    },
+    {
+      "level": 90,
+      "difficulty": {
+        "blockCount": 109
+      },
+      "contentVariant": "canyon-cut",
+      "runtimeSignature": "lv90-canyon-cut-5x5x5-b109-s1077327768",
+      "mechanicsActive": [
+        "perspective-align"
+      ]
+    },
+    {
+      "level": 100,
+      "difficulty": {
+        "blockCount": 120
+      },
+      "contentVariant": "grand-cube-5",
+      "runtimeSignature": "lv100-grand-cube-5-5x5x5-b120-s2626435406",
+      "mechanicsActive": [
+        "perspective-align"
+      ]
+    }
+  ]
+}

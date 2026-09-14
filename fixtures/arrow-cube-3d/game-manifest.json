@@ -1,0 +1,167 @@
+{
+  "title": "箭头魔方",
+  "template": "generated",
+  "experimental": false,
+  "runtimeTarget": "web-3d",
+  "naturalInteractionChecks": [],
+  "engine": "three.js",
+  "engineVersion": "0.185.1",
+  "generator": "claude-cli:opus",
+  "generationRounds": 1,
+  "difficulty": "standard",
+  "visualStyle": "cute",
+  "aspectRatio": "1:1",
+  "inputModes": [
+    "keyboard",
+    "virtual-stick"
+  ],
+  "levelProgression": {
+    "levelCount": 100,
+    "curve": "stepped",
+    "tierSize": 4,
+    "unlockMode": "sequential",
+    "persistProgress": true
+  },
+  "generatedCampaign": {
+    "mode": "campaign",
+    "failurePolicy": "required",
+    "levelCount": 100,
+    "milestones": [
+      1,
+      4,
+      5,
+      6,
+      8,
+      10,
+      15,
+      20,
+      30,
+      40,
+      50,
+      60,
+      70,
+      80,
+      90,
+      100
+    ],
+    "difficultyKeys": [
+      "blockCount"
+    ],
+    "rationale": "共 100 关，唯一变化的还是方块数量，逐关严格变多：第 1–8 关保持原样，从 4 块单层一路到 27 块的完整立方体；第 9 关起继续加块，第 9–20 关的摆放范围不超过 4×4×3，第 21–50 关不超过 4×4×4，第 51–100 关不超过 5×5×5，最后一关约 120 块。每关按关号生成固定题目并用逐块放置保证一定有解，保留原有的可见性要求和“任何一条直线上不能有 3 个紧挨着的同向方块”。关卡样式按完整长方体、单层或多层异形、缺角镂空三类循环出现，结构真正发生变化的第 1、4、5、6、8、10、15、20、30、40、50、60、70、80、90、100 关作为节点关，每个节点关的样式与题面各不相同。界面上方显示“第 n/100 关”。清空当前关即进入下一关，打通第 100 关为最终胜利；卡死判负，可重开本关。"
+  },
+  "generatedBlueprint": {
+    "mechanicIds": [
+      "perspective-align"
+    ],
+    "modifierIds": [
+      "untimed-safe",
+      "instant-retry"
+    ],
+    "coreDecision": "每次点击都要选顺序：先清能直接滑出的外层块可立刻腾空间，但也可能让别的块失去通路；也可故意让某块中途停住，去堵路或当垫脚。",
+    "tension": "立方体空间有限，每块停下就变成新障碍。27 块只有部分顺序能全清，一步贪快就可能把某块永久堵死，只剩重开本局。",
+    "masterySignal": "高手旋转次数少、几乎不点无效方块，能连出一串直接滑出的清除，并在死路块前提前清开让位通道。",
+    "sprites": [
+      {
+        "file": "assets/arrow-cube-block.png",
+        "role": "箭头小方块",
+        "hint": "哑光石质立方块，边角微磨圆，外露面中央有凹刻箭头，棱边有浅高光",
+        "presentation": {
+          "region": "playfield",
+          "fit": "contain",
+          "logicalSize": {
+            "min": 0.08,
+            "max": 0.16
+          },
+          "anchor": {
+            "x": 0.5,
+            "y": 0.5
+          },
+          "safeInsetRatio": 0.06,
+          "minSourcePixels": 256
+        }
+      },
+      {
+        "file": "assets/arrow-glyph-carved.png",
+        "role": "箭头刻纹",
+        "hint": "单色凹刻三角箭头带细长尾杆，边缘有阴影表现深度，透明底便于贴面",
+        "presentation": {
+          "region": "playfield",
+          "fit": "contain",
+          "logicalSize": {
+            "min": 0.04,
+            "max": 0.09
+          },
+          "anchor": {
+            "x": 0.5,
+            "y": 0.5
+          },
+          "safeInsetRatio": 0.08,
+          "minSourcePixels": 192
+        }
+      },
+      {
+        "file": "assets/blocked-cross-marker.png",
+        "role": "堵塞标记",
+        "hint": "半透明红橙斜十字，带轻微发光边，表示该块箭头前方被挡",
+        "presentation": {
+          "region": "playfield",
+          "fit": "contain",
+          "logicalSize": {
+            "min": 0.05,
+            "max": 0.1
+          },
+          "anchor": {
+            "x": 0.5,
+            "y": 0.5
+          },
+          "safeInsetRatio": 0.1,
+          "minSourcePixels": 160
+        }
+      },
+      {
+        "file": "assets/slide-trail-guide.png",
+        "role": "滑行路径指示",
+        "hint": "由虚线段与末端小箭头组成的淡青色引导条，越远越淡，透明底",
+        "presentation": {
+          "region": "overlay",
+          "fit": "contain",
+          "logicalSize": {
+            "min": 0.12,
+            "max": 0.3
+          },
+          "anchor": {
+            "x": 0.5,
+            "y": 0.5
+          },
+          "safeInsetRatio": 0.04,
+          "minSourcePixels": 192
+        }
+      },
+      {
+        "file": "assets/remaining-counter-badge.png",
+        "role": "剩余计数牌",
+        "hint": "石板质感圆角方牌，中央留空显示数字，边框有浅刻纹",
+        "presentation": {
+          "region": "hud",
+          "fit": "contain",
+          "logicalSize": {
+            "min": 0.08,
+            "max": 0.13
+          },
+          "anchor": {
+            "x": 0.5,
+            "y": 0.5
+          },
+          "safeInsetRatio": 0.05,
+          "minSourcePixels": 160
+        }
+      }
+    ]
+  },
+  "generatedAt": "2026-09-14T15:02:10.216Z",
+  "sourceProject": {
+    "projectId": "6c230413-7c83-43b8-bb11-f0349d73e0de",
+    "versionId": "532e7f1f-4c70-41e5-bac5-3a61a84a3689",
+    "promotedAt": "2026-09-14"
+  }
+}

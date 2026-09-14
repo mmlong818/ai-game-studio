@@ -6,7 +6,7 @@ export const blockPlace = defineOfficialGame({
   title: "果冻填阵",
   kind: "template",
   serverTemplate: "block-place",
-  lobbyRank: 6,
+  lobbyRank: 7,
   cover: "assets/templates/packs/block-place/cover.png",
   referenceDoc: "docs/47-block-place-best-template-reference.md",
   knowledge: { patternId: "polyomino-space-planning", mechanicIds: ["polyomino-placement"], rationale: "有限候选、合法放置和空间规划组合。" },

@@ -1,0 +1,74 @@
+{
+  "schemaVersion": 2,
+  "checkedAt": "2026-09-14T15:03:40.567Z",
+  "implemented": 13,
+  "total": 13,
+  "verdicts": [
+    {
+      "rule": "核心循环第 1 步:拖动或方向键旋转，看清各面箭头",
+      "implemented": true,
+      "evidence": "canvas pointermove→rotateView 拖动旋转；keydown 方向键/WASD 与 bindHold(bLeft/bRight/bUp/bDown)、resetView 回正；drawFace/arrowPath 在与箭头方向平行的四面程序绘制箭头。"
+    },
+    {
+      "rule": "核心循环第 2 步:按屏幕位置循环选块，找箭头前方全空的",
+      "implemented": true,
+      "evidence": "cycleSel() 用 visibleAlive() 投影 projectToBoard 得屏幕坐标，按 row(y/band)→x 排序后取下一个；hasVisibleFace 过滤被埋方块，selArrow/outline 显示所选块箭头方向。"
+    },
+    {
+      "rule": "核心循环第 3 步:点击它，让它沿箭头三维滑动",
+      "implemented": true,
+      "evidence": "pointerup 内 Raycaster 命中 mesh→activate(b.id)；resolvePath 沿 DIRS[b.dir] 三维推进，anim 在 tick 中 lerpVectors 插值移动。"
+    },
+    {
+      "rule": "核心循环第 4 步:看它滑出消失，或贴住障碍停下",
+      "implemented": true,
+      "evidence": "resolvePath 返回 exit/target；finishMove 中 exit 时 alive=false、mesh.visible=false 并缩放消失+sfx.out，否则落到 target 并 grid[idxOf]=b.id+1 贴障碍停下。"
+    },
+    {
+      "rule": "核心循环第 5 步:按新的堵塞格局重排清除顺序",
+      "implemented": true,
+      "evidence": "停住的块写回 grid 成为新障碍，canStep/resolvePath 每次点击实时读 grid；updateStuckHint、visibleAlive 每步重算，顺序随格局改变。"
+    },
+    {
+      "rule": "胜利条件:27 个小方块全部沿自身箭头滑出立方体，场上清空即通关",
+      "implemented": true,
+      "evidence": "finishMove 中 aliveCount()===0 → setState('won')+sfx.win；第 8 关 BASE_DEFS 3×3×3 正为 27 块，清空即进入结算并可 advance()。"
+    },
+    {
+      "rule": "失败条件:剩余方块的箭头前方全被堵死，没有一块能移动，判定卡死失败",
+      "implemented": true,
+      "evidence": "finishMove 中 movable=blocks.some(alive&&canStep)，为 false 时写 failureReason 并 setState('lost')；updateStuckHint 提前提示，结算页显示卡死原因。"
+    },
+    {
+      "rule": "关卡总数严格为100；1/4/5/6/8/10/15/20/30/40/50/60/70/80/90/100是必须出现新阶段或新变体的结构里程碑，不表示其他关的普通数值不得变化。",
+      "implemented": true,
+      "evidence": "MAX_LEVEL=100、advance() 到 100 关封顶；BASE_DEFS 里 1/4/5/6/8 milestone:true 且形态各异，MILESTONES 表覆盖 10~100 全部 11 个节点，各有独立 kind/variant/label。"
+    },
+    {
+      "rule": "动态难度维度blockCount对应的玩法属性必须在真实关卡配置中生效，不得只伪造探针返回值；调试值可由同一真实关卡配置派生，不要求玩法反向读取调试字段。依据：共 100 关，唯一变化的还是方块数量，逐关严格变多：第 1–8 关保持原样，从 4 块单层一路到 27 块的完整立方体；第 9 关起继续加块，第 9–20 关的摆放范围不超过 4×4×3，第 21–50 关不超过 4×4×4，第 51–100 关不超过 5×5×5，最后一关约 120 块。每关按关号生成固定题目并用逐块放置保证一定有解，保留原有的可见性要求和“任何一条直线上不能有 3 个紧挨着的同向方块”。关卡样式按完整长方体、单层或多层异形、缺角镂空三类循环出现，结构真正发生变化的第 1、4、5、6、8、10、15、20、30、40、50、60、70、80、90、100 关作为节点关，每个节点关的样式与题面各不相同。界面上方显示“第 n/100 关”。清空当前关即进入下一关，打通第 100 关为最终胜利；卡死判负，可重开本关。",
+      "implemented": true,
+      "evidence": "countFor(4,6,9,12,13,18,22,27→28..118→120)严格递增并经 shapeCells/LAYOUT 真正落子；boxFor 分档(4×3×4/4×4×4/4×4×5/5×5×5)；seed 由关号派生；genPuzzle 逐块倒推放置含 rayClear、camVisible、trip"
+    },
+    {
+      "rule": "玩家取舍:每次点击都要选顺序：先清能直接滑出的外层块可立刻腾空间，但也可能让别的块失去通路；也可故意让某块中途停住，去堵路或当垫脚。",
+      "implemented": true,
+      "evidence": "resolvePath 区分 exit 与中途停靠，停靠块 grid 占位成为他块障碍，canStep 随之变化；无撤销机制使顺序选择产生真实后果，卡死由 finishMove 判负。"
+    },
+    {
+      "rule": "修饰器无计时安全局:首次成功前不得引入倒计时或不可逆损失。",
+      "implemented": true,
+      "evidence": "全代码无倒计时/生命值/分数惩罚；仅 misses 计数与 toastTimer(1.8s 提示消隐)、bindHold 长按重复，均不影响胜负；随时可 startLevel 重开。"
+    },
+    {
+      "rule": "修饰器立即重试:重试不超过三秒且保留失败原因。",
+      "implemented": true,
+      "evidence": "btnRestart/btnAgain/键盘 r 直接调用 startLevel() 无延时；失败时 failureReason 写入 resReason 与 body.dataset.failureReason，在结算页可见后再重试。"
+    },
+    {
+      "rule": "单色渲染:不加载、不引用任何图片文件；方块、角色、符号与反馈全部由纯色/顶点色材质、程序 CanvasTexture 或 Canvas 路径绘制。",
+      "implemented": true,
+      "evidence": "无 img/贴图文件引用(__FORGE_SPRITE_SPECS__ 为空)；buildAtlas/drawFace 用 canvas 2D 路径绘制面与箭头→THREE.CanvasTexture+MeshBasicMaterial；outline/selArrow 为纯色材质，FX 用 CSS 渐变。"
+    }
+  ],
+  "sourceSha256": "4264bd564dac37a5ec565020bd76a4541ee0748adc189b2796f7cc2e99da2558"
+}

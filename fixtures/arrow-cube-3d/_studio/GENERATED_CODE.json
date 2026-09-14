@@ -1,0 +1,16 @@
+{
+  "schemaVersion": 1,
+  "model": "claude-cli:opus",
+  "experimental": true,
+  "rounds": 1,
+  "files": [
+    "index.html",
+    "styles.css",
+    "app.js"
+  ],
+  "bytes": 55402,
+  "sha256": "d2fb92bae9e99ea8258e385625d46de75b47b214b16a31b4ae5414efbbf81cf3",
+  "securityScan": "passed",
+  "designNotes": "本次只修复被点名的 blockCount 单调性缺陷，其余玩法、操作、布局、配色、旋转与回正逻辑全部保持上一版不变。\n\n1) countFor 改为闭式严格递增：1–8 关沿用 4,6,9,12,13,18,22,27；9–99 关为 27+(n-8)（28…118）；第 100 关 120 块。相邻两关块数差恒为 +1（末关 +2），不再出现第 12/13、20/21 关重复，也永不回落。该值即 spec.blockCount，直接决定 shapeCells 取格数与真实放置的方块数量，探针 difficulty.blockCount 由同一配置派生。\n\n2) 盒体随块数阶梯放大，且单元格数始终不小于当关块数：9–20 关 4×3×4（≤48，覆盖 28–39 块）；21–45 关 4×4×4（第 45 关正好 64 块填满）；46–50 关 4×4×5；51–100 关 5×5×5（120/125）。取舍说明：从第 8 关 27 块起严格每关 +1，到第 50 关下界即 69 块，4×4×4 的 64 格在算术上无法容纳，故 46–50 这五关把盒体单轴放宽到 5，以优先保证被判定失败的「逐关严格变多」。第 50 关里程碑标签同步改为「四层巨塔 / quad-slab-445」，仍与其他里程碑的 contentVariant、runtimeSignature 互不相同。\n\n3) shapeCells 增加 slice 上限保护；buildLayout 兜底分支补写 blockCount，保证展示与探针同源。genPuzzle 的逐块反推、默认视角可见性、任意直线禁三连同向的全盘复查、剥壳兜底与 deadline 预算均未改动，HUD 仍显示「第 n/100 关」，清空进下一关、第 100 关最终胜利、卡死写入 failureReason 并可重开本关。",
+  "generatedAt": "2026-09-14T15:02:10.217Z"
+}

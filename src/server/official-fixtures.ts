@@ -54,7 +54,21 @@ function acceptedFreecellSpec() {
 
 const arrowEscapeIdea = "抽象细线箭头逻辑解谜：点击前方通道全空的箭头让它沿自身折线滑出棋盘，被挡则扣心；固定种子生成 20 关可解盘面，第 2 关起按箭头数计时。";
 
+const arrowCubeIdea = "三维箭头滑出解谜：选中方块沿箭头在立方体内直线滑出，被挡则停靠占位；100 关按关号种子逐块放置构造保证有解，方块数逐关递增，任何直线上不出现三个紧挨着的同向方块。";
+
 export const fixtureSpecBuilders: Record<string, FixtureSpecBuilder> = {
+  'arrow-cube-3d': {
+    input: { title: '箭头魔方', dimensions: '3d', template: 'generated', aspectRatio: '1:1', idea: arrowCubeIdea },
+    spec: () => {
+      const spec = generateGameSpec({ title: '箭头魔方', dimensions: '3d', template: 'generated', aspectRatio: '1:1', idea: arrowCubeIdea });
+      return gameSpecSchema.parse({ ...spec, template: 'generated', inputModes: ['pointer', 'keyboard', 'touch-buttons'], acceptanceCriteria: [
+        { id: 'AC-CUBE-RAY', priority: 'P0', statement: '选中方块沿箭头逐格检查到包围盒外，全空才滑出消失；被挡贴着障碍停下并占住新位置', probeType: 'state', status: 'passed' },
+        { id: 'AC-CUBE-CAMPAIGN', priority: 'P0', statement: '100 关方块数 4→120 严格递增，按关号种子构造保证有解，任何直线上无三个紧挨着的同向方块', probeType: 'state', status: 'passed' },
+        { id: 'AC-CUBE-VISIBLE', priority: 'P0', statement: '固定默认视角下每块轮到被推出时至少有一个朝镜头的面可见；可旋转观察并一键回正', probeType: 'state', status: 'passed' },
+        { id: 'AC-CUBE-QUALITY', priority: 'P0', statement: '真人确认 3D 点选手感、逐关难度与配色可读性', probeType: 'state', status: 'pending' },
+      ] });
+    },
+  },
   'arrow-escape': {
     input: { title: '箭头逃脱', dimensions: '2d', template: 'generated', aspectRatio: '9:16', idea: arrowEscapeIdea },
     spec: () => {

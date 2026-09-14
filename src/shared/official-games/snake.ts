@@ -6,7 +6,7 @@ export const snake = defineOfficialGame({
   title: "青玉长游",
   kind: "template",
   serverTemplate: "snake",
-  lobbyRank: 11,
+  lobbyRank: 12,
   cover: "assets/templates/packs/snake/cover.png",
   referenceDoc: "docs/44-snake-best-template-reference.md",
   knowledge: { patternId: "trail-survival", mechanicIds: ["trail-growth"], rationale: "连续转向配合固定资源地图；所有食物增长身体，额外效果分别是积分、转向灵活度和采集半径。超额采集保留，无限玩法吃空整批才刷新。独立机制与组合关系见改造文档。" },

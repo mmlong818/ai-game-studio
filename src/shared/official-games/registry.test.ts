@@ -17,6 +17,7 @@ const fileExists = (relativePath: string) => existsSync(resolve(repoRoot, relati
 /** 大厅顺序锁：改动这里必须是产品负责人确认过的大厅调整。 */
 const LOCKED_LOBBY_ORDER = [
   "arrow-escape", // 2026-09-14 产品决定：玩家新建复刻的箭头逃脱置于第一位
+  "arrow-cube-3d", // 2026-09-14 产品决定：3D 箭头魔方置于第二位
   "star-dream-duel",
   "puzzle",
   "mahjong-roguelite",

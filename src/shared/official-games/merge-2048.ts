@@ -6,7 +6,7 @@ export const merge2048 = defineOfficialGame({
   title: "数织矩阵",
   kind: "template",
   serverTemplate: "merge-2048",
-  lobbyRank: 7,
+  lobbyRank: 8,
   cover: "assets/templates/packs/merge-2048/cover.png",
   referenceDoc: "docs/42-merge-2048-best-template-reference.md",
   knowledge: { patternId: "sliding-merge-puzzle", mechanicIds: ["grid-slide-merge"], rationale: "全盘滑动、同值合并与空间管理组合。" },

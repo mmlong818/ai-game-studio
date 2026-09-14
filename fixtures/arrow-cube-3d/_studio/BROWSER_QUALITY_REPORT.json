@@ -1,0 +1,54 @@
+{
+  "checkedAt": "2026-09-14T15:03:45.755Z",
+  "executablePath": "C:\\Users\\Admin\\AppData\\Local\\ms-playwright\\chromium-1234\\chrome-win64\\chrome.exe",
+  "experimental": true,
+  "timedOut": false,
+  "totalTimeoutMs": 120000,
+  "checks": [
+    {
+      "id": "GEN-BROWSER-CONTRACT",
+      "label": "生成游戏运行时契约（状态机、开始、胜负、重开）",
+      "status": "passed",
+      "evidence": "360×640: 无横向溢出，首屏可开局。 390×844 执行 idle→playing→won→重开；验证失败结算。 390×844: 无横向溢出，首屏可开局。 1366×900: 无横向溢出，首屏可开局。"
+    },
+    {
+      "id": "GEN-BROWSER-LAYOUT",
+      "label": "三档画幅布局与触控可达",
+      "status": "passed",
+      "evidence": "360/390/1366 宽度均无横向溢出且可开局。"
+    },
+    {
+      "id": "GEN-BROWSER-VISUAL",
+      "label": "位图等比显示与关键文字完整",
+      "status": "passed",
+      "evidence": "已核对 Canvas 源矩形/目标矩形、Canvas 像素画布/CSS 尺寸、DOM 图片 object-fit、CSS 背景和关键文字裁切；cover/contain 与等比 DPR 缩放保留。"
+    },
+    {
+      "id": "GEN-BROWSER-ERRORS",
+      "label": "浏览器错误监听",
+      "status": "passed",
+      "evidence": "已监听控制台错误与未处理异常。"
+    },
+    {
+      "id": "PROGRESSION-RUNTIME",
+      "label": "生成游戏确认的 100 关递进与结构变化",
+      "status": "passed",
+      "evidence": "逐关检查 setLevel/restart，数值维度 blockCount，结构变化关 1/4/5/6/8/10/15/20/30/40/50/60/70/80/90/100。探针数据不等同于自然操作玩通。"
+    },
+    {
+      "id": "GEN-BROWSER-VARIATION",
+      "label": "里程碑关卡 1/4/5/6/8/10/15/20/30/40/50/60/70/80/90/100 的结构变体互不相同",
+      "status": "passed",
+      "evidence": "里程碑关的 contentVariant 与 runtimeSignature 各不相同（16 个里程碑）。"
+    }
+  ],
+  "failures": [],
+  "observations": [],
+  "screenshots": [
+    "_studio/quality/phone-small-idle.png",
+    "_studio/quality/phone-standard-idle.png",
+    "_studio/quality/phone-standard-playing.png",
+    "_studio/quality/phone-standard-result.png",
+    "_studio/quality/desktop-wide-idle.png"
+  ]
+}

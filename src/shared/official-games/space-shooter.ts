@@ -6,7 +6,7 @@ export const spaceShooter = defineOfficialGame({
   title: "星环突围",
   kind: "template",
   serverTemplate: "space-shooter",
-  lobbyRank: 10,
+  lobbyRank: 11,
   cover: "assets/templates/packs/space-shooter/cover.png",
   referenceDoc: "docs/40-space-shooter-best-template-reference.md",
   knowledge: { patternId: "wave-shooter", mechanicIds: ["projectile-wave"], rationale: "移动射击、弹体命中和波次结算组合。" },

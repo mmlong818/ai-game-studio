@@ -309,6 +309,12 @@
 - **根因 4**：关卡协议 schema 与策划 JSON schema 把 `levelCount`/`milestones` 上限写死为 60，100 关的策划答案整份作废、合同停在 8 关，代码却已做 100 关，浏览器门禁报"确认仅 8 关，越界选择却进入第 9 关"并反复返工。修复：上限放到 100（浏览器门禁逐关调用 setLevel，再高需另评估）。
 - **重跑结果**（`532e7f1f…`，两轮）：合同 `levelCount = 100`、里程碑 1/4/5/6/8/10/15/20/30/40/50/60/70/80/90/100；探针逐关核对 100 关方块数 4→120 严格递增、三连同向 0 处、剥离模拟 100 关全部可解、层数 1→5 阶梯递增；拖动/方向键旋转与"回正视角"按钮恢复。
 
+### 2026-09-14 上架：箭头魔方成为官方游戏并置于大厅第二位
+
+- 版本 `532e7f1f…`（100 关、可旋转）按 docs/55 五步沉淀为 fixture：`src/shared/official-games/arrow-cube-3d.ts`（lobbyRank 2，其余官方游戏顺延）、`fixtureSpecBuilders['arrow-cube-3d']`、`fixtures/arrow-cube-3d/`（index/app/styles、`vendor/` 本地 three.js、`_studio/` 验收记录、封面为第 50 关运行截图）、`docs/109`。
+- 重启服务后自动登记（health 的 `officialFixtureIds.arrow-cube-3d`），`/play/arrow-cube-3d/` 及 `vendor/three.module.js` 均可访问；对上架路径再次探针核对 100 关递增、0 三连、全部可解。
+- **升级包**：官方游戏当前是"代码级登记"（登记表 + 构造器编译进服务），所以上架只能以"补丁 + fixtures 目录"的形式发布，部署机 `git apply`/拉取后重新构建并重启即自动入库；没有运行时可加载的独立游戏包。包内容见 `output/upgrade-packages/`（不入库）。
+
 ### 2026-09-12：结算层重开控件状态错配
 
 - **证据**：正式构建 `8935080e…` 第 2/5 轮报告固定点击 `#restart`，但该按钮属于局内控制栏；`won` 结算 overlay 正常覆盖它。结算层已有可见 `#again` 与 `#restartEnd`，均调用真实 `restart(level)`。因此“后方 #restart 被遮挡”是验收选错状态控件，不是游戏缺少结算重开。
