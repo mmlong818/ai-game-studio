@@ -533,3 +533,32 @@ test("参考复刻的单局 demo 合同（generatedCampaign 为 null）不会被
   const legacy = { ...project, spec: { ...spec, designProfile: { ...spec.designProfile, generatedCampaign: undefined } } } as unknown as ProjectDetail;
   await assert.rejects(generator.generate(legacy), /缺少已确认的关卡或局制合同/);
 });
+
+test("结构化输出 html 太短时带具体缺陷纠错一轮，用完轮数才失败", async () => {
+  let calls = 0;
+  const users: string[] = [];
+  const generator = new GameCodeGenerator(new OpenAISettings(validKey), {
+    fetchImpl: async (_url, init) => {
+      calls += 1;
+      const body = JSON.parse(String(init?.body)) as { messages: Array<{ role: string; content: string }> };
+      users.push(body.messages.find(message => message.role === "user")?.content ?? "");
+      return llmResponse(calls === 1 ? { html: "<p>只剩说明</p>", design_notes: "把代码写到别处了" } : { html: contractHtml, design_notes: "补全" });
+    },
+  });
+  const warnings: string[] = [];
+  const originalWarn = console.warn;
+  console.warn = (...args: unknown[]) => { warnings.push(args.map(String).join(" ")); };
+  try {
+    const result = await generator.generate(fakeProject());
+    assert.equal(result.rounds, 2);
+    assert.match(users[1]!, /html 字段只有 \d+ 个字符/);
+    assert.match(users[1]!, /放进 html 字段/);
+    assert.ok(warnings.some(line => line.includes("结构化输出不合格") && line.includes("只剩说明")), "原文应进入服务端日志");
+  } finally { console.warn = originalWarn; }
+
+  const alwaysShort = new GameCodeGenerator(new OpenAISettings(validKey), { fetchImpl: async () => llmResponse({ html: "<p>短</p>", design_notes: "x" }) });
+  console.warn = () => {};
+  try {
+    await assert.rejects(alwaysShort.generate(fakeProject()), (error: Error) => error.name === "InvalidGeneratedAnswerError" && /html 字段只有/.test(error.message));
+  } finally { console.warn = originalWarn; }
+});

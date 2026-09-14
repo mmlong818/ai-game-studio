@@ -295,7 +295,8 @@ export async function installImageRenderingProbe(page: Page) {
             }
           }
           const sourceUrl = String(source?.currentSrc || source?.src || "");
-          if (sourceUrl && targetWidth > 0 && targetHeight > 0 && assetRecords.length < 500) assetRecords.push({ sourceUrl, targetX, targetY, targetWidth, targetHeight, canvasWidth: this.canvas.width, canvasHeight: this.canvas.height });
+          // 离屏画布（未挂到文档，例如给 three.js 烘 CanvasTexture 的贴图画布）不是玩家看到的玩法区，尺寸合同不对它成立。
+          if (sourceUrl && targetWidth > 0 && targetHeight > 0 && assetRecords.length < 500) assetRecords.push({ sourceUrl, targetX, targetY, targetWidth, targetHeight, canvasWidth: this.canvas.width, canvasHeight: this.canvas.height, attached: this.canvas.isConnected !== false });
           const sourceRatio = Math.abs(sourceWidth / sourceHeight);
           const targetRatio = Math.abs(targetWidth / targetHeight);
           // 1px/2px procedural textures and nine-slice borders are intentionally scalable.
@@ -319,11 +320,13 @@ export async function installImageRenderingProbe(page: Page) {
 
 /** Enforce only the stable upper display bound. Entry animation and temporary effects may be smaller than the planned normal size. */
 export async function collectSpritePresentationFailures(page: Page, blueprint?: GeneratedBlueprint | null): Promise<string[]> {
-  const records = await page.evaluate(() => (window as any).__FORGE_IMAGE_RENDERING__?.assetRecords ?? []) as Array<{ sourceUrl: string; targetWidth: number; targetHeight: number; canvasWidth: number; canvasHeight: number }>;
+  const records = await page.evaluate(() => (window as any).__FORGE_IMAGE_RENDERING__?.assetRecords ?? []) as Array<{ sourceUrl: string; targetWidth: number; targetHeight: number; canvasWidth: number; canvasHeight: number; attached?: boolean }>;
   const failures: string[] = [];
   for (const sprite of blueprint?.sprites ?? []) {
     if (sprite.presentation.region !== "playfield") continue;
-    const matching = records.filter(record => decodeURIComponent(record.sourceUrl).includes(sprite.file));
+    // 只看挂在文档里的画布：3D 作品把位图先画到离屏画布再作为贴图上传 WebGL，那一笔占满贴图画布是正常的，
+    // 玩家看到的尺寸由投影决定（2026-09-14 3D 首建曾因此被误判“90% 超上限”）。
+    const matching = records.filter(record => record.attached !== false && decodeURIComponent(record.sourceUrl).includes(sprite.file));
     if (!matching.length) continue; // Asset-use and Sprite Sheet checks own the missing-draw failure.
     const ratios = matching.map(record => Math.max(Math.abs(record.targetWidth), Math.abs(record.targetHeight)) / Math.max(1, Math.min(record.canvasWidth, record.canvasHeight)));
     const largest = Math.max(...ratios);

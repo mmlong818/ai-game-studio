@@ -115,6 +115,11 @@ test("图像渲染探针拒绝拉伸并接受 contain、裁切图集与 DPR 等�
     const presentationBlueprint = { sprites: [{ file: "assets/hero.png", role: "主角", presentation: { region: "playfield", fit: "contain", logicalSize: { min: .05, max: .2 }, anchor: { x: .5, y: .5 }, safeInsetRatio: .08, minSourcePixels: 128 } }] } as unknown as GeneratedBlueprint;
     await page.evaluate(() => { const canvas = document.querySelector("canvas")!; const context = canvas.getContext("2d")!; const sheet = document.createElement("canvas"); sheet.width = 256; sheet.height = 64; (sheet as any).src = "/assets/hero.png"; context.drawImage(sheet, 0, 0, 64, 64, 0, 0, 64, 64); context.drawImage(sheet, 64, 0, 64, 64, 0, 0, 64, 64); context.drawImage(sheet, 128, 0, 64, 64, 0, 0, 64, 64); });
     assert.ok((await collectSpritePresentationFailures(page, presentationBlueprint)).some(failure => failure.includes("超过合同上限")));
+
+    // 3D 贴图烘焙：位图只画到未挂载的离屏画布（占满 90%），不是玩法区显示尺寸，不得判超限。
+    const textureBlueprint = { sprites: [{ file: "assets/block.png", role: "方块贴图", presentation: { region: "playfield", fit: "contain", logicalSize: { min: .08, max: .16 }, anchor: { x: .5, y: .5 }, safeInsetRatio: .06, minSourcePixels: 256 } }] } as unknown as GeneratedBlueprint;
+    await page.evaluate(() => { const offscreen = document.createElement("canvas"); offscreen.width = 256; offscreen.height = 256; const context = offscreen.getContext("2d")!; const image = document.createElement("canvas"); image.width = 256; image.height = 256; (image as any).src = "/assets/block.png"; for (let index = 0; index < 4; index += 1) context.drawImage(image, 13, 13, 230, 230); });
+    assert.deepEqual(await collectSpritePresentationFailures(page, textureBlueprint), []);
   } finally {
     await page.close();
     await browser.close();

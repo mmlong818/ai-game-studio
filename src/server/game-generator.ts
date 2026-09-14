@@ -118,6 +118,35 @@ const answerSchema = z.object({
   design_notes: z.string(),
 });
 
+/** 模型完成了请求、返回了 JSON，但内容不符合答案合同（不是 JSON、缺 html、html 太短）。带原文以便诊断，可在轮数内纠错重试。 */
+export class InvalidGeneratedAnswerError extends Error {
+  constructor(message: string, readonly rawContent: string, readonly reason: "not-json" | "schema") {
+    super(message);
+    this.name = "InvalidGeneratedAnswerError";
+  }
+}
+
+function parseAnswer(content: string): z.infer<typeof answerSchema> {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(content);
+  } catch {
+    throw new InvalidGeneratedAnswerError(`模型输出不是有效的 JSON（${content.length.toLocaleString("zh-CN")} 个字符）。`, content, "not-json");
+  }
+  const result = answerSchema.safeParse(parsed);
+  if (result.success) return result.data;
+  const record = parsed && typeof parsed === "object" ? (parsed as Record<string, unknown>) : null;
+  const keys = record ? Object.keys(record).join("、") || "（空对象）" : typeof parsed;
+  const html = typeof record?.html === "string" ? record.html : null;
+  throw new InvalidGeneratedAnswerError(
+    html !== null
+      ? `模型输出的 html 字段只有 ${html.length} 个字符，不是完整的 HTML 文档（至少 500 字符）；返回字段：${keys}。`
+      : `模型输出缺少 html 字段；返回字段：${keys}。`,
+    content,
+    "schema",
+  );
+}
+
 const responseJsonSchema = {
   type: "object",
   additionalProperties: false,
@@ -278,7 +307,23 @@ export class GameCodeGenerator {
       const reserved = budget.reserve();
       await report(`本任务代码生成请求额度：${reserved}/${budget.limit}；达到上限后停止自动修复。`);
       await report(`正在生成游戏代码，第 ${round} 轮（最多 ${MAX_GENERATION_ROUNDS} 轮安全修正），等待模型输出`);
-      const answer = await this.requestGame(project, pendingFeedback, repairBase, apiKey, async (count, progress) => report(`正在生成游戏代码，第 ${round} 轮 · ${progress?.phase ?? "正在写页面骨架"} · 已收到 ${count.toLocaleString("zh-CN")} 个字符`, progress?.excerpt || null));
+      let answer: z.infer<typeof answerSchema>;
+      try {
+        answer = await this.requestGame(project, pendingFeedback, repairBase, apiKey, async (count, progress) => report(`正在生成游戏代码，第 ${round} 轮 · ${progress?.phase ?? "正在写页面骨架"} · 已收到 ${count.toLocaleString("zh-CN")} 个字符`, progress?.excerpt || null));
+      } catch (error) {
+        // 模型答了、格式却不合答案合同（2026-09-14 3D 首建：流了 2.6 万字符，最终 html 字段不足 500 字符）。
+        // 原文只进服务端日志供诊断；轮数未用完时把具体缺陷作为纠错意见再生成一轮，而不是整次构建直接失败。
+        if (error instanceof InvalidGeneratedAnswerError) {
+          const raw = error.rawContent;
+          console.warn(`[game-generator] 项目 ${project.id} 第 ${round} 轮结构化输出不合格：${error.message} 原文 ${raw.length} 字符，前 600：${JSON.stringify(raw.slice(0, 600))} 后 600：${JSON.stringify(raw.slice(-600))}`);
+          if (round < MAX_GENERATION_ROUNDS) {
+            await report(`第 ${round} 轮输出不合格：${error.message} 将带着纠错意见再生成一轮`);
+            pendingFeedback = [...feedback, ...lastViolations.map((item) => `安全扫描违规:${item}`), `上一轮结构化输出不合格：${error.message} 必须把完整的单文件 HTML 文档（以 <!DOCTYPE html> 开头，内联全部样式与脚本）放进 html 字段，design_notes 只放简短实现说明；不要把代码放进其他字段、拆成多段或省略。`];
+            continue;
+          }
+        }
+        throw error;
+      }
       await report(`第 ${round} 轮输出已接收，正在进行代码安全检查`);
       const violations = scanGeneratedHtml(answer.html, { allowThreeModule: project.spec.runtimeTarget === "web-3d" });
       if (violations.length === 0) {
@@ -365,7 +410,7 @@ export class GameCodeGenerator {
           }
           if (!completed) throw new Error("代码输出流中断，未自动重新发起付费生成。");
           await onProgress(content.length, describeGenerationProgress(content));
-          return answerSchema.parse(JSON.parse(content));
+          return parseAnswer(content);
         }
         // OpenAI-compatible providers may still return a complete JSON response.
         const body = (await response.json()) as { choices?: Array<{ message?: { content?: string | null; refusal?: string | null } }> };
@@ -373,7 +418,7 @@ export class GameCodeGenerator {
         if (message?.refusal) throw new Error(`模型拒绝了该请求：${message.refusal.slice(0, 120)}`);
         if (!message?.content) throw new Error("模型没有返回可解析的内容。");
         await onProgress(message.content.length);
-        return answerSchema.parse(JSON.parse(message.content));
+        return parseAnswer(message.content);
       } catch (error) {
         if (cancellationSignal()?.aborted) throw error;
         const annotated = error instanceof Error ? Object.assign(error, { failureMeta }) : error;

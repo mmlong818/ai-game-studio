@@ -39,7 +39,7 @@ export function safeFailure(stage: FailureDetail["stage"], error: unknown, extra
   // safe explanation separate from an image decoder failure.
   // 交付阶段已经没有模型调用：这里的 ZodError 是平台自己的成品规格校验，不能说成“服务返回内容无效”。
   const platformSchemaFailure = stage === "delivery" && source.name === "ZodError";
-  const invalidTextResponse = !platformSchemaFailure && (/不是有效的 JSON|没有返回可解析的内容|未提供输出流|模型流式输出失败|输出连接中断|输出因 .*截断/.test(message)
+  const invalidTextResponse = !platformSchemaFailure && (/不是有效的 JSON|html 字段只有|缺少 html 字段|没有返回可解析的内容|未提供输出流|模型流式输出失败|输出连接中断|输出因 .*截断/.test(message)
     || source.name === "SyntaxError" || source.name === "ZodError");
   const causeCode = (value: unknown): string => value && typeof value === "object"
     ? String((value as { code?: unknown }).code ?? causeCode((value as { cause?: unknown }).cause)).toUpperCase() : "";
