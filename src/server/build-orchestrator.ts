@@ -94,18 +94,27 @@ const operationScopePatterns = {
   "visual-style": /美术风格|画风|视觉风格|配色|材质|绘本|水彩|像素风|卡通风/,
 } as const;
 
-function selectedOperationContent(scope: RevisionPlan["operations"][number]["scope"], content: string) {
+function selectedOperationContent(scope: RevisionPlan["operations"][number]["scope"], content: string, planContent?: string) {
+  // 关键词筛句只针对“启发式规划把整段原话原样塞进每个操作”的情况；用户或客户端为某个操作单独写的内容是明确意图，必须原样保留。
+  if (planContent !== undefined && content.trim() !== planContent.trim()) return content.trim();
   const clauses = content.split(/[，,。；;\n]|同时|并且/).map(clause => clause.trim()).filter(Boolean);
   const selected = clauses.filter(clause => operationScopePatterns[scope].test(clause));
   return selected.join("，") || content.trim();
 }
 
 export function revisionPlanInstructions(revisionPlan: RevisionPlan) {
-  return revisionPlan.operations.map((operation) => renovationScopeInstruction(operation.scope, selectedOperationContent(operation.scope, operation.content)));
+  return revisionPlan.operations.map((operation) => renovationScopeInstruction(operation.scope, selectedOperationContent(operation.scope, operation.content, revisionPlan.content)));
 }
 
 export function selectedRevisionRequest(revisionPlan: RevisionPlan) {
-  return revisionPlan.operations.map((operation) => selectedOperationContent(operation.scope, operation.content)).join("；");
+  return revisionPlan.operations.map((operation) => selectedOperationContent(operation.scope, operation.content, revisionPlan.content)).join("；");
+}
+
+/** 策划输入至少 12 字（projectInputSchema）。计划拆出的单条操作可能只有几个字（如“关卡需要扩展为100关”），这时退回用户的完整原话，不能让整次改造在规划阶段就被输入校验打回。 */
+export const MINIMUM_REVISION_IDEA_LENGTH = 12;
+export function effectiveRevisionRequestFor(revisionPlan: RevisionPlan) {
+  const selected = selectedRevisionRequest(revisionPlan).trim();
+  return selected.length >= MINIMUM_REVISION_IDEA_LENGTH ? selected : revisionPlan.content.trim();
 }
 import type { ResourceFamily } from "../shared/resource-library/index.js";
 
@@ -305,7 +314,7 @@ export class BuildOrchestrator {
         : revisionScope && revisionRequest
           ? [renovationScopeInstruction(revisionScope, revisionRequest)]
         : userMessages.map((message) => message.content);
-      const effectiveRevisionRequest = revisionPlan ? selectedRevisionRequest(revisionPlan) : revisionRequest;
+      const effectiveRevisionRequest = revisionPlan ? effectiveRevisionRequestFor(revisionPlan) : revisionRequest;
       // A new renovation already carries a locally constrained confirmed profile.
       // Only a /revisions request asks the planner to revise the current contract again.
       const project = await this.normalizeProject(storedProject, build.revisionScope || build.revisionPlan ? directions : [], revisionScope, effectiveRevisionRequest);

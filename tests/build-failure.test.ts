@@ -95,3 +95,14 @@ test("交付阶段的平台规格校验失败不冒充服务返回无效，并�
   // 其他阶段的 ZodError 仍是模型输出解析问题。
   assert.equal(safeFailure("design", error).code, "INVALID_RESPONSE");
 });
+
+test("规划阶段的用户输入校验失败如实归为输入问题，不冒充服务返回无效", () => {
+  // 复现 2026-09-14：计划拆出的操作只有 10 个字，idea 最少 12 字的本地校验抛 ZodError，用户看到的却是“服务返回内容格式无效”。
+  const error = Object.assign(new Error("[{\"path\":[\"idea\"]}]"), { name: "ZodError", issues: [{ code: "too_small", path: ["idea"], message: "请至少说明玩家做什么，以及怎样算完成。" }] });
+  const detail = safeFailure("planning", error);
+  assert.equal(detail.code, "INVALID_INPUT");
+  assert.equal(detail.category, "validation");
+  assert.match(detail.message, /请至少说明玩家做什么/);
+  assert.match(detail.nextStep, /没有调用模型/);
+  assert.doesNotMatch(detail.message, /服务返回内容格式无效/);
+});

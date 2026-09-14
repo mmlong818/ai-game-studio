@@ -82,8 +82,8 @@ const responseJsonSchema = {
         properties: {
           mode: { type: "string", enum: ["campaign", "endless"], description: "有限闯关或无目标无限玩法；无限玩法总关数0、milestones空数组，不得强加胜利目标。" },
           failurePolicy: { type: "string", enum: ["required", "forbidden"], description: "有失败条件为required，无失败玩法为forbidden。必须与fail_condition一致，不得为了验收给无失败玩法增加失败。" },
-          levelCount: { type: "integer", minimum: 0, maximum: 60 },
-          milestones: { type: "array", maxItems: 20, items: { type: "integer", minimum: 1, maximum: 60 } },
+          levelCount: { type: "integer", minimum: 0, maximum: 100 },
+          milestones: { type: "array", maxItems: 20, items: { type: "integer", minimum: 1, maximum: 100 } },
           difficultyKeys: { type: "array", maxItems: 6, items: { type: "string", pattern: "^[a-z][a-zA-Z0-9]{0,39}$" }, description: "最多 6 个，小写英文开头的驼峰标识，如 basketSlots、tideInterval。" },
           rationale: { type: "string" },
         },

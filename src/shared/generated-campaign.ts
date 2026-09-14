@@ -4,8 +4,9 @@ import { z } from "zod";
 export const generatedCampaignSchema = z.object({
   mode: z.enum(["campaign", "endless"]).default("campaign"),
   failurePolicy: z.enum(["required", "forbidden"]).default("required"),
-  levelCount: z.number().int().min(0).max(60),
-  milestones: z.array(z.number().int().min(1).max(60)).max(20),
+  // 2026-09-14 产品要求 100 关战役；浏览器门禁逐关调用 setLevel，因此上限只放到 100。
+  levelCount: z.number().int().min(0).max(100),
+  milestones: z.array(z.number().int().min(1).max(100)).max(20),
   difficultyKeys: z.array(z.string().regex(/^[a-z][a-zA-Z0-9]{0,39}$/)).max(6),
   rationale: z.string().trim().min(1).max(400),
 }).superRefine((plan, ctx) => {

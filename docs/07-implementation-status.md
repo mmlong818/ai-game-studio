@@ -25,7 +25,7 @@
 
 - `npm run typecheck`：2026-09-14 通过。
 - `npm run test:platform`：2026-09-14 共 95 个测试文件、480 项测试通过。
-- `npm run test:legacy`：2026-09-14 共 408 项全部通过（玩法改造采用策划关卡协议修复后完整重跑），含 14 款官方游戏的真实浏览器构建与教学验收、参考机制分析 8 项（假网络、假模型）。
+- `npm run test:legacy`：2026-09-14 共 411 项全部通过（改造计划拆句、输入校验分类与 100 关上限修复后完整重跑），含 14 款官方游戏的真实浏览器构建与教学验收、参考机制分析 8 项（假网络、假模型）。
 - 真实构建（2026-09-12/13，文本实际走 OpenAI 计费——CLI 接线当时已被 `4c3a23b` 删除，见 docs/94 补记）：官方游戏改造路径（数织矩阵 gameplay 改造，68 s，2 张图）与玩家新建路径（复刻数织矩阵单局 demo，55 s，零图）各交付一个版本。
 - 真实构建（2026-09-14，文本走 Claude CLI，零图）：外部参考游戏 Arrow Escape 经"核心玩法分析"复刻为 20 关生成游戏。首版 `3ce61a1f…`/`b996d7d3…` 因分析误读站点外壳而被大幅简化；修正后第二版 `98d0a327…`/`0df041f5…` 按参考原公式交付（32×34/182 箭起、时限 ceil5(max(4×箭头数,120))、细线抽象风）；试玩反馈后经 `/revisions` 玩法修订得到 `734c88a0…`（前 20 关按原作关卡表 15×20/45 起、沿路径滑行的射出动画）；过程与边界见 docs/106。同日删除了仍按旧"生成游戏必须有教学"合同断言的三个生成侧浏览器用例文件（`generated-onboarding-browser`、`f6-generated-onboarding-browser`、`sprite-sheet-generated-browser`，共 12 项）；生成游戏的浏览器验收目前只剩 `generated-build-onboarding`、`minimal-creation-golden`、`three-design-build` 等用例覆盖，取消教学后的无教学交付尚无专门浏览器用例。2026-09-08 的"286 项全部通过"为历史记录。
 - `npm run build`：2026-09-12 `vite build` 通过（服务端 tsc 由 typecheck 覆盖）。
