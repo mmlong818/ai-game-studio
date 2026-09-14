@@ -1,6 +1,6 @@
 # Codex 接手记录
 
-2026-09-08，基于 `feature/production-reliability` 的 `ed4ae47`。保留未跟踪的 `public/`，不合并main，不改部署包，不启动历史制作。
+2026-09-08，基于 `feature/production-reliability` 的 `85af908`。保留未跟踪的 `public/`，不合并main，不改部署包，不启动历史制作。
 
 ## 首项修复：方案生成请求去重
 

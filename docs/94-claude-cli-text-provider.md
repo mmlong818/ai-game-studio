@@ -2,7 +2,7 @@
 
 2026-09-07。本文描述代码行为；某次任务实际使用了哪个模型，以该版本 `_studio/GENERATED_CODE.json` 的 `model` 字段和服务端日志为准。
 
-> 2026-09-14 补记：提交 `e6d2a14`（2026-09-11）在固定模型时删掉了 `src/server/index.ts` 里这条接线，`STUDIO_TEXT_PROVIDER=claude-cli` 被静默忽略，09-12/13 的真实构建文本调用实际全部走了 OpenAI 计费（回执 `model: gpt-5.6-terra`）。已于 09-14 恢复；核对方法：`GET /api/settings/openai` 的 `models.text` 应为 `claude-cli:<model>`，服务启动日志应有"文本模型使用本机 Claude CLI"。
+> 2026-09-14 补记：提交 `4c3a23b`（2026-09-11）在固定模型时删掉了 `src/server/index.ts` 里这条接线，`STUDIO_TEXT_PROVIDER=claude-cli` 被静默忽略，09-12/13 的真实构建文本调用实际全部走了 OpenAI 计费（回执 `model: gpt-5.6-terra`）。已于 09-14 恢复；核对方法：`GET /api/settings/openai` 的 `models.text` 应为 `claude-cli:<model>`，服务启动日志应有"文本模型使用本机 Claude CLI"。
 
 ## 目的
 
