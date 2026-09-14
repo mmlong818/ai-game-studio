@@ -44,6 +44,26 @@ test("初次创作即使提到七关也先收敛为单局demo，不能影响官�
   assert.equal(official?.generatedCampaign, undefined);
 });
 
+test("玩法改造明确修订关卡协议时采用策划输出的关卡协议，视觉改造仍锁定", async () => {
+  const campaign = { mode: "campaign", failurePolicy: "required", levelCount: 8, milestones: [1, 4, 5, 6, 8], difficultyKeys: ["blockCount", "layerCount"], rationale: "4→6→9→12→异形 11→18→异形 22→27 块。" };
+  let prompt = "";
+  const generator = new DesignContractGenerator(new OpenAISettings(validKey), {
+    fetchImpl: async (_url, init) => {
+      const body = JSON.parse(String(init?.body)) as { messages: Array<{ role: string; content: string }> };
+      prompt = body.messages.map(message => message.content).join(" | ");
+      return llmResponse({ ...themedAnswer, generated_campaign: campaign });
+    },
+  });
+  const baseline = createDesignProfile("generated", "standard");
+  const sourceProjectId = randomUUID();
+  const gameplay = await generator.generate({ idea: "关卡递进：由单局改为 8 关，方块数 4、6、9、12、11、18、22、27。", template: "generated", sourceProjectId, revisionScope: "gameplay", confirmedDesignProfile: baseline }, null, ["关卡递进：由单局改为 8 关"]);
+  assert.equal(gameplay?.generatedCampaign?.levelCount, 8);
+  assert.deepEqual(gameplay?.generatedCampaign?.difficultyKeys, ["blockCount", "layerCount"]);
+  assert.match(prompt, /generated_campaign 里给出新的关卡协议/);
+  const visual = await generator.generate({ idea: "方块改为不受光照影响的自发光材质，其余玩法与关卡保持不变", template: "generated", sourceProjectId, revisionScope: "visual-style", confirmedDesignProfile: baseline }, null, ["方块改为自发光材质"]);
+  assert.equal(visual?.generatedCampaign ?? null, null, "视觉改造不得改关卡协议");
+});
+
 test("长方案只裁剪简介，不能因 vision 上限使创建失败", () => {
   const idea = "用户确认的完整方案：玩家在花园中收集星星并躲避障碍。".repeat(30);
   const spec = generateGameSpec({ idea, template: "snake" });

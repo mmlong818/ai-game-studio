@@ -508,6 +508,7 @@ export class DesignContractGenerator {
           "以上档案是复刻依据：core_loop、win_condition、fail_condition、progression、difficulty_curve 必须与档案一致，用中文规则语言重述并保留具体数值；只有档案 unknowns 里的项才允许写“未知”。广告、内购、激励续命等商业化机制不是玩法规则：fail_condition 只写失败判定与重试，不写“看广告续命/加时”。复刻不做规模克制：棋盘/场景尺寸、对象数量、时限公式、生成参数一律按档案原值或原公式（例如时限=max(4×对象数,120) 秒并向上取整到 5 的倍数，就原样写进 difficulty_curve 与 fail_condition），difficulty_curve 逐条给出具体数值或公式，不得为了“一局 2–8 分钟”“规模克制”而缩小；generated_campaign.difficultyKeys 只填档案里真实随关卡变化的**数值**参数（如 boardWidth、arrowCount、timeLimitSeconds），形状/模式等类别不得作为 difficultyKeys（由代码以 contentVariant 表达），方向允许按原作规律非单调（如每 10 关的大关）。generated_campaign 格式硬约束：mode=campaign 时 levelCount 为 1–60 的整数，milestones 必须以 1 开头、严格递增、不超过 levelCount（例如 [1,2,4,10,20]），difficultyKeys 至少 1 个且不重复。档案说明有关卡与结构规律时，generated_campaign 必须按档案填写（mode=campaign；关卡无上限时本次交付前 20 关并在 rationale 说明，milestones 取尺寸或规则明显变化的关；difficultyKeys 用档案里随关卡变化的真实参数名，如棋盘宽高、对象数量、时限）；档案说明是单局或无关卡时 generated_campaign 返回 null。",
         ] : []),
         ...(referenceEvidence.length && !referenceMechanics ? ["只提炼证据支持的核心动作、状态变化与目标。未证实终局时不得编造胜利，未证实失败时不得编造失败；不得补写关卡、教学或外围系统。"] : []),
+        ...(template === "generated" && revisionScope === "gameplay" ? ["若本次修改意见明确改变关卡或局制（关数、每关内容、里程碑、难度维度），必须在 generated_campaign 里给出新的关卡协议：levelCount 为总关数，milestones 从 1 开始严格递增且都是结构变化关，difficultyKeys 只填真实关卡配置里的数值维度（camelCase），rationale 概括每关内容；意见没有涉及关卡时 generated_campaign 返回 null 沿用现有协议。"] : []),
         ...(template === "generated" ? [blueprintPlanningPrompt(idea), spriteAnimation === "none"
           ? "本次明确关闭 Sprite Sheet：所有 sprites.animation 必须返回 null，保持静态位图。"
           : "Sprite Sheet 偏好为自动：只给适合的2D主要角色或短特效填写 animation；背景、静态道具和3D对象保持静态。"] : []),
@@ -518,7 +519,7 @@ export class DesignContractGenerator {
     // but the local contract schema has not yet accepted it. Failures before this
     // point (including cancellation and timeouts) must never look like validation.
     onValidating?.();
-    const profile = this.parseDesign(content, baseline, template, spriteAnimation, idea, referenceEvidence, referenceMechanics);
+    const profile = this.parseDesign(content, baseline, template, spriteAnimation, idea, referenceEvidence, referenceMechanics, revisionScope === "gameplay");
     return revisionScope ? constrainRenovationProfile(profile, baseline, revisionScope) : profile;
   }
 
@@ -647,7 +648,7 @@ export class DesignContractGenerator {
     throw lastError instanceof Error ? lastError : new Error("模型接口调用失败。");
   }
 
-  private parseDesign(content: string, baseline: GameDesignProfile, template: GameTemplate, spriteAnimation: "auto" | "none" = "auto", idea = "", referenceEvidence: ReferenceEvidence[] = [], referenceMechanics: ReferenceMechanics | null = null): GameDesignProfile {
+  private parseDesign(content: string, baseline: GameDesignProfile, template: GameTemplate, spriteAnimation: "auto" | "none" = "auto", idea = "", referenceEvidence: ReferenceEvidence[] = [], referenceMechanics: ReferenceMechanics | null = null, allowCampaignRevision = false): GameDesignProfile {
     let raw: unknown;
     try {
       raw = JSON.parse(content);
@@ -705,7 +706,8 @@ export class DesignContractGenerator {
       productionRisks: [...baseline.productionRisks, ...extraRisks].slice(0, 6),
       referenceMechanics: referenceReplica ? referenceMechanics : null,
       // 原创首版固定交付单局 demo；有机制档案的参考复刻按档案里的关卡结构交付（含关数、里程碑与真实难度参数）。
-      ...(template === "generated" ? { generatedCampaign: referenceReplica && referenceMechanics && answer.generated_campaign ? answer.generated_campaign : baseline.generatedCampaign ?? null } : {}),
+      // 玩法改造明确修订关卡协议（关数、里程碑、难度维度）时也采用策划输出，否则原创首版仍固定单局 demo。
+      ...(template === "generated" ? { generatedCampaign: ((referenceReplica && referenceMechanics) || allowCampaignRevision) && answer.generated_campaign ? answer.generated_campaign : baseline.generatedCampaign ?? null } : {}),
       // 蓝图只对无模板生成游戏有效；机制与修饰器 id 由 schema 对照知识库校验，选错即整份方案作废。
       ...(template === "generated" && !referenceReplica && answer.generated_blueprint ? {
         generatedBlueprint: generatedBlueprintSchema.parse({
