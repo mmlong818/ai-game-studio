@@ -4,6 +4,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { generateGameSpec, getTemplateCatalog, type ProjectDetail } from "../src/shared/contracts";
+import { blueprintRules, generatedBlueprintPrompt, renderableBlueprint } from "../src/shared/generated-blueprint";
+import { dynamicArtPlan } from "../src/server/image-generator";
 import {
   GameCodeGenerator,
   describeGenerationProgress,
@@ -561,4 +563,35 @@ test("结构化输出 html 太短时带具体缺陷纠错一轮，用完轮数�
   try {
     await assert.rejects(alwaysShort.generate(fakeProject()), (error: Error) => error.name === "InvalidGeneratedAnswerError" && /html 字段只有/.test(error.message));
   } finally { console.warn = originalWarn; }
+});
+
+test("3D 作品默认单色渲染：蓝图位图不进图片计划、不进静态探针、提示词改为程序绘制", () => {
+  const project = fake3dProject();
+  const sprites = [
+    { file: "assets/arrow-cube-block.png", role: "箭头小方块", hint: "石质方块", presentation: { region: "playfield", fit: "contain", logicalSize: { min: 0.08, max: 0.16 }, anchor: { x: 0.5, y: 0.5 }, safeInsetRatio: 0.06, minSourcePixels: 256 } },
+    { file: "assets/arrow-glyph.png", role: "箭头", hint: "实心箭头", presentation: { region: "playfield", fit: "contain", logicalSize: { min: 0.04, max: 0.09 }, anchor: { x: 0.5, y: 0.5 }, safeInsetRatio: 0.08, minSourcePixels: 192 } },
+  ];
+  project.spec.designProfile.creationMode = "original-demo";
+  project.spec.designProfile.generatedBlueprint = { mechanicIds: ["perspective-align"], modifierIds: ["untimed-safe"], coreDecision: "先推哪一块。", tension: "停下的块变成障碍。", masterySignal: "更少无效点击。", sprites } as never;
+  assert.deepEqual(dynamicArtPlan(project), [], "3D 生成作品不应计划任何位图");
+  const renderable = renderableBlueprint(project.spec.designProfile.generatedBlueprint, project.spec.runtimeTarget)!;
+  assert.deepEqual(renderable.sprites, []);
+  assert.equal(renderable.coreDecision, "先推哪一块。", "玩法取舍必须保留");
+  const prompt = generatedBlueprintPrompt(renderable);
+  assert.match(prompt, /单色渲染/);
+  assert.doesNotMatch(prompt, /arrow-cube-block|必须由这些位图承担/);
+  const rules = blueprintRules(renderable);
+  assert.ok(rules.some(rule => rule.startsWith("单色渲染")), "规则审核清单应换成单色渲染规则");
+  assert.ok(!rules.some(rule => rule.includes("已加载位图")), "规则审核不得再要求位图承担主体");
+  // 2D 作品不受影响。
+  const flat = renderableBlueprint(project.spec.designProfile.generatedBlueprint, "web-2d")!;
+  assert.equal(flat.sprites.length, 2);
+  // 静态探针：没有任何位图文件也能通过（探针拿到的是可渲染蓝图）。
+  const root = mkdtempSync(join(tmpdir(), "forge-gen3d-solid-"));
+  try {
+    writeGeneratedArtifact(root, project, { html: contract3dHtml, designNotes: "单色", rounds: 1 });
+    const labels = inspectGeneratedArtifact(root, { requireAiArt: false, expectedBlueprint: renderable });
+    assert.ok(labels.includes("程序化资源路线"));
+    assert.ok(!labels.includes("局内主体位图接入"));
+  } finally { rmSync(root, { recursive: true, force: true }); }
 });

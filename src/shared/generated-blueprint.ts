@@ -112,6 +112,16 @@ export function blueprintSpriteFiles(plan?: GeneratedBlueprint | null): string[]
 }
 
 /**
+ * 3D 作品默认单色渲染（2026-09-14 产品规则）：主体用纯色/顶点色材质与程序 CanvasTexture 表现，
+ * 方案里声明的位图不生成、不加载、不验收；是否补贴图留到上线后按需要单独决定。
+ * 蓝图的玩法取舍、机制与修饰器照常生效，只把 sprites 清空。
+ */
+export function renderableBlueprint(plan: GeneratedBlueprint | null | undefined, runtimeTarget: string): GeneratedBlueprint | null {
+  if (!plan) return null;
+  return runtimeTarget === "web-3d" ? { ...plan, sprites: [] } : plan;
+}
+
+/**
  * 供代码生成使用的规则段：既列出必须绘制的位图，也把机制与修饰器的生产规则写成硬要求。
  */
 export function generatedBlueprintPrompt(plan?: GeneratedBlueprint | null): string {
@@ -125,9 +135,10 @@ export function generatedBlueprintPrompt(plan?: GeneratedBlueprint | null): stri
     "以下知识库机制卡只用于帮助理解策划分类；不得用卡片里的通用角色、状态或结果替换上面的本游戏具体取舍，也不得据此增加玩家未要求的操作。",
     ...mechanics,
     ...modifiers,
-    `局内美术：平台已生成 ${plan.sprites.map(({ file, role, animation, presentation }) => `${file}（${role}${animation ? `；Sprite Sheet ${animation.columns}×${animation.rows}，单帧 ${animation.frameWidth}×${animation.frameHeight}，像素锚点 ${animation.anchor.x},${animation.anchor.y}，动作 ${animation.clips.map(clip => `${clip.id}:${clip.startFrame}+${clip.frameCount}@${clip.fps}fps${clip.loop ? "循环" : "单次"}`).join("/")}` : "；静态位图"}；显示区域 ${presentation.region}；相对玩法区短边的常态显示比例 ${presentation.logicalSize.min}–${presentation.logicalSize.max}；归一化锚点 ${presentation.anchor.x},${presentation.anchor.y}；contain）`).join("、")}，全部必须实际加载并绘制。源文件像素尺寸与逻辑显示尺寸是两个独立概念。`,
+    ...(plan.sprites.length === 0 ? ["局内美术：本作品不使用任何位图（3D 默认单色渲染）：方块、角色、符号与反馈全部程序绘制——纯色或顶点色材质、程序 CanvasTexture、Canvas 路径；不得加载、引用或虚构任何图片文件。"] : []),
+    ...(plan.sprites.length === 0 ? [] : [`局内美术：平台已生成 ${plan.sprites.map(({ file, role, animation, presentation }) => `${file}（${role}${animation ? `；Sprite Sheet ${animation.columns}×${animation.rows}，单帧 ${animation.frameWidth}×${animation.frameHeight}，像素锚点 ${animation.anchor.x},${animation.anchor.y}，动作 ${animation.clips.map(clip => `${clip.id}:${clip.startFrame}+${clip.frameCount}@${clip.fps}fps${clip.loop ? "循环" : "单次"}`).join("/")}` : "；静态位图"}；显示区域 ${presentation.region}；相对玩法区短边的常态显示比例 ${presentation.logicalSize.min}–${presentation.logicalSize.max}；归一化锚点 ${presentation.anchor.x},${presentation.anchor.y}；contain）`).join("、")}，全部必须实际加载并绘制。源文件像素尺寸与逻辑显示尺寸是两个独立概念。`]),
     ...(plan.sprites.some(({ animation }) => animation) ? ["带 animation 的文件是 row-major Sprite Sheet。必须使用平台 window.__FORGE_SPRITES__.create(image, animation, initialClip) 播放，并在正常玩法状态切换时调用 play(id)；每帧用 player.draw(ctx, anchorX, anchorY, scale, timestamp) 绘制。禁止把整张网格当静态图显示，也禁止另写一套帧索引算法。"] : []),
-    "玩家直接看到或操作的主体外观必须由这些位图承担；禁止用 canvas 路径、圆形、多边形或渐变替代主体位图。允许程序绘制路线、网格、碰撞或出口判定遮罩、高亮框、状态灯和进度条等玩法辅助层，也允许在位图之上叠加反馈。",
+    ...(plan.sprites.length === 0 ? [] : ["玩家直接看到或操作的主体外观必须由这些位图承担；禁止用 canvas 路径、圆形、多边形或渐变替代主体位图。允许程序绘制路线、网格、碰撞或出口判定遮罩、高亮框、状态灯和进度条等玩法辅助层，也允许在位图之上叠加反馈。"]),
   ].join("\n");
 }
 
@@ -137,7 +148,8 @@ export function blueprintRules(plan?: GeneratedBlueprint | null): string[] {
   return [
     `玩家取舍:${plan.coreDecision}`,
     ...blueprintModifiers(plan).map(entry => `修饰器${entry.label}:${entry.rule}`),
-    `局内主体外观必须由这些已加载位图按显示合同承担:${plan.sprites.map(({ file, presentation }) => `${file}[${presentation.region},${presentation.logicalSize.min}-${presentation.logicalSize.max}]`).join("、")}；程序绘制路线、网格、碰撞或出口判定遮罩、高亮及状态UI属于允许的玩法辅助层，只有以程序图形替代主体位图才违规。`,
+    ...(plan.sprites.length === 0 ? ["单色渲染:不加载、不引用任何图片文件；方块、角色、符号与反馈全部由纯色/顶点色材质、程序 CanvasTexture 或 Canvas 路径绘制。"] : []),
+    ...(plan.sprites.length === 0 ? [] : [`局内主体外观必须由这些已加载位图按显示合同承担:${plan.sprites.map(({ file, presentation }) => `${file}[${presentation.region},${presentation.logicalSize.min}-${presentation.logicalSize.max}]`).join("、")}；程序绘制路线、网格、碰撞或出口判定遮罩、高亮及状态UI属于允许的玩法辅助层，只有以程序图形替代主体位图才违规。`]),
   ];
 }
 

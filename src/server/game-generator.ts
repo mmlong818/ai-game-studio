@@ -12,7 +12,7 @@ import { OPENAI_TEXT_MODEL, type OpenAISettings } from "./openai-settings.js";
 import { streamLines } from "../shared/stream-lines.js";
 import { ArtifactValidationFailure, GenerationBudget } from "./generation-budget.js";
 import { generatedCampaignPrompt, resolveGeneratedCampaign, verifyGeneratedCampaign } from "../shared/generated-campaign.js";
-import { blueprintSpriteFiles, generatedBlueprintPrompt, isReferenceReplicationIdea, type GeneratedBlueprint } from "../shared/generated-blueprint.js";
+import { blueprintSpriteFiles, generatedBlueprintPrompt, isReferenceReplicationIdea, renderableBlueprint, type GeneratedBlueprint } from "../shared/generated-blueprint.js";
 import { referenceMechanicsPrompt } from "../shared/reference-mechanics.js";
 import { spriteSheetRuntimeWithRegistry } from "../shared/sprite-sheet-runtime/index.js";
 import { cancellationSignal, throwIfCancellationRequested, withTimeoutSignal } from "./cancellation.js";
@@ -108,6 +108,7 @@ function runtimeContract(is3d: boolean, campaign?: unknown, blueprint?: Generate
       : "13. 代码必须是一个完整的 HTML 文档:<style> 内联全部样式,单个 <script>(非 module)内联全部逻辑;不使用任何构建工具语法。",
     ...(is3d ? [
       "14. 3D 工程边界:WebGLRenderer({ antialias: true }) 并 renderer.setPixelRatio(Math.min(devicePixelRatio, 1.5));场景只用 three 原始几何(Box/Sphere/Cylinder/Plane 等)+顶点色/纯色/程序 CanvasTexture,禁止加载外部模型与纹理文件;同屏动态物体不超过 60 个,光源不超过 2 个平行光/点光+1 个环境光;监听 resize 同步相机纵横比与画布尺寸;每帧逻辑放 renderer.setAnimationLoop,页面隐藏时暂停渲染。",
+      "14.1 3D 默认单色渲染:所有主体、符号、描边与反馈只用纯色/顶点色材质、程序 CanvasTexture 与 Canvas 路径绘制;不加载、不引用任何图片文件(方案里声明的位图在 3D 作品中不生成);颜色用少量饱和度适中的纯色区分对象,靠明度分档表现朝向。",
       "15. 3D 操控:桌面用键盘(WASD/方向键)与鼠标;移动端必须提供 DOM 虚拟按键(方向+动作),不得依赖陀螺仪;相机跟随主角或固定俯视,主体始终可读。",
     ] : []),
   ].join("\n");
@@ -203,10 +204,10 @@ function buildSystemPrompt(project: ProjectDetail, iterating: boolean): string {
     ] : []),
     ...(project.spec.designProfile.generatedBlueprint ? [
       "== 玩法深度与知识蓝图(逐条硬性要求) ==",
-      generatedBlueprintPrompt(project.spec.designProfile.generatedBlueprint),
+      generatedBlueprintPrompt(renderableBlueprint(project.spec.designProfile.generatedBlueprint, project.spec.runtimeTarget)),
     ] : []),
     "== 运行时契约(逐条硬性要求) ==",
-    runtimeContract(is3d, project.spec.designProfile.generatedCampaign, project.spec.designProfile.generatedBlueprint ?? null, [
+    runtimeContract(is3d, project.spec.designProfile.generatedCampaign, renderableBlueprint(project.spec.designProfile.generatedBlueprint, project.spec.runtimeTarget), [
       ...project.spec.designProfile.coreLoop, project.spec.designProfile.winCondition, project.spec.designProfile.failCondition,
       ...project.spec.designProfile.progression, ...project.spec.designProfile.difficultyCurve,
     ]),

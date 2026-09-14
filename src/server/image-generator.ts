@@ -1,5 +1,5 @@
 import { visualStyleOptions, type GameTemplate, type ProjectDetail, type RevisionAssetCandidate } from "../shared/contracts.js";
-import type { SpriteAnimationClipId, SpriteSheetAnimation } from "../shared/generated-blueprint.js";
+import { renderableBlueprint, type SpriteAnimationClipId, type SpriteSheetAnimation } from "../shared/generated-blueprint.js";
 import { type OpenAISettings } from "./openai-settings.js";
 import { packAnimationSpriteSheet, replaceAnimationSpriteClip, splitSpriteSheetDraft, SpriteSheetValidationError, type SpriteFrameSourceMetadata, type SpriteSheetWarning } from "./sprite-sheet.js";
 import { createHash } from "node:crypto";
@@ -406,8 +406,9 @@ export interface DynamicArtEntry {
  * 同批主体共享一个风格锚点，避免几张图各自为政。
  */
 export function blueprintSpriteSet(project: ProjectDetail): SpriteSetSpec | null {
-  const blueprint = project.spec.template === "generated" ? project.spec.designProfile.generatedBlueprint : undefined;
-  if (!blueprint) return null;
+  // 3D 作品默认单色渲染：蓝图里的位图不进入图片计划（见 renderableBlueprint）。
+  const blueprint = project.spec.template === "generated" ? renderableBlueprint(project.spec.designProfile.generatedBlueprint, project.spec.runtimeTarget) : undefined;
+  if (!blueprint || blueprint.sprites.length === 0) return null;
   return {
     anchor: `这是同一款游戏的一套局内主体位图之一，共 ${blueprint.sprites.length} 张：全部共用相同的笔触、描边语言、光照方向与配色体系，彼此并排出现时必须像同一位美术在同一天画的；每张只画本条描述的单一主体`,
     entries: blueprint.sprites.map(({ file, role, hint, animation, presentation }) => ({ file, role, hint, presentation, ...(animation ? { animation } : {}) })),

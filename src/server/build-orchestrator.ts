@@ -30,7 +30,7 @@ import { createGameDesignContractForLegacyProject } from "../shared/game-design-
 import { readGeneratedSource } from "./generated-source.js";
 import { ArtifactValidationFailure, GenerationBudget } from "./generation-budget.js";
 import { readReusableGeneratedArt } from "./generated-art-reuse.js";
-import { blueprintSpriteFiles, spriteSheetAnimationSchema, type SpriteSheetAnimation } from "../shared/generated-blueprint.js";
+import { blueprintSpriteFiles, renderableBlueprint, spriteSheetAnimationSchema, type SpriteSheetAnimation } from "../shared/generated-blueprint.js";
 import { readReusableRuleAudit, safeContractRules, sha256, writeRuleFidelity } from "./rule-audit-checkpoint.js";
 import { runWithCancellation, throwIfCancellationRequested } from "./cancellation.js";
 import { BuildFailure, safeFailure } from "./build-failure.js";
@@ -288,7 +288,9 @@ export class BuildOrchestrator {
       if (!storedProject) throw new Error("项目不存在。");
       if (storedProject.archivedAt) throw new Error("项目已归档，未继续制作或调用模型；恢复项目后可明确启动新任务。");
       const userMessages = (await this.repository.listMessages(build.projectId)).filter((message) => message.role === "user");
-      const revisionPlan = build.revisionPlan ?? storedProject.spec.renovation?.revisionPlan ?? null;
+      // 只有“无改造参数的重建”才沿用上一版保存的修改计划；带 revisionScope 的新改造请求必须以自己的内容为准。
+      // 2026-09-14：此前新请求会被上一版计划覆盖，连续 5 次改造都在重复执行旧的贴纸计划。
+      const revisionPlan = build.revisionPlan ?? (build.revisionScope ? null : storedProject.spec.renovation?.revisionPlan ?? null);
       const planScopes = new Set(revisionPlan?.operations.map((operation) => operation.scope) ?? []);
       const hasAssetOperation = planScopes.has("assets");
       const hasGameplayOperation = planScopes.has("gameplay");
@@ -454,7 +456,7 @@ export class BuildOrchestrator {
         const backgroundPlanned = declaredArtPlan.some((entry) => entry.file === "assets/background.png");
         if (backgroundPlanned && !background && !existsSync(join(root, "assets", "background.png"))) throw new Error("AI 局内背景生成失败，构建已中断；不会使用程序图或 SVG 替代。");
         // 确认方案声明的局内主体必须全部真实生成；缺图不能用程序化图形或占位图顶替。
-        const plannedSprites = blueprintSpriteFiles(project.spec.template === "generated" ? project.spec.designProfile.generatedBlueprint : null);
+        const plannedSprites = blueprintSpriteFiles(project.spec.template === "generated" ? renderableBlueprint(project.spec.designProfile.generatedBlueprint, project.spec.runtimeTarget) : null);
         const missingSprites = plannedSprites.filter(file => !dynamicArt.some(entry => entry.file === file) && !existsSync(join(root, file)));
         if (missingSprites.length) throw new Error(`确认方案要求的局内主体位图未全部生成（${missingSprites.join("、")}），构建已中断；不会用程序化图形或占位图替代。`);
         mkdirSync(join(root, "assets"), { recursive: true });
@@ -464,7 +466,7 @@ export class BuildOrchestrator {
           mkdirSync(dirname(target), { recursive: true });
           writeFileSync(target, entry.bytes);
         }
-        const animatedFiles = new Set(project.spec.designProfile.generatedBlueprint?.sprites.filter(sprite => sprite.animation).map(sprite => sprite.file) ?? []);
+        const animatedFiles = new Set(renderableBlueprint(project.spec.designProfile.generatedBlueprint, project.spec.runtimeTarget)?.sprites.filter(sprite => sprite.animation).map(sprite => sprite.file) ?? []);
         const deliveredSlots = [{ file: "assets/cover.png", role: "封面", fit: "cover" as const }, ...dynamicArtPlan(project).map(entry => ({ file: entry.file, role: entry.role, fit: entry.file === "assets/background.png" ? "cover" as const : animatedFiles.has(entry.file) ? "sprite-sheet" as const : "contain" as const }))];
         const deliveredLayout: string[] = [];
         for (const slot of deliveredSlots) {
@@ -616,7 +618,7 @@ export class BuildOrchestrator {
       });
       sequence += 1;
       await this.step(buildId, sequence, () => {
-        passedProbes = project.spec.template === "generated" ? inspectGeneratedArtifact(root, { requireAiArt: dynamicArtPlan(project).length > 0, expectedCampaign: project.spec.designProfile.generatedCampaign ?? null, expectedBlueprint: project.spec.designProfile.generatedBlueprint ?? null }) : inspectGameArtifact(root);
+        passedProbes = project.spec.template === "generated" ? inspectGeneratedArtifact(root, { requireAiArt: dynamicArtPlan(project).length > 0, expectedCampaign: project.spec.designProfile.generatedCampaign ?? null, expectedBlueprint: renderableBlueprint(project.spec.designProfile.generatedBlueprint, project.spec.runtimeTarget) }) : inspectGameArtifact(root);
         qualityChecks = passedProbes.map((label, index) => ({
           id: `STATIC-${String(index + 1).padStart(2, "0")}`,
           label,
@@ -631,7 +633,7 @@ export class BuildOrchestrator {
           return "页面公开：测试环境跳过浏览器验收；成功构建将冻结为不可变版本。";
         }
         if (project.spec.template === "generated") {
-          const generatedResult = await inspectGeneratedGameInBrowser(root, { expectedCampaign: project.spec.designProfile.generatedCampaign ?? null, expectedBlueprint: project.spec.designProfile.generatedBlueprint ?? null, referenceReplica: Boolean(project.spec.designProfile.referenceMechanics) });
+          const generatedResult = await inspectGeneratedGameInBrowser(root, { expectedCampaign: project.spec.designProfile.generatedCampaign ?? null, expectedBlueprint: renderableBlueprint(project.spec.designProfile.generatedBlueprint, project.spec.runtimeTarget), referenceReplica: Boolean(project.spec.designProfile.referenceMechanics) });
           qualityChecks.push(...generatedResult.checks);
           if (project.spec.designContract) qualityChecks.push(writeDesignAcceptanceReport(root, project.spec.designContract, qualityChecks, { tutorialRequired: false }));
           return `页面公开：真实浏览器已按运行时契约验证生成代码——关卡递进、开始、胜负与重开、3 档画幅布局与错误监听均通过；保存 ${generatedResult.screenshotPaths.length} 张验收截图。实验性作品：通过自动验收，但玩法深度仍以真人试玩为准。`;
@@ -863,13 +865,13 @@ export class BuildOrchestrator {
         writeGeneratedArtifact(root, project, generation);
         // 代码阶段只检查结构、运行时与 AI 背景接入声明；真实位图和溯源在下一资产阶段落盘后统一验收。
         await report(`第 ${round} 次制作：正在检查生成产物与运行契约`);
-        inspectGeneratedArtifact(root, { requireAiArt: false, expectedCampaign: project.spec.designProfile.generatedCampaign ?? null, expectedBlueprint: project.spec.designProfile.generatedBlueprint ?? null });
+        inspectGeneratedArtifact(root, { requireAiArt: false, expectedCampaign: project.spec.designProfile.generatedCampaign ?? null, expectedBlueprint: renderableBlueprint(project.spec.designProfile.generatedBlueprint, project.spec.runtimeTarget) });
         if (this.options.browserAudit !== false) {
           await report(`第 ${round} 次制作：正在真实浏览器中检查操作、关卡与结算`);
           await inspectGeneratedGameInBrowser(root, {
             referenceReplica: Boolean(project.spec.designProfile.referenceMechanics),
             expectedCampaign: project.spec.designProfile.generatedCampaign ?? null,
-            expectedBlueprint: project.spec.designProfile.generatedBlueprint ?? null,
+            expectedBlueprint: renderableBlueprint(project.spec.designProfile.generatedBlueprint, project.spec.runtimeTarget),
             onProgress: message => report(`第 ${round} 次制作：${message}`),
           });
         }
@@ -895,10 +897,12 @@ export class BuildOrchestrator {
         continue;
       }
       if (this.options.browserAudit === false) return { generation, audit: null, iterated: previous !== null };
-      const ruleCount = safeContractRules(project.spec.designProfile)?.length;
+      // 规则审核用可渲染蓝图：3D 作品默认单色渲染，不能再拿“主体必须由位图承担”去打回程序绘制的代码。
+      const auditProfile = project.spec.runtimeTarget === "web-3d" ? { ...project.spec.designProfile, generatedBlueprint: renderableBlueprint(project.spec.designProfile.generatedBlueprint, project.spec.runtimeTarget) } : project.spec.designProfile;
+      const ruleCount = safeContractRules(auditProfile)?.length;
       await report(`第 ${round} 次制作：正在逐条核对${ruleCount ? ` ${ruleCount} 条` : ""}方案规则是否在代码中实现（模型审核，通常需要 1–3 分钟）`);
       // 复用代码且规则清单未变时，同一份源码的已通过审核回执可以复用；审核模型只在代码或规则变化时付费调用。
-      const rules = this.options.designContracts ? safeContractRules(project.spec.designProfile) : null;
+      const rules = this.options.designContracts ? safeContractRules(auditProfile) : null;
       const auditSource = deliveredRuleAuditSource(root, generation.html);
       const reusedAudit = reusable && round === 1 && reusableSourceBuildId && rules && generation.html === reusable.html
         ? readReusableRuleAudit(join(this.artifactRoot, reusableSourceBuildId), { rules, sourceSha256: sha256(auditSource) })
@@ -906,7 +910,7 @@ export class BuildOrchestrator {
       const reusedAuditFrom = reusedAudit ? reusableSourceBuildId : null;
       if (reusedAudit) await report(`代码与规则清单均与构建 ${reusedAuditFrom} 一致，复用其已通过的逐条规则审核，本次不调用审核模型`);
       const audit = reusedAudit ?? (this.options.designContracts
-        ? await this.options.designContracts.auditRuleFidelity(project.spec.designProfile, auditSource)
+        ? await this.options.designContracts.auditRuleFidelity(auditProfile, auditSource)
         : null);
       const missing = audit?.filter((verdict) => !verdict.implemented) ?? [];
       recordAttempt(round, reusedAudit ? "rule-audit-reused" : audit ? "rule-audit" : "rule-audit-unavailable", reusedAudit ? [`复用构建 ${reusedAuditFrom} 的规则审核`] : missing.map(verdict => `${verdict.rule}：${verdict.evidence}`));

@@ -209,9 +209,11 @@ test("混合计划在同一构建升级全部角色动画并把选中的玩法�
   let observedFiles: readonly string[] = [];
   let observedSources: Readonly<Record<string, Buffer>> = {};
   let codeProject: ProjectDetail | null = null;
+  const codeDirections: string[][] = [];
   const codeGenerator = {
-    async generate(project: ProjectDetail) {
+    async generate(project: ProjectDetail, _feedback: string[] = [], previous: { directions?: string[] } | null = null) {
       codeProject = project;
+      codeDirections.push([...(previous?.directions ?? [])]);
       const animation = JSON.stringify(project.spec.designProfile.generatedBlueprint!.sprites[0]!.animation);
       const bindings = roleFiles.map((file, index) => `const image${index}=new Image();image${index}.src='./${file}';const player${index}=window.__FORGE_SPRITES__.create(image${index},${animation},'idle');player${index}.play('idle');player${index}.draw(document.querySelector('#game-canvas').getContext('2d'),${80 + index * 120},220,1,performance.now());`).join("\n");
       const html = generatedDesignHtml("mechanic-1-completed").replace("<script>", `<script>\nconst inkCost = 10 * 0.5;\n${bindings}\nconst beadImage=new Image();beadImage.src='./assets/prayer-bead.png';\nconst bgImage=new Image();bgImage.src='./assets/background.png';`);
@@ -264,7 +266,7 @@ test("混合计划在同一构建升级全部角色动画并把选中的玩法�
       generateDynamicArt: async (next: ProjectDetail, files?: readonly string[], _outputs?: Readonly<Record<string, unknown>>, sources?: Readonly<Record<string, Buffer>>) => {
         observedFiles = files ?? [];
         observedSources = sources ?? {};
-        return next.spec.designProfile.generatedBlueprint!.sprites.filter((sprite) => files?.includes(sprite.file)).map((sprite) => ({
+        return next.spec.designProfile.generatedBlueprint!.sprites.filter((sprite) => !files || files.includes(sprite.file)).map((sprite) => ({
           file: sprite.file, role: sprite.role, bytes: sheet, prompt: `测试夹具使用的${sprite.role}动画提示词，明确四乘四帧序、透明背景、统一角色比例与脚底锚点。`,
           image: { providerSource: { width: 512, height: 512, hasAlpha: true, hasTransparency: true }, delivered: { width: 512, height: 512, fit: "sprite-sheet" as const }, spriteSheet: sprite.animation! },
         }));
@@ -279,6 +281,18 @@ test("混合计划在同一构建升级全部角色动画并把选中的玩法�
     assert.ok(codeProject, "动画升级与玩法修改必须进入代码生成");
     for (const sprite of codeProject!.spec.designProfile.generatedBlueprint!.sprites.slice(0, 3)) assert.equal(sprite.animation?.frameCount, 16);
     assert.deepEqual(readFileSync(join(artifactRoot, revisionId, "assets", "prayer-bead.png")), staticRole, "未选念珠必须保持来源字节");
+
+    // 回归（2026-09-14）：随后的单范围改造必须以自己的内容为准，不能继承上一版保存的多操作计划。
+    const followUpId = randomUUID();
+    const followUpContent = "背景改成夜晚星空，其余不变";
+    await new BuildOrchestrator(repository, artifactRoot, { coverArt: art as never, codeGenerator, browserAudit: false }).start(project.id, { requestId: followUpId, revisionScope: "visual-style", content: followUpContent });
+    const followUp = await waitForBuild(repository, project.id);
+    assert.equal(followUp.status, "succeeded", followUp.error ?? undefined);
+    const lastDirections = codeDirections.at(-1) ?? [];
+    assert.ok(lastDirections.some(direction => direction.includes(followUpContent)), `新改造内容必须进入代码生成：${JSON.stringify(lastDirections)}`);
+    assert.ok(!lastDirections.some(direction => direction.includes("精灵动图")), "上一版的计划内容不得再次执行");
+    assert.equal(codeProject!.spec.renovation?.request, followUpContent);
+    assert.equal(codeProject!.spec.renovation?.revisionPlan ?? null, null);
   } finally {
     rmSync(artifactRoot, { recursive: true, force: true });
     await database.close();
