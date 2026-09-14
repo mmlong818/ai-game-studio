@@ -275,7 +275,7 @@ test("迭代模式:带上一版代码与意见,系统提示声明增量修改;�
   assert.match(captured[1]!.user, /小幅校准/);
 
   const repairProject = fakeProject();
-  repairProject.spec.hardConstraints.push("实际图片交付槽位:assets/background.png(局内背景,1536×1024,cover)；assets/player.png(玩家,512×512,contain)。代码必须按各槽位角色和 fit 等比显示，以运行时 naturalWidth/naturalHeight 为准。");
+  repairProject.spec.deliveredAssetLayout = "assets/background.png(局内背景,1536×1024,cover)；assets/player.png(玩家,512×512,contain)。代码必须按各槽位角色和 fit 等比显示，以运行时 naturalWidth/naturalHeight 为准。";
   await generator.generate(repairProject, ["背景发生非等比拉伸"], { html: previousHtml, directions: [] });
   assert.match(captured[2]!.user, /只修改造成上述客观失败/);
   assert.match(captured[2]!.user, /允许为修复遮挡、溢出、比例和可读性调整直接相关容器/);

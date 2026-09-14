@@ -208,6 +208,7 @@ function buildUserPrompt(project: ProjectDetail, feedback: string[], previous: P
   if (project.spec.renovation) lines.push(`本次已有游戏局部改造:${project.spec.renovation.request}；范围=${project.spec.renovation.revisionScope}。必须以提供的上一版代码为修改基础。`);
   if (analysis?.mechanics.length) lines.push(`已识别机制:${analysis.mechanics.join("、")}`);
   if (project.spec.hardConstraints.length) lines.push(`硬性约束:${project.spec.hardConstraints.join(";")}`);
+  if (project.spec.deliveredAssetLayout) lines.push(`实际图片交付槽位:${project.spec.deliveredAssetLayout}`);
   if (previous) {
     if (previous.directions.length) {
       lines.push("创作者对上一版的修改意见(按时间顺序,越靠后优先级越高,必须逐条落实):");
@@ -221,9 +222,8 @@ function buildUserPrompt(project: ProjectDetail, feedback: string[], previous: P
     lines.push("上一版代码未通过验收,必须修复以下问题后重新输出完整 HTML:");
     lines.push(...feedback.map((item, index) => `${index + 1}. ${item}`));
     lines.push("修复边界:只修改造成上述客观失败的代码、样式或相关布局；允许为修复遮挡、溢出、比例和可读性调整直接相关容器，但不得借机改变用户未授权的玩法、胜负条件、操作、关卡、导航、其他素材或整体美术方向。修复后仍需重新通过同一组自动验收，不能把提示词或实现说明当作通过证据。");
-    const deliveredAssets = project.spec.hardConstraints.filter((constraint) => constraint.startsWith("实际图片交付槽位:"));
-    if (deliveredAssets.length) {
-      lines.push(`本轮必须继续遵守的实际素材交付合同:${deliveredAssets.join("；")}`);
+    if (project.spec.deliveredAssetLayout) {
+      lines.push(`本轮必须继续遵守的实际素材交付合同:实际图片交付槽位:${project.spec.deliveredAssetLayout}`);
     }
   }
   return lines.join("\n");

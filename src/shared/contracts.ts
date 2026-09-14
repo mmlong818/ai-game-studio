@@ -319,6 +319,9 @@ export const gameSpecSchema = z.object({
   mechanics: z.array(z.string().min(1)).min(1).max(12),
   controls: z.array(z.string().min(1)).min(1).max(8),
   hardConstraints: z.array(z.string().min(1)).max(10),
+  // 资源步骤实际落盘的位图槽位（文件、角色、像素尺寸、fit）。它是平台记录的交付事实，
+  // 不占用用户硬性约束的 10 条名额；每次构建整体覆盖，不会跨次累积。
+  deliveredAssetLayout: z.string().min(1).max(4000).nullable().default(null),
   acceptanceCriteria: z.array(acceptanceCriterionSchema).min(4).max(20),
   nonGoalsForThisVersion: z.array(z.string().min(1)).max(10),
   ideaAnalysis: ideaAnalysisSchema.nullable().default(null),
@@ -1087,6 +1090,7 @@ export function generateGameSpec(
     mechanics: analysis && analysis.mechanics.length > 0 ? analysis.mechanics.slice(0, 12) : inferMechanics(input.idea),
     controls: dimensions === "3d" ? ["键盘与鼠标", "触控虚拟摇杆"] : templateDefaults[template].controls,
     hardConstraints: createHardConstraints(input, template, analysis),
+    deliveredAssetLayout: null,
     acceptanceCriteria: createAcceptance(dimensions, input.visualStyle),
     nonGoalsForThisVersion: dimensions === "3d" ? ["实时多人", "开放世界"] : ["实时多人"],
     ideaAnalysis: analysis,

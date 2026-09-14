@@ -267,6 +267,7 @@ export class BuildOrchestrator {
 
   private async run(buildId: string, signal: AbortSignal) {
     let sequence = 0;
+    let finalizing = false;
     let passedProbes: string[] = [];
     let qualityChecks: QualityCheck[] = [];
     // 图片先于代码生成；结果留给代码步骤写入溯源并在模板资源之后回写。
@@ -477,7 +478,10 @@ export class BuildOrchestrator {
             // Image generation itself validates and normalizes every new provider response before this point.
           }
         }
-        if (deliveredLayout.length) project.spec.hardConstraints = [...project.spec.hardConstraints, `实际图片交付槽位:${deliveredLayout.join("；")}。代码必须按各槽位角色和 fit 等比显示，以运行时 naturalWidth/naturalHeight 为准。`];
+        // 交付槽位是平台记录的事实，写入独立字段：不占用户硬性约束的 10 条名额（分析器恰好给满 10 条时，
+        // 再追加一条会让成品规格在最后一步被 schema 拒绝），也不会在重建时逐次累积。旧项目里累积的同类条目一并清理。
+        project.spec.hardConstraints = project.spec.hardConstraints.filter(constraint => !constraint.startsWith("实际图片交付槽位:"));
+        project.spec.deliveredAssetLayout = deliveredLayout.length ? `${deliveredLayout.join("；")}。代码必须按各槽位角色和 fit 等比显示，以运行时 naturalWidth/naturalHeight 为准。` : null;
         artResult = { cover, dynamicArt, ...(coverImage ? { coverImage } : {}), reusedArt, imageReceipts };
         const planningSummary = resourcePlan ? `生成前已检索 ${resourcePlan.decisions.length} 个资源需求：${resourcePlan.summary.needsReview} 个候选待复核，${resourcePlan.summary.needsGeneration} 个需生成或补状态。` : "旧项目没有资源规划记录。";
         const warningEntries = dynamicArt.filter(entry => entry.image?.warnings?.length);
@@ -728,6 +732,7 @@ export class BuildOrchestrator {
       });
       const checkedAt = new Date().toISOString();
       signal.throwIfAborted();
+      finalizing = true;
       await this.repository.completeBuild(buildId, project.spec, {
         status: "passed",
         summary: `${qualityChecks.length}/${qualityChecks.length} 项自动验收通过，可以进入主美复核。`,
@@ -739,7 +744,8 @@ export class BuildOrchestrator {
         await this.repository.cancelBuild(buildId).catch(() => {});
       } else {
         console.error(`构建 ${buildId} 失败：`, error);
-        const stage = (['planning', 'design', 'asset', 'code', 'validation', 'browser'][Math.min(sequence, 5)] ?? 'unknown') as Parameters<typeof safeFailure>[0];
+        // 六个步骤都已通过、冻结版本时出错，属于交付阶段，不能记在浏览器验收头上。
+        const stage = (finalizing ? 'delivery' : ['planning', 'design', 'asset', 'code', 'validation', 'browser'][Math.min(sequence, 5)] ?? 'unknown') as Parameters<typeof safeFailure>[0];
         const details = error instanceof BuildFailure ? error.details : [safeFailure(stage, error)];
         const message = error instanceof BuildFailure ? error.message : details[0]!.message;
         await this.repository.failBuild(buildId, Math.min(sequence, 5), message, details);

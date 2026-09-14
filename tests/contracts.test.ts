@@ -220,3 +220,13 @@ test("平台跳跃不再作为成熟模板提供", () => {
   assert.equal(projectInputSchema.safeParse({ idea, template: "platformer" }).success, false);
   assert.equal(generateGameSpec({ idea }).template, "generated");
 });
+
+test("交付槽位有独立字段，10 条用户硬性约束满额时成品规格仍然有效", () => {
+  const spec = generateGameSpec({ idea: "一个3*3格的立方体，用户点击后每格只能向标注的方向直线运动消失画外", template: "generated" }, null);
+  const full = { ...spec, hardConstraints: Array.from({ length: 10 }, (_, index) => `约束 ${index + 1}`), deliveredAssetLayout: "assets/cover.png(封面,1024×1536,cover)。代码必须按各槽位角色和 fit 等比显示。" };
+  assert.equal(gameSpecSchema.parse(full).hardConstraints.length, 10);
+  assert.match(gameSpecSchema.parse(full).deliveredAssetLayout ?? "", /cover\.png/);
+  // 旧规格没有该字段：默认为 null，不影响解析。
+  const { deliveredAssetLayout: _omitted, ...legacy } = full;
+  assert.equal(gameSpecSchema.parse(legacy).deliveredAssetLayout, null);
+});

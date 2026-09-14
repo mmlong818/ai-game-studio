@@ -81,3 +81,17 @@ test("只有已耗尽自动质量修复预算的资源才提供结构化续作�
   assert.equal(hard.continuation, undefined);
   assert.equal(safeFailure("asset", new Error("图像服务额度不足。"), { resource: { file: "assets/hero.png", label: "主角" } }).continuation, undefined);
 });
+
+test("交付阶段的平台规格校验失败不冒充服务返回无效，并点出字段", () => {
+  // 复现 2026-09-14 真实构建：分析器给满 10 条硬性约束，资源步骤再追加一条交付槽位，冻结版本时被 schema 拒绝。
+  const error = Object.assign(new Error("[{\"code\":\"too_big\",\"path\":[\"hardConstraints\"]}]"), { name: "ZodError", issues: [{ code: "too_big", path: ["hardConstraints"] }] });
+  const detail = safeFailure("delivery", error);
+  assert.equal(detail.code, "PLATFORM_SCHEMA");
+  assert.equal(detail.category, "validation");
+  assert.match(detail.message, /hardConstraints/);
+  assert.match(detail.message, /平台缺陷/);
+  assert.doesNotMatch(detail.message, /服务返回内容格式无效/);
+  assert.match(detail.nextStep, /不需要重新生成图片/);
+  // 其他阶段的 ZodError 仍是模型输出解析问题。
+  assert.equal(safeFailure("design", error).code, "INVALID_RESPONSE");
+});
