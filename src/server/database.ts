@@ -110,6 +110,7 @@ const postgresSchema = `
     version_id TEXT,
     error_message TEXT,
     failure_details_json TEXT,
+    execution_mode TEXT NOT NULL DEFAULT 'normal' CHECK (execution_mode IN ('normal', 'checkpoint-validation')),
     revision_scope TEXT CHECK (revision_scope IN ('gameplay', 'assets', 'visual-style')),
     revision_plan_json TEXT,
     asset_clip_id TEXT CHECK (asset_clip_id IN ('idle', 'run', 'hit', 'effect'))
@@ -119,6 +120,7 @@ const postgresSchema = `
   ALTER TABLE builds ADD COLUMN IF NOT EXISTS failure_details_json TEXT;
   ALTER TABLE builds ADD COLUMN IF NOT EXISTS revision_plan_json TEXT;
   ALTER TABLE builds ADD COLUMN IF NOT EXISTS asset_clip_id TEXT;
+  ALTER TABLE builds ADD COLUMN IF NOT EXISTS execution_mode TEXT NOT NULL DEFAULT 'normal';
 
   ALTER TABLE builds DROP CONSTRAINT IF EXISTS builds_status_check;
   ALTER TABLE builds ADD CONSTRAINT builds_status_check CHECK (status IN ('queued', 'running', 'succeeded', 'failed', 'cancelled'));
@@ -135,6 +137,12 @@ const postgresSchema = `
     started_at TIMESTAMPTZ,
     completed_at TIMESTAMPTZ,
     UNIQUE(build_id, sequence)
+  );
+
+  CREATE TABLE IF NOT EXISTS build_checkpoint_validations (
+    build_id TEXT PRIMARY KEY REFERENCES builds(id) ON DELETE CASCADE,
+    source_build_id TEXT NOT NULL REFERENCES builds(id),
+    source_sha256 TEXT NOT NULL
   );
 
   -- 运行中的步骤可附带一段正在生成的内容片段，让制作页能流式展示进展。
@@ -346,13 +354,17 @@ const sqliteSchema = `
   CREATE TABLE builds (
     id TEXT PRIMARY KEY, project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
     status TEXT NOT NULL, runtime_target TEXT NOT NULL, created_at TEXT NOT NULL, started_at TEXT,
-    completed_at TEXT, version_id TEXT, error_message TEXT, failure_details_json TEXT, revision_scope TEXT, revision_plan_json TEXT, asset_clip_id TEXT
+    completed_at TEXT, version_id TEXT, error_message TEXT, failure_details_json TEXT, execution_mode TEXT NOT NULL DEFAULT 'normal', revision_scope TEXT, revision_plan_json TEXT, asset_clip_id TEXT
   );
   CREATE TABLE build_steps (
     id TEXT PRIMARY KEY, build_id TEXT NOT NULL REFERENCES builds(id) ON DELETE CASCADE,
     sequence INTEGER NOT NULL, kind TEXT NOT NULL, title TEXT NOT NULL, detail TEXT NOT NULL, live_excerpt TEXT,
     status TEXT NOT NULL, output_text TEXT, started_at TEXT, completed_at TEXT,
     UNIQUE(build_id, sequence)
+  );
+  CREATE TABLE build_checkpoint_validations (
+    build_id TEXT PRIMARY KEY REFERENCES builds(id) ON DELETE CASCADE,
+    source_build_id TEXT NOT NULL REFERENCES builds(id), source_sha256 TEXT NOT NULL
   );
   CREATE TABLE project_messages (
     id TEXT PRIMARY KEY, project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,

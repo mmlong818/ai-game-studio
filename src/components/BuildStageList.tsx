@@ -1,17 +1,9 @@
 import { Braces, CheckCircle2, Clock3, FileText, FlaskConical, Image as ImageIcon, LoaderCircle, PackageCheck, ScanSearch, XCircle } from "lucide-react";
 import type { Build, BuildStep } from "../shared/contracts";
 import { LiveExcerpt } from "./WaitingActivity";
+import { useComponentMessages } from "./component-i18n";
 
 /** 制作步骤列表：项目页与制作页共用同一套编号轨道、动作标签与状态图标。 */
-export const stepActionLabels: Record<BuildStep["kind"], string> = {
-  analyze: "ANALYZE",
-  document: "WRITE DOC",
-  code: "WRITE CODE",
-  asset: "GENERATE ASSET",
-  test: "RUN TEST",
-  delivery: "PACKAGE",
-};
-
 export function StepIcon({ status }: { status: BuildStep["status"] }) {
   if (status === "succeeded") return <CheckCircle2 size={16} aria-hidden="true" />;
   if (status === "running") return <LoaderCircle className="spin" size={16} aria-hidden="true" />;
@@ -28,7 +20,11 @@ export function StepKindIcon({ kind }: { kind: BuildStep["kind"] }) {
   return <PackageCheck size={15} aria-hidden="true" />;
 }
 
-export function BuildStageList({ steps, evidenceLabel = "步骤结果", showExcerpt = true }: { steps: Build["steps"]; evidenceLabel?: string; showExcerpt?: boolean }) {
+export function BuildStageList({ steps, evidenceLabel, showExcerpt = true }: { steps: Build["steps"]; evidenceLabel?: string; showExcerpt?: boolean }) {
+  const t = useComponentMessages();
+  const stepActionLabels: Record<BuildStep["kind"], string> = {
+    analyze: t("steps.analyze"), document: t("steps.document"), code: t("steps.code"), asset: t("steps.asset"), test: t("steps.test"), delivery: t("steps.delivery"),
+  };
   return (
     <ol className="production-stages">
       {steps.map((step, index) => (
@@ -47,7 +43,7 @@ export function BuildStageList({ steps, evidenceLabel = "步骤结果", showExce
             {showExcerpt && step.status === "running" && step.excerpt && <LiveExcerpt text={step.excerpt} />}
             {step.output ? (
               <div className="stage-evidence">
-                <span>{evidenceLabel}</span>
+                <span>{evidenceLabel ?? t("steps.evidence")}</span>
                 <p>{step.output}</p>
               </div>
             ) : null}

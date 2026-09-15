@@ -1,5 +1,5 @@
 import { appendFileSync, cpSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { basename, dirname, join } from "node:path";
+import { basename, dirname, isAbsolute, join } from "node:path";
 import {
   generateGameSpec,
   recommendedArtStyle,
@@ -35,6 +35,8 @@ import { readReusableRuleAudit, safeContractRules, sha256, writeRuleFidelity } f
 import { runWithCancellation, throwIfCancellationRequested } from "./cancellation.js";
 import { BuildFailure, safeFailure } from "./build-failure.js";
 import { inspectLocalRepairCandidate } from "./local-repair-candidate.js";
+import { normalizeRepairFailure, recordRepairExperience, repairExperienceRoot, repairExperienceScope, repairExperienceSuggestions, type RepairExperienceRecord } from "./repair-experience.js";
+import { applyDeterministicArtifactRepair } from "./deterministic-artifact-repair.js";
 
 // 官方模板游戏保留新手教学、变化关复验与分层失败帮助的浏览器验收；生成游戏不走这些门禁。
 const realtimeOnboardingTemplates: readonly TemplateOnboardingQualityResult["template"][] = ["tetris", "breakout", "snake", "space-shooter"];
@@ -49,7 +51,7 @@ function deliveredRuleAuditSource(root: string, generatedFallback: string) {
   if (![indexPath, stylesPath, appPath].every(existsSync)) return generatedFallback;
   return [
     "/* 平台交付事实：index.html 先加载 app.js；app.js 中 forge-platform 段由平台在游戏代码前安装 safeStorage 与 __FORGE_SPRITES__，不是缺失依赖。以下是浏览器实际执行的交付文件。 */",
-    `<!-- index.html -->\n${readFileSync(indexPath, "utf8")}`,
+    `<!-- index.html -->\n${readFileSync(indexPath, "utf8").replace('<script src="_studio/runtime-inspector.js"></script>', "")}`,
     `/* styles.css */\n${readFileSync(stylesPath, "utf8")}`,
     `/* app.js */\n${readFileSync(appPath, "utf8")}`,
   ].join("\n\n");
@@ -123,6 +125,18 @@ const wait = (milliseconds: number) => new Promise((resolve) => setTimeout(resol
 export const DEFAULT_REPAIR_ROUNDS = 6;
 /** 每一外层轮最多含 3 次安全子请求，请求预算据此推算，作为消耗硬上限。 */
 const REQUESTS_PER_ROUND = 3;
+
+export type CheckpointValidationToken = {
+  sourceBuildId: string;
+  sourceSha256: string;
+};
+
+function checkpointValidationFailure(message: string) {
+  return new BuildFailure(message, [{
+    stage: "planning", category: "validation", code: "CHECKPOINT_INVALID",
+    message, nextStep: "零模型检查点已保留；平台不会回退普通制作或调用任何模型。", retryable: false,
+  }]);
+}
 
 export async function sourceImageOutputConstraints(root: string, files: readonly string[]) {
   const outputs: Record<string, ImageOutputConstraint> = {};
@@ -218,6 +232,28 @@ export class BuildOrchestrator {
     return build;
   }
 
+  /** Revalidate one immutable zero-model checkpoint. Execution rechecks every
+   * bound identity and never falls back to code, image, planning or audit calls. */
+  async startCheckpointValidation(projectId: string, token: CheckpointValidationToken, signal?: AbortSignal): Promise<Build> {
+    if (!/^[a-f0-9]{64}$/.test(token.sourceSha256)) throw new Error("自动复验检查点源码哈希无效，未创建构建。");
+    const source = await this.repository.buildById(token.sourceBuildId);
+    if (source.projectId !== projectId) throw new Error("自动复验检查点不属于当前项目，未创建构建。");
+    const build = await this.repository.createBuild(projectId, undefined, token);
+    if (build.status === "queued") {
+      const persisted = await this.repository.checkpointValidationForBuild(build.id);
+      const executionMode = await this.repository.buildExecutionMode(build.id);
+      if (executionMode !== "checkpoint-validation" || !persisted || persisted.sourceBuildId !== token.sourceBuildId || persisted.sourceSha256 !== token.sourceSha256) {
+        throw new Error("自动复验专用执行标志未能原子持久化，构建不会按普通模式启动。");
+      }
+      this.enqueue(build.id);
+      if (signal) {
+        if (signal.aborted) await this.cancel(build.id);
+        else signal.addEventListener("abort", () => void this.cancel(build.id), { once: true });
+      }
+    }
+    return build;
+  }
+
   async cancel(buildId: string): Promise<Build> {
     const build = await this.repository.cancelBuild(buildId);
     if (build.status === "cancelled") this.cancellations.get(buildId)?.abort(new DOMException("用户已停止制作。", "AbortError"));
@@ -275,6 +311,7 @@ export class BuildOrchestrator {
   }
 
   private async run(buildId: string, signal: AbortSignal) {
+    let checkpointValidation: CheckpointValidationToken | null = null;
     let sequence = 0;
     let finalizing = false;
     let passedProbes: string[] = [];
@@ -292,6 +329,17 @@ export class BuildOrchestrator {
       // A second process may have queued the same receipt. Only the database
       // claim winner may call models or write artifacts; losers do not fail it.
       if (!await this.repository.markBuildRunning(buildId)) return;
+      // execution_mode is independent from the token row. A checkpoint build
+      // whose token was deleted or corrupted must fail closed after restart; it
+      // can never become an ordinary model-enabled build.
+      const executionMode = await this.repository.buildExecutionMode(buildId);
+      checkpointValidation = await this.repository.checkpointValidationForBuild(buildId);
+      if (executionMode === "checkpoint-validation" && (!checkpointValidation
+        || !/^[a-f0-9]{64}$/.test(checkpointValidation.sourceSha256)
+        || !/^[A-Za-z0-9-]{1,100}$/.test(checkpointValidation.sourceBuildId))) {
+        throw checkpointValidationFailure("自动复验专用 token 缺失或损坏，已安全停止且不会调用任何模型。");
+      }
+      if (executionMode === "normal" && checkpointValidation) throw checkpointValidationFailure("普通构建出现了不匹配的自动复验 token，已安全停止且不会调用任何模型。");
       const build = await this.repository.buildById(buildId);
       const storedProject = await this.repository.get(build.projectId);
       if (!storedProject) throw new Error("项目不存在。");
@@ -309,7 +357,7 @@ export class BuildOrchestrator {
       const revisionMessage = build.revisionScope || revisionPlan ? userMessages.find((message) => message.id === build.id) : null;
       const revisionRequest = revisionMessage?.content ?? storedProject.spec.renovation?.request ?? null;
       const revisionScope = build.revisionScope ?? (hasGameplayOperation ? "gameplay" : hasAssetOperation ? "assets" : hasVisualOperation ? "visual-style" : storedProject.spec.renovation?.revisionScope ?? null);
-      const directions = revisionPlan
+      const directions = checkpointValidation ? [] : revisionPlan
         ? revisionPlanInstructions(revisionPlan)
         : revisionScope && revisionRequest
           ? [renovationScopeInstruction(revisionScope, revisionRequest)]
@@ -318,6 +366,7 @@ export class BuildOrchestrator {
       // A new renovation already carries a locally constrained confirmed profile.
       // Only a /revisions request asks the planner to revise the current contract again.
       const project = await this.normalizeProject(storedProject, build.revisionScope || build.revisionPlan ? directions : [], revisionScope, effectiveRevisionRequest);
+      if (checkpointValidation && project.spec.template !== "generated") throw new Error("自动复验检查点不是生成式零模型路径，已停止且未调用模型。");
       if (revisionScope && effectiveRevisionRequest && (storedProject.spec.renovation || revisionPlan)) project.spec.renovation = {
         sourceProjectId: renovationSourceForBuild(storedProject.spec.renovation?.sourceProjectId ?? storedProject.id, storedProject.id, Boolean(build.revisionScope || build.revisionPlan)),
         revisionScope,
@@ -332,7 +381,7 @@ export class BuildOrchestrator {
       sequence += 1;
       await this.step(buildId, sequence, async () => {
         // 逐条审计修订后的合同是否落实了创作意见;审计不可用时文档只列意见。
-        const directionAudit = directions.length > 0 && this.options.designContracts
+        const directionAudit = !checkpointValidation && directions.length > 0 && this.options.designContracts
           ? await this.options.designContracts.auditDirections(project.spec.designProfile, directions)
           : null;
         writeDesignDocuments(root, project, directions, directionAudit);
@@ -354,6 +403,7 @@ export class BuildOrchestrator {
         }
         const declaredArtPlan = dynamicArtPlan(project);
         const zeroImageRoute = project.spec.template === "generated" && declaredArtPlan.length === 0 && !plannedAssetTargets.length;
+        if (checkpointValidation && !zeroImageRoute) throw new Error("自动复验检查点不再是零图片模型路径，已停止且未调用模型。");
         if (zeroImageRoute) {
           artResult = { cover: null, dynamicArt: [], reusedArt: null, imageReceipts: [] };
           return "页面公开：当前确认方案未声明必须交付的位图，本次不调用图像模型；代码可用 CSS、Canvas 或内联 SVG 绘制玩法与界面。";
@@ -521,7 +571,7 @@ export class BuildOrchestrator {
               this.repository.reportStepProgress(buildId, sequence, detail, excerpt ?? null).catch(error => {
                 // Reporting trouble must never be mistaken for defective code and trigger paid regeneration.
                 console.warn(`构建 ${buildId} 进度写入暂时失败：`, error);
-              }));
+              }), checkpointValidation ?? undefined);
             const modeNote = experimental.iterated
               ? `基于上一版代码迭代修改（${directions.length} 条对话意见）`
               : "全新生成";
@@ -807,23 +857,42 @@ export class BuildOrchestrator {
    * 契约失败或规则未实现都会把原因喂回模型再生成一轮;两轮后契约仍失败则构建失败,
    * 规则仍有未实现的如实记录到 RULE_FIDELITY.json,不静默美化。
    */
-  private async generateExperimentalGame(project: ProjectDetail, root: string, directions: string[], report: (detail: string, excerpt?: string | null) => Promise<void> = async () => {}) {
+  private async generateExperimentalGame(project: ProjectDetail, root: string, directions: string[], report: (detail: string, excerpt?: string | null) => Promise<void> = async () => {}, checkpointValidation?: CheckpointValidationToken) {
     const generator = this.options.codeGenerator;
-    if (!generator) throw new Error("实验通道未启用：服务端没有配置玩法代码生成器。");
+    if (!generator && !checkpointValidation) throw new Error("实验通道未启用：服务端没有配置玩法代码生成器。");
     let previous: PreviousGeneration | null = null;
     let reusable: GeneratedGame | null = null;
     let reusableSourceBuildId: string | null = null;
+    let checkpointSourceRoot: string | null = null;
     let localRepair = false;
     const reusableCandidates: Array<{ generation: GeneratedGame; buildId: string }> = [];
+    const experienceRoot = repairExperienceRoot(this.artifactRoot);
+    const experienceScope = repairExperienceScope(project);
     const reusableProjectIds = [...new Set([project.id, project.spec.renovation?.sourceProjectId].filter(Boolean))] as string[];
     const preferredBuildId = project.spec.renovation?.revisionPlan?.sourceVersionId;
-    const recentCandidates = (await Promise.all(reusableProjectIds.map(projectId => this.repository.recentReusableBuilds(projectId, basename(root))))).flat();
+    const recentCandidates = checkpointValidation ? [] : (await Promise.all(reusableProjectIds.map(projectId => this.repository.recentReusableBuilds(projectId, basename(root))))).flat();
     const candidates = [...(preferredBuildId ? [{ id: preferredBuildId }] : []), ...recentCandidates.filter((candidate) => candidate.id !== preferredBuildId)];
-    for (const candidate of candidates) {
+    if (checkpointValidation) {
+      const sourceBuild = await this.repository.buildById(checkpointValidation.sourceBuildId);
+      if (sourceBuild.projectId !== project.id || sourceBuild.revisionPlan || sourceBuild.revisionScope) throw new Error("自动复验检查点与当前项目或构建类型不匹配，已停止且未调用模型。");
+      checkpointSourceRoot = join(this.artifactRoot, sourceBuild.id);
+      const html = readGeneratedSource(checkpointSourceRoot);
+      if (!html) throw new Error("自动复验检查点源码不完整，已停止且未调用模型。");
+      const storedContract = JSON.parse(readFileSync(join(checkpointSourceRoot, "_studio", "GAME_DESIGN_CONTRACT.json"), "utf8"));
+      if (JSON.stringify(stripTutorialContract(storedContract)) !== JSON.stringify(stripTutorialContract(project.spec.designContract))) throw new Error("自动复验检查点合同已变化，已停止且未调用模型。");
+      const actualSourceSha256 = sha256(deliveredRuleAuditSource(checkpointSourceRoot, html));
+      if (actualSourceSha256 !== checkpointValidation.sourceSha256) throw new Error("自动复验检查点源码哈希已变化，已停止且未调用模型。");
+      reusable = { html, designNotes: `只读复验构建 ${sourceBuild.id} 的零模型检查点。`, rounds: 0, model: "checkpoint-validation" };
+      reusableSourceBuildId = sourceBuild.id;
+      await report(`已绑定构建 ${sourceBuild.id} 的源码、合同与审核哈希；本次只复验，不允许任何模型调用`);
+    }
+    for (const candidate of checkpointValidation ? [] : candidates) {
       const html = readGeneratedSource(join(this.artifactRoot, candidate.id));
       if (!html) continue;
       const priorBuild = await this.repository.buildById(candidate.id);
-      previous ??= { html, directions: [...directions, ...(priorBuild.error ? [`上一版验收问题：${priorBuild.error}`] : []), "保留已实现玩法；以本次确认方案为准修正，并删除旧版教学覆盖层、教学进度与教学钩子。"] };
+      const previousFailure = priorBuild.error ? normalizeRepairFailure("BROWSER_VALIDATION", priorBuild.error) : null;
+      const learnedReferences = previousFailure ? repairExperienceSuggestions(experienceRoot, project, [previousFailure.signature]).promptReferences : [];
+      previous ??= { html, directions: [...directions, ...(priorBuild.error ? [`上一版验收问题：${priorBuild.error}`] : []), ...learnedReferences, "保留已实现玩法；以本次确认方案为准修正，并删除旧版教学覆盖层、教学进度与教学钩子。"] };
       if (directions.length === 0 && project.spec.designContract) {
         try {
           const previousContract = JSON.parse(readFileSync(join(this.artifactRoot, candidate.id, "_studio", "GAME_DESIGN_CONTRACT.json"), "utf8"));
@@ -837,7 +906,7 @@ export class BuildOrchestrator {
         } catch { /* Missing or obsolete metadata requires normal targeted generation. */ }
       }
     }
-    const registeredRepair = directions.length === 0 && !project.spec.renovation
+    const registeredRepair = !checkpointValidation && directions.length === 0 && !project.spec.renovation
       ? inspectLocalRepairCandidate(join(dirname(this.artifactRoot), "local-repair-candidates"), project)
       : { status: "absent" as const };
     if (registeredRepair.status === "invalid") throw new Error(`服务器本地修复候选登记无效，已停止且不会回退代码生成模型：${registeredRepair.reason}`);
@@ -854,11 +923,27 @@ export class BuildOrchestrator {
       const html = readGeneratedSource(join(this.artifactRoot, project.version.id));
       if (html) previous = { html, directions };
     }
+    // A small set of previously verified, exactly scoped experiences is preventive
+    // reference data for the first code attempt. Failed attempts are only consulted
+    // after the same normalized signature appears.
+    const initialExperienceReferences = repairExperienceSuggestions(experienceRoot, project).promptReferences;
     let feedback: string[] = [];
+    if (initialExperienceReferences.length) await report(`已读取 ${initialExperienceReferences.length} 条同范围且复验成功的修复经验，作为本次首次代码制作的低优先级参考`);
     const initialReport = (detail: string, excerpt?: string | null) => report(`${previous ? "第 1 次制作 · 沿用已有版本修改" : "第 1 次制作 · 初次生成"}：${detail}`, excerpt);
     const repairReport = (round: number) => (detail: string, excerpt?: string | null) => report(`第 ${round} 次制作 · 针对验收问题修正：${detail}`, excerpt);
     const maxRounds = this.maxRepairRounds;
     const requestBudget = new GenerationBudget(maxRounds * REQUESTS_PER_ROUND);
+    let pendingRepair: null | {
+      failure: ReturnType<typeof normalizeRepairFailure>;
+      verification: Extract<RepairExperienceRecord["verification"], "artifact-and-browser" | "artifact-only" | "rule-audit" | "artifact-browser-and-rule">;
+    } = null;
+    const attemptedDeterministicRepairs = new Set<string>();
+    const persistExperience = (outcome: RepairExperienceRecord["outcome"], verification: RepairExperienceRecord["verification"], failure: ReturnType<typeof normalizeRepairFailure>) => {
+      // A missing artifact root is a common isolated-test fixture and cannot be
+      // a durable production store. Do not create repository-relative debris.
+      if (!isAbsolute(this.artifactRoot) || !existsSync(this.artifactRoot)) return;
+      recordRepairExperience(experienceRoot, { ...failure, scope: experienceScope, outcome, verification });
+    };
     const recordAttempt = (round: number, phase: string, reasons: string[]) => {
       if (!existsSync(root)) return;
       mkdirSync(join(root, "_studio"), { recursive: true });
@@ -867,11 +952,14 @@ export class BuildOrchestrator {
       }) + "\n", "utf8");
     };
     if (reusable) await report("确认方案未变，先重新验收已有代码；通过则不再调用代码生成模型");
-    let generation = reusable ?? await generator.generate(project, feedback, previous, initialReport, requestBudget);
+    let generation = reusable ?? await generator!.generate(project, feedback, previous, initialReport, requestBudget, initialExperienceReferences);
     for (let round = 1; ; round += 1) {
       try {
         // 写盘时的 app.js 语法校验也是产物验收的一部分：模型交出坏代码要进入下一轮修复，而不是终止整次制作。
         writeGeneratedArtifact(root, project, generation);
+        if (checkpointValidation && sha256(deliveredRuleAuditSource(root, generation.html)) !== checkpointValidation.sourceSha256) {
+          throw new Error("自动复验写入后的源码哈希与认领检查点不一致，已停止且未调用模型。");
+        }
         // 代码阶段只检查结构、运行时与 AI 背景接入声明；真实位图和溯源在下一资产阶段落盘后统一验收。
         await report(`第 ${round} 次制作：正在检查生成产物与运行契约`);
         inspectGeneratedArtifact(root, { requireAiArt: false, expectedCampaign: project.spec.designProfile.generatedCampaign ?? null, expectedBlueprint: renderableBlueprint(project.spec.designProfile.generatedBlueprint, project.spec.runtimeTarget) });
@@ -885,7 +973,39 @@ export class BuildOrchestrator {
           });
         }
       } catch (error) {
+        if (error instanceof Error && error.name === "AbortError") throw error;
+        throwIfCancellationRequested();
         const reason = error instanceof Error ? error.message : String(error);
+        const normalizedFailure = normalizeRepairFailure("ARTIFACT_REJECTED", reason);
+        if (checkpointValidation) {
+          recordAttempt(round, "checkpoint-validation-rejected", [reason]);
+          throw new Error(`零模型检查点复验未通过，已保留结果且不会调用生成或审核模型：${reason}`);
+        }
+        const deterministicRepair = error instanceof ArtifactValidationFailure
+          ? applyDeterministicArtifactRepair(generation.html, error.repairHint)
+          : null;
+        const deterministicKey = error instanceof ArtifactValidationFailure && error.repairHint
+          ? `${error.repairHint.kind}:${error.repairHint.elementTag}#${error.repairHint.elementId}`
+          : "";
+        if (deterministicRepair && !attemptedDeterministicRepairs.has(deterministicKey)) {
+          attemptedDeterministicRepairs.add(deterministicKey);
+          generation = {
+            ...generation,
+            html: deterministicRepair.html,
+            designNotes: `${generation.designNotes ?? ""} ${deterministicRepair.summary}`.trim(),
+          };
+          pendingRepair = {
+            failure: { ...normalizedFailure, strategyId: deterministicRepair.strategyId },
+            verification: "artifact-browser-and-rule",
+          };
+          recordAttempt(round, "deterministic-artifact-repair", [deterministicRepair.summary]);
+          await report(`第 ${round} 次验收定位到高置信局部接入缺陷；已补充真实棋盘容器标记，正在同轮重新执行完整验收`);
+          round -= 1;
+          continue;
+        }
+        if (pendingRepair) persistExperience("failed", "rejected", pendingRepair.failure);
+        else persistExperience("failed", "rejected", normalizedFailure);
+        pendingRepair = null;
         recordAttempt(round, error instanceof ArtifactValidationFailure ? "artifact-rejected" : "infrastructure-error", [reason]);
         if (!(error instanceof ArtifactValidationFailure)) throw new Error(`验收服务未能完成检查，已停止自动付费修复：${reason}`);
         if (localRepair) throw new Error(`服务器本地修复候选未通过现行产物或浏览器验收，已停止且未调用代码生成模型：${reason}`);
@@ -902,33 +1022,65 @@ export class BuildOrchestrator {
         // 质量问题不是停下的理由：带着验收原因继续修，直到通过或达到本次制作的消耗上限。
         if (round >= maxRounds) throw new Error(`连续 ${round} 轮生成代码均未通过产物契约验收，已达本次制作的修正上限，停止以免无限消耗：${reason}`);
         await report(`第 ${round} 次验收发现问题，正在进行第 ${round + 1} 次针对性修复（最多 ${maxRounds} 次）`);
-        generation = await generator.generate(project, [reason], { html: generation.html, directions: [...directions, reason] }, repairReport(round + 1), requestBudget);
+        const learnedReferences = repairExperienceSuggestions(experienceRoot, project, [normalizedFailure.signature]).promptReferences;
+        generation = await generator!.generate(project, [reason, ...learnedReferences], { html: generation.html, directions: [...directions, reason, ...learnedReferences] }, repairReport(round + 1), requestBudget);
+        pendingRepair = { failure: normalizedFailure, verification: this.options.browserAudit === false ? "artifact-only" : "artifact-and-browser" };
         continue;
+      }
+      if (pendingRepair && pendingRepair.verification !== "rule-audit") {
+        if (pendingRepair.verification !== "artifact-browser-and-rule") {
+          persistExperience("verified", pendingRepair.verification, pendingRepair.failure);
+          pendingRepair = null;
+        }
       }
       if (this.options.browserAudit === false) return { generation, audit: null, iterated: previous !== null };
       // 规则审核用可渲染蓝图：3D 作品默认单色渲染，不能再拿“主体必须由位图承担”去打回程序绘制的代码。
-      const auditProfile = project.spec.runtimeTarget === "web-3d" ? { ...project.spec.designProfile, generatedBlueprint: renderableBlueprint(project.spec.designProfile.generatedBlueprint, project.spec.runtimeTarget) } : project.spec.designProfile;
+      const renderedAuditBlueprint = renderableBlueprint(project.spec.designProfile.generatedBlueprint, project.spec.runtimeTarget);
+      // The catalog blueprint is optional. Keep the confirmed core loop, win/fail
+      // policy and campaign rules auditable when planning intentionally chose no
+      // bitmap/mechanic blueprint, while normalizing the absent value for the
+      // established GameDesignProfile audit API.
+      const auditProfile: import("../shared/contracts.js").GameDesignProfile = project.spec.designProfile.generatedBlueprint !== null
+        && renderedAuditBlueprint === project.spec.designProfile.generatedBlueprint
+        ? project.spec.designProfile
+        : { ...project.spec.designProfile, generatedBlueprint: renderedAuditBlueprint ?? undefined };
       const ruleCount = safeContractRules(auditProfile)?.length;
       await report(`第 ${round} 次制作：正在逐条核对${ruleCount ? ` ${ruleCount} 条` : ""}方案规则是否在代码中实现（模型审核，通常需要 1–3 分钟）`);
       // 复用代码且规则清单未变时，同一份源码的已通过审核回执可以复用；审核模型只在代码或规则变化时付费调用。
       const rules = this.options.designContracts ? safeContractRules(auditProfile) : null;
       const auditSource = deliveredRuleAuditSource(root, generation.html);
-      const reusedAudit = reusable && round === 1 && reusableSourceBuildId && rules && generation.html === reusable.html
-        ? readReusableRuleAudit(join(this.artifactRoot, reusableSourceBuildId), { rules, sourceSha256: sha256(auditSource) })
-        : null;
+      const reusedAudit = checkpointValidation && checkpointSourceRoot && rules
+        ? readReusableRuleAudit(checkpointSourceRoot, { rules, sourceSha256: checkpointValidation.sourceSha256 })
+        : reusable && round === 1 && reusableSourceBuildId && rules && generation.html === reusable.html
+          ? readReusableRuleAudit(join(this.artifactRoot, reusableSourceBuildId), { rules, sourceSha256: sha256(auditSource) })
+          : null;
+      if (checkpointValidation && !reusedAudit) throw new Error("自动复验检查点的完整规则审核回执已变化，已停止且未调用审核模型。");
       const reusedAuditFrom = reusedAudit ? reusableSourceBuildId : null;
       if (reusedAudit) await report(`代码与规则清单均与构建 ${reusedAuditFrom} 一致，复用其已通过的逐条规则审核，本次不调用审核模型`);
       const audit = reusedAudit ?? (this.options.designContracts
-        ? await this.options.designContracts.auditRuleFidelity(auditProfile, auditSource)
+        ? await this.options.designContracts.auditRuleFidelity(auditProfile, auditSource, requestBudget)
         : null);
       const missing = audit?.filter((verdict) => !verdict.implemented) ?? [];
       recordAttempt(round, reusedAudit ? "rule-audit-reused" : audit ? "rule-audit" : "rule-audit-unavailable", reusedAudit ? [`复用构建 ${reusedAuditFrom} 的规则审核`] : missing.map(verdict => `${verdict.rule}：${verdict.evidence}`));
-      if (this.options.designContracts && (!audit || !audit.length)) throw new Error("规则审核未返回完整结果，已保留代码并停止后续生图及交付；不会因审核服务故障自动重新生成代码。");
-      if (localRepair && missing.length) throw new Error(`服务器本地修复候选规则审核仍有 ${missing.length} 项未落实，已停止且未调用代码生成模型：${missing.map(item => item.rule).join("；")}`);
+      if (this.options.designContracts && (!audit || !audit.length)) {
+        if (pendingRepair?.verification === "artifact-browser-and-rule") persistExperience("failed", "rejected", pendingRepair.failure);
+        throw new Error("规则审核未返回完整结果，已保留代码并停止后续生图及交付；不会因审核服务故障自动重新生成代码。");
+      }
+      if (localRepair && missing.length) {
+        if (pendingRepair?.verification === "artifact-browser-and-rule") persistExperience("failed", "rejected", pendingRepair.failure);
+        throw new Error(`服务器本地修复候选规则审核仍有 ${missing.length} 项未落实，已停止且未调用代码生成模型：${missing.map(item => item.rule).join("；")}`);
+      }
       if (missing.length > 0 && round < maxRounds) {
         feedback = missing.map((verdict) => `规则审计判定未实现:${verdict.rule}——${verdict.evidence}`);
+        const normalizedFailure = normalizeRepairFailure("VALIDATION", feedback.join("；"));
+        const learnedReferences = repairExperienceSuggestions(experienceRoot, project, [normalizedFailure.signature]).promptReferences;
+        if (pendingRepair?.verification === "artifact-browser-and-rule") {
+          persistExperience("failed", "rejected", pendingRepair.failure);
+          pendingRepair = null;
+        }
         await report(`规则审核发现 ${missing.length} 项待修复，正在进行第 ${round + 1} 次针对性修复（最多 ${maxRounds} 次）`);
-        generation = await generator.generate(project, feedback, { html: generation.html, directions: [...directions, ...feedback] }, repairReport(round + 1), requestBudget);
+        generation = await generator!.generate(project, [...feedback, ...learnedReferences], { html: generation.html, directions: [...directions, ...feedback, ...learnedReferences] }, repairReport(round + 1), requestBudget);
+        pendingRepair = { failure: normalizedFailure, verification: "rule-audit" };
         writeGeneratedArtifact(root, project, generation);
         continue;
       }
@@ -936,7 +1088,22 @@ export class BuildOrchestrator {
         // 记录被审核源码的可复原哈希；后续同项目复用同一份代码时可据此复用通过的审核，不能复用未通过或不完整的审核。
         writeRuleFidelity(root, { verdicts: audit, sourceSha256: sha256(auditSource), ...(reusedAuditFrom ? { reusedFromBuildId: reusedAuditFrom } : {}) });
       }
-      if (missing.length) throw new Error(`${round} 轮修正后规则审核仍有 ${missing.length} 项未落实，已达本次制作的修正上限，停止后续生图及交付：${missing.map(item => item.rule).join("；")}`);
+      if (pendingRepair?.verification === "rule-audit" && missing.length) {
+        persistExperience("failed", "rejected", pendingRepair.failure);
+        pendingRepair = null;
+      }
+      if (missing.length) {
+        if (pendingRepair?.verification === "artifact-browser-and-rule") persistExperience("failed", "rejected", pendingRepair.failure);
+        throw new Error(`${round} 轮修正后规则审核仍有 ${missing.length} 项未落实，已达本次制作的修正上限，停止后续生图及交付：${missing.map(item => item.rule).join("；")}`);
+      }
+      if (pendingRepair?.verification === "rule-audit") {
+        persistExperience("verified", "rule-audit", pendingRepair.failure);
+        pendingRepair = null;
+      }
+      if (audit && pendingRepair?.verification === "artifact-browser-and-rule") {
+        persistExperience("verified", "artifact-browser-and-rule", pendingRepair.failure);
+        pendingRepair = null;
+      }
       return { generation, audit, iterated: previous !== null, auditReusedFrom: reusedAuditFrom };
     }
   }

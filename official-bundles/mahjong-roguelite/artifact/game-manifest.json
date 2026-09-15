@@ -1,0 +1,102 @@
+{
+  "title": "月港雀旅",
+  "template": "mahjong-roguelite",
+  "runtimeTarget": "web-2d",
+  "difficulty": "standard",
+  "visualStyle": "cute",
+  "aspectRatio": "9:16",
+  "cameraMode": "board",
+  "inputModes": [
+    "pointer",
+    "keyboard",
+    "touch-buttons"
+  ],
+  "designProfile": {
+    "genre": "肉鸽式麻将接龙",
+    "targetPlayer": "喜欢可观察空间关系、短回合配对和局间成长选择的休闲策略玩家",
+    "playerFantasy": "沿月港航线清除层叠灵牌，并用旅途遗物塑造本次牌局节奏",
+    "sessionLength": "6–15 分钟",
+    "coreLoop": [
+      "观察未被覆盖且侧边开放的自由牌",
+      "选择两张相同灵牌消除",
+      "维持连击并寻找新开放边缘",
+      "清空牌阵后选择遗物进入下一航段"
+    ],
+    "winCondition": "清空当前难度要求的全部航段牌阵",
+    "failCondition": "牌面仍有灵牌但没有可用对子，且洗牌次数已经耗尽",
+    "progression": [
+      "后续航段增加牌层和灵牌数量",
+      "每航段结束从三件遗物中选择一件永久强化",
+      "连击和遗物共同改变得分、提示或洗牌资源"
+    ],
+    "difficultyCurve": [
+      "标准档：保持足够学习窗口，并在中段形成稳定压力",
+      "难度调整必须改变 mahjong-roguelite 的真实规则参数，而不是只改标签"
+    ],
+    "gameFeel": [
+      "自由牌保持高亮与轻微抬升",
+      "配对成功时两张牌同步收束并释放陶瓷清响",
+      "新开放牌产生短促轮廓脉冲",
+      "遗物选择明确改变下一航段资源"
+    ],
+    "onboarding": [
+      "首航段只使用低层牌阵并默认点亮一对可消除牌",
+      "被阻挡牌点击后直接说明是上层覆盖还是左右被夹住"
+    ],
+    "accessibility": [
+      "灵牌同时使用位图符号、编号替代文本和明暗表达可用性",
+      "提示、洗牌和撤销都有文字按钮与键盘快捷键"
+    ],
+    "productionRisks": [
+      "生成器必须保证初始牌阵存在完整解法",
+      "洗牌后不能制造无解状态",
+      "移动端牌面不能因层数增加而小于可辨识尺寸"
+    ]
+  },
+  "levelProgression": {
+    "levelCount": 20,
+    "curve": "stepped",
+    "tierSize": 4,
+    "unlockMode": "sequential",
+    "persistProgress": true
+  },
+  "templateSource": {
+    "sourceName": "Whatajong",
+    "sourceUrl": "https://github.com/masylum/whatajong",
+    "license": "MIT",
+    "licenseUrl": "https://github.com/masylum/whatajong/blob/main/LICENSE",
+    "integrationMode": "architecture-adaptation",
+    "importedElements": [
+      "自由牌遮挡与左右开放判定",
+      "可用对子与无对子判定",
+      "反向放置保证可解牌局",
+      "多回合旅程与局间成长选择"
+    ],
+    "assetPolicy": "未复制 Whatajong 的牌面、字体、背景、音乐、音效、响应式牌阵、商店内容或品牌；规则、牌阵、遗物和视听资产均由本平台重制。",
+    "verifiedAt": "2026-08-27"
+  },
+  "generatedAt": "2026-08-31T08:37:43.596Z",
+  "assetManifest": "./assets/asset-manifest.json",
+  "artPipeline": {
+    "renderer": "role-split-bitmaps",
+    "sourceAtlas": "./assets/gameplay-atlas.png",
+    "gameplayBackground": "./assets/background.png",
+    "sprites": [
+      "./assets/sprites/sprite-01.png",
+      "./assets/sprites/sprite-02.png",
+      "./assets/sprites/sprite-03.png",
+      "./assets/sprites/sprite-04.png",
+      "./assets/sprites/sprite-05.png",
+      "./assets/sprites/sprite-06.png",
+      "./assets/sprites/sprite-07.png",
+      "./assets/sprites/sprite-08.png",
+      "./assets/sprites/sprite-09.png"
+    ],
+    "cover": "./assets/cover.png",
+    "assetCompositionVersion": 2,
+    "tileBodySource": "canvas-single-layer",
+    "spriteContent": "transparent-motif-only"
+  },
+  "userCustomization": [],
+  "puzzleRules": null
+}

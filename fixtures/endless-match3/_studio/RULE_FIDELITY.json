@@ -1,0 +1,69 @@
+{
+  "schemaVersion": 2,
+  "checkedAt": "2026-09-14T22:20:14.728Z",
+  "implemented": 12,
+  "total": 12,
+  "verdicts": [
+    {
+      "rule": "核心循环第 1 步:扫视棋盘找可消的相邻对",
+      "implemented": true,
+      "evidence": "render() 绘制 7x7 棋盘与 5 种颜色+形状宝石(GEMS/drawGem),getMoves()/updateHints() 列出所有可消交换并以虚线箭头提示,玩家可扫视识别"
+    },
+    {
+      "rule": "核心循环第 2 步:拖动或点选交换两个相邻方块",
+      "implemented": true,
+      "evidence": "gDown/gMove 实现拖动方向判定,handleTap 实现点选两格,attemptSwap 校验曼哈顿距离为1后交换;键盘方向键亦可交换"
+    },
+    {
+      "rule": "核心循环第 3 步:三个及以上同色消除并加分",
+      "implemented": true,
+      "evidence": "findMatches 扫描 run>=3 的行列,beginClear 计算 gain=格数*10*chain+超3格*15 并累加 score、更新 best"
+    },
+    {
+      "rule": "核心循环第 4 步:上方方块下落补齐，触发连锁",
+      "implemented": true,
+      "evidence": "beginFall 逐列下压并在顶部用 rndType 补新块,fallFrom 驱动下落动画;advance() 在 fall 后再次 findMatches,chain+1 触发连锁"
+    },
+    {
+      "rule": "核心循环第 5 步:无可消交换时棋盘自动洗牌",
+      "implemented": true,
+      "evidence": "onIdle() 调用 hasAnyMove(),为假则 beginShuffle();shuffleBoard 洗牌直至无现成匹配且有可行步,否则 genBoard 重生"
+    },
+    {
+      "rule": "胜利条件:无通关目标，玩家自行决定何时停止；分数持续累积",
+      "implemented": true,
+      "evidence": "代码无 win/胜利状态,setState 只有 idle/playing;score 仅在 startGame 重置,游戏中持续累加并写入 best"
+    },
+    {
+      "rule": "失败条件:无失败条件：不会输，无倒计时与生命，无解时自动洗牌",
+      "implemented": true,
+      "evidence": "无 lost 状态、无生命/计时变量;无效交换仅 swapback 回位;无解时 beginShuffle 自动洗牌"
+    },
+    {
+      "rule": "无限玩法没有最终胜利、强制通关或关卡选择；按确认规则持续供给可玩的内容。",
+      "implemented": true,
+      "evidence": "无关卡/阶段数据,probe 中 mode:'endless';beginFall 持续补充新方块,shuffleBoard 保证始终存在可消步"
+    },
+    {
+      "rule": "玩家取舍:在多个可消位置中选先消哪一处，可赌上方能否顺势连锁",
+      "implemented": true,
+      "evidence": "getMoves() 通常返回多个可选交换,玩家任选;chain 随 fall 后再匹配递增且 beginClear 的 gain 乘以 chain,使赌连锁有实际收益差"
+    },
+    {
+      "rule": "修饰器无计时安全局:首次成功前不得引入倒计时或不可逆损失。",
+      "implemented": true,
+      "evidence": "全局无计时器扣分/生命逻辑;失败交换只触发 swapback 动画与提示文案,分数不减"
+    },
+    {
+      "rule": "修饰器方格空间:格位边界、合法位置和占用必须清楚可见。",
+      "implemented": true,
+      "evidence": "render() 画交替底色格、1px 网格线与 3px 外框;选中格双线虚线框、键盘光标虚线框;提示按钮定位在格心标示合法交换方向"
+    },
+    {
+      "rule": "程序绘制:不加载、不引用未声明图片；按已确认画面风格用 CSS、Canvas、SVG、纯色/顶点色材质或程序 CanvasTexture 绘制主体与反馈。",
+      "implemented": true,
+      "evidence": "无 img/Image/drawImage 调用(__FORGE_SPRITE_SPECS__ 为空),全部由 Canvas 2D 的 fillRect/arc/path 与 CSS 色块绘制,粒子 bursts、飘字 popups 亦程序绘制"
+    }
+  ],
+  "sourceSha256": "dce652ffbca074b0cf996bbd5ee5ac2f6e699835480613e1454ad1d3be8a8956"
+}

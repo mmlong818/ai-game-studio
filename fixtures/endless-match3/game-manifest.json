@@ -1,0 +1,51 @@
+{
+  "title": "无限三消",
+  "template": "generated",
+  "experimental": false,
+  "runtimeTarget": "web-2d",
+  "naturalInteractionChecks": [],
+  "generator": "claude-cli:opus + verified-local-repair",
+  "generationRounds": 2,
+  "difficulty": "standard",
+  "visualStyle": "color-block",
+  "aspectRatio": "9:16",
+  "inputModes": ["pointer", "keyboard", "touch-buttons"],
+  "levelProgression": {
+    "levelCount": 0,
+    "curve": "stepped",
+    "tierSize": 4,
+    "unlockMode": "sequential",
+    "persistProgress": true
+  },
+  "generatedCampaign": {
+    "mode": "endless",
+    "failurePolicy": "forbidden",
+    "levelCount": 0,
+    "milestones": [],
+    "difficultyKeys": [],
+    "rationale": "无限玩法没有关卡、通关、失败、倒计时、生命或等级；只有累计得分与重新开始。"
+  },
+  "generatedBlueprint": {
+    "mechanicIds": ["swap-match"],
+    "modifierIds": ["untimed-safe", "square-grid"],
+    "coreDecision": "在多个可消位置中选择先消哪一处，并预判下落后的连锁",
+    "tension": "",
+    "masterySignal": "能预判下落后的新排列并主动制造连锁",
+    "sprites": []
+  },
+  "generatedAt": "2026-09-14T22:19:37.545Z",
+  "fixtureKind": "endless-match3",
+  "resourceProvenance": "./_studio/ART_PROVENANCE.md",
+  "sourceProject": {
+    "projectId": "93620a9e-9916-4d4b-9301-e114ea1aa3a4",
+    "versionId": "58151dd2-9217-4526-b2a0-79540ee0109a",
+    "originalTitle": "自由创想",
+    "promotedAt": "2026-09-15"
+  },
+  "promotionTransform": {
+    "kind": "display-title-only",
+    "file": "index.html",
+    "officialTitle": "无限三消",
+    "sourceReportsAreProvenanceOnly": true
+  }
+}

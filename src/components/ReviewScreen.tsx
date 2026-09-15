@@ -2,6 +2,7 @@ import { describeChangeLevel } from "../domain/classifyChange";
 import { GAME_TEMPLATES, MECHANIC_LIBRARY } from "../domain/templates";
 import type { StudioDraft } from "../domain/types";
 import { readableDesign } from "../domain/readableDesign";
+import { useReviewMessages } from "./review-i18n";
 
 export function ReviewScreen({
   draft,
@@ -12,6 +13,7 @@ export function ReviewScreen({
   onBack: () => void;
   onStartProduction: () => void;
 }) {
+  const t = useReviewMessages();
   const template =
     draft.creationMode === "template-remix"
       ? GAME_TEMPLATES.find((item) => item.id === draft.templateId)
@@ -25,38 +27,37 @@ export function ReviewScreen({
   );
 
   return (
-    <section className="review-screen" aria-label="游戏方案" tabIndex={-1}>
+    <section className="review-screen" aria-label={t("label")} tabIndex={-1}>
       <div className="review-heading">
         <div>
-          <span className="eyebrow">方案已形成</span>
-          <h1>{template ? `${draft.sourceGame?.title ?? template.name}改造方案` : "新游戏机制方案"}</h1>
+          <span className="eyebrow">{t("formed")}</span>
+          <h1>{template ? t("remixTitle", { title: draft.sourceGame?.title ?? template.name }) : t("newTitle")}</h1>
           <p>{draft.referenceDossier?.references.length
-            ? "先确认基础复刻是否准确。系统会保留参考中已经核实的关卡和局制，不会擅自改玩法；不合适就返回修改。"
-            : "先看看这一局玩家会怎样玩。符合你的想法就继续制作单局 demo，不合适就返回修改；不会默认增加关卡、等级或教学系统。"}</p>
+            ? t("referenceDetail") : t("newDetail")}</p>
         </div>
-        <span className="ready-stamp">方案草案 · 待制作验证</span>
+        <span className="ready-stamp">{t("stamp")}</span>
       </div>
 
       <div className="review-grid">
         <section className="review-main" aria-labelledby="review-content-heading">
-          <h2 id="review-content-heading">方案摘要</h2>
+          <h2 id="review-content-heading">{t("summary")}</h2>
           {template ? (
             <>
               <dl className="fact-list">
                 <div>
-                  <dt>基于的玩法</dt>
+                  <dt>{t("based")}</dt>
                   <dd>{template.name}</dd>
                 </div>
                 <div>
-                  <dt>改动范围</dt>
+                  <dt>{t("scope")}</dt>
                   <dd>{describeChangeLevel(draft.changeLevel)}</dd>
                 </div>
                 <div>
-                  <dt>玩家会反复做什么</dt>
+                  <dt>{t("loop")}</dt>
                   <dd>{template.coreLoop}</dd>
                 </div>
               </dl>
-              <h3>你的要求</h3>
+              <h3>{t("requirements")}</h3>
               <ul className="review-list">
                 {selectedSuggestions?.map((item) => (
                   <li key={item.id}>
@@ -66,7 +67,7 @@ export function ReviewScreen({
                 ))}
                 {draft.freeRequest && (
                   <li>
-                    <strong>你写的话</strong>
+                    <strong>{t("yourWords")}</strong>
                     <span>{draft.freeRequest}</span>
                   </li>
                 )}
@@ -75,7 +76,7 @@ export function ReviewScreen({
           ) : (
             <>
               <blockquote>{draft.newGameBrief}</blockquote>
-              <h3>我们理解的玩法方向</h3>
+              <h3>{t("direction")}</h3>
               <ul className="review-list">
                 {selectedMechanics.map((item) => (
                   <li key={item.id}>
@@ -86,31 +87,27 @@ export function ReviewScreen({
               </ul>
             </>
           )}
-          <h3>具体怎么玩</h3>
+          <h3>{t("how")}</h3>
           <dl className="fact-list">
-            <div><dt>玩家要做什么</dt><dd>{readable.play || "先明确玩家最常做的一个动作，再确定其他规则。"}</dd></div>
-            <div><dt>实际玩一小段</dt><dd>{readable.example}</dd></div>
-            <div><dt>怎样过关或结束</dt><dd>{readable.goal}</dd></div>
+            <div><dt>{t("action")}</dt><dd>{readable.play || t("actionFallback")}</dd></div>
+            <div><dt>{t("example")}</dt><dd>{readable.example}</dd></div>
+            <div><dt>{t("goal")}</dt><dd>{readable.goal}</dd></div>
           </dl>
-          {readable.needsCombination && <p>上面列出的是不同玩法方向的候选规则，不是要求玩家同时完成所有目标；它们怎样配合、以哪个目标为准，制作前仍需确认。</p>}
-          <h3>{readable.preserve ? "本次改造需要照顾的体验" : "建议做成怎样的完整体验"}</h3>
+          {readable.needsCombination && <p>{t("combination")}</p>}
+          <h3>{t(readable.preserve ? "preserve" : "experience")}</h3>
           <dl className="fact-list">
             {readable.experience.map(item => <div key={item.title}><dt>{item.title}</dt><dd>{item.detail}</dd></div>)}
           </dl>
         </section>
 
         <aside className="review-evidence" aria-labelledby="evidence-heading">
-          <h2 id="evidence-heading">制作时需要完成的检查</h2>
+          <h2 id="evidence-heading">{t("checks")}</h2>
           <ul className="gate-list">
-            <li><span>待验证</span> 核心玩法与胜负规则</li>
-            <li><span>待验证</span> 操作反馈是否清楚</li>
-            <li><span>待验证</span> {draft.referenceDossier?.references.length ? "参考中的关卡与局制" : "单局节奏"}</li>
-            <li><span>待验证</span> 图像资源与胜利结算</li>
-            <li><span>待验证</span> 桌面、触控与运行流畅度</li>
+            <li><span>{t("pending")}</span> {t("core")}</li><li><span>{t("pending")}</span> {t("feedback")}</li><li><span>{t("pending")}</span> {t(draft.referenceDossier?.references.length ? "reference" : "rhythm")}</li><li><span>{t("pending")}</span> {t("art")}</li><li><span>{t("pending")}</span> {t("devices")}</li>
           </ul>
           {draft.referenceDossier && (
             <div className="source-summary">
-              <strong>已收录的参考资料：{draft.referenceDossier.references.length} 项</strong>
+              <strong>{t("sources", { count: draft.referenceDossier.references.length })}</strong>
               <ul>
                 {draft.referenceDossier.references.map((reference) => (
                   <li key={reference.url}>
@@ -126,16 +123,16 @@ export function ReviewScreen({
       </div>
 
       <div className="review-actions">
-        <p>点击“继续”后将保存方案、分析并制作游戏；模型分析和图片生成可能使用已配置的模型额度。</p>
+        <p>{t("quota")}</p>
         <button type="button" className="secondary-action" onClick={onBack}>
-          返回修改
+          {t("back")}
         </button>
         <button
           type="button"
           className="primary-action review-primary"
           onClick={onStartProduction}
         >
-          继续 <span aria-hidden="true">→</span>
+          {t("continue")} <span aria-hidden="true">→</span>
         </button>
       </div>
     </section>

@@ -76,7 +76,7 @@
           <div class="round-card">
             <div class="round-card__top">
               <span>当前回合</span>
-              <strong>第 <span id="round-current">1</span><small>回合</small></strong>
+              <strong><span id="round-prefix">第 </span><span id="round-current">1</span><small>回合</small></strong>
             </div>
             <div class="turn-banner" id="turn-banner" role="status" aria-live="polite">
               <span class="turn-banner__orb"></span>
@@ -125,7 +125,7 @@
 
         <section class="board-stage" aria-label="共用棋盘">
           <div class="solo-hud" aria-label="本关收集目标" aria-live="polite">
-            <strong>剩余 <b id="solo-moves">12</b> 步</strong>
+            <strong><span id="solo-remaining">剩余</span> <b id="solo-moves">12</b> <span id="solo-moves-unit">步</span></strong>
             <div id="solo-targets"></div>
             <small>整张棋盘都能交换 · 凑成三个即可收集</small>
           </div>
@@ -144,7 +144,7 @@
             <div class="ai-veil" aria-hidden="true">
               <div class="ai-veil__badge">
                 <svg viewBox="0 0 24 24"><path d="M9 11a3 3 0 1 1 6 0v2H9v-2Zm-2 2h10v7H7v-7Zm2-7V4m6 2V4M4 10H2m20 0h-2"/></svg>
-                AI 操作区 · 可观察不可交换
+                <span id="ai-zone-text">AI 操作区 · 可观察不可交换</span>
               </div>
             </div>
             <div class="zone-divider" aria-hidden="true">
@@ -237,7 +237,7 @@
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9v6h4l5 4V5L8 9H4Zm12.5 1.1a3 3 0 0 1 0 3.8M18.8 7a7 7 0 0 1 0 10"/></svg>
           <span id="sound-toggle-label">声音开启</span>
         </button>
-        <button class="setup-card__start" id="setup-start" type="button"><span id="duel-start-label" hidden>以 <span id="setup-start-score">100</span> 点生命开始对局</span><span id="solo-start-label">开始收集星光</span></button>
+        <button class="setup-card__start" id="setup-start" type="button"><span id="duel-start-label" hidden><span id="duel-start-prefix">以</span> <span id="setup-start-score">100</span> <span id="duel-start-suffix">点生命开始对局</span></span><span id="solo-start-label">开始收集星光</span></button>
         <p class="install-note">添加到手机主屏幕，即可全屏并支持离线启动。</p>
       </section>
     </div>
@@ -251,15 +251,16 @@
         <div id="solo-result" class="solo-medals"></div>
         <p id="solo-result-targets"></p>
         <div class="result-scores">
-          <span>你 <strong id="result-player-score">0</strong></span>
+          <span><span id="result-player-label">你</span> <strong id="result-player-score">0</strong></span>
           <i>VS</i>
-          <span>露娜 <strong id="result-ai-score">0</strong></span>
+          <span><span id="result-ai-label">露娜</span> <strong id="result-ai-score">0</strong></span>
         </div>
         <button id="play-again" type="button">再战一局</button>
         <button id="result-setup" type="button">选择玩法与关卡</button>
       </section>
     </div>
 
+    <script src="i18n.js?v=1"></script>
     <script type="module" src="app.js?v=16"></script>
   </body>
 </html>

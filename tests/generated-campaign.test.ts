@@ -48,6 +48,14 @@ test("无限玩法不声明有限关卡，不强迫胜利或虚构难度维度",
   const plan = { mode: "endless", failurePolicy: "forbidden", levelCount: 0, milestones: [], difficultyKeys: [], rationale: "自由收集，没有最终目标。" };
   assert.equal(resolveGeneratedCampaign(plan).mode, "endless");
   assert.match(generatedCampaignPrompt(plan), /不实现setLevel或forceWin/);
+  assert.match(generatedCampaignPrompt(plan), /data-game-action/);
+  assert.match(generatedCampaignPrompt(plan), /click.*drag.*key:ArrowRight/);
+  assert.match(generatedCampaignPrompt(plan), /少量合法且有代表性的正常操作/);
+  assert.match(generatedCampaignPrompt(plan), /玩法本身的洗牌或继续机制/);
+  assert.match(generatedCampaignPrompt(plan), /Canvas 与覆盖层必须放在这个带data-game-board的共同父容器内/);
+  assert.match(generatedCampaignPrompt(plan), /不得为验收新增/);
+  assert.match(generatedCampaignPrompt(plan), /不表示必须增加关卡、等级、难度递增或分数系统/);
+  assert.match(generatedCampaignPrompt(plan), /不得用调试counter、milestone、mechanicsActive、计时或动画帧变化冒充核心玩法/);
   assert.throws(() => resolveGeneratedCampaign({ ...plan, levelCount: 20 }));
   assert.throws(() => resolveGeneratedCampaign({ ...plan, milestones: [1] }));
   const profile = gameDesignProfileSchema.parse({ ...createDesignProfile("generated", "standard"), generatedCampaign: plan });

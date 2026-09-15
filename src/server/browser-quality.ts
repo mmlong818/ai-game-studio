@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { createServer, type Server } from "node:http";
 import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
@@ -5,7 +6,7 @@ import { extname, join, normalize, relative, resolve } from "node:path";
 import { chromium, type Browser, type Page, type Locator } from "playwright";
 import type { QualityCheck } from "../shared/contracts.js";
 import { gameContentSecurityPolicy } from "./static-files.js";
-import { ArtifactValidationFailure } from "./generation-budget.js";
+import { ArtifactValidationFailure, type DeterministicArtifactRepairHint } from "./generation-budget.js";
 import { verifyGeneratedCampaign } from "../shared/generated-campaign.js";
 import type { GeneratedBlueprint } from "../shared/generated-blueprint.js";
 import { cancellationSignal, throwIfCancellationRequested } from "./cancellation.js";
@@ -2466,6 +2467,203 @@ export async function inspectMemoryMatchNaturalActions(page: Page, outOfOrder = 
   }, first, { timeout: 1000 });
 }
 
+type EndlessObservableSnapshot = { score: string; board: string; canvas: string; renderedCanvas: string };
+
+async function endlessObservableSnapshot(page: Page): Promise<EndlessObservableSnapshot> {
+  // Focus rings and :focus filters are control chrome, not gameplay evidence.
+  // Remove them before every sample so a no-op click/drag cannot pass through
+  // the rendered-canvas fallback merely by focusing the canvas.
+  await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur?.());
+  const observable = await page.evaluate(() => {
+    const score = Array.from(document.querySelectorAll<HTMLElement>("[data-score], #score, .score, [aria-label*='得分'], [aria-label*='分数']"))
+      .filter(element => {
+        const box = element.getBoundingClientRect();
+        const style = getComputedStyle(element);
+        return box.width > 0 && box.height > 0 && style.visibility !== "hidden" && style.display !== "none";
+      }).map(element => `${element.getAttribute("aria-label") ?? ""}|${element.textContent?.trim() ?? ""}`).join("||");
+    const boardRoot = document.querySelector<HTMLElement>("[data-game-board], [role='grid'], #board, #game-canvas")
+      ?? document.querySelector<HTMLElement>("[data-game-action]")?.parentElement
+      ?? null;
+    const board = boardRoot ? [boardRoot, ...boardRoot.querySelectorAll<HTMLElement>("*")].map((element) => {
+      const data = Array.from(element.attributes)
+        .filter(attribute => /^(?:data-(?!game-action)|aria-(?:label|checked|pressed|selected|valuenow)|class$)/.test(attribute.name))
+        .filter(attribute => !/(?:counter|milestone|mechanics-active|elapsed|timer|time|frame|tick)/i.test(attribute.name))
+        .map(attribute => `${attribute.name}=${attribute.value}`).sort().join(",");
+      const leafText = element.children.length === 0 ? element.textContent?.trim() ?? "" : "";
+      return `${element.tagName}:${data}:${leafText}`;
+    }).join("|") : "";
+    const canvas = boardRoot instanceof HTMLCanvasElement ? boardRoot : boardRoot?.querySelector("canvas");
+    let canvasSignature = "";
+    if (canvas) {
+      try {
+        const context = canvas.getContext("2d", { willReadFrequently: true });
+        if (context && canvas.width > 0 && canvas.height > 0) {
+          const pixels = context.getImageData(0, 0, canvas.width, canvas.height).data;
+          let hash = 2166136261;
+          const step = Math.max(4, Math.floor(pixels.length / 4096 / 4) * 4);
+          for (let index = 0; index < pixels.length; index += step) {
+            hash = Math.imul(hash ^ pixels[index], 16777619);
+            hash = Math.imul(hash ^ pixels[index + 1], 16777619);
+            hash = Math.imul(hash ^ pixels[index + 2], 16777619);
+            hash = Math.imul(hash ^ pixels[index + 3], 16777619);
+          }
+          canvasSignature = `${canvas.width}x${canvas.height}:${hash >>> 0}`;
+        }
+      } catch { /* A tainted/WebGL canvas is not accepted as standalone evidence. */ }
+    }
+    return { score, board, canvas: canvasSignature };
+  });
+  const renderedTarget = page.locator("canvas#game-canvas, #game-canvas canvas, canvas[data-game-action]").first();
+  const renderedCanvas = await renderedTarget.count()
+    ? await renderedTarget.screenshot({ animations: "disabled", caret: "hide", timeout: 1_000 })
+      .then(image => createHash("sha256").update(image).digest("hex"))
+      .catch(() => "")
+    : "";
+  return { ...observable, renderedCanvas };
+}
+
+function changedStableObservable(before: EndlessObservableSnapshot, after: EndlessObservableSnapshot, settled: EndlessObservableSnapshot, passiveA: EndlessObservableSnapshot, passiveB: EndlessObservableSnapshot): string | null {
+  if (passiveA.score === passiveB.score && before.score && before.score !== after.score && after.score === settled.score) return "玩家可见得分";
+  if (passiveA.board === passiveB.board && before.board && before.board !== after.board && after.board === settled.board) return "棋盘DOM";
+  if (passiveA.canvas === passiveB.canvas && before.canvas && before.canvas !== after.canvas && after.canvas === settled.canvas) return "棋盘像素";
+  if (passiveA.renderedCanvas === passiveB.renderedCanvas && before.renderedCanvas && before.renderedCanvas !== after.renderedCanvas && after.renderedCanvas === settled.renderedCanvas) return "浏览器渲染画面";
+  return null;
+}
+
+async function waitForStableEndlessChange(page: Page, before: EndlessObservableSnapshot, passiveA: EndlessObservableSnapshot, passiveB: EndlessObservableSnapshot) {
+  const deadline = Date.now() + 3_000;
+  const stableWindowMs = 450;
+  await page.waitForTimeout(200);
+  let previous = await endlessObservableSnapshot(page);
+  let stableCandidate: string | null = null;
+  let stableSince = 0;
+  while (Date.now() < deadline) {
+    await page.waitForTimeout(200);
+    const current = await endlessObservableSnapshot(page);
+    const observable = changedStableObservable(before, previous, current, passiveA, passiveB);
+    if (!observable) {
+      stableCandidate = null;
+      stableSince = 0;
+    } else if (stableCandidate !== observable) {
+      stableCandidate = observable;
+      stableSince = Date.now();
+    } else if (Date.now() - stableSince >= stableWindowMs) {
+      return observable;
+    }
+    previous = current;
+  }
+  return null;
+}
+
+async function performDeclaredGameAction(page: Page, target: Locator) {
+  const declaration = (await target.getAttribute("data-game-action") ?? "click").trim() || "click";
+  if (declaration === "drag") {
+    const box = await target.boundingBox();
+    if (!box) throw new Error("拖拽玩法目标没有可点击区域。");
+    const direction = (await target.getAttribute("data-game-drag") ?? "right").toLowerCase();
+    const distance = Math.max(24, Math.min(72, Math.max(box.width, box.height) * .6));
+    const vector = direction === "left" ? [-distance, 0] : direction === "up" ? [0, -distance] : direction === "down" ? [0, distance] : [distance, 0];
+    const start = { x: box.x + box.width / 2, y: box.y + box.height / 2 };
+    await page.mouse.move(start.x, start.y);
+    await page.mouse.down();
+    await page.mouse.move(start.x + vector[0], start.y + vector[1], { steps: 6 });
+    await page.mouse.up();
+    return;
+  }
+  if (declaration.startsWith("key:")) {
+    const key = declaration.slice(4);
+    if (!/^(?:Arrow(?:Up|Down|Left|Right)|Space|Enter|[WASDwasd])$/.test(key)) throw new Error("键盘玩法动作声明不在允许范围内。");
+    await target.focus();
+    await page.keyboard.press(key);
+    return;
+  }
+  if (declaration !== "click") throw new Error(`未知的玩法动作声明:${declaration}。`);
+  await clickAnimatedControl(page, target);
+}
+
+async function boardMarkerRepairHint(page: Page): Promise<DeterministicArtifactRepairHint | undefined> {
+  // Source string prevents tsx from injecting its Node-only __name helper into
+  // the browser for the small local visibility predicate.
+  return await page.evaluate(`(() => {
+    const visible = (element) => {
+      const box = element.getBoundingClientRect();
+      const style = getComputedStyle(element);
+      return box.width > 0 && box.height > 0 && style.display !== "none" && style.visibility !== "hidden";
+    };
+    const actions = [...document.querySelectorAll("[data-game-action]")]
+      .filter(element => visible(element) && !(element instanceof HTMLButtonElement && element.disabled)
+        && !/(?:验收|测试|完成核心动作)/.test(element.textContent ?? ""));
+    const canvases = [...document.querySelectorAll("canvas")];
+    if (!actions.length || canvases.length !== 1 || !visible(canvases[0])) return undefined;
+    // An existing semantic board root means the page is ambiguous or wired in a
+    // different place; do not manufacture a second root to make the probe pass.
+    if (document.querySelector("[data-game-board], [role='grid'], #board")) return undefined;
+    const nodes = [canvases[0], ...actions];
+    let candidate = nodes[0];
+    while (candidate && !nodes.every(node => candidate?.contains(node))) candidate = candidate.parentElement;
+    if (!(candidate instanceof HTMLElement) || ["HTML", "BODY", "MAIN"].includes(candidate.tagName)) return undefined;
+    // The canvas must be a direct stage child while actions occupy a sibling
+    // overlay branch. This matches canvas games without treating a broad app shell
+    // as a board merely because it eventually contains both UI and gameplay.
+    if (canvases[0].parentElement !== candidate) return undefined;
+    const canvasBranch = canvases[0];
+    if (actions.some(action => action === canvasBranch || canvasBranch.contains(action))) return undefined;
+    const id = candidate.id;
+    if (!/^[A-Za-z][A-Za-z0-9_.:-]{0,79}$/.test(id) || document.querySelectorAll("#" + CSS.escape(id)).length !== 1) return undefined;
+    if (candidate.hasAttribute("data-game-board") || candidate.getAttribute("role") === "grid") return undefined;
+    return { kind: "add-game-board-marker", elementId: id, elementTag: candidate.tagName.toLowerCase() };
+  })()`) as DeterministicArtifactRepairHint | undefined;
+}
+
+/** Run a real pointer action and require a stable player-visible gameplay change. */
+export async function inspectEndlessNaturalAction(page: Page): Promise<string> {
+  const boardActionSelector = [
+    "[data-game-board][data-game-action]:visible",
+    "[data-game-board] [data-game-action]:visible",
+    "[role='grid'][data-game-action]:visible",
+    "[role='grid'] [data-game-action]:visible",
+    "#board[data-game-action]:visible",
+    "#board [data-game-action]:visible",
+    "#game-canvas[data-game-action]:visible",
+    "#game-canvas [data-game-action]:visible",
+  ].join(", ");
+  // Games may create their normal move affordance just after entering `playing`
+  // (for example, once an initial board animation settles). Wait only for a
+  // declared action inside a real board root; an unrelated outside control must
+  // neither end this wait nor become an accepted gameplay action.
+  await page.locator(boardActionSelector).first().waitFor({ state: "visible", timeout: 1_500 }).catch(() => undefined);
+  const actions = page.locator("[data-game-action]:visible");
+  const count = Math.min(await actions.count(), 12);
+  if (!count) throw new Error("无限玩法没有标记当前可执行的真实玩法控件 data-game-action。");
+  const passiveA = await endlessObservableSnapshot(page);
+  await page.waitForTimeout(250);
+  const passiveB = await endlessObservableSnapshot(page);
+  let eligibleActions = 0;
+  let outsideBoardActions = 0;
+  for (let index = 0; index < count; index += 1) {
+    const target = actions.nth(index);
+    if (!await target.isVisible().catch(() => false) || !await target.isEnabled().catch(() => false)) continue;
+    const control = await target.evaluate(element => ({
+      withinBoard: Boolean(element.closest("[data-game-board], [role='grid'], #board, #game-canvas")),
+      dedicatedQaControl: /(?:验收|测试|完成核心动作)/.test(element.textContent ?? ""),
+    }));
+    if (!control.withinBoard) { outsideBoardActions += 1; continue; }
+    if (control.dedicatedQaControl) continue;
+    eligibleActions += 1;
+    try {
+      const before = await endlessObservableSnapshot(page);
+      await performDeclaredGameAction(page, target);
+      const observable = await waitForStableEndlessChange(page, before, passiveA, passiveB);
+      if (observable && await page.locator("body").getAttribute("data-game-state") === "playing") return observable;
+    } catch { /* Try the next declared normal gameplay target within the small action budget. */ }
+  }
+  if (!eligibleActions && outsideBoardActions > 0) {
+    const repairHint = await boardMarkerRepairHint(page);
+    throw new ArtifactValidationFailure(`发现 ${outsideBoardActions} 个可见的 data-game-action，但它们都不在真实棋盘容器内，因此没有执行任何有效玩法操作。请将 Canvas 与操作覆盖层放入共同父容器，并在该真实容器上声明 data-game-board；不要把标记放在棋盘外或专用验收按钮上。`, repairHint);
+  }
+  throw new Error("无限玩法的真实点击、拖拽或键盘操作没有产生稳定可见的得分、棋盘DOM或渲染画面变化；调试counter/milestone和计时动画不算核心玩法证据。");
+}
+
 async function monitorForbiddenLoss(page: Page, failures: string[], forbidden: "lost" | "won" = "lost") {
   const binding = `__recordForbidden_${forbidden}`;
   await page.exposeFunction(binding, () => { failures.push(`确认方案出现了禁止的${forbidden}状态`); });
@@ -2540,6 +2738,8 @@ export async function inspectGeneratedGameInBrowser(root: string, options: { exp
   let completedErrorViewports = 0;
   const memoryMatch = requiresMemoryMatchNaturalCheck(root);
   let memoryFailure: string | null = null;
+  const endlessActionEvidence: string[] = [];
+  let deterministicRepairHint: DeterministicArtifactRepairHint | undefined;
   const generatedViewports = [
     { name: "phone-small", width: 360, height: 640 },
     { name: "phone-standard", width: 390, height: 844 },
@@ -2642,8 +2842,8 @@ export async function inspectGeneratedGameInBrowser(root: string, options: { exp
             const debug = (window as any).__GAME_DEBUG__;
             return { hasState: Boolean(debug?.getState), hasWin: Boolean(debug?.forceWin), hasLose: Boolean(debug?.forceLose) };
           });
-          if (!hooks.hasState || !hooks.hasWin || (failureAllowed && !hooks.hasLose)) {
-            recordGeneratedFailure(`probe 模式缺少 getState/forceWin${failureAllowed ? "/forceLose" : ""} 钩子。`, "GEN-BROWSER-CONTRACT");
+          if (!hooks.hasState || (!endless && !hooks.hasWin) || (failureAllowed && !hooks.hasLose)) {
+            recordGeneratedFailure(`probe 模式缺少 getState${endless ? "" : "/forceWin"}${failureAllowed ? "/forceLose" : ""} 钩子。`, "GEN-BROWSER-CONTRACT");
           } else {
             if (!endless && !singleDemo) {
             beginGeneratedCheck("PROGRESSION-RUNTIME");
@@ -2695,11 +2895,14 @@ export async function inspectGeneratedGameInBrowser(root: string, options: { exp
             completeGeneratedCheck("PROGRESSION-RUNTIME");
 
             } else if (endless) {
+              beginGeneratedCheck("PROGRESSION-RUNTIME");
               const mode = await page.evaluate(() => (window as any).__GAME_DEBUG__.getState()?.mode);
               if (mode !== "endless") recordGeneratedFailure("无限玩法没有返回真实模式endless。", "PROGRESSION-RUNTIME");
-              await page.evaluate(() => (window as any).__GAME_DEBUG__.restart());
-              await page.waitForFunction(() => document.body.dataset.gameState === "playing", undefined, { timeout: 3000 });
-              progressionReport = { checkedAt: new Date().toISOString(), status: "not-applicable", reason: "确认无限玩法，没有有限关卡。" };
+              try { endlessActionEvidence.push(`重开前:${await inspectEndlessNaturalAction(page)}`); }
+              catch (error) {
+                if (error instanceof ArtifactValidationFailure && error.repairHint) deterministicRepairHint ??= error.repairHint;
+                recordGeneratedFailure(error instanceof Error ? error.message : String(error), "PROGRESSION-RUNTIME");
+              }
             } else {
               beginGeneratedCheck("PROGRESSION-RUNTIME");
               progressionReport = { checkedAt: new Date().toISOString(), status: "not-applicable", reason: "确认单局 demo，没有关卡递进。" };
@@ -2741,9 +2944,16 @@ export async function inspectGeneratedGameInBrowser(root: string, options: { exp
                 .catch(() => recordGeneratedFailure("重开后无法再次进入 playing。", "GEN-BROWSER-CONTRACT"));
             }
             } else {
+              try { endlessActionEvidence.push(`重开后:${await inspectEndlessNaturalAction(page)}`); }
+              catch (error) {
+                if (error instanceof ArtifactValidationFailure && error.repairHint) deterministicRepairHint ??= error.repairHint;
+                recordGeneratedFailure(error instanceof Error ? error.message : String(error), "PROGRESSION-RUNTIME");
+              }
               await page.waitForTimeout(1000);
               if (await page.locator("body").getAttribute("data-game-state") !== "playing") recordGeneratedFailure(`无限模式重开后的观察期未保持可玩状态。`, "GEN-BROWSER-CONTRACT");
               await takeScreenshot(page, join(qualityRoot, `${viewport.name}-endless.png`), screenshotPaths);
+              progressionReport = { checkedAt: new Date().toISOString(), status: "sampled", reason: "确认无限玩法，没有有限关卡。", naturalActions: endlessActionEvidence };
+              completeGeneratedCheck("PROGRESSION-RUNTIME");
             }
             if (failureAllowed) {
             await page.evaluate(() => (window as Window & { __GAME_DEBUG__?: { forceLose?: () => void } }).__GAME_DEBUG__?.forceLose?.());
@@ -2752,7 +2962,7 @@ export async function inspectGeneratedGameInBrowser(root: string, options: { exp
             }
             completeGeneratedCheck("GEN-BROWSER-CONTRACT");
           }
-          evidence.push(`390×844 执行 ${endless ? "无限模式声明与重开短期观察，不代表无限时长运行证明" : "idle→playing→won→重开"}${failureAllowed ? "；验证失败结算" : "；按确认方案不测试失败结算"}。`);
+          evidence.push(`390×844 执行 ${endless ? `无限模式声明、正常玩法操作与重开后再次操作（${endlessActionEvidence.join("、")}）；不代表无限时长运行证明` : "idle→playing→won→重开"}${failureAllowed ? "；验证失败结算" : "；按确认方案不测试失败结算"}。`);
         }
         beginGeneratedCheck("GEN-BROWSER-ERRORS");
         if (runtimeErrors.length) recordGeneratedFailure(`${viewport.name} 浏览器错误：${runtimeErrors.join(" | ")}`, "GEN-BROWSER-ERRORS");
@@ -2804,16 +3014,24 @@ export async function inspectGeneratedGameInBrowser(root: string, options: { exp
   const checks: QualityCheck[] = [
     ...(memoryMatch && !endless && !campaign.legacy ? [{ id: "MEMORY-MATCH-COMPLETION", label: "通过正常点击完成首关", status: memoryFailure ? "failed" as const : "passed" as const, evidence: "读取可观察牌面身份作为解法，以真实鼠标逐对完成剩余卡牌并等待自然won状态；未调用forceWin。仅证明首关，两条输入路径。" }] : []),
     ...(memoryMatch ? [{ id: "MEMORY-MATCH-NATURAL", label: "记忆翻牌正常点击、乱序动作、自动回盖与继续操作", status: memoryFailure ? "failed" as const : "passed" as const, evidence: memoryFailure ?? "无probe：配对再错配及先错→对→错两条自然路径，2秒内自动回盖并解除输入锁。" }] : []),
-    { id: "GEN-BROWSER-CONTRACT", label: `生成游戏运行时契约（状态机、开始、胜负、重开）`, status: generatedReportStatus("GEN-BROWSER-CONTRACT") === "passed" ? "passed" : "failed", evidence: generatedReportEvidence("GEN-BROWSER-CONTRACT", evidence.join(" ")) },
+    { id: "GEN-BROWSER-CONTRACT", label: `生成游戏运行时契约（状态机、开始、${endless ? "无最终胜利" : "胜利"}${failureAllowed ? "、失败" : ""}、重开）`, status: generatedReportStatus("GEN-BROWSER-CONTRACT") === "passed" ? "passed" : "failed", evidence: generatedReportEvidence("GEN-BROWSER-CONTRACT", evidence.join(" ")) },
     { id: "GEN-BROWSER-LAYOUT", label: "三档画幅布局与触控可达", status: generatedReportStatus("GEN-BROWSER-LAYOUT") === "passed" ? "passed" : "failed", evidence: generatedReportEvidence("GEN-BROWSER-LAYOUT", "360/390/1366 宽度均无横向溢出且可开局。") },
     { id: "GEN-BROWSER-VISUAL", label: "位图等比显示与关键文字完整", status: generatedReportStatus("GEN-BROWSER-VISUAL") === "passed" ? "passed" : "failed", evidence: generatedReportEvidence("GEN-BROWSER-VISUAL", `已核对 Canvas 源矩形/目标矩形、Canvas 像素画布/CSS 尺寸、DOM 图片 object-fit、CSS 背景和关键文字裁切；cover/contain 与等比 DPR 缩放保留。${runtimeObservations.length ? ` 未完成的事件采样：${runtimeObservations.join(" ")}` : ""}`) },
     { id: "GEN-BROWSER-ERRORS", label: "浏览器错误监听", status: generatedReportStatus("GEN-BROWSER-ERRORS") === "passed" ? "passed" : "failed", evidence: generatedReportEvidence("GEN-BROWSER-ERRORS", "已监听控制台错误与未处理异常。") },
+    ...(!failureAllowed ? [{
+      id: "NO-FAILURE-SAMPLED",
+      label: "正常操作抽样期间未进入禁止的失败状态",
+      status: failures.some(failure => failure.includes("禁止的lost状态")) ? "failed" as const : "passed" as const,
+      evidence: failures.some(failure => failure.includes("禁止的lost状态"))
+        ? "正常操作或重开抽样期间观察到禁止的 lost 状态。"
+        : "已在正常操作与重开抽样期间持续监听 game:state-change 和 data-game-state，未观察到 lost；短期抽样不代表无限时长证明。",
+    }] : []),
     ...(singleDemo ? [
       { id: "PROGRESSION-RUNTIME", label: "单局 demo 无关卡递进", status: generatedReportStatus("PROGRESSION-RUNTIME") === "passed" ? "passed" as const : "failed" as const, evidence: generatedReportEvidence("PROGRESSION-RUNTIME", "确认单局 demo；未要求 setLevel、difficulty、contentVariant 或 runtimeSignature。") },
     ] : !endless ? [
       { id: "PROGRESSION-RUNTIME", label: `生成游戏确认的 ${campaign.levelCount} 关递进与结构变化`, status: generatedReportStatus("PROGRESSION-RUNTIME") === "passed" ? "passed" as const : "failed" as const, evidence: generatedReportEvidence("PROGRESSION-RUNTIME", `逐关检查 setLevel/restart，数值维度 ${campaign.difficultyKeys.join("、")}，结构变化关 ${campaign.milestones.join("/")}。探针数据不等同于自然操作玩通。`) },
       { id: "GEN-BROWSER-VARIATION", label: `里程碑关卡 ${campaign.milestones.join("/")} 的结构变体互不相同`, status: generatedReportStatus("GEN-BROWSER-VARIATION") === "passed" ? "passed" as const : "failed" as const, evidence: generatedReportEvidence("GEN-BROWSER-VARIATION", `里程碑关的 contentVariant 与 runtimeSignature 各不相同（${campaign.milestones.length} 个里程碑）。`) },
-    ] : [{ id: "ENDLESS-SAMPLED", label: "无限模式声明、重开及禁止胜利状态抽样", status: failures.length ? "failed" as const : "passed" as const, evidence: "有限关卡检查不适用；短期观察不证明内容持续供给或长期性能。" }]),
+    ] : [{ id: "ENDLESS-SAMPLED", label: "无限模式正常操作、重开后再操作及禁止胜利状态抽样", status: failures.length ? "failed" as const : "passed" as const, evidence: failures.length ? failures.join(" ") : `真实指针操作观察到${endlessActionEvidence.join("、")}；有限关卡检查不适用，短期观察不证明内容持续供给或长期性能。` }]),
   ];
   if (progressionReport) writeFileSync(join(root, "_studio", "DIFFICULTY_QUALITY_REPORT.json"), `${JSON.stringify(progressionReport, null, 2)}\n`, "utf8");
   const reportChecks = checks.map((check) => {
@@ -2823,7 +3041,7 @@ export async function inspectGeneratedGameInBrowser(root: string, options: { exp
   const report = { checkedAt: new Date().toISOString(), executablePath, experimental: true, timedOut, totalTimeoutMs, checks: reportChecks, failures, observations: runtimeObservations, screenshots: screenshotPaths.map((path) => relative(root, path).replaceAll("\\", "/")) };
   writeFileSync(join(root, "_studio", "BROWSER_QUALITY_REPORT.json"), `${JSON.stringify(report, null, 2)}\n`, "utf8");
   if (timedOut) throw new BrowserQualityTimeoutError(`生成游戏浏览器整体验收超时：${failures.join(" ")}`);
-  if (failures.length) throw new ArtifactValidationFailure(`生成游戏浏览器验收失败：${failures.join(" ")}`);
+  if (failures.length) throw new ArtifactValidationFailure(`生成游戏浏览器验收失败：${failures.join(" ")}`, deterministicRepairHint);
   return { checks, screenshotPaths };
 }
 

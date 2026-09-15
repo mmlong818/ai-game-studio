@@ -73,6 +73,15 @@ const remainEl=$('remain'), statsEl=$('stats'), toastEl=$('goalToast'), stuckEl=
 const startScreen=$('startScreen'), resultScreen=$('resultScreen');
 const resTitle=$('resTitle'), resReason=$('resReason'), resStats=$('resStats');
 const btnStart=$('start'), btnRestart=$('restart'), btnAgain=$('again'), btnNext=$('next');
+const LOCALES=new Set(['zh-CN','zh-TW','en','ja']);
+let locale=new URLSearchParams(location.search).get('lang');if(!LOCALES.has(locale))locale='zh-CN';
+const TEXT={
+  'zh-CN':{title:'箭头魔方 · 100 关战役',stuck:'看得见的方块都推不动了 · 点「重开本关」',remain:'剩余方块',stats:(l,m,x)=>`第 ${l}/100 关 · 步数 ${m} · 无效 ${x}`,restart:'重开本关',introTitle:'把魔方一路推空',intro1:'点一个小方块，它沿着面上箭头的方向直线滑动：',intro1b:'前方一路空',intro1c:'就滑出去消失；被挡住则贴着障碍停下，变成新的障碍。',intro2:'推空当前一关进入下一关，共 100 关，最后是 5×5×5 的巨方。拖动画面或方向键/WASD 转视角，回正复位，空格换一块，回车推出。',tags:['无倒计时','顺序即解法','卡死可秒重开'],start:'开始',pad:'操作按键',left:'视角左转',up:'视角上转',down:'视角下转',right:'视角右转',home:'回正',homeAria:'回正视角',cycle:'换一块',cycleAria:'切换选中的方块',go:'推出',goAria:'推动选中的方块',won:l=>`第 ${l} 关清空！`,allWon:'百关全通关！',rankBest:'大师级：几乎没有无效点击',rankGood:'不错：顺序读得挺准',rankPass:'通过：多留意箭头前方的通路',cleared:(n,r)=>`${n} 块都被推出了立方体 · ${r}`,finalCleared:(n,r)=>`最终关 ${n} 块全部推出立方体 · ${r}`,steps:(label,m,x)=>`${label} · 步数 ${m} · 无效点击 ${x}`,next:'下一关',againAll:'从第 1 关再来',replay:'重玩本关',lost:'卡死了',noMove:'没有任何一块还能移动',lostReason:(l,n)=>`第 ${l} 关剩余 ${n} 块的箭头前方全被挡死，没有任何一块还能移动（卡死）`,lostStats:(l,label,m,n)=>`第 ${l} 关 ${label} · 步数 ${m} · 剩余 ${n}`,retry:'重来本关',goal:(l,n,label)=>`第 ${l}/100 关 · ${n} 块 · ${label} · 沿箭头推空`,pieces:n=>`${n} 块`,structures:{base:'基础阵列',cuboid:'层叠长方体',carved:'异形层塔',notched:'缺角镂空'}},
+  'zh-TW':{title:'箭頭魔方 · 100 關戰役',stuck:'看得見的方塊都推不動了 · 點「重開本關」',remain:'剩餘方塊',stats:(l,m,x)=>`第 ${l}/100 關 · 步數 ${m} · 無效 ${x}`,restart:'重開本關',introTitle:'把魔方一路推空',intro1:'點一個小方塊，它會沿著表面箭頭直線滑動：',intro1b:'前方一路淨空',intro1c:'就會滑出去消失；被擋住則停在障礙旁，成為新的障礙。',intro2:'推空目前關卡即可進入下一關，共 100 關，最後是 5×5×5 巨方。拖動畫面或方向鍵/WASD 轉視角，回正復位，空白鍵換一塊，Enter 推出。',tags:['無倒數計時','順序就是解法','卡死可立即重開'],start:'開始',pad:'操作按鍵',left:'視角左轉',up:'視角上轉',down:'視角下轉',right:'視角右轉',home:'回正',homeAria:'回正視角',cycle:'換一塊',cycleAria:'切換選取的方塊',go:'推出',goAria:'推動選取的方塊',won:l=>`第 ${l} 關清空！`,allWon:'百關全通關！',rankBest:'大師級：幾乎沒有無效點擊',rankGood:'不錯：順序判讀很準',rankPass:'通過：多留意箭頭前方的通路',cleared:(n,r)=>`${n} 塊都推出立方體了 · ${r}`,finalCleared:(n,r)=>`最終關 ${n} 塊全部推出立方體 · ${r}`,steps:(label,m,x)=>`${label} · 步數 ${m} · 無效點擊 ${x}`,next:'下一關',againAll:'從第 1 關再來',replay:'重玩本關',lost:'卡死了',noMove:'沒有任何一塊還能移動',lostReason:(l,n)=>`第 ${l} 關剩餘 ${n} 塊的箭頭前方全被擋住，沒有任何一塊還能移動（卡死）`,lostStats:(l,label,m,n)=>`第 ${l} 關 ${label} · 步數 ${m} · 剩餘 ${n}`,retry:'重來本關',goal:(l,n,label)=>`第 ${l}/100 關 · ${n} 塊 · ${label} · 沿箭頭推空`,pieces:n=>`${n} 塊`,structures:{base:'基礎陣列',cuboid:'層疊長方體',carved:'異形層塔',notched:'缺角鏤空'}},
+  en:{title:'Arrow Cube · 100-Level Campaign',stuck:'No visible cube can move · select Restart level',remain:'Cubes remaining',stats:(l,m,x)=>`Level ${l}/100 · Moves ${m} · Misses ${x}`,restart:'Restart level',introTitle:'Push every cube clear',intro1:'Select a small cube. It slides in the direction of its arrow: if the ',intro1b:'whole path ahead is clear',intro1c:', it exits and disappears. If blocked, it stops at the obstacle and becomes a new obstacle.',intro2:'Clear each level to advance through 100 levels, ending with a 5×5×5 giant cube. Drag or use arrows/WASD to rotate, Home to reset, Space to select, and Enter to push.',tags:['No timer','Order is the solution','Restart instantly if stuck'],start:'Start',pad:'Game controls',left:'Rotate view left',up:'Rotate view up',down:'Rotate view down',right:'Rotate view right',home:'Reset',homeAria:'Reset view',cycle:'Next cube',cycleAria:'Select the next cube',go:'Push out',goAria:'Push the selected cube',won:l=>`Level ${l} cleared!`,allWon:'All 100 levels cleared!',rankBest:'Master: almost no missed moves',rankGood:'Great: you read the order well',rankPass:'Cleared: watch the path ahead of each arrow',cleared:(n,r)=>`All ${n} cubes left the block · ${r}`,finalCleared:(n,r)=>`All ${n} cubes cleared from the final level · ${r}`,steps:(label,m,x)=>`${label} · Moves ${m} · Misses ${x}`,next:'Next level',againAll:'Play again from Level 1',replay:'Replay level',lost:'Stuck',noMove:'No cube can move',lostReason:(l,n)=>`Level ${l} has ${n} cubes left, and every arrow path is blocked`,lostStats:(l,label,m,n)=>`Level ${l} · ${label} · Moves ${m} · ${n} remaining`,retry:'Retry level',goal:(l,n,label)=>`Level ${l}/100 · ${n} cubes · ${label} · Push along the arrows`,pieces:n=>`${n} cubes`,structures:{base:'Starter array',cuboid:'Layered cuboid',carved:'Carved tower',notched:'Hollow notched form'}},
+  ja:{title:'矢印キューブ · 100ステージ',stuck:'見えているキューブは動かせません · 「ステージをやり直す」を選択',remain:'残りキューブ',stats:(l,m,x)=>`ステージ ${l}/100 · 手数 ${m} · ミス ${x}`,restart:'ステージをやり直す',introTitle:'キューブをすべて押し出そう',intro1:'小さなキューブを選ぶと、表面の矢印方向へ直進します：',intro1b:'前方がすべて空いていれば',intro1c:'外へ滑り出して消えます。遮られると障害物の手前で止まり、新しい障害物になります。',intro2:'現在のステージを空にすると次へ進みます。全100ステージ、最後は5×5×5の巨大キューブです。ドラッグまたは矢印/WASDで回転、Homeで視点リセット、Spaceで選択、Enterで押し出します。',tags:['時間制限なし','順番が解法','詰んだらすぐ再開'],start:'スタート',pad:'操作ボタン',left:'視点を左へ回転',up:'視点を上へ回転',down:'視点を下へ回転',right:'視点を右へ回転',home:'正面',homeAria:'視点をリセット',cycle:'次のキューブ',cycleAria:'選択キューブを切り替え',go:'押し出す',goAria:'選択したキューブを押す',won:l=>`ステージ ${l} クリア！`,allWon:'100ステージ完全クリア！',rankBest:'マスター：ミスがほとんどありません',rankGood:'いい読みです：順番は正確でした',rankPass:'クリア：矢印の前方をよく見よう',cleared:(n,r)=>`${n}個すべてを押し出しました · ${r}`,finalCleared:(n,r)=>`最終ステージの${n}個をすべて押し出しました · ${r}`,steps:(label,m,x)=>`${label} · 手数 ${m} · ミス ${x}`,next:'次のステージ',againAll:'ステージ1からもう一度',replay:'このステージをもう一度',lost:'行き詰まり',noMove:'動かせるキューブがありません',lostReason:(l,n)=>`ステージ ${l} は残り${n}個。すべての矢印の前がふさがれています`,lostStats:(l,label,m,n)=>`ステージ ${l} · ${label} · 手数 ${m} · 残り ${n}`,retry:'ステージをやり直す',goal:(l,n,label)=>`ステージ ${l}/100 · ${n}個 · ${label} · 矢印方向へ押し出そう`,pieces:n=>`${n}個`,structures:{base:'基本配置',cuboid:'積層直方体',carved:'変形タワー',notched:'切り欠き中空形'}}
+};
+const tr=key=>TEXT[locale][key];
 
 /* 方向索引与 BoxGeometry 面顺序一致：0=+X 1=-X 2=+Y 3=-Y 4=+Z 5=-Z */
 const DIRS=[[1,0,0],[-1,0,0],[0,1,0],[0,-1,0],[0,0,1],[0,0,-1]];
@@ -208,6 +217,7 @@ function buildLevelSpec(n){
     }
   };
 }
+function levelLabel(spec=LV){return `${spec.nx}×${spec.ny}×${spec.nz} ${TEXT[locale].structures[spec.kind]||TEXT[locale].structures.base} · ${tr('pieces')(spec.blockCount)}`;}
 
 let level=1;
 let LV=null;
@@ -745,7 +755,7 @@ function finishMove(){
   if(aliveCount()===0){ setState('won'); sfx.win(); return; }
   const movable=blocks.some(x=>x.alive&&canStep(x));
   if(!movable){
-    failureReason=`第 ${level} 关剩余 ${aliveCount()} 块的箭头前方全被挡死，没有任何一块还能移动（卡死）`;
+    failureReason='stuck';
     setState('lost'); sfx.lose();
     return;
   }
@@ -850,10 +860,22 @@ btnAgain.addEventListener('click',()=>{ac();startLevel();});
 btnNext.addEventListener('click',()=>{ac();advance();});
 
 /* ================= 状态机 ================= */
+function applyLocale(){
+  document.documentElement.lang=locale;document.title=tr('title');
+  document.querySelector('.titlechip').innerHTML=`<span class="dot"></span>${tr('title')}<span class="dot b"></span>`;
+  stuckEl.textContent=tr('stuck');remainEl.setAttribute('aria-label',tr('remain'));btnRestart.textContent=tr('restart');
+  const intro=startScreen.querySelector('.pscroll');intro.querySelector('h1').textContent=tr('introTitle');
+  const paragraphs=intro.querySelectorAll(':scope > p');paragraphs[0].innerHTML='';paragraphs[0].append(document.createTextNode(tr('intro1')));const bold=document.createElement('b');bold.textContent=tr('intro1b');paragraphs[0].append(bold,document.createTextNode(tr('intro1c')));paragraphs[1].textContent=tr('intro2');
+  intro.querySelectorAll('.tag').forEach((tag,index)=>tag.textContent=tr('tags')[index]);btnStart.textContent=tr('start');
+  const pad=$('pad');pad.setAttribute('aria-label',tr('pad'));for(const [id,key]of[['bLeft','left'],['bUp','up'],['bDown','down'],['bRight','right'],['bHome','homeAria'],['bCycle','cycleAria'],['bGo','goAria']])$(id).setAttribute('aria-label',tr(key));
+  $('bHome').textContent=tr('home');$('bCycle').textContent=tr('cycle');$('bGo').textContent=tr('go');
+  toastEl.classList.remove('show');renderUI(state);
+}
+addEventListener('message',event=>{let parentOrigin='';try{parentOrigin=new URL(document.referrer).origin;}catch{}if(event.source!==window.parent||!parentOrigin||event.origin!==parentOrigin||event.data?.type!=='forge:locale'||!LOCALES.has(event.data.locale))return;locale=event.data.locale;applyLocale();});
 function setState(s){
   state=s;
   document.body.dataset.gameState=s;
-  if(s==='lost') document.body.dataset.failureReason=failureReason||'未知原因';
+  if(s==='lost') document.body.dataset.failureReason=failureReason==='stuck'?tr('lostReason')(level,aliveCount()):(failureReason||tr('noMove'));
   window.dispatchEvent(new CustomEvent('game:state-change',{detail:{state:s}}));
   renderUI(s);
 }
@@ -866,21 +888,21 @@ function renderUI(s){
   if(over){
     if(s==='won'){
       const final=(level>=MAX_LEVEL);
-      const rank=(misses<=2)?'大师级：几乎没有无效点击':(misses<=6?'不错：顺序读得挺准':'通过：多留意箭头前方的通路');
-      resTitle.textContent=final?'百关全通关！':`第 ${level} 关清空！`;
+      const rank=(misses<=2)?tr('rankBest'):(misses<=6?tr('rankGood'):tr('rankPass'));
+      resTitle.textContent=final?tr('allWon'):tr('won')(level);
       resReason.textContent=final
-        ? `最终关 ${LV.blockCount} 块全部推出立方体 · ${rank}`
-        : `${LV.blockCount} 块都被推出了立方体 · ${rank}`;
-      resStats.textContent=`${LV.label} · 步数 ${moves} · 无效点击 ${misses}`;
+        ? tr('finalCleared')(LV.blockCount,rank)
+        : tr('cleared')(LV.blockCount,rank);
+      resStats.textContent=tr('steps')(levelLabel(),moves,misses);
       btnNext.classList.remove('hidden');
-      btnNext.textContent=final?'从第 1 关再来':'下一关';
-      btnAgain.textContent='重玩本关';
+      btnNext.textContent=final?tr('againAll'):tr('next');
+      btnAgain.textContent=tr('replay');
     }else{
-      resTitle.textContent='卡死了';
-      resReason.textContent=failureReason||'没有任何一块还能移动';
-      resStats.textContent=`第 ${level} 关 ${LV.label} · 步数 ${moves} · 剩余 ${aliveCount()}`;
+      resTitle.textContent=tr('lost');
+      resReason.textContent=failureReason==='stuck'?tr('lostReason')(level,aliveCount()):(failureReason||tr('noMove'));
+      resStats.textContent=tr('lostStats')(level,levelLabel(),moves,aliveCount());
       btnNext.classList.add('hidden');
-      btnAgain.textContent='重来本关';
+      btnAgain.textContent=tr('retry');
     }
   }
   updateStats();
@@ -888,7 +910,7 @@ function renderUI(s){
 }
 function updateStats(){
   remainEl.textContent=String(aliveCount());
-  statsEl.textContent=`第 ${level}/${MAX_LEVEL} 关 · 步数 ${moves} · 无效 ${misses}`;
+  statsEl.textContent=tr('stats')(level,moves,misses);
 }
 function updateStuckHint(){
   let stuck=false;
@@ -901,7 +923,7 @@ function updateStuckHint(){
 }
 let toastTimer=0;
 function showGoalToast(){
-  toastEl.innerHTML=`第 ${level}/${MAX_LEVEL} 关 · <b>${LAYOUT.length} 块</b> · ${LV.label} · 沿箭头推空`;
+  toastEl.textContent=tr('goal')(level,LAYOUT.length,levelLabel());
   toastEl.classList.add('show');
   clearTimeout(toastTimer);
   toastTimer=setTimeout(()=>toastEl.classList.remove('show'),1800);
@@ -977,6 +999,7 @@ buildLayout();
 setupBoard();
 resize();
 setState('idle');
+applyLocale();
 renderer.setAnimationLoop(tick);
 
 /* ================= 探针 ================= */
@@ -1000,7 +1023,7 @@ if(new URLSearchParams(location.search).has('probe')){
     setLevel:(n)=>{ level=clamp(Math.round(Number(n))||1,1,MAX_LEVEL); startLevel(); return level; },
     restart:()=>{ startLevel(); return true; },
     forceWin:()=>{ anim=null; blocks.forEach(b=>{b.alive=false;b.mesh.visible=false;}); grid.fill(0); setState('won'); return true; },
-    forceLose:(cause)=>{ anim=null; failureReason=cause||`第 ${level} 关剩余 ${aliveCount()} 块的箭头前方全被挡死，没有任何一块还能移动（卡死）`; setState('lost'); return true; }
+    forceLose:(cause)=>{ anim=null; failureReason=cause||'stuck'; setState('lost'); return true; }
   };
 }
 

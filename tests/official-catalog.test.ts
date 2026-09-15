@@ -4,6 +4,24 @@ import { openTestDatabase } from "../src/server/database";
 import { fixtureSpecBuilders, officialFixtures } from "../src/server/official-fixtures";
 import { StudioRepository } from "../src/server/studio-repository";
 import { OFFICIAL_GAMES, officialFixtureGames, officialLobbyOrder } from "../src/shared/official-games";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
+
+test("live registry 的每个 template 都有可移植发布 bundle，且 stable slug 与版本路径唯一", () => {
+  const catalog = JSON.parse(readFileSync(resolve("official-bundles/catalog.json"), "utf8")) as {
+    games: Array<{ officialId: string; publication: { stable_path: string; version_path: string }; files: Array<{ path: string }> }>;
+  };
+  const templates = OFFICIAL_GAMES.filter((game) => game.kind === "template").map((game) => game.id).sort();
+  assert.deepEqual(catalog.games.map((game) => game.officialId).sort(), templates);
+  assert.equal(new Set(catalog.games.map((game) => game.publication.stable_path)).size, templates.length);
+  assert.equal(new Set(catalog.games.map((game) => game.publication.version_path)).size, templates.length);
+  for (const game of catalog.games) {
+    const files = new Set(game.files.map((file) => file.path));
+    assert.ok(files.has("index.html"), `${game.officialId} bundle 缺少 index.html`);
+    assert.ok(files.has("game-manifest.json"), `${game.officialId} bundle 缺少 game-manifest.json`);
+    assert.ok(files.has("_studio/runtime-inspector.js"), `${game.officialId} bundle 必须保留页面引用的 runtime-inspector.js`);
+  }
+});
 
 async function createRepository() {
   const database = await openTestDatabase();
@@ -36,6 +54,7 @@ test("启动同步按登记表标记官方并写入大厅顺序，未登记的�
   const { database, repository } = await createRepository();
   try {
     await repository.ensureOfficialFixtures();
+    await database.query("UPDATE projects SET title = '旧的三消展示名' WHERE fixture_kind = 'endless-match3'");
 
     const tetrisGame = OFFICIAL_GAMES.find((game) => game.id === "tetris")!;
     const tetris = await repository.create({ title: tetrisGame.title, dimensions: "2d", template: "tetris", idea: tetrisGame.seed!.idea });
@@ -60,14 +79,15 @@ test("启动同步按登记表标记官方并写入大厅顺序，未登记的�
     assert.equal(first.puzzle, null, "未发布的登记游戏不会被匹配");
 
     const ranks = new Map(officialLobbyOrder().map((game) => [game.id, game.lobbyRank]));
-    const rowsAfterFirst = (await database.query<{ id: string; is_official: number | boolean; lobby_rank: number | null }>(
-      "SELECT id, is_official, lobby_rank FROM projects",
+    const rowsAfterFirst = (await database.query<{ id: string; title: string; is_official: number | boolean; lobby_rank: number | null }>(
+      "SELECT id, title, is_official, lobby_rank FROM projects",
     )).rows;
     const rowOf = (id: string) => rowsAfterFirst.find((row) => row.id === id)!;
     assert.equal(Boolean(rowOf(tetris.id).is_official), true);
     assert.equal(rowOf(tetris.id).lobby_rank, ranks.get("tetris"));
     assert.equal(rowOf(first["star-dream-duel"]!).lobby_rank, ranks.get("star-dream-duel"));
     assert.equal(rowOf(first.freecell!).lobby_rank, ranks.get("freecell"));
+    assert.equal(rowOf(first["endless-match3"]!).title, "无限三消", "登记表标题应幂等同步到已有官方固定项目");
     for(const id of ['island-kart','meadow-railway']) {
       assert.equal(Boolean(rowOf(first[id]!).is_official),true);
       assert.equal(rowOf(first[id]!).lobby_rank,ranks.get(id));
@@ -79,8 +99,8 @@ test("启动同步按登记表标记官方并写入大厅顺序，未登记的�
 
     const second = await repository.syncOfficialCatalog();
     assert.deepEqual(second, first);
-    const rowsAfterSecond = (await database.query<{ id: string; is_official: number | boolean; lobby_rank: number | null }>(
-      "SELECT id, is_official, lobby_rank FROM projects",
+    const rowsAfterSecond = (await database.query<{ id: string; title: string; is_official: number | boolean; lobby_rank: number | null }>(
+      "SELECT id, title, is_official, lobby_rank FROM projects",
     )).rows;
     assert.deepEqual(rowsAfterSecond, rowsAfterFirst);
 

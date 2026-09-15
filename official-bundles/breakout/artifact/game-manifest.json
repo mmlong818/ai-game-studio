@@ -1,0 +1,82 @@
+{
+  "title": "漆海碎星",
+  "template": "breakout",
+  "runtimeTarget": "web-2d",
+  "difficulty": "standard",
+  "visualStyle": "classic",
+  "aspectRatio": "9:16",
+  "cameraMode": "fixed-stage",
+  "inputModes": [
+    "pointer",
+    "keyboard",
+    "touch-buttons"
+  ],
+  "designProfile": {
+    "genre": "反弹清砖",
+    "targetPlayer": "喜欢短局动作反馈和路线预判的休闲玩家",
+    "playerFantasy": "控制一块稳定挡板，把光球持续送回砖阵并清空场面",
+    "sessionLength": "2–6 分钟",
+    "coreLoop": [
+      "判断光球落点",
+      "移动挡板接球",
+      "连续清砖积累炸弹",
+      "下一次清砖触发十字爆炸"
+    ],
+    "winCondition": "清除全部砖块",
+    "failCondition": "光球越过挡板底部",
+    "progression": [
+      "二十关使用二十种不同砖阵",
+      "难度通过阵型、砖块耐久、球速和挡板宽度组合控制"
+    ],
+    "difficultyCurve": [
+      "标准档：保持足够学习窗口，并在中段形成稳定压力",
+      "难度调整必须改变 breakout 的真实规则参数，而不是只改标签"
+    ],
+    "gameFeel": [
+      "挡板接球改变水平角度",
+      "每次击砖有短促声音",
+      "炸弹使用明确的上下左右十字爆炸反馈"
+    ],
+    "onboarding": [
+      "开局直接指出挡板和清砖目标",
+      "说明连续消除三块会获得一次自动爆炸"
+    ],
+    "accessibility": [
+      "支持指针、键盘和触控",
+      "球、挡板和砖块保持亮度差"
+    ],
+    "productionRisks": [
+      "高速球不能穿过薄砖或挡板",
+      "十字爆炸不能越过相邻格或误伤斜角"
+    ]
+  },
+  "levelProgression": {
+    "levelCount": 20,
+    "curve": "stepped",
+    "tierSize": 4,
+    "unlockMode": "sequential",
+    "persistProgress": true
+  },
+  "templateSource": null,
+  "generatedAt": "2026-08-31T08:39:26.933Z",
+  "assetManifest": "./assets/asset-manifest.json",
+  "artPipeline": {
+    "renderer": "role-split-bitmaps",
+    "sourceAtlas": "./assets/gameplay-atlas.png",
+    "gameplayBackground": "./assets/background.png",
+    "sprites": [
+      "./assets/sprites/sprite-01.png",
+      "./assets/sprites/sprite-02.png",
+      "./assets/sprites/sprite-03.png",
+      "./assets/sprites/sprite-04.png",
+      "./assets/sprites/sprite-05.png",
+      "./assets/sprites/sprite-06.png",
+      "./assets/sprites/sprite-07.png",
+      "./assets/sprites/sprite-08.png",
+      "./assets/sprites/sprite-09.png"
+    ],
+    "cover": "./assets/cover.png"
+  },
+  "userCustomization": [],
+  "puzzleRules": null
+}

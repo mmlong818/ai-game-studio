@@ -1,0 +1,85 @@
+{
+  "title": "青玉长游",
+  "template": "snake",
+  "runtimeTarget": "web-2d",
+  "difficulty": "standard",
+  "visualStyle": "cute",
+  "aspectRatio": "9:16",
+  "cameraMode": "board",
+  "inputModes": [
+    "swipe",
+    "keyboard",
+    "touch-buttons"
+  ],
+  "designProfile": {
+    "genre": "持续移动与收集",
+    "targetPlayer": "喜欢逐步提速、风险不断累积的街机玩家",
+    "playerFantasy": "引导不断生长的玉蛇穿过花园并保持完整",
+    "sessionLength": "2–7 分钟",
+    "coreLoop": [
+      "预判蛇头方向",
+      "转向收集朱果",
+      "身体增长",
+      "在更小安全空间中继续移动"
+    ],
+    "winCondition": "收集当前难度要求的全部朱果",
+    "failCondition": "撞到边界或自身",
+    "progression": [
+      "身体长度持续增加",
+      "难度同时改变速度和目标数量"
+    ],
+    "difficultyCurve": [
+      "标准档：保持足够学习窗口，并在中段形成稳定压力",
+      "难度调整必须改变 snake 的真实规则参数，而不是只改标签"
+    ],
+    "gameFeel": [
+      "逻辑仍按格点推进，但画面使用逐帧插值连续移动",
+      "转向只在格点生效避免输入抖动",
+      "收集和失败声音明确区分",
+      "蛇头与身体层级清晰"
+    ],
+    "onboarding": [
+      "开局给出直线路径和明显首个目标",
+      "禁止直接反向并保持规则可预测"
+    ],
+    "accessibility": [
+      "键盘和触控均支持四向输入",
+      "食物使用形状和亮度与身体区分"
+    ],
+    "productionRisks": [
+      "快速连续转向不能造成自相交误判",
+      "刷新节奏不能依赖容易抖动的固定间隔定时器"
+    ]
+  },
+  "levelProgression": {
+    "levelCount": 20,
+    "curve": "stepped",
+    "tierSize": 4,
+    "unlockMode": "sequential",
+    "persistProgress": true
+  },
+  "templateSource": null,
+  "generatedAt": "2026-08-31T08:39:05.910Z",
+  "assetManifest": "./assets/asset-manifest.json",
+  "artPipeline": {
+    "renderer": "role-split-bitmaps",
+    "sourceAtlas": "./assets/gameplay-atlas.png",
+    "gameplayBackground": "./assets/background.png",
+    "sprites": [
+      "./assets/sprites/sprite-01.png",
+      "./assets/sprites/sprite-02.png",
+      "./assets/sprites/sprite-03.png",
+      "./assets/sprites/sprite-04.png",
+      "./assets/sprites/sprite-05.png",
+      "./assets/sprites/sprite-06.png",
+      "./assets/sprites/sprite-07.png",
+      "./assets/sprites/sprite-08.png",
+      "./assets/sprites/sprite-09.png"
+    ],
+    "cover": "./assets/cover.png"
+  },
+  "userCustomization": [
+    "runtime-difficulty-selection"
+  ],
+  "puzzleRules": null
+}

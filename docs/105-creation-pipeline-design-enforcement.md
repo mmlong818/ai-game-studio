@@ -7,7 +7,7 @@
 | 阶段 | 实际字段或调用 | 失败处理 |
 |---|---|---|
 | 策划与设计合同 | 设计合同先确定核心玩点、现有状态、资源角色和验收信号；局部改造由可多选的 `revisionPlan.operations`、来源项目和保留基线约束 | 不为凑状态矩阵新增玩法；合同与用户范围冲突时不进入全量重做 |
-| 简单创作资源规划 | `AssetDeliverySpec { fit, background, purpose, safeArea }` 随 role/label/prompt 进入 `/api/image-generation` | 返回尺寸、alpha 或角色合同不符时不写入可用资源 |
+| 简单创作资源规划 | 先按玩法和已确认风格选择程序绘制、位图或混合路线；只有真实需要的位图槽位才以 `AssetDeliverySpec { fit, background, purpose, safeArea }` 随 role/label/prompt 进入 `/api/image-generation` | 零位图是有效规划；位图返回尺寸、alpha 或角色合同不符时不写入可用资源 |
 | 主构建提示 | `coverPrompt`、`backgroundPrompt`、`roleBitmapPrompt`、`animationSheetPrompt` 按用途、主体、构图与交付、只改变、必须保持组织 | 内部规则不进入玩家文案；缺少明确资源目标时构建停止 |
 | 普通新生成 | `/v1/images/generations` JSON 请求，沿用已配置模型，显式 `quality=high`、合规标准 `size`、`output_format=png`；透明主体另传 `background=transparent` | 不改变模型，不以另一模型或占位图回退 |
 | 局部资源替换 | 从来源构建复制运行时与资源；仅按内部解析出的目标路径读取本地 PNG，经真实解码后作为 multipart `image` 发送 `/v1/images/edits` | 缺来源、图片无效、自定义 provider 无兼容 edits 地址或 edit 失败时停止；绝不退回无参考 generations 重画 |
@@ -17,6 +17,9 @@
 | 缓存与溯源 | checkpoint identity 写入 prompt 版本、质量、格式、size 策略、目标 outputs、来源 SHA-256 和 clipId；`IMAGE_GENERATION_RECEIPTS.json` 归档同一 request fingerprint | 任一来源、尺寸、质量、提示版本或 clip 变化都使用新键，不复用旧图 |
 | 实际交付进入代码 | 解码后的实际宽高、资源角色和 `cover`/`contain`/`sprite-sheet` 写入项目 `hardConstraints`，代码生成按真实槽位与 `naturalWidth/naturalHeight` 接线 | 动态计划中明确要求的槽位须由新生成、来源复用或精选绑定之一实际落盘；缺项停止，不以程序图形或缺图页面发布 |
 | 客观质量与定向修复 | 静态探针、设计合同验收、桌面/手机浏览器检查先报告具体失败项；Advanced 流程把失败证据送入定向 repair，再执行同类复验 | 几何、语义和接线自动检查不能代替 Canvas/WebGL 审美判断；修复后仍须重新验证，不因执行过 repair 就标记通过 |
+| 局制与失败策略 | `generatedCampaign` 可为单局、有限 campaign 或 endless；endless 使用 `levelCount=0`、空里程碑/难度键，并保留 `failurePolicy` | 不把 endless 解释为一关，不强加等级、终局、`forceWin`/`forceLose` 或与确认方案冲突的胜负状态 |
+| 瞬时故障恢复 | 文字策划/审核、代码和图片 provider 在明确 429（排除额度）/5xx 或发送前网络故障时，于原请求边界做 250ms/1s 有界退避；制作阶段的代码生成与规则审核每次物理请求共用 build 请求预算，图片每个资源最多三次，确认前策划使用独立的最多两次请求边界 | 流式策划只在尚未向界面输出任何内容时重试明确的 429/5xx；已有输出、取消、超时、流中断和结果不确定的普通 socket 错误不重放，也不重跑整个 production job |
+| 修复经验 | 只存规范化签名、作用域、平台策略 ID 和复验结果；同范围 verified 经验作为低优先级参考进入后续首次 code 输入，同签名失败再精确参考 | 失败记录不能晋升规则；不存机制原文、key、完整请求/响应、路径或历史生成代码；没有后台无限接管 |
 
 主构建局部资源改造还会复制来源 `game-manifest.json`，保证复用运行时进入静态验收时具有完整工程清单；未选资源继续从来源构建逐字节保留。
 

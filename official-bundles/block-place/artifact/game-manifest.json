@@ -1,0 +1,98 @@
+{
+  "title": "果冻填阵",
+  "template": "block-place",
+  "runtimeTarget": "web-2d",
+  "difficulty": "standard",
+  "visualStyle": "color-block",
+  "aspectRatio": "9:16",
+  "cameraMode": "board",
+  "inputModes": [
+    "pointer",
+    "keyboard",
+    "touch-buttons"
+  ],
+  "designProfile": {
+    "genre": "自由方块填阵",
+    "targetPlayer": "喜欢无倒计时规划、追求连续消行和高分的休闲玩家",
+    "playerFantasy": "把三组果冻拼块排进有限棋盘，用连续横竖消除维持空间",
+    "sessionLength": "3–12 分钟",
+    "coreLoop": [
+      "观察三个候选拼块",
+      "规划放置顺序",
+      "完成横行或竖列",
+      "用连击腾出新空间"
+    ],
+    "winCondition": "达到当前难度的目标分数",
+    "failCondition": "剩余候选拼块全部没有合法落点",
+    "progression": [
+      "每组三块使用后刷新",
+      "棋盘密度和形状风险持续增加"
+    ],
+    "difficultyCurve": [
+      "标准档：保持足够学习窗口，并在中段形成稳定压力",
+      "难度调整必须改变 block-place 的真实规则参数，而不是只改标签"
+    ],
+    "gameFeel": [
+      "三枚候选使用统一浅色底座和扁平编号卡槽，选中态用结构与描边表达而不是堆叠发光边框",
+      "绿色拼块使用浅薄荷底板与深绿色轮廓，确保在暗色游戏背景上可辨认",
+      "选择与放置保持立即响应",
+      "交叉消除有方向明确的扩散反馈",
+      "连击通过粒子和得分飞字强化"
+    ],
+    "onboarding": [
+      "首组三块可以自然完成一条横线",
+      "棋盘预览明确区分合法与非法落点"
+    ],
+    "accessibility": [
+      "点击选择和点击放置适合单指操作",
+      "拼块通过材质、轮廓和颜色共同区分"
+    ],
+    "productionRisks": [
+      "交叉格只能清除一次",
+      "只要任一候选可放就不能误判结束"
+    ]
+  },
+  "levelProgression": {
+    "levelCount": 20,
+    "curve": "stepped",
+    "tierSize": 4,
+    "unlockMode": "sequential",
+    "persistProgress": true
+  },
+  "templateSource": {
+    "sourceName": "mkgame-blocks",
+    "sourceUrl": "https://github.com/MkThingsHQ/mkgame-blocks",
+    "license": "MIT",
+    "licenseUrl": "https://github.com/MkThingsHQ/mkgame-blocks/blob/main/LICENSE",
+    "integrationMode": "code-port",
+    "importedElements": [
+      "三选拼块批次",
+      "横竖消行",
+      "连击计分",
+      "种子随机与无解判定"
+    ],
+    "assetPolicy": "只移植 MIT 玩法结构；未复制 Android 应用音频、TanStarter 图标、品牌字标或其他上游媒体。",
+    "verifiedAt": "2026-08-27"
+  },
+  "generatedAt": "2026-08-31T08:38:19.193Z",
+  "assetManifest": "./assets/asset-manifest.json",
+  "artPipeline": {
+    "renderer": "role-split-bitmaps",
+    "sourceAtlas": "./assets/gameplay-atlas.png",
+    "gameplayBackground": "./assets/background.png",
+    "sprites": [
+      "./assets/sprites/sprite-01.png",
+      "./assets/sprites/sprite-02.png",
+      "./assets/sprites/sprite-03.png",
+      "./assets/sprites/sprite-04.png",
+      "./assets/sprites/sprite-05.png",
+      "./assets/sprites/sprite-06.png",
+      "./assets/sprites/sprite-07.png",
+      "./assets/sprites/sprite-08.png",
+      "./assets/sprites/sprite-09.png"
+    ],
+    "cover": "./assets/cover.png"
+  },
+  "userCustomization": [],
+  "puzzleRules": null
+}

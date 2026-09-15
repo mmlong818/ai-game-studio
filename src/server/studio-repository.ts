@@ -714,8 +714,14 @@ export class StudioRepository {
     const officialValue = this.database.provider === "sqlite-test" ? 1 : true;
     const claimed = new Set<string>();
     const result: Record<string, string | null> = {};
+    const bundleMappings = new Map((await this.database.query<{ key: string; value: string }>(
+      "SELECT key,value FROM studio_meta WHERE key LIKE 'official_template_bundle:%'",
+    )).rows.map((row) => [row.key.slice("official_template_bundle:".length), row.value]));
     for (const game of OFFICIAL_GAMES) {
-      const match = rows.find((row) => !claimed.has(row.id) && matchesOfficialGame(row, game));
+      const mappedProjectId = bundleMappings.get(game.id);
+      const match = mappedProjectId
+        ? rows.find((row) => !claimed.has(row.id) && row.id === mappedProjectId && matchesOfficialGame(row, game))
+        : rows.find((row) => !claimed.has(row.id) && matchesOfficialGame(row, game));
       result[game.id] = match?.id ?? null;
       if (!match) continue;
       claimed.add(match.id);
@@ -728,10 +734,10 @@ export class StudioRepository {
         );
         continue;
       }
-      if (Boolean(match.is_official) && match.lobby_rank === game.lobbyRank) continue;
+      if (Boolean(match.is_official) && match.lobby_rank === game.lobbyRank && match.title === game.title) continue;
       await this.database.query(
-        "UPDATE projects SET is_official = $1, lobby_rank = $2 WHERE id = $3",
-        [officialValue, game.lobbyRank, match.id],
+        "UPDATE projects SET is_official = $1, lobby_rank = $2, title = $3 WHERE id = $4",
+        [officialValue, game.lobbyRank, game.title, match.id],
       );
     }
     return result;
@@ -1712,7 +1718,7 @@ export class StudioRepository {
     return row ? this.buildById(row.id) : null;
   }
 
-  async createBuild(projectId: string, revision?: { requestId: string; revisionScope?: import("../shared/contracts.js").RenovationScope; revisionPlan?: RevisionPlan; assetTarget?: { clipId: import("../shared/generated-blueprint.js").SpriteAnimationClipId }; content: string }) {
+  async createBuild(projectId: string, revision?: { requestId: string; revisionScope?: import("../shared/contracts.js").RenovationScope; revisionPlan?: RevisionPlan; assetTarget?: { clipId: import("../shared/generated-blueprint.js").SpriteAnimationClipId }; content: string }, checkpointValidation?: { sourceBuildId: string; sourceSha256: string }) {
     const confirmed = revision ? projectRevisionInputSchema.parse(revision) : null;
     // The "is there already a queued/running build" check and the INSERT that follows must be
     // atomic per project, otherwise two concurrent calls (e.g. a double click) can both see "no
@@ -1765,9 +1771,13 @@ export class StudioRepository {
           [buildId, projectId, confirmed.content, now],
         );
         await transaction.query(
-          `INSERT INTO builds (id, project_id, status, runtime_target, created_at, started_at, completed_at, version_id, error_message, revision_scope, revision_plan_json, asset_clip_id)
-           VALUES ($1, $2, 'queued', $3, $4, NULL, NULL, NULL, NULL, $5, $6, $7)`,
-          [buildId, projectId, lockedSpec.runtimeTarget, now, confirmed?.revisionScope ?? null, confirmedPlan ? JSON.stringify(confirmedPlan) : null, confirmed?.assetTarget?.clipId ?? null],
+          `INSERT INTO builds (id, project_id, status, runtime_target, created_at, started_at, completed_at, version_id, error_message, execution_mode, revision_scope, revision_plan_json, asset_clip_id)
+           VALUES ($1, $2, 'queued', $3, $4, NULL, NULL, NULL, NULL, $5, $6, $7, $8)`,
+          [buildId, projectId, lockedSpec.runtimeTarget, now, checkpointValidation ? "checkpoint-validation" : "normal", confirmed?.revisionScope ?? null, confirmedPlan ? JSON.stringify(confirmedPlan) : null, confirmed?.assetTarget?.clipId ?? null],
+        );
+        if (checkpointValidation) await transaction.query(
+          "INSERT INTO build_checkpoint_validations (build_id, source_build_id, source_sha256) VALUES ($1, $2, $3)",
+          [buildId, checkpointValidation.sourceBuildId, checkpointValidation.sourceSha256],
         );
         for (const [sequence, step] of buildPlan.entries()) {
           await transaction.query(
@@ -1780,6 +1790,18 @@ export class StudioRepository {
       });
       return this.buildById(buildId);
     });
+  }
+
+  async checkpointValidationForBuild(buildId: string) {
+    const row = (await this.database.query<{ source_build_id: string; source_sha256: string }>(
+      "SELECT source_build_id, source_sha256 FROM build_checkpoint_validations WHERE build_id = $1", [buildId],
+    )).rows[0];
+    return row ? { sourceBuildId: row.source_build_id, sourceSha256: row.source_sha256 } : null;
+  }
+
+  async buildExecutionMode(buildId: string) {
+    const row = (await this.database.query<{ execution_mode: string }>("SELECT execution_mode FROM builds WHERE id = $1", [buildId])).rows[0];
+    return row?.execution_mode === "checkpoint-validation" ? "checkpoint-validation" as const : "normal" as const;
   }
 
   async buildById(buildId: string) {

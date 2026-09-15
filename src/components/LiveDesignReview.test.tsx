@@ -18,13 +18,15 @@ it("显示模型结果并提交同一方案，修改描述立即禁用旧方案"
   expect(screen.getByRole("button", { name: "确认方案，开始制作" })).toBeDisabled();
   await screen.findByText(profile.playerFantasy, {}, { timeout: 3000 });
   expect(screen.getByText(/会产生额外模型用量/)).toBeInTheDocument();
-  expect(screen.getByText("查看完整玩法、教学与制作要求").closest("details")).not.toHaveAttribute("open");
+  expect(screen.getByText("查看完整玩法与制作要求").closest("details")).not.toHaveAttribute("open");
+  expect(screen.getByText(/拟定美术方向/)).toBeInTheDocument();
   await userEvent.click(screen.getByRole("button", { name: "确认方案，开始制作" }));
   expect(confirm.mock.calls[0][0]).toContain(profile.playerFantasy);
+  expect(confirm.mock.calls[0][0]).toContain("已确认美术方向");
   expect(confirm.mock.calls[0][1]).toEqual(profile);
   expect(confirm.mock.calls[0][2]).toBe(draft.newGameBrief);
   // 第四个参数是预览被服务端撤回时清空半截文本的回调。
-  expect(generateDesignPreview).toHaveBeenCalledWith(expect.objectContaining({ idea: draft.newGameBrief, template: "generated", spriteAnimation: "auto" }), expect.any(AbortSignal), expect.any(Function), expect.any(Function), expect.any(Function));
+  expect(generateDesignPreview).toHaveBeenCalledWith(expect.objectContaining({ idea: draft.newGameBrief, template: "generated", spriteAnimation: "auto", artStyle: "pop", visualStyle: "fashion" }), expect.any(AbortSignal), expect.any(Function), expect.any(Function), expect.any(Function));
   view.rerender(<LiveDesignReview draft={{ ...draft, newGameBrief: "在水下探索珊瑚城，收集珍珠并躲避鲨鱼" }} onBack={vi.fn()} onConfirm={confirm} />);
   expect(screen.getByRole("button", { name: "确认方案，开始制作" })).toBeDisabled();
   expect(screen.queryByText(profile.playerFantasy)).not.toBeInTheDocument();
@@ -39,6 +41,14 @@ it("确认前直接展示真实关数和无失败规则，并原样提交", asyn
   await userEvent.click(screen.getByRole("button", { name: "确认方案，开始制作" }));
   expect(confirm.mock.calls[0][1]).toEqual(planned);
   expect(confirm.mock.calls[0][0]).toContain("共 7 关；不会失败");
+});
+
+it("无限玩法显示为持续游玩，不把零关合同展示成未完成", async () => {
+  const endless = { ...profile, generatedCampaign: { mode: "endless" as const, failurePolicy: "forbidden" as const, levelCount: 0, milestones: [], difficultyKeys: [], rationale: "持续合并，没有最终通关。" } };
+  vi.mocked(generateDesignPreview).mockResolvedValue(endless);
+  render(<LiveDesignReview draft={draft} onBack={vi.fn()} onConfirm={vi.fn()} />);
+  expect(await screen.findByText(/无限玩法，没有通关目标；不会失败/)).toBeInTheDocument();
+  expect(screen.queryByText(/0\s*关|零关|未完成/)).not.toBeInTheDocument();
 });
 
 it("输入复刻 URL 时先按参考获取送审，不依赖预先存在的 dossier", async () => {
@@ -78,12 +88,12 @@ it("参考资料不足时只在用户明确同意后按玩法描述请求原创�
   expect(screen.queryByRole("button", { name: "重新生成方案" })).not.toBeInTheDocument();
   expect(await screen.findByLabelText("你了解到的玩法", {}, { timeout: 3000 })).toBeInTheDocument();
   await userEvent.type(screen.getByLabelText("你了解到的玩法"), "https://example.com/only-link");
-  expect(screen.getByRole("button", { name: "按我的描述制作单局 demo" })).toBeDisabled();
+  expect(screen.getByRole("button", { name: "按我的描述制作原创 demo" })).toBeDisabled();
   await userEvent.clear(screen.getByLabelText("你了解到的玩法"));
   const description = "点击气球得分";
   await userEvent.type(screen.getByLabelText("你了解到的玩法"), description);
   expect(generateDesignPreview).toHaveBeenCalledTimes(1);
-  await userEvent.click(screen.getByRole("button", { name: "按我的描述制作单局 demo" }));
+  await userEvent.click(screen.getByRole("button", { name: "按我的描述制作原创 demo" }));
   await screen.findByText(originalProfile.playerFantasy);
   expect(generateDesignPreview).toHaveBeenLastCalledWith(expect.objectContaining({
     creationMode: "original-demo",

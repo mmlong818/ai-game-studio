@@ -1,4 +1,5 @@
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
+import { randomBytes } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { explicitAspectProjectInputSchema, generateGameSpec, projectInputSchema, projectRevisionInputSchema } from "../shared/contracts.js";
@@ -13,6 +14,7 @@ import { openDatabase } from "./database.js";
 import { acquireRuntimeOwnership } from "./runtime-ownership.js";
 import { BuildOrchestrator, DEFAULT_REPAIR_ROUNDS } from "./build-orchestrator.js";
 import { ProductionJobs } from "./production-jobs.js";
+import { zeroModelRecoveryCheckpoint } from "./production-auto-recovery.js";
 import { prepareRenovationInput, resolveCreationDesign } from "./creation-design.js";
 import { DesignContractGenerator } from "./design-contract.js";
 import { serveDesignPreview } from "./design-preview-http.js";
@@ -21,6 +23,7 @@ import { IdeaAnalyzer } from "./idea-analyzer.js";
 import { GameCodeGenerator } from "./game-generator.js";
 import { CoverArtGenerator } from "./image-generator.js";
 import { OpenAISettings } from "./openai-settings.js";
+import { ensureOfficialTemplateBundles } from "./official-template-bundles.js";
 import { configureOutboundProxy } from "./outbound-proxy.js";
 import { ProjectLifecycle } from "./project-lifecycle.js";
 import { importLegacySqliteIfEmpty } from "./sqlite-migration.js";
@@ -119,6 +122,12 @@ for (const [fixtureKind, projectId] of Object.entries(officialFixtureIds)) {
     fixtureProject,
   );
 }
+// 模板官方游戏使用仓库内的已审查发布 bundle 初始化，不触发模型请求；registry 的 18 款由此统一完整落库。
+await ensureOfficialTemplateBundles(
+  database,
+  join(projectRoot, "official-bundles"),
+  artifactRoot,
+);
 // 按登记表把已发布的官方游戏标记为官方并写入大厅顺序；未登记的项目不动。
 await repository.syncOfficialCatalog();
 const goldenProjectId = officialFixtureIds["star-dream-duel"] ?? null;
@@ -184,6 +193,13 @@ const productionJobs = new ProductionJobs(database, async (input, report, signal
   signal.throwIfAborted();
   await report("正在启动资源生成与游戏构建");
   await orchestrator.start(project.id, undefined, signal);
+}, {
+  latestBuild: projectId => repository.latestBuild(projectId),
+  recoveryCheckpoint: async build => {
+    const project = await repository.get(build.projectId);
+    return project ? zeroModelRecoveryCheckpoint(artifactRoot, project, build) : null;
+  },
+  startBuild: (projectId, checkpoint, signal) => orchestrator.startCheckpointValidation(projectId, checkpoint, signal),
 });
 await productionJobs.initialize();
 await orchestrator.resumeQueuedBuilds();
@@ -646,11 +662,12 @@ async function handleGame(response: ServerResponse, pathname: string, raw = fals
       const title = readFileSync(indexPath, "utf8").match(/<title[^>]*>([\s\S]*?)<\/title>/i)?.[1].trim() || "游戏试玩";
       const rawQuery = new URLSearchParams(query);
       rawQuery.set("__studio_game_raw", "1");
-      const html = renderGameLobbyShell(`?${rawQuery.toString()}`, resolveGameLobbyOrigin({ publicOrigin, workbenchOrigin: process.env.WORKBENCH_ORIGIN }), title);
+      const scriptNonce = randomBytes(18).toString("base64url");
+      const html = renderGameLobbyShell(`?${rawQuery.toString()}`, resolveGameLobbyOrigin({ publicOrigin, workbenchOrigin: process.env.WORKBENCH_ORIGIN }), title, scriptNonce);
       response.writeHead(200, {
         "Content-Type": "text/html; charset=utf-8",
         "Cache-Control": "no-cache",
-        "Content-Security-Policy": gameContentSecurityPolicy(ancestors.join(" ")),
+        "Content-Security-Policy": gameContentSecurityPolicy(ancestors.join(" "), scriptNonce),
         "Permissions-Policy": "camera=(), microphone=(), geolocation=()",
         "Referrer-Policy": "strict-origin-when-cross-origin",
         "X-Content-Type-Options": "nosniff",

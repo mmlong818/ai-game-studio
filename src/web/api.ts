@@ -209,7 +209,7 @@ export async function createProject(input: ProjectInput): Promise<ProjectDetail>
   return projectDetailSchema.parse(payload.project);
 }
 
-export type ProductionJob = { id: string; status: "queued" | "creating" | "building" | "succeeded" | "failed" | "cancelled"; error: string | null; failureDetails?: Build["failureDetails"]; events?: { title: string; createdAt: string }[] };
+export type ProductionJob = { id: string; status: "queued" | "creating" | "building" | "recovering" | "succeeded" | "failed" | "cancelled"; error: string | null; failureDetails?: Build["failureDetails"]; autoRecovery?: "checking" | "started" | "failed" | null; events?: { title: string; createdAt: string }[] };
 export async function submitProduction(input: ProjectInput): Promise<ProductionJob> {
   explicitAspectProjectInputSchema.parse(input);
   const payload = await apiRequest("/api/production-jobs", { method: "POST", body: JSON.stringify(input) });

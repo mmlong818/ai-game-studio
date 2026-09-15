@@ -16,24 +16,24 @@ beforeEach(() => {
   vi.mocked(getPlayableBuild).mockResolvedValue(success);
 });
 it("未发布游戏只读取成功版本即可试玩", async () => {
-  render(<PrivateGamePreview project={project} />);
-  expect(await screen.findByTitle("花园试玩")).toHaveAttribute("src", success.previewUrl);
+  render(<PreferencesProvider><PrivateGamePreview project={project} /></PreferencesProvider>);
+  expect(await screen.findByTitle("花园试玩")).toHaveAttribute("src", `${success.previewUrl}?lang=zh-CN`);
   expect(getPlayableBuild).toHaveBeenCalledWith("p1");
   expect(screen.queryByRole("button")).not.toBeInTheDocument();
 });
 it("没有成功版本不伪造试玩或启动制作", async () => {
   vi.mocked(getPlayableBuild).mockResolvedValue(null);
-  render(<PrivateGamePreview project={project} />);
+  render(<PreferencesProvider><PrivateGamePreview project={project} /></PreferencesProvider>);
   expect(await screen.findByText(/还没有通过检查/)).toBeInTheDocument();
   expect(screen.queryByTitle("花园试玩")).not.toBeInTheDocument();
 });
 it("新版运行与失败仍保留旧成功版，成功后才切换", async () => {
   const view = render(<PreferencesProvider><PreviewPane project={project} build={{ id: "b2", status: "running" } as Build} /></PreferencesProvider>);
   const frame = await screen.findByTitle("花园试玩预览");
-  expect(frame).toHaveAttribute("src", success.previewUrl);
+  expect(frame).toHaveAttribute("src", `${success.previewUrl}?lang=zh-CN`);
   view.rerender(<PreferencesProvider><PreviewPane project={project} build={{ id: "b2", status: "failed" } as Build} /></PreferencesProvider>);
   expect(screen.getByText(/新版未完成/)).toBeInTheDocument();
-  expect(frame).toHaveAttribute("src", success.previewUrl);
+  expect(frame).toHaveAttribute("src", `${success.previewUrl}?lang=zh-CN`);
   view.rerender(<PreferencesProvider><PreviewPane project={project} build={{ ...success, id: "b2", previewUrl: "http://127.0.0.1:4313/version/b2/" }} /></PreferencesProvider>);
-  await waitFor(() => expect(screen.getByTitle("花园试玩预览")).toHaveAttribute("src", "http://127.0.0.1:4313/version/b2/"));
+  await waitFor(() => expect(screen.getByTitle("花园试玩预览")).toHaveAttribute("src", "http://127.0.0.1:4313/version/b2/?lang=zh-CN"));
 });

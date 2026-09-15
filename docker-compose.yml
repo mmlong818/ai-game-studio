@@ -36,7 +36,7 @@ services:
     ports:
       - "127.0.0.1:54329:5432"
     volumes:
-      - studio-postgres-data:/var/lib/postgresql
+      - studio-postgres-data-current-v1:/var/lib/postgresql
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U studio -d ai_game_studio"]
       interval: 5s
@@ -45,5 +45,9 @@ services:
     restart: unless-stopped
 
 volumes:
-  studio-postgres-data:
+  # 2026-09-15: the active database was restored into this separately retained
+  # named volume after Docker Desktop recovery. Compose creates it on a new
+  # machine and reuses the explicit name on this machine.
+  studio-postgres-data-current-v1:
+    name: ai-game-studio_studio-postgres-data-current-v1
   studio-artifacts:

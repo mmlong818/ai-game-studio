@@ -56,7 +56,44 @@ const arrowEscapeIdea = "抽象细线箭头逻辑解谜：点击前方通道全�
 
 const arrowCubeIdea = "三维箭头滑出解谜：选中方块沿箭头在立方体内直线滑出，被挡则停靠占位；100 关按关号种子逐块放置构造保证有解，方块数逐关递增，任何直线上不出现三个紧挨着的同向方块。";
 
+const endlessMatch3Idea = "制作一个清爽柔和风格的无限三消最小demo。拖动或点选交换相邻方块，三个及以上相同方块消除、下落补齐并可连锁；无可交换消除时自动洗牌。没有通关、失败、倒计时、生命、等级、教学或关卡扩展，可一直玩；有得分和重新开始。全部画面程序绘制，不生成图片。";
+
 export const fixtureSpecBuilders: Record<string, FixtureSpecBuilder> = {
+  'endless-match3': {
+    input: { title: '无限三消', dimensions: '2d', template: 'generated', aspectRatio: '9:16', idea: endlessMatch3Idea },
+    spec: () => {
+      const spec = generateGameSpec({ title: '无限三消', dimensions: '2d', template: 'generated', aspectRatio: '9:16', idea: endlessMatch3Idea });
+      return gameSpecSchema.parse({
+        ...spec,
+        template: 'generated',
+        spriteAnimation: 'none',
+        inputModes: ['pointer', 'keyboard', 'touch-buttons'],
+        levelProgression: { levelCount: 0, curve: 'stepped', tierSize: 4, unlockMode: 'sequential', persistProgress: true },
+        designProfile: {
+          ...spec.designProfile,
+          genre: '清爽柔和风无限三消',
+          targetPlayer: '喜欢轻松消除、追求分数与连锁掌控感的休闲玩家，随时开随时停',
+          playerFantasy: '在柔和的糖果色棋盘上随手拨动方块，看成串消除和连锁一路蔓延',
+          sessionLength: '2–8 分钟',
+          coreLoop: ['扫视棋盘找可消的相邻对', '拖动或点选交换两个相邻方块', '三个及以上同色消除并加分', '上方方块下落补齐，触发连锁', '无可消交换时棋盘自动洗牌'],
+          winCondition: '无通关目标，玩家自行决定何时停止；分数持续累积',
+          failCondition: '无失败条件：不会输，无倒计时与生命，无解时自动洗牌',
+          progression: [],
+          difficultyCurve: [],
+          onboarding: [],
+          gameFeel: ['非法交换回位', '消除缩小淡出', '下落补齐停稳', '连锁递增并显示得分', '无解时自动洗牌'],
+          generatedCampaign: { mode: 'endless', failurePolicy: 'forbidden', levelCount: 0, milestones: [], difficultyKeys: [], rationale: '官方固定版沿用已验收的无限局制：没有关卡、通关、失败、倒计时、生命或等级。' },
+          generatedBlueprint: { mechanicIds: ['swap-match'], modifierIds: ['untimed-safe', 'square-grid'], coreDecision: '在多个可消位置中选择先消哪一处，并预判下落后的连锁', tension: '', masterySignal: '能预判下落后的新排列并主动制造连锁', sprites: [] },
+        },
+        acceptanceCriteria: [
+          ...spec.acceptanceCriteria,
+          { id: 'AC-ENDLESS-MATCH3', priority: 'P0', statement: '正常相邻交换可触发三连消除、下落补齐与连锁，无解时自动洗牌', probeType: 'state', status: 'passed' },
+          { id: 'AC-ENDLESS-STATE', priority: 'P0', statement: '正常操作与重开抽样期间始终保持无限 playing 状态，不进入 won 或 lost', probeType: 'state', status: 'passed' },
+          { id: 'AC-ENDLESS-RESTART', priority: 'P0', statement: '重新开始会把分数归零、生成新棋盘并允许再次完成有效交换', probeType: 'state', status: 'passed' },
+        ].map((criterion) => ({ ...criterion, status: 'passed' })),
+      });
+    },
+  },
   'arrow-cube-3d': {
     input: { title: '箭头魔方', dimensions: '3d', template: 'generated', aspectRatio: '1:1', idea: arrowCubeIdea },
     spec: () => {

@@ -9,6 +9,9 @@ coverage/
 /output/
 /dogfood-output/
 .resource-quarantine/
+/data/
+/.tmp/
+/.tmp-*
 /data/logs/
 /data/artifacts/
 /data/artifacts-v1.1/

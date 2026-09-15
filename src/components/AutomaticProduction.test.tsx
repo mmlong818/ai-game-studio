@@ -20,6 +20,7 @@ it("技术校验错误展示安全详情且不重新提交", async () => {
   expect(await screen.findByRole("alert")).toHaveTextContent("规则检查 · 检查未通过");
   expect(screen.getByRole("alert")).toHaveTextContent("缩短描述后重新分析方案。");
   expect(screen.queryByRole("button", { name: "手动重新制作" })).not.toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: /继续让系统/ })).not.toBeInTheDocument();
   expect(api.submitProduction).not.toHaveBeenCalled();
 });
 
@@ -34,6 +35,49 @@ it("已有服务端任务通过流接收过程，不重复提交", async () => {
   await screen.findByText("准备资源");
   expect(api.watchProductionJob).toHaveBeenCalledTimes(1);
   expect(api.submitProduction).not.toHaveBeenCalled();
+});
+
+it("零模型自动复验期间显示检查点状态且不提供重复继续按钮", async () => {
+  history.replaceState(null, "", "/create?production=p1");
+  const failure = { stage: "validation", category: "validation", code: "PLATFORM_SCHEMA", message: "平台格式检查未通过。", nextStep: "从检查点复验。", retryable: false } as const;
+  vi.mocked(api.getProductionJob).mockResolvedValue({ id: "p1", status: "recovering", error: null, autoRecovery: "checking", events: [{ title: "检测到无需新增模型请求的完整检查点，系统正在自动复验", createdAt: new Date().toISOString() }] });
+  vi.mocked(api.getLatestBuild).mockResolvedValue({ ...build, status: "failed", error: failure.message, failureDetails: [failure] });
+  render(<AutomaticProduction draft={INITIAL_DRAFT} />);
+  expect(await screen.findByText("系统正在从完整检查点自动复验")).toBeInTheDocument();
+  expect(screen.getByText(/不会新增模型请求/)).toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: /继续让系统/ })).not.toBeInTheDocument();
+  expect(api.startBuild).not.toHaveBeenCalled();
+});
+
+it("零图片程序绘制路线不会显示游戏图片已经生成", async () => {
+  history.replaceState(null, "", "/create?production=p1");
+  vi.mocked(api.getLatestBuild).mockResolvedValue({
+    ...build,
+    steps: [{
+      ...build.steps[0],
+      kind: "asset",
+      title: "生成视听资源",
+      status: "succeeded",
+      detail: "先生成可追溯的封面、局内背景与局内主体位图。",
+      output: "页面公开：当前确认方案未声明必须交付的位图，本次不调用图像模型；代码可用 CSS、Canvas 或内联 SVG 绘制玩法与界面。",
+    }],
+  });
+  render(<AutomaticProduction draft={INITIAL_DRAFT} />);
+  expect(await screen.findByText("确认方案采用程序绘制，本轮无需生成游戏图片。")).toBeInTheDocument();
+  expect(screen.getByText(/本轮未调用图像模型/)).toBeInTheDocument();
+  expect(screen.queryByText("游戏图片已经生成并通过系统检查。")).not.toBeInTheDocument();
+});
+
+it("资源步骤输出缺失时不会猜测为零图片或宣称未调用图像模型", async () => {
+  history.replaceState(null, "", "/create?production=p1");
+  vi.mocked(api.getLatestBuild).mockResolvedValue({
+    ...build,
+    steps: [{ ...build.steps[0], kind: "asset", status: "succeeded", output: null }],
+  });
+  render(<AutomaticProduction draft={INITIAL_DRAFT} />);
+  await screen.findByText("资源步骤已经完成；服务端未提供图片生成明细。");
+  expect(screen.queryByText("游戏图片已经生成并通过系统检查。")).not.toBeInTheDocument();
+  expect(screen.queryByText(/本轮未调用图像模型|无需生成游戏图片/)).not.toBeInTheDocument();
 });
 beforeEach(() => {
   vi.resetAllMocks(); localStorage.clear(); history.replaceState(null, "", "/create");
@@ -96,10 +140,11 @@ it("多项改造只在确认制作后把完整计划、来源版本和所有角�
 
 it("从零创建新游戏不携带已有游戏改造字段", async () => {
   const fresh = { ...INITIAL_DRAFT, creationMode: "mechanic-composition" as const, sourceGame: null, newGameBrief: "控制小船收集水晶并避开陨石", aspectRatio: "16:9" as const };
-  render(<AutomaticProduction draft={fresh} confirmedPlan="控制小船收集水晶并避开陨石，收集十颗后完成。" />);
+  render(<AutomaticProduction draft={fresh} confirmedPlan="控制小船收集水晶并避开陨石，收集十颗后完成。" originalIdea={fresh.newGameBrief} />);
   await screen.findByText("准备资源");
   expect(api.submitProduction).toHaveBeenCalledWith(expect.objectContaining({ spriteAnimation: "auto" }));
   expect(api.submitProduction).toHaveBeenCalledWith(expect.objectContaining({ aspectRatio: "16:9" }));
+  expect(api.submitProduction).toHaveBeenCalledWith(expect.objectContaining({ artStyle: "dreamy", visualStyle: "cute" }));
   expect(api.submitProduction).toHaveBeenCalledWith(expect.not.objectContaining({ sourceProjectId: expect.anything(), revisionScope: expect.anything() }));
 });
 it.each(["queued", "running", "succeeded", "failed", "cancelled"])("%s 状态刷新不会发起制作；仅安全标记为可重试的失败才能重新制作", async status => {
@@ -190,7 +235,7 @@ it("完成后提供隔离试玩并等待用户明确验收，不自动保存通�
   render(<AutomaticProduction draft={INITIAL_DRAFT} />);
   const frame = await screen.findByTitle("游戏试玩");
   expect(frame).toHaveAttribute("sandbox", "allow-scripts allow-same-origin");
-  expect(frame).toHaveAttribute("src", "http://127.0.0.1:4313/version/p1/v1/");
+  expect(frame).toHaveAttribute("src", "http://127.0.0.1:4313/version/p1/v1/?lang=zh-CN");
   const approve = screen.getByRole("button", { name: "我已试玩，验收通过" });
   expect(api.approveDemoReview).not.toHaveBeenCalled();
   approve.click();
@@ -298,9 +343,9 @@ it("构建失败（项目已存在）且可重试时不重新创建项目，而�
   expect(screen.queryByRole("button", { name: "继续让系统制作" })).not.toBeInTheDocument();
 });
 
-it("浏览器代码验收失败可由用户在同一项目继续，沿用已确认方案且旧失败任务不会覆盖新构建", async () => {
+it("浏览器阶段验收失败可由用户在同一项目继续，沿用已确认方案且旧失败任务不会覆盖新构建", async () => {
   history.replaceState(null, "", "/create?production=p1");
-  const failure = { stage: "code", category: "validation", code: "BROWSER_VALIDATION", message: "生成结果没有通过验收。", nextStep: "系统可沿用已确认方案修复代码后重新验收。", retryable: false } as const;
+  const failure = { stage: "browser", category: "validation", code: "VALIDATION", message: "生成结果没有通过验收。", nextStep: "系统可沿用已确认方案修复代码后重新验收。", retryable: false } as const;
   const failedBuild = { ...build, id: "b-old", status: "failed", error: failure.message, failureDetails: [failure], projectId: "p1" } as any;
   const queuedBuild = { ...build, id: "b-new", status: "queued", error: null, failureDetails: null, projectId: "p1", steps: [{ ...build.steps[0], status: "pending" }] } as any;
   vi.mocked(api.getProductionJob).mockResolvedValue({ id: "p1", status: "failed", error: failure.message, failureDetails: [failure], events: [] });

@@ -1,4 +1,5 @@
 import type { RenovationScope } from "../shared/contracts";
+import { useRevisionCopy } from "./revision-i18n";
 
 export const revisionScopeOptions: ReadonlyArray<{
   id: RenovationScope;
@@ -35,12 +36,14 @@ export function RevisionScopePicker({ value, onChange, disabled = false }: {
   onChange: (value: RenovationScope) => void;
   disabled?: boolean;
 }) {
+  const copy = useRevisionCopy();
+  const options = revisionScopeOptions.map((option) => ({ ...option, ...(option.id === "gameplay" ? { label: copy.gameplay[0], detail: copy.gameplay[1], example: copy.gameplay[2] } : option.id === "assets" ? { label: copy.assets[0], detail: copy.assets[1], example: copy.assets[2] } : { label: copy.visual[0], detail: copy.visual[1], example: copy.visual[2] }) }));
   return (
     <fieldset className="revision-scope-picker" disabled={disabled}>
-      <legend>这次只改哪一类？</legend>
-      <p>先圈定一个范围，再说具体想改的地方。</p>
+      <legend>{copy.scopeLegend}</legend>
+      <p>{copy.scopeHelp}</p>
       <div>
-        {revisionScopeOptions.map((option) => (
+        {options.map((option) => (
           <label className={value === option.id ? "is-selected" : undefined} key={option.id}>
             <input
               type="radio"

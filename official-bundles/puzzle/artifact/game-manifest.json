@@ -1,0 +1,104 @@
+{
+  "title": "植光拼图",
+  "template": "puzzle",
+  "runtimeTarget": "web-2d",
+  "difficulty": "standard",
+  "visualStyle": "fashion",
+  "aspectRatio": "9:16",
+  "cameraMode": "board",
+  "inputModes": [
+    "drag",
+    "pointer",
+    "keyboard"
+  ],
+  "designProfile": {
+    "genre": "经典自由拼图",
+    "targetPlayer": "希望使用个人照片或艺术图片进行舒缓解谜的玩家",
+    "playerFantasy": "从散落在画板外围的真实拼块中逐步恢复完整图像",
+    "sessionLength": "3–15 分钟",
+    "coreLoop": [
+      "观察图像与拼块边缘",
+      "从外围选择拼块",
+      "拖到目标区域",
+      "吸附确认并继续还原"
+    ],
+    "winCondition": "所有拼块都吸附到正确位置",
+    "failCondition": "无强制失败；玩家可以重开或调整块数",
+    "progression": [
+      "已归位拼块持续减少搜索空间",
+      "玩家可以在 6–50 块间改变复杂度"
+    ],
+    "difficultyCurve": [
+      "标准档：保持足够学习窗口，并在中段形成稳定压力",
+      "难度调整必须改变 puzzle 的真实规则参数，而不是只改标签"
+    ],
+    "gameFeel": [
+      "拼块拖动保持一比一跟手",
+      "接近正确位置时产生明确吸附",
+      "最后一块完成时使用完整画面和庆祝声"
+    ],
+    "onboarding": [
+      "开局说明外围排布与吸附规则",
+      "参考底图强度随难度变化"
+    ],
+    "accessibility": [
+      "自定义图片自动适配横竖比例",
+      "关键状态同时使用位置、轮廓和声音表达"
+    ],
+    "productionRisks": [
+      "高块数下必须保持触控命中面积",
+      "用户图片需要在浏览器边界完成格式和大小校验"
+    ]
+  },
+  "levelProgression": {
+    "levelCount": 20,
+    "curve": "stepped",
+    "tierSize": 4,
+    "unlockMode": "sequential",
+    "persistProgress": true
+  },
+  "templateSource": null,
+  "generatedAt": "2026-08-31T08:39:41.590Z",
+  "assetManifest": "./assets/asset-manifest.json",
+  "artPipeline": {
+    "renderer": "role-split-bitmaps",
+    "sourceAtlas": "./assets/gameplay-atlas.png",
+    "gameplayBackground": "./assets/background.png",
+    "sprites": [
+      "./assets/sprites/sprite-01.png",
+      "./assets/sprites/sprite-02.png",
+      "./assets/sprites/sprite-03.png",
+      "./assets/sprites/sprite-04.png",
+      "./assets/sprites/sprite-05.png",
+      "./assets/sprites/sprite-06.png",
+      "./assets/sprites/sprite-07.png",
+      "./assets/sprites/sprite-08.png",
+      "./assets/sprites/sprite-09.png"
+    ],
+    "cover": "./assets/cover.png"
+  },
+  "userCustomization": [
+    "runtime-image-upload",
+    "creation-image-upload"
+  ],
+  "puzzleRules": {
+    "pieceCount": 20,
+    "allowedPieceCounts": [
+      6,
+      9,
+      12,
+      16,
+      20,
+      24,
+      30,
+      36,
+      42,
+      48,
+      50
+    ],
+    "maxPieceCount": 50,
+    "startArrangement": "perimeter",
+    "snapTolerance": 0.26,
+    "guideOpacity": 0.14
+  }
+}

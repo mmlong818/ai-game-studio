@@ -604,6 +604,30 @@ test("同一项目并行调用两次 createBuild 只会产生一条构建记录"
   }
 });
 
+test("零模型复验标志与新构建原子持久化，进程内存丢失后仍可读取", async () => {
+  const { database, repository } = await createRepository();
+  try {
+    const project = await repository.create({
+      title: "检查点恢复测试",
+      dimensions: "2d",
+      idea: "玩家交换相邻宝石持续消除并积累分数，支持触控与重新开始。",
+    });
+    const source = await repository.createBuild(project.id);
+    await repository.failBuild(source.id, 4, "浏览器验收失败");
+    const token = { sourceBuildId: source.id, sourceSha256: "a".repeat(64) };
+    const recovery = await repository.createBuild(project.id, undefined, token);
+    assert.deepEqual(await repository.checkpointValidationForBuild(recovery.id), token);
+    assert.equal(await repository.buildExecutionMode(recovery.id), "checkpoint-validation");
+    const row = (await database.query<{ source_build_id: string; source_sha256: string }>(
+      "SELECT source_build_id, source_sha256 FROM build_checkpoint_validations WHERE build_id = $1", [recovery.id],
+    )).rows[0];
+    assert.equal(row?.source_build_id, source.id);
+    assert.equal(row?.source_sha256, token.sourceSha256);
+  } finally {
+    await database.close();
+  }
+});
+
 test("并行完成两个构建时版本号不会冲突", async () => {
   const { database, repository } = await createRepository();
   try {

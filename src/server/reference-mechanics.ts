@@ -39,9 +39,11 @@ const stripToMarkup = (html: string) => html
   .trim()
   .slice(0, 6_000);
 
-async function readPublicText(url: URL, fetchImpl: typeof fetch, accept: string, maxBytes: number, timeoutMs: number): Promise<{ text: string; type: string } | null> {
+async function readPublicText(url: URL, fetchImpl: typeof fetch, accept: string, maxBytes: number, timeoutMs: number, signal?: AbortSignal): Promise<{ text: string; type: string } | null> {
   await assertPublicReferenceUrl(url);
-  const response = await fetchImpl(url, { redirect: "follow", signal: AbortSignal.timeout(timeoutMs), headers: { Accept: accept, "User-Agent": "Mozilla/5.0 (compatible; ai-game-studio reference analysis)" } });
+  signal?.throwIfAborted();
+  const timeoutSignal = AbortSignal.timeout(timeoutMs);
+  const response = await fetchImpl(url, { redirect: "follow", signal: signal ? AbortSignal.any([signal, timeoutSignal]) : timeoutSignal, headers: { Accept: accept, "User-Agent": "Mozilla/5.0 (compatible; ai-game-studio reference analysis)" } });
   if (!response.ok) return null;
   if (Number(response.headers.get("content-length") ?? 0) > maxBytes) return null;
   const text = await response.text();
@@ -49,8 +51,8 @@ async function readPublicText(url: URL, fetchImpl: typeof fetch, accept: string,
   return { text, type: (response.headers.get("content-type") ?? "").toLowerCase() };
 }
 
-async function collectFromDocument(entry: URL, fetchImpl: typeof fetch, limits: ReferenceSourceLimits): Promise<ReferenceClientSource | null> {
-  const document = await readPublicText(entry, fetchImpl, "text/html", limits.documentBytes, 8_000);
+async function collectFromDocument(entry: URL, fetchImpl: typeof fetch, limits: ReferenceSourceLimits, signal?: AbortSignal): Promise<ReferenceClientSource | null> {
+  const document = await readPublicText(entry, fetchImpl, "text/html", limits.documentBytes, 8_000, signal);
   if (!document || !document.type.includes("text/html")) return null;
   const html = document.text;
   const inline = [...html.matchAll(/<script(?![^>]*\bsrc=)[^>]*>([\s\S]*?)<\/script>/gi)]
@@ -67,7 +69,7 @@ async function collectFromDocument(entry: URL, fetchImpl: typeof fetch, limits: 
     if (thirdPartyScript.test(url.toString())) { skipped.push(`第三方统计/广告脚本：${url.hostname}`); continue; }
     if (url.origin !== entry.origin) { skipped.push(`非同源脚本：${url.hostname}`); continue; }
     try {
-      const script = await readPublicText(url, fetchImpl, "application/javascript,text/javascript,*/*", limits.totalScriptBytes - total, 8_000);
+      const script = await readPublicText(url, fetchImpl, "application/javascript,text/javascript,*/*", limits.totalScriptBytes - total, 8_000, signal);
       if (!script) { skipped.push(`不可读取或超限：${url.pathname}`); continue; }
       total += script.text.length;
       files.push(`/* ---- 脚本文件 ${files.length + 1} ---- */\n${script.text}`);
@@ -84,7 +86,7 @@ async function collectFromDocument(entry: URL, fetchImpl: typeof fetch, limits: 
  * 在候选入口（浏览器观察到的 iframe / 直接入口 / 页面本身）中找出真正承载游戏逻辑的文档，返回其客户端源码。
  * 取代码量最大的候选；没有任何候选含有足够的脚本时返回 null。
  */
-export async function collectReferenceClientSource(candidates: readonly (string | null | undefined)[], fetchImpl: typeof fetch = fetch, limits: ReferenceSourceLimits = DEFAULT_REFERENCE_SOURCE_LIMITS): Promise<ReferenceClientSource | null> {
+export async function collectReferenceClientSource(candidates: readonly (string | null | undefined)[], fetchImpl: typeof fetch = fetch, limits: ReferenceSourceLimits = DEFAULT_REFERENCE_SOURCE_LIMITS, signal?: AbortSignal): Promise<ReferenceClientSource | null> {
   const seen = new Set<string>();
   let best: ReferenceClientSource | null = null;
   for (const candidate of candidates) {
@@ -94,10 +96,10 @@ export async function collectReferenceClientSource(candidates: readonly (string 
     if (!/^https?:$/.test(url.protocol) || seen.has(url.toString())) continue;
     seen.add(url.toString());
     try {
-      const source = await collectFromDocument(url, fetchImpl, limits);
+      const source = await collectFromDocument(url, fetchImpl, limits, signal);
       // 先比游戏信号，再比代码量：站点壳的框架脚本再多，也不该压过真正的游戏文档。
       if (source && (!best || source.gameSignals > best.gameSignals || (source.gameSignals === best.gameSignals && source.bytes > best.bytes))) best = source;
-    } catch { /* 候选不可读取时继续尝试下一个 */ }
+    } catch { signal?.throwIfAborted(); /* 候选不可读取时继续尝试下一个 */ }
   }
   return best;
 }
@@ -128,13 +130,15 @@ export function discoverEntryCandidates(html: string, pageUrl: string): string[]
 /**
  * 先读落地页，把页面本身、HTML 里能看到的同源入口和浏览器观察到的入口都作为候选，取真正承载游戏逻辑的那一个。
  */
-export async function collectReferenceMechanicsSource(pageUrl: string, fetchImpl: typeof fetch = fetch, browserCandidates: readonly (string | null | undefined)[] = [], limits: ReferenceSourceLimits = DEFAULT_REFERENCE_SOURCE_LIMITS): Promise<ReferenceClientSource | null> {
+export async function collectReferenceMechanicsSource(pageUrl: string, fetchImpl: typeof fetch = fetch, browserCandidates: readonly (string | null | undefined)[] = [], limits: ReferenceSourceLimits = DEFAULT_REFERENCE_SOURCE_LIMITS, signal?: AbortSignal): Promise<ReferenceClientSource | null> {
+  const budgetSignal = AbortSignal.timeout(12_000);
+  const combinedSignal = signal ? AbortSignal.any([signal, budgetSignal]) : budgetSignal;
   const discovered: string[] = [];
   try {
-    const page = await readPublicText(new URL(pageUrl), fetchImpl, "text/html", limits.documentBytes, 8_000);
+    const page = await readPublicText(new URL(pageUrl), fetchImpl, "text/html", limits.documentBytes, 8_000, combinedSignal);
     if (page?.type.includes("text/html")) discovered.push(...discoverEntryCandidates(page.text, pageUrl));
-  } catch { /* 落地页读不到时仍尝试浏览器候选 */ }
-  return collectReferenceClientSource([...browserCandidates, ...discovered, pageUrl], fetchImpl, limits);
+  } catch { signal?.throwIfAborted(); /* 落地页读不到时仍尝试浏览器候选 */ }
+  return collectReferenceClientSource([...browserCandidates, ...discovered, pageUrl], fetchImpl, limits, combinedSignal);
 }
 
 export type ReferenceMechanicsAnalysisOptions = {

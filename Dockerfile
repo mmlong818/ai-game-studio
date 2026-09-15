@@ -20,6 +20,7 @@ COPY --from=build /app/dist-server ./dist-server
 COPY --from=build /app/dist-web ./dist-web
 COPY assets ./assets
 COPY fixtures ./fixtures
+COPY official-bundles ./official-bundles
 COPY third_party ./third_party
 EXPOSE 4312 4313
 CMD ["node", "dist-server/server/index.js"]

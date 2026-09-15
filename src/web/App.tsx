@@ -29,6 +29,7 @@ import { SiteHeader } from "./SiteHeader";
 import { AdvancedStudioApp } from "../App";
 import { usePreferences, type ResolvedLocale } from "./preferences";
 import { DesignKnowledgeConsole } from "./DesignKnowledgeConsole";
+import { localizeOfficialGame } from "./official-game-copy";
 
 function projectIdFromLocation() {
   return new URLSearchParams(window.location.search).get("project");
@@ -70,6 +71,7 @@ function ProjectList({ projects, archived, busyId, onArchive, onRestore, onDelet
   return (
     <div className="project-card-grid">
       {projects.map((project) => {
+        project = localizeOfficialGame(project, locale);
         const cover = project.coverUrl ?? (project.template === "generated" ? null : `/media/template-art/${project.template}/cover.png`);
         return (
           <article className={`project-card ${archived ? "is-archived" : ""}`} key={project.id}>
@@ -93,7 +95,7 @@ function ProjectList({ projects, archived, busyId, onArchive, onRestore, onDelet
               ) : (
                 <>
                   {project.status === "playable" || project.publication?.status === "live" ? (
-                    <a className="project-play-link" href={project.publication?.status === "live" ? `/player-first?game=${encodeURIComponent(project.id)}` : `${projectPath(project.id)}?view=play`}><Play size={15} aria-hidden="true" />{t("projects.play")}</a>
+                    <a className="project-play-link" href={project.publication?.status === "live" ? `/player-first?game=${encodeURIComponent(project.id)}&lang=${encodeURIComponent(locale)}` : `${projectPath(project.id)}?view=play`}><Play size={15} aria-hidden="true" />{t("projects.play")}</a>
                   ) : (
                     <span className="project-play-link is-disabled" title={t("projects.playNeedsPublish")} aria-disabled="true"><Play size={15} aria-hidden="true" />{t("projects.play")}</span>
                   )}
@@ -164,10 +166,10 @@ function StudioHome() {
     let active = true;
     Promise.all([getProjects(), getArchivedProjects()])
       .then(([projectList, archivedList]) => { if (active) { setProjects(projectList); setArchivedProjects(archivedList); } })
-      .catch((caught) => { if (active) setError(caught instanceof Error ? caught.message : "项目加载失败。"); })
+      .catch(() => { if (active) setError(t("projects.loadFailed")); })
       .finally(() => { if (active) setLoading(false); });
     return () => { active = false; };
-  }, []);
+  }, [t]);
 
   useEffect(() => {
     const updateView = () => setShowArchived(window.location.hash === "#archive");
@@ -246,7 +248,7 @@ function StudioHome() {
 }
 
 function ProjectPage({ projectId, legacyUrl = false }: { projectId: string; legacyUrl?: boolean }) {
-  const { t } = usePreferences();
+  const { locale, t } = usePreferences();
   const [project, setProject] = useState<ProjectDetail | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -256,12 +258,13 @@ function ProjectPage({ projectId, legacyUrl = false }: { projectId: string; lega
     getProject(projectId)
       .then((result) => {
         if (!active) return;
-        setProject(result);
-        document.title = `${result.title} · 制作台`;
+        const localized = localizeOfficialGame(result, locale);
+        setProject(localized);
+        document.title = t("document.studio", { title: localized.title });
       })
-      .catch((caught) => { if (active) setError(caught instanceof Error ? caught.message : "项目详情加载失败。"); });
-    return () => { active = false; document.title = "造界 · AI 游戏工坊"; };
-  }, [legacyUrl, projectId]);
+      .catch(() => { if (active) setError(t("projects.detailLoadFailed")); });
+    return () => { active = false; document.title = t("document.home"); };
+  }, [legacyUrl, locale, projectId, t]);
 
   return (
     <div className="app-shell studio-route-shell">
@@ -291,12 +294,13 @@ function NotFoundPage() {
 }
 
 function CreatePage() {
+  const { t } = usePreferences();
   useEffect(() => {
-    document.title = "游戏创作 · 造界";
+    document.title = t("document.create");
     return () => {
-      document.title = "造界 · AI 游戏工坊";
+      document.title = t("document.home");
     };
-  }, []);
+  }, [t]);
   return (
     <div className="app-shell">
       <SiteHeader active="create" />

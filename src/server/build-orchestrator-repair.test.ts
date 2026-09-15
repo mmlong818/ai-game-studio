@@ -1,6 +1,7 @@
 import { afterAll, beforeEach, expect, it, vi } from "vitest";
 import { BuildOrchestrator } from "./build-orchestrator";
 import { inspectGeneratedArtifact, writeGeneratedArtifact } from "./game-generator";
+import { inspectGeneratedGameInBrowser } from "./browser-quality";
 import { readGeneratedSource } from "./generated-source";
 import { ArtifactValidationFailure } from "./generation-budget";
 import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, rmSync } from "node:fs";
@@ -8,6 +9,7 @@ import { sha256, writeRuleFidelity } from "./rule-audit-checkpoint";
 import { inspectLocalRepairCandidate } from "./local-repair-candidate";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
+import { readRepairExperiences, repairExperienceRoot } from "./repair-experience";
 
 // 编排器按相对路径落盘；用临时目录承接，避免测试把产物写进仓库根目录。
 const scratchRoot = mkdtempSync(join(tmpdir(), "orchestrator-repair-scratch-"));
@@ -36,6 +38,31 @@ beforeEach(() => {
   vi.mocked(inspectGeneratedArtifact).mockReset();
   vi.mocked(writeGeneratedArtifact).mockReset();
   vi.mocked(inspectLocalRepairCandidate).mockReset().mockReturnValue({ status: "absent" });
+});
+
+it("重启后专用复验模式缺少或损坏token时fail closed且provider零调用", async () => {
+  for (const token of [null, { sourceBuildId: "../bad", sourceSha256: "bad" }]) {
+    const generate = vi.fn();
+    const generateArt = vi.fn();
+    const auditRuleFidelity = vi.fn();
+    const failBuild = vi.fn().mockResolvedValue(undefined);
+    const repository = {
+      markBuildRunning: vi.fn().mockResolvedValue(true),
+      buildExecutionMode: vi.fn().mockResolvedValue("checkpoint-validation"),
+      checkpointValidationForBuild: vi.fn().mockResolvedValue(token),
+      failBuild,
+    };
+    const orchestrator = new BuildOrchestrator(repository as never, scratchRoot, {
+      codeGenerator: { generate } as never,
+      coverArt: { generate: generateArt, generateDynamicArt: generateArt } as never,
+      designContracts: { auditRuleFidelity } as never,
+    });
+    await (orchestrator as any).run("queued-after-restart", new AbortController().signal);
+    expect(failBuild).toHaveBeenCalledWith("queued-after-restart", 0, expect.stringContaining("token 缺失或损坏"), expect.any(Array));
+    expect(generate).not.toHaveBeenCalled();
+    expect(generateArt).not.toHaveBeenCalled();
+    expect(auditRuleFidelity).not.toHaveBeenCalled();
+  }
 });
 const project = { version: { id: "not-on-disk" }, spec: { designProfile: {} } };
 const first = { html: "<html>first failed playable version</html>", rounds: 1, designNotes: "first" };
@@ -113,8 +140,8 @@ it("首次产物验收失败后将当前失败代码交给第二轮修复", asyn
   const orchestrator = new BuildOrchestrator({ recentReusableBuilds: async () => [] } as never, "missing-test-artifact-root", { browserAudit: false, codeGenerator: { generate } as never });
   await (orchestrator as any).generateExperimentalGame(project, scratchRoot, ["保持花园主题"]);
   expect(generate.mock.calls[0][2]).toBeNull();
-  expect(generate.mock.calls[1][2]).toEqual({ html: first.html, directions: ["保持花园主题", "开始按钮被遮挡"] });
-  expect(generate.mock.calls[1][1]).toEqual(["开始按钮被遮挡"]);
+  expect(generate.mock.calls[1][2]).toEqual(expect.objectContaining({ html: first.html, directions: expect.arrayContaining(["保持花园主题", "开始按钮被遮挡"]) }));
+  expect(generate.mock.calls[1][1]).toEqual(expect.arrayContaining(["开始按钮被遮挡"]));
   expect(generate.mock.calls[0][4]).toBe(generate.mock.calls[1][4]);
 });
 
@@ -160,7 +187,7 @@ it("规则审核未落实时沿用当轮代码，只定向修正缺失规则", a
   finally { if (dirname(root) === tmpdir()) rmSync(root, { recursive: true, force: true }); }
   expect(generate.mock.calls[1][2].html).toBe(first.html);
   expect(auditRuleFidelity.mock.calls[0][1]).toContain("window.__FORGE_SPRITES__");
-  expect(generate.mock.calls[1][2].directions).toEqual(["规则审计判定未实现:配对计分——未增加分数"]);
+  expect(generate.mock.calls[1][2].directions).toEqual(expect.arrayContaining(["规则审计判定未实现:配对计分——未增加分数"]));
 });
 
 it("审核服务没有结果时停止交付，不重新付费生成代码", async () => {
@@ -194,7 +221,7 @@ it("质量问题不交给用户重试：验收连续失败时带原因继续修�
   const result = await (orchestrator as any).generateExperimentalGame(project, scratchRoot, [], report);
   expect(result.generation.html).toBe(repaired.html);
   expect(generate).toHaveBeenCalledTimes(4);
-  expect(generate.mock.calls[3][1]).toEqual(["教学第二步未完成"]);
+  expect(generate.mock.calls[3][1]).toEqual(expect.arrayContaining(["教学第二步未完成"]));
   expect(report.mock.calls.map(call => call[0]).some((text: string) => text.includes("第 4 次针对性修复（最多 6 次）"))).toBe(true);
 });
 
@@ -218,6 +245,97 @@ it("修正轮用尽仍未通过验收才停止，错误写明是上限而不是�
   await expect((orchestrator as any).generateExperimentalGame(project, scratchRoot, [])).rejects.toThrow("连续 3 轮生成代码均未通过产物契约验收，已达本次制作的修正上限");
   expect(generate).toHaveBeenCalledTimes(3);
   vi.mocked(inspectGeneratedArtifact).mockReset();
+});
+
+it("已通过复验的同范围失败经验会实际进入下一次同类修复输入", async () => {
+  const root = mkdtempSync(join(tmpdir(), "studio-learning-loop-"));
+  const artifactRoot = join(root, "artifacts-v1.1");
+  mkdirSync(artifactRoot, { recursive: true });
+  const scopedProject = { ...project, id: "learning-project", spec: { ...project.spec, template: "custom", runtimeTarget: "web-2d", mechanics: ["点击"], designContract: { schemaVersion: "game-design-contract-v1" } } };
+  const failure = "手机视口开始按钮被遮挡";
+  vi.mocked(inspectGeneratedArtifact)
+    .mockImplementationOnce(() => { throw new ArtifactValidationFailure(failure); })
+    .mockImplementationOnce(() => undefined)
+    .mockImplementationOnce(() => { throw new ArtifactValidationFailure(failure); })
+    .mockImplementationOnce(() => undefined);
+  const generate = vi.fn().mockResolvedValueOnce(first).mockResolvedValueOnce(repaired).mockResolvedValueOnce(first).mockResolvedValueOnce(repaired);
+  const orchestrator = new BuildOrchestrator({ recentReusableBuilds: async () => [] } as never, artifactRoot, { browserAudit: false, codeGenerator: { generate } as never });
+  try {
+    await (orchestrator as any).generateExperimentalGame(scopedProject, join(root, "build-one"), []);
+    await (orchestrator as any).generateExperimentalGame(scopedProject, join(root, "build-two"), []);
+    expect(generate.mock.calls[2][1]).toEqual([]);
+    expect(generate.mock.calls[2][5]).toEqual(expect.arrayContaining([expect.stringContaining("不可信修复经验参考")]));
+    expect(generate.mock.calls[3][1]).toEqual(expect.arrayContaining([expect.stringContaining("不可信修复经验参考")]));
+    expect(generate.mock.calls[3][1]).toEqual(expect.arrayContaining([expect.stringContaining("响应式布局")]));
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
+it("动态棋盘接入缺陷同轮确定性修复，完整验收后晋升并进入下一任务首次输入", async () => {
+  const root = mkdtempSync(join(tmpdir(), "studio-board-marker-loop-"));
+  const artifactRoot = join(root, "artifacts-v1.1");
+  mkdirSync(artifactRoot, { recursive: true });
+  const scopedProject = { ...project, id: "board-marker-project", spec: { ...project.spec, template: "custom", runtimeTarget: "web-2d", mechanics: ["交换消除"], designContract: { schemaVersion: "game-design-contract-v1" }, designProfile: { coreLoop: ["交换相邻宝石"], winCondition: "持续获得分数", failCondition: "不会失败", generatedCampaign: { mode: "endless", failurePolicy: "forbidden", levelCount: 0, milestones: [], difficultyKeys: [] }, generatedBlueprint: null } } };
+  const source = '<body><div id="stage"><canvas></canvas><div id="hint-layer"></div></div></body>';
+  const generation = { html: source, rounds: 1, designNotes: "dynamic match-three" };
+  const generate = vi.fn().mockResolvedValue(generation);
+  const auditRuleFidelity = vi.fn().mockResolvedValue([{ rule: "交换相邻宝石", implemented: true, evidence: "真实交互" }]);
+  vi.mocked(writeGeneratedArtifact).mockImplementation((targetRoot: string, _project, candidate: typeof generation) => {
+    mkdirSync(targetRoot, { recursive: true });
+    writeFileSync(join(targetRoot, "index.html"), candidate.html);
+    writeFileSync(join(targetRoot, "styles.css"), "canvas{display:block}");
+    writeFileSync(join(targetRoot, "app.js"), "window.__FORGE_SPRITES__={create(){}};");
+  });
+  vi.mocked(inspectGeneratedGameInBrowser)
+    .mockRejectedValueOnce(new ArtifactValidationFailure("Canvas 与操作覆盖层需要共同父容器 data-game-board", { kind: "add-game-board-marker", elementId: "stage", elementTag: "div" }))
+    .mockResolvedValue({ checks: [], screenshotPaths: [] });
+  const orchestrator = new BuildOrchestrator({ recentReusableBuilds: async () => [] } as never, artifactRoot, { codeGenerator: { generate } as never, designContracts: { auditRuleFidelity } as never });
+  try {
+    await (orchestrator as any).generateExperimentalGame(scopedProject, join(root, "build-one"), []);
+    expect(generate).toHaveBeenCalledTimes(1);
+    expect(writeGeneratedArtifact).toHaveBeenCalledTimes(2);
+    expect(vi.mocked(writeGeneratedArtifact).mock.calls[1][2].html).toContain('<div data-game-board id="stage">');
+    expect(inspectGeneratedArtifact).toHaveBeenCalledTimes(2);
+    expect(inspectGeneratedGameInBrowser).toHaveBeenCalledTimes(2);
+    expect(auditRuleFidelity).toHaveBeenCalledTimes(1);
+    const records = readRepairExperiences(repairExperienceRoot(artifactRoot));
+    expect(records).toEqual([expect.objectContaining({ strategyId: "repair-game-board-marker", outcome: "verified", verification: "artifact-browser-and-rule" })]);
+
+    await (orchestrator as any).generateExperimentalGame(scopedProject, join(root, "build-two"), []);
+    expect(generate.mock.calls[1][5]).toEqual(expect.arrayContaining([expect.stringContaining("data-game-board")]));
+    expect(generate.mock.calls[1][5]).toEqual(expect.arrayContaining([expect.stringContaining("不可信修复经验参考")]));
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
+it("确定性补标复验失败时只记录失败经验，不晋升成功规则", async () => {
+  const root = mkdtempSync(join(tmpdir(), "studio-board-marker-rejected-"));
+  const artifactRoot = join(root, "artifacts-v1.1"); mkdirSync(artifactRoot, { recursive: true });
+  const scopedProject = { ...project, id: "board-marker-rejected", spec: { ...project.spec, template: "custom", runtimeTarget: "web-2d", mechanics: ["交换消除"], designContract: { schemaVersion: "game-design-contract-v1" }, designProfile: { generatedCampaign: { mode: "endless", failurePolicy: "forbidden", levelCount: 0, milestones: [], difficultyKeys: [] }, generatedBlueprint: null } } };
+  const generate = vi.fn().mockResolvedValue({ html: '<body><div id="stage"><canvas></canvas><div id="hint-layer"></div></div></body>', rounds: 1 });
+  vi.mocked(inspectGeneratedGameInBrowser)
+    .mockRejectedValueOnce(new ArtifactValidationFailure("共同父容器缺少 data-game-board", { kind: "add-game-board-marker", elementId: "stage", elementTag: "div" }))
+    .mockRejectedValueOnce(new ArtifactValidationFailure("补标后真实动作仍没有产生稳定可见变化"));
+  const orchestrator = new BuildOrchestrator({ recentReusableBuilds: async () => [] } as never, artifactRoot, { codeGenerator: { generate } as never, maxRepairRounds: 1 });
+  try {
+    await expect((orchestrator as any).generateExperimentalGame(scopedProject, join(root, "build"), [])).rejects.toThrow(/修正上限/);
+    const records = readRepairExperiences(repairExperienceRoot(artifactRoot));
+    expect(records.some(record => record.outcome === "verified")).toBe(false);
+    expect(records).toEqual([expect.objectContaining({ strategyId: "repair-game-board-marker", outcome: "failed", verification: "rejected" })]);
+    expect(generate).toHaveBeenCalledTimes(1);
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
+it("确认的 endless/failure-forbidden 合同完整传给代码生成和浏览器验收", async () => {
+  const campaign = { mode: "endless", failurePolicy: "forbidden", levelCount: 0, milestones: [], difficultyKeys: [], rationale: "自由三消持续游玩" } as const;
+  const endlessProject = { ...project, id: "endless-project", spec: { ...project.spec, runtimeTarget: "web-2d", template: "custom", mechanics: ["交换并消除"], designProfile: { ...project.spec.designProfile, generatedCampaign: campaign } } };
+  const generate = vi.fn().mockResolvedValue(repaired);
+  const root = mkdtempSync(join(tmpdir(), "studio-endless-contract-"));
+  try {
+    const orchestrator = new BuildOrchestrator({ recentReusableBuilds: async () => [] } as never, root, { codeGenerator: { generate } as never });
+    await (orchestrator as any).generateExperimentalGame(endlessProject, join(root, "build"), []);
+    expect(generate.mock.calls[0][0].spec.designProfile.generatedCampaign).toEqual(campaign);
+    expect(inspectGeneratedArtifact).toHaveBeenCalledWith(expect.any(String), expect.objectContaining({ expectedCampaign: campaign }));
+    expect(vi.mocked(inspectGeneratedGameInBrowser)).toHaveBeenCalledWith(expect.any(String), expect.objectContaining({ expectedCampaign: campaign }));
+  } finally { rmSync(root, { recursive: true, force: true }); }
 });
 
 it("恢复同项目失败构建的完整代码与错误，不重新从空白制作", async () => {
@@ -291,6 +409,57 @@ it("合同只移除平台教学时先验收旧候选，通过则代码生成与�
   } finally { if (dirname(root) === tmpdir()) rmSync(root, { recursive: true, force: true }); }
 });
 
+it("零模型检查点执行时绑定来源哈希并禁止代码与审核 provider 回退", async () => {
+  const root = mkdtempSync(join(tmpdir(), "studio-zero-model-guard-"));
+  const sourceRoot = join(root, "source-build");
+  const targetRoot = join(root, "target-build");
+  const contract = { id: "same-contract" };
+  const profile = { ...auditProfile, generatedBlueprint: null };
+  const guardedProject = { ...project, id: "guarded-project", spec: { template: "generated", runtimeTarget: "web-2d", mechanics: ["翻牌"], designProfile: profile, designContract: contract } };
+  const index = '<html><body><div id="board" data-game-board></div><script src="./app.js"></script></body></html>';
+  const styles = "#board{display:block}";
+  const app = "window.__FORGE_SPRITES__={create(){}};";
+  const sourceText = [
+    "/* 平台交付事实：index.html 先加载 app.js；app.js 中 forge-platform 段由平台在游戏代码前安装 safeStorage 与 __FORGE_SPRITES__，不是缺失依赖。以下是浏览器实际执行的交付文件。 */",
+    `<!-- index.html -->\n${index}`,
+    `/* styles.css */\n${styles}`,
+    `/* app.js */\n${app}`,
+  ].join("\n\n");
+  const sourceSha256 = sha256(sourceText);
+  const verdicts = auditRules.map(rule => ({ rule, implemented: true, evidence: "来源审核通过" }));
+  mkdirSync(join(sourceRoot, "_studio"), { recursive: true });
+  writeFileSync(join(sourceRoot, "index.html"), index);
+  writeFileSync(join(sourceRoot, "styles.css"), styles);
+  writeFileSync(join(sourceRoot, "app.js"), app);
+  writeFileSync(join(sourceRoot, "_studio", "GAME_DESIGN_CONTRACT.json"), JSON.stringify(contract));
+  writeRuleFidelity(sourceRoot, { verdicts, sourceSha256 });
+  vi.mocked(readGeneratedSource).mockReturnValueOnce("<html>guarded source</html>");
+  vi.mocked(writeGeneratedArtifact).mockImplementation((target: string) => {
+    mkdirSync(target, { recursive: true });
+    writeFileSync(join(target, "index.html"), index);
+    writeFileSync(join(target, "styles.css"), styles);
+    writeFileSync(join(target, "app.js"), app);
+  });
+  vi.mocked(inspectGeneratedGameInBrowser).mockResolvedValue({ checks: [], screenshotPaths: [] });
+  const generate = vi.fn();
+  const auditRuleFidelity = vi.fn();
+  const repository = { recentReusableBuilds: vi.fn(() => { throw new Error("不得扫描其它候选"); }), buildById: async () => ({ id: "source-build", projectId: "guarded-project", revisionPlan: null, revisionScope: null }) };
+  try {
+    const orchestrator = new BuildOrchestrator(repository as never, root, { codeGenerator: { generate } as never, designContracts: { auditRuleFidelity } as never });
+    const result = await (orchestrator as any).generateExperimentalGame(guardedProject, targetRoot, [], undefined, { sourceBuildId: "source-build", sourceSha256 });
+    expect(result.audit).toEqual(verdicts);
+    expect(result.auditReusedFrom).toBe("source-build");
+    expect(generate).not.toHaveBeenCalled();
+    expect(auditRuleFidelity).not.toHaveBeenCalled();
+    expect(repository.recentReusableBuilds).not.toHaveBeenCalled();
+
+    vi.mocked(readGeneratedSource).mockReturnValueOnce("<html>guarded source</html>");
+    await expect((orchestrator as any).generateExperimentalGame(guardedProject, join(root, "drifted-target"), [], undefined, { sourceBuildId: "source-build", sourceSha256: "f".repeat(64) })).rejects.toThrow(/源码哈希已变化/);
+    expect(generate).not.toHaveBeenCalled();
+    expect(auditRuleFidelity).not.toHaveBeenCalled();
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
 it("最新匹配候选验收失败时改验较早候选，不先调用代码生成模型", async () => {
   const contract = { id: "same-contract" };
   const older = { ...first, html: "<html>older passing candidate</html>" };
@@ -358,7 +527,7 @@ it("候选通过静态与浏览器但没有规则回执时，只审核旧代码�
     const result = await (orchestrator as any).generateExperimentalGame({ ...project, id: "same-project", spec: { designProfile: auditProfile, designContract: contract } }, join(root, "new-build"), []);
     expect(generate).not.toHaveBeenCalled();
     expect(auditRuleFidelity).toHaveBeenCalledTimes(1);
-    expect(auditRuleFidelity.mock.calls[0][0]).toBe(auditProfile);
+    expect(auditRuleFidelity.mock.calls[0][0]).toEqual({ ...auditProfile, generatedBlueprint: undefined });
     expect(auditRuleFidelity.mock.calls[0][1]).toContain("window.__FORGE_SPRITES__");
     expect(result.generation.html).toBe(first.html);
     expect(result.audit).toEqual(verdicts);

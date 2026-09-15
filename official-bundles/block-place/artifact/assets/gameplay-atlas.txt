@@ -1,0 +1,7 @@
+Use case: stylized-concept
+Asset type: 3×3 game sprite atlas
+Primary request: Exact row-major 3x3 atlas for a free-placement block puzzle. Cells 1-5 are five isolated single rounded jelly blocks of identical dimensions: coral berry, mango citrus, turquoise bubble, lemon candy and warm oat cookie. Cell 6 is one compact row-clear flash. Cell 7 is one compact combo crown burst. Cell 8 is one compact invalid-placement wobble mark without text. Cell 9 is one compact confetti sparkle.
+Style/medium: premium fruit-gel, silicone and biscuit mobile game sprites, tactile contemporary product design, no purple
+Composition/framing: strict 3x3 equal-cell contact sheet, one centered isolated square block or compact effect per cell, identical block scale
+Lighting/mood: clean candy-shop product light with bright edge highlights
+Constraints: solid uniform chroma-green #00FF00 background; no grid lines, text, letters, numbers, logos, watermark, connected shapes, full board, scene, overlap, cast shadows crossing cells or green-family colors on objects

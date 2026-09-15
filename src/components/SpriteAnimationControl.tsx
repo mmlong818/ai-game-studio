@@ -2,15 +2,9 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { createSpriteSheetPlayer } from "../shared/sprite-sheet-runtime";
 import type { SpriteAnimationClipId, SpriteSheetAnimation } from "../shared/generated-blueprint";
 import spriteAnimationDemoPng from "../web/assets/sprite-animation-adventurer-v2.png";
+import { useComponentMessages } from "./component-i18n";
 
 export type SpriteAnimationPreference = "auto" | "none";
-
-const clipLabels: Record<SpriteAnimationClipId, string> = {
-  idle: "待机",
-  run: "移动",
-  hit: "受击",
-  effect: "特效",
-};
 
 /** This reviewed 4 × 4 PNG is packed by the server Sprite Sheet helper. */
 export const spriteAnimationDemo: SpriteSheetAnimation = {
@@ -37,7 +31,9 @@ function clipEnds(animation: SpriteSheetAnimation, clipId: SpriteAnimationClipId
   return !clip.loop && elapsedMs >= clip.frameCount * 1000 / clip.fps;
 }
 
-export function SpriteAnimationPreview({ label = "Sprite Sheet 播放预览" }: { label?: string }) {
+export function SpriteAnimationPreview({ label }: { label?: string }) {
+  const t = useComponentMessages();
+  const clipLabels: Record<SpriteAnimationClipId, string> = { idle: t("sprite.idle"), run: t("sprite.run"), hit: t("sprite.hit"), effect: t("sprite.effect") };
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [clipId, setClipId] = useState<SpriteAnimationClipId>("idle");
   const [status, setStatus] = useState({ frame: 0, ended: false });
@@ -88,34 +84,37 @@ export function SpriteAnimationPreview({ label = "Sprite Sheet 播放预览" }: 
   }, [clipId, image, speed]);
 
   const clip = spriteAnimationDemo.clips.find(item => item.id === clipId)!;
-  return <section className="sprite-animation-preview" aria-label={label}>
-    <div className="sprite-animation-preview-heading"><span>可播放示例</span><small>示例动画，可切换动作查看效果</small></div>
-    <canvas ref={canvasRef} role="img" aria-label={`${clipLabels[clipId]}动作第 ${status.frame + 1} 帧`} />
-    <div className="sprite-animation-actions" role="group" aria-label="预览动作">
+  return <section className="sprite-animation-preview" aria-label={label ?? t("sprite.previewLabel")}>
+    <div className="sprite-animation-preview-heading"><span>{t("sprite.example")}</span><small>{t("sprite.exampleDetail")}</small></div>
+    <canvas ref={canvasRef} role="img" aria-label={t("sprite.frameA11y", { clip: clipLabels[clipId], frame: status.frame + 1 })} />
+    <div className="sprite-animation-actions" role="group" aria-label={t("sprite.actions")}>
       {spriteAnimationDemo.clips.map(item => <button key={item.id} type="button" className={item.id === clipId ? "is-selected" : undefined} onClick={() => { setStatus({ frame: item.startFrame, ended: false }); setClipId(item.id); }}>{clipLabels[item.id]}</button>)}
     </div>
-    <label className="sprite-animation-speed">预览速度 <select value={speed} onChange={event => setSpeed(Number(event.target.value))}><option value={0.5}>0.5×</option><option value={1}>1×</option><option value={2}>2×</option></select></label>
-    <p aria-live="polite">{clipLabels[clipId]} · 第 {status.frame - clip.startFrame + 1}/{clip.frameCount} 帧 · {clip.fps} fps · {clip.loop ? "循环播放" : status.ended ? "已停在最后一帧" : "播放一次后停在最后一帧"}</p>
+    <label className="sprite-animation-speed">{t("sprite.speed")} <select value={speed} onChange={event => setSpeed(Number(event.target.value))}><option value={0.5}>0.5×</option><option value={1}>1×</option><option value={2}>2×</option></select></label>
+    <p aria-live="polite">{t("sprite.status", { clip: clipLabels[clipId], frame: status.frame - clip.startFrame + 1, total: clip.frameCount, fps: clip.fps, state: clip.loop ? t("sprite.loop") : status.ended ? t("sprite.ended") : t("sprite.once") })}</p>
   </section>;
 }
 
 export function SpriteAnimationChoice({ value, onChange }: { value: SpriteAnimationPreference; onChange: (value: SpriteAnimationPreference) => void }) {
+  const t = useComponentMessages();
   return <fieldset className="sprite-animation-choice">
-    <legend>角色和短特效要动起来吗？</legend>
-    <p>适合 2D 角色、持续运动物和命中特效。平台会把每个动作做成 4–8 帧的透明底图集，并在游戏中播放。</p>
+    <legend>{t("sprite.title")}</legend>
+    <p>{t("sprite.detail")}</p>
     <div>
-      <label className={value === "auto" ? "is-selected" : undefined}><input type="radio" name="sprite-animation" value="auto" checked={value === "auto"} onChange={() => onChange("auto")} /><span><strong>适用时生成可播放动画</strong><small>为适合的角色或特效自动安排待机、移动、受击或短特效。</small></span></label>
-      <label className={value === "none" ? "is-selected" : undefined}><input type="radio" name="sprite-animation" value="none" checked={value === "none"} onChange={() => onChange("none")} /><span><strong>这次使用静态图片</strong><small>适合以静态道具和界面元素为主的游戏。</small></span></label>
+      <label className={value === "auto" ? "is-selected" : undefined}><input type="radio" name="sprite-animation" value="auto" checked={value === "auto"} onChange={() => onChange("auto")} /><span><strong>{t("sprite.auto")}</strong><small>{t("sprite.autoDetail")}</small></span></label>
+      <label className={value === "none" ? "is-selected" : undefined}><input type="radio" name="sprite-animation" value="none" checked={value === "none"} onChange={() => onChange("none")} /><span><strong>{t("sprite.none")}</strong><small>{t("sprite.noneDetail")}</small></span></label>
     </div>
     {value === "auto" && <SpriteAnimationPreview />}
   </fieldset>;
 }
 
 export function SpriteClipChoice({ value, available, onChange }: { value: SpriteAnimationClipId; available: readonly SpriteAnimationClipId[]; onChange: (value: SpriteAnimationClipId) => void }) {
+  const t = useComponentMessages();
+  const clipLabels: Record<SpriteAnimationClipId, string> = { idle: t("sprite.idle"), run: t("sprite.run"), hit: t("sprite.hit"), effect: t("sprite.effect") };
   return <fieldset className="sprite-clip-choice">
-    <legend>要替换哪段动画？</legend>
-    <p>这款游戏已有可播放图集。只替换一段动作，其余动作和玩法会保留。</p>
-    <div role="radiogroup" aria-label="要替换的动画">
+    <legend>{t("sprite.replace")}</legend>
+    <p>{t("sprite.replaceDetail")}</p>
+    <div role="radiogroup" aria-label={t("sprite.replaceGroup")}>
       {available.map(clipId => <label className={value === clipId ? "is-selected" : undefined} key={clipId}><input type="radio" name="sprite-clip" value={clipId} checked={value === clipId} onChange={() => onChange(clipId)} /><span>{clipLabels[clipId]}</span></label>)}
     </div>
   </fieldset>;

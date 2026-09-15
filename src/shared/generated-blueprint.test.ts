@@ -63,9 +63,12 @@ describe("生成式游戏知识蓝图", () => {
     expect(() => generatedBlueprintSchema.parse({ ...valid, sprites: [valid.sprites[0], { file: "assets/cover.png", role: "封面", hint: "不该出现在清单里" }] })).toThrow(/封面与局内背景由平台生成/);
   });
 
-  it("要求写清取舍、张力与熟练度，空话无法通过长度门槛", () => {
-    expect(() => generatedBlueprintSchema.parse({ ...valid, coreDecision: "点就行" })).toThrow();
-    expect(() => generatedBlueprintSchema.parse({ ...valid, sprites: [valid.sprites[0]] })).toThrow();
+  it("简单玩法允许不选机制、修饰器和位图，也不强造取舍", () => {
+    const plan = generatedBlueprintSchema.parse({ mechanicIds: [], modifierIds: [], coreDecision: "", tension: "", masterySignal: "", sprites: [] });
+    expect(plan.sprites).toEqual([]);
+    expect(blueprintRules(plan)).toEqual([expect.stringContaining("程序绘制")]);
+    expect(generatedBlueprintPrompt(plan)).toContain("按项目已确认的题材与画面风格");
+    expect(generatedBlueprintPrompt(plan)).not.toContain("玩法取舍");
   });
 
   it("硬审核保留本游戏取舍与位图，不把知识分类的通用状态模型凌驾具体玩法", () => {
@@ -115,11 +118,11 @@ describe("生成式游戏知识蓝图", () => {
     expect(selectBlueprintCandidates("").length).toBe(14);
   });
 
-  it("策划提示给出候选菜单与反纯点选要求", () => {
+  it("策划提示给出可选候选，并明确最小玩法与按需资源", () => {
     const prompt = blueprintPlanningPrompt("海边捡贝壳装满竹篮");
-    expect(prompt).toContain("mechanic_ids 只能从这些 id 中选 1–3 个");
-    expect(prompt).toContain("“点到就得分”不是取舍");
-    expect(prompt).toContain("初次创建始终交付单局demo");
+    expect(prompt).toContain("0–3 个");
+    expect(prompt).toContain("不得为了显得完整而增加新系统");
+    expect(prompt).toContain("风格选择本身不要求生成图片");
     expect(prompt).toContain(DESIGN_MODIFIERS[0].id);
   });
 });

@@ -1,0 +1,102 @@
+{
+  "title": "星环突围",
+  "template": "space-shooter",
+  "runtimeTarget": "web-2d",
+  "difficulty": "standard",
+  "visualStyle": "color-block",
+  "aspectRatio": "9:16",
+  "cameraMode": "scrolling",
+  "inputModes": [
+    "drag",
+    "keyboard",
+    "touch-buttons"
+  ],
+  "designProfile": {
+    "genre": "俯视街机射击",
+    "targetPlayer": "喜欢短局弹幕、清晰波次、主动防御和高分复玩的玩家",
+    "playerFantasy": "选择自己的星环战机，在三波编队与守关者之间打穿一条跃迁航道",
+    "sessionLength": "2–6 分钟",
+    "coreLoop": [
+      "读取预警与编队",
+      "移动规避并持续射击",
+      "擦弹积蓄脉冲",
+      "在弹幕高压时释放脉冲",
+      "完成三波与守关目标"
+    ],
+    "winCondition": "完成三波敌机编队并击破精英或守关者",
+    "failCondition": "生命值降为零",
+    "progression": [
+      "二十关分为五章，每关三波，每章第四关出现分阶段守关者",
+      "侦察、摆翼、冲锋、炮台和护盾编队逐章组合",
+      "三种机体用射速、耐久、追随与脉冲形成不同打法"
+    ],
+    "difficultyCurve": [
+      "标准档：保持足够学习窗口，并在中段形成稳定压力",
+      "难度调整必须改变 space-shooter 的真实规则参数，而不是只改标签"
+    ],
+    "gameFeel": [
+      "玩家弹使用青白核心和短尾迹，敌弹使用暖色实心轮廓，二者不依赖颜色单独识别",
+      "网页端鼠标悬停跟随，手机端按住拖动，飞船平滑追随而不瞬移",
+      "顶部薄 HUD 只显示能量、波次、得分和 Boss 血量",
+      "击破、护盾破裂、脉冲清弹、受击和 Boss 转阶段都有不同的声音与画面反馈"
+    ],
+    "onboarding": [
+      "第一关先出现有完整入口预警的侦察机编队",
+      "默认持续射击，让玩家先专注移动",
+      "脉冲首次充满时只提示一次，并提供独立大触控目标"
+    ],
+    "accessibility": [
+      "鼠标、四向键和按压拖动均可移动，默认持续射击",
+      "Space、F 与触控按钮等价释放脉冲",
+      "弹体、敌机、预警和掉落使用形状、亮度、动势与颜色共同表达"
+    ],
+    "productionRisks": [
+      "弹体、敌机和粒子离屏后必须回收并限制上限",
+      "低帧率下高速冲锋机和弹体不能穿透",
+      "触控能力按钮不能被解释为移动指令"
+    ]
+  },
+  "levelProgression": {
+    "levelCount": 20,
+    "curve": "stepped",
+    "tierSize": 4,
+    "unlockMode": "sequential",
+    "persistProgress": true
+  },
+  "templateSource": {
+    "sourceName": "Radius Raid (js13kGames 2013)",
+    "sourceUrl": "https://github.com/jackrugile/radius-raid-js13k",
+    "license": "MIT",
+    "licenseUrl": "https://github.com/jackrugile/radius-raid-js13k/blob/master/LICENSE.md",
+    "integrationMode": "code-port",
+    "importedElements": [
+      "持续帧循环",
+      "敌机波次生成",
+      "弹体与目标碰撞",
+      "生命和击破数结束条件"
+    ],
+    "assetPolicy": "只移植玩法结构；没有复制上游图像和音效。",
+    "verifiedAt": "2026-08-26"
+  },
+  "generatedAt": "2026-08-31T08:38:39.375Z",
+  "assetManifest": "./assets/asset-manifest.json",
+  "artPipeline": {
+    "renderer": "role-split-bitmaps",
+    "sourceAtlas": "./assets/gameplay-atlas.png",
+    "gameplayBackground": "./assets/background.png",
+    "sprites": [
+      "./assets/sprites/sprite-01.png",
+      "./assets/sprites/sprite-02.png",
+      "./assets/sprites/sprite-03.png",
+      "./assets/sprites/sprite-04.png",
+      "./assets/sprites/sprite-05.png",
+      "./assets/sprites/sprite-06.png",
+      "./assets/sprites/sprite-07.png",
+      "./assets/sprites/sprite-08.png",
+      "./assets/sprites/sprite-09.png"
+    ],
+    "cover": "./assets/cover.png"
+  },
+  "userCustomization": [],
+  "puzzleRules": null
+}

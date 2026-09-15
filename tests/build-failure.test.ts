@@ -106,3 +106,19 @@ test("规划阶段的用户输入校验失败如实归为输入问题，不冒�
   assert.match(detail.nextStep, /没有调用模型/);
   assert.doesNotMatch(detail.message, /服务返回内容格式无效/);
 });
+
+test("代码修复预算用尽归为平台未解决，不要求用户修改技术产物", () => {
+  const detail = safeFailure("code", new Error("连续 6 轮生成代码均未通过产物契约验收，已达本次制作的修正上限，停止以免无限消耗：按钮被遮挡"));
+  assert.equal(detail.code, "AUTO_REPAIR_EXHAUSTED");
+  assert.equal(detail.category, "validation");
+  assert.equal(detail.retryable, false);
+  assert.match(detail.nextStep, /平台仍未解决/);
+  assert.doesNotMatch(detail.nextStep, /请.*修改|重新提交/);
+});
+
+test("制作阶段共享请求预算在规则审核前耗尽仍归为自动修复耗尽", () => {
+  const detail = safeFailure("review", new Error("本次构建的文字生成与审核已达到 1 次请求上限，已停止自动修复，不会继续消耗模型额度。"));
+  assert.equal(detail.code, "AUTO_REPAIR_EXHAUSTED");
+  assert.equal(detail.retryable, false);
+  assert.match(detail.nextStep, /平台仍未解决/);
+});

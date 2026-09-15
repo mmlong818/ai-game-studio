@@ -1,0 +1,7 @@
+Use case: stylized-concept
+Asset type: production 3×3 game sprite atlas for a 2048-style number-merging puzzle
+Primary request: exact row-major 3×3 atlas. Cell 1 is a recessed blue-black jade socket. Cells 2–7 are six identical-scale blank tiles: ivory ceramic, vermilion enamel, ochre ceramic, celadon glass, deep jade lacquer, blue-black with brass inlay. Cell 8 is a jade-and-brass merge pulse. Cell 9 is a woven-knot goal medallion.
+Style/medium: premium contemporary tactile 3D game assets with ceramic speckle, enamel, textile embossing and satin brass
+Composition/framing: exact equal 3×3 cells; one centered isolated asset per cell; front-facing; at least 12% clean margin; no overlap or crop
+Lighting/mood: neutral contained softbox light with crisp silhouette edges
+Constraints: source generated on uniform #FF00FF chroma background and locally converted to alpha; all tile faces blank; no text, numbers, labels, logos, watermark, candy, stars, toy studs or rainbow

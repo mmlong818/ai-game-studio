@@ -1,0 +1,98 @@
+{
+  "title": "软糖拼岛",
+  "template": "polyomino-fit",
+  "runtimeTarget": "web-2d",
+  "difficulty": "standard",
+  "visualStyle": "cute",
+  "aspectRatio": "9:16",
+  "cameraMode": "board",
+  "inputModes": [
+    "pointer",
+    "keyboard",
+    "touch-buttons"
+  ],
+  "designProfile": {
+    "genre": "多格拼块填形",
+    "targetPlayer": "喜欢短局空间推理、希望触控操作宽容明确的玩家",
+    "playerFantasy": "旋转并安放软糖岛块，让散落构件严丝合缝地填满目标轮廓",
+    "sessionLength": "2–8 分钟",
+    "coreLoop": [
+      "观察目标轮廓",
+      "选择并旋转拼块",
+      "尝试合法落点",
+      "填满全部目标格"
+    ],
+    "winCondition": "所有原创拼块无重叠地覆盖全部目标格",
+    "failCondition": "无强制失败；可以撤销、提示或重新开始",
+    "progression": [
+      "拼块数量与相似度增加",
+      "目标轮廓产生更多凹槽并收紧吸附距离"
+    ],
+    "difficultyCurve": [
+      "标准档：保持足够学习窗口，并在中段形成稳定压力",
+      "难度调整必须改变 polyomino-fit 的真实规则参数，而不是只改标签"
+    ],
+    "gameFeel": [
+      "下方候选拼块使用大尺寸卡槽，点击拼块本身即可选择并旋转",
+      "上方目标轮廓从首关起就具有凹凸转折和至少四块组合结构",
+      "落点合法性即时预览",
+      "吸附后播放短促弹性反馈",
+      "完成时由最后落点扩散庆祝效果"
+    ],
+    "onboarding": [
+      "第一局使用三块和宽松吸附",
+      "选中拼块后突出旋转与目标覆盖方式"
+    ],
+    "accessibility": [
+      "点击放置不要求精确拖拽",
+      "颜色之外同时使用纹理和轮廓区分拼块"
+    ],
+    "productionRisks": [
+      "所有关卡必须保留可验证解",
+      "旋转后触控锚点不能发生跳跃"
+    ]
+  },
+  "levelProgression": {
+    "levelCount": 20,
+    "curve": "stepped",
+    "tierSize": 4,
+    "unlockMode": "sequential",
+    "persistProgress": true
+  },
+  "templateSource": {
+    "sourceName": "mkgame-poly",
+    "sourceUrl": "https://github.com/MkThingsHQ/mkgame-poly",
+    "license": "MIT",
+    "licenseUrl": "https://github.com/MkThingsHQ/mkgame-poly/blob/main/LICENSE",
+    "integrationMode": "architecture-adaptation",
+    "importedElements": [
+      "占位放置状态机",
+      "旋转与合法落点判定",
+      "触控覆盖格放置",
+      "提示与完成判定"
+    ],
+    "assetPolicy": "未复制原 APK 的关卡、拼块表、已知解、图像、音乐或音效；规则、关卡和视听资产均由本平台重制。",
+    "verifiedAt": "2026-08-27"
+  },
+  "generatedAt": "2026-08-31T08:38:30.353Z",
+  "assetManifest": "./assets/asset-manifest.json",
+  "artPipeline": {
+    "renderer": "role-split-bitmaps",
+    "sourceAtlas": "./assets/gameplay-atlas.png",
+    "gameplayBackground": "./assets/background.png",
+    "sprites": [
+      "./assets/sprites/sprite-01.png",
+      "./assets/sprites/sprite-02.png",
+      "./assets/sprites/sprite-03.png",
+      "./assets/sprites/sprite-04.png",
+      "./assets/sprites/sprite-05.png",
+      "./assets/sprites/sprite-06.png",
+      "./assets/sprites/sprite-07.png",
+      "./assets/sprites/sprite-08.png",
+      "./assets/sprites/sprite-09.png"
+    ],
+    "cover": "./assets/cover.png"
+  },
+  "userCustomization": [],
+  "puzzleRules": null
+}

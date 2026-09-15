@@ -5,10 +5,21 @@ export class GenerationBudget {
     if (!Number.isInteger(limit) || limit < 1) throw new Error("生成请求额度必须是正整数。");
   }
   reserve() {
-    if (this.used >= this.limit) throw new Error(`本次代码生成已达到 ${this.limit} 次请求上限，已停止自动修复，不会继续消耗模型额度。`);
+    if (this.used >= this.limit) throw new Error(`本次构建的文字生成与审核已达到 ${this.limit} 次请求上限，已停止自动修复，不会继续消耗模型额度。`);
     return ++this.used;
   }
 }
 
+export type DeterministicArtifactRepairHint = {
+  kind: "add-game-board-marker";
+  elementId: string;
+  elementTag: string;
+};
+
 /** Only a completed artifact check can authorize another paid repair attempt. */
-export class ArtifactValidationFailure extends Error {}
+export class ArtifactValidationFailure extends Error {
+  constructor(message: string, readonly repairHint?: DeterministicArtifactRepairHint) {
+    super(message);
+    this.name = "ArtifactValidationFailure";
+  }
+}

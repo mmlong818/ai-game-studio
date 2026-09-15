@@ -29,6 +29,7 @@ import {
 } from './game-core.js?v=10';
 import { SOLO_LEVELS, createSoloProgress, collectSolo, soloOutcome, soloStars } from './solo-mode.js?v=8';
 import { installGameHelp } from './new-player-help.js?v=15';
+const I=window.StarI18n;
 
 const TILE_ART = {
   moon: './assets/tiles-v2/moon.png',
@@ -114,6 +115,7 @@ const soundToggle = document.querySelector('#sound-toggle');
 const soundToggleLabel = document.querySelector('#sound-toggle-label');
 const installButton = document.querySelector('#install-app');
 const resultModal = document.querySelector('#result-modal');
+let renderLocalizedResult = null;
 const fxLayer = document.querySelector('#fx-layer');
 const gameRoot = document.querySelector('.game');
 const setupModal = document.querySelector('#setup-modal');
@@ -203,22 +205,21 @@ function syncCampaignUi() {
   campaignSelect.replaceChildren(...activeLevels().map((item, index) => {
     const option = document.createElement('option');
     option.value = String(index);
-    option.textContent = `${String(item.number).padStart(2, '0')} · ${item.tierLabel} · ${item.name}`;
+    option.textContent = I.t('levelOption',{number:String(item.number).padStart(2,'0'),tier:I.tier(item.number),name:I.levelName(item.number)});
     option.disabled = index > campaignMaxUnlocked;
     option.selected = index === campaignLevelIndex;
     return option;
   }));
-  campaignProgress.textContent = `第 ${level.number} / 20 关 · ${level.tierLabel} · ${level.mission}`;
+  campaignProgress.textContent=I.t('levelProgress',{number:level.number,tier:I.tier(level.number),mission:I.mission(level.number)});
   document.body.dataset.campaignCurrentLevel = String(level.number);
   document.body.dataset.gameMode = gameMode;
   document.querySelector('#setup-description').textContent = isSolo()
-    ? '独自探索整张棋盘。交换相邻棋子凑成三个，收集目标即可过关；没有计时，也没有对手。'
-    : '你和露娜共用一张棋盘，各自控制一半区域。不同棋子承担攻击、恢复和充能职责。';
+    ? I.t('soloDesc') : I.t('duelDesc');
   document.querySelector('#solo-start-label').hidden = !isSolo();
   document.querySelector('#duel-start-label').hidden = isSolo();
-  document.querySelector('#result-eyebrow').textContent = isSolo() ? '星梦收藏册' : '对战成果';
-  if (isEndless()) document.querySelector('#setup-description').textContent = '没有目标、没有步数和时间限制。自由交换整张棋盘，享受消除与连锁；随时离开，下次继续。';
-  document.querySelector('#solo-start-label').textContent = isEndless() ? '进入无限休闲' : '开始收集星光';
+  document.querySelector('#result-eyebrow').textContent=isSolo()?I.t('collection'):I.t('result');
+  if(isEndless())document.querySelector('#setup-description').textContent=I.t('endlessDesc');
+  document.querySelector('#solo-start-label').textContent=isEndless()?I.t('enterEndless'):I.t('startSolo');
 }
 
 function setCampaignLevel(levelNumber, allowLocked = false) {
@@ -264,7 +265,7 @@ function clearDuelSession() {
 }
 
 function formatScore(score) {
-  return new Intl.NumberFormat('zh-CN').format(score);
+  return new Intl.NumberFormat(I.getLocale()).format(score);
 }
 
 function wait(duration) {
@@ -290,10 +291,11 @@ function renderBoard() {
       button.dataset.col = String(col);
       button.dataset.position = `${row}:${col}`;
       button.setAttribute('role', 'gridcell');
-      const specialLabel = { row: '横向星轨', column: '纵向星轨', nova: '新星', prism: '棱镜' }[special] ?? '';
-      button.setAttribute('aria-label', `${row < 4 ? 'AI 区' : '玩家区'}第 ${row + 1} 行第 ${col + 1} 列${blocker ? '封印障碍' : specialLabel || TILE_LABEL[type]}棋子`);
+      const specialLabel=special?I.t({row:'rowSpecial',column:'columnSpecial',nova:'nova',prism:'prism'}[special]):'';
+      const tileLabel=blocker?I.t('blocker'):specialLabel||I.t(type);
+      button.setAttribute('aria-label',I.t('zoneTile',{zone:row<4?I.t('aiZoneShort'):I.t('playerZone'),row:row+1,col:col+1,tile:tileLabel}));
       button.disabled = blocker || (!isSolo() && row < 4) || state.phase !== 'player';
-      if (isSolo()) button.setAttribute('aria-label', `第 ${row + 1} 行第 ${col + 1} 列${TILE_LABEL[type]}棋子`);
+      if(isSolo())button.setAttribute('aria-label',I.t('tile',{row:row+1,col:col+1,tile:I.t(type)}));
       const artType = type === 'prism' ? 'star' : blocker ? 'moon' : type;
       button.innerHTML = `<span class="tile__face"><img src="${TILE_ART[artType]}" alt="" width="512" height="512" draggable="false"></span>${blocker ? '<i class="tile__blocker-mark" aria-hidden="true">×</i>' : ''}${special ? `<i class="tile__special-mark" aria-hidden="true">${{ row: '↔', column: '↕', nova: '✦', prism: '◇' }[special]}</i>` : ''}`;
       if (state.selected && state.selected.row === row && state.selected.col === col) {
@@ -347,7 +349,7 @@ function renderStatus() {
     document.querySelector('#solo-targets').replaceChildren(...Object.entries(level.targets).map(([type, target]) => {
       const item = document.createElement('span');
       const count = Math.min(target, state.solo.collected[type] || 0);
-      item.textContent = `${TILE_LABEL[type]} ${count} / ${target}${count >= target ? ' ✓' : ''}`;
+      item.textContent=I.t('target',{tile:I.t(type),count,target})+(count>=target?' ✓':'');
       return item;
     }));
     hintButton.disabled = state.phase !== 'player';
@@ -358,26 +360,17 @@ function renderStatus() {
   roundCurrent.textContent = String(state.round);
 
   const messages = {
-    player: '轮到你行动',
-    ai: '露娜正在思考',
-    resolving: state.activeActor === 'player' ? '正在结算你的攻击' : '正在结算 AI 攻击',
-    ended: '本局对战结束'
+    player:I.t('yourTurn'),ai:I.t('aiThinking'),resolving:state.activeActor==='player'?I.t('playerResolve'):I.t('aiResolve'),ended:I.t('ended')
   };
   const stepMessages = {
-    'player-ready': '轮到你行动',
-    resolving: state.activeActor === 'player' ? '正在结算你的攻击' : '正在结算 AI 攻击',
-    cascade: '连消继续结算',
-    'ai-thinking': '露娜正在思考',
-    'ai-action': '露娜正在行动',
-    handoff: '回合交接中'
+    'player-ready':I.t('yourTurn'),resolving:state.activeActor==='player'?I.t('playerResolve'):I.t('aiResolve'),cascade:I.t('cascade'),'ai-thinking':I.t('aiThinking'),'ai-action':I.t('aiAction'),handoff:I.t('handoff')
   };
   turnText.textContent = stepMessages[duelStep] || messages[state.phase] || messages.player;
   turnBanner.dataset.phase = state.phase;
   thinkingDots.classList.toggle('is-active', state.phase === 'ai');
   hintButton.disabled = state.phase !== 'player';
   damageSummary.textContent = state.playerDamage + state.aiDamage
-    ? `你造成 ${formatScore(state.playerDamage)} · AI 造成 ${formatScore(state.aiDamage)}`
-    : '双方尚未出手';
+    ? I.t('damage',{player:formatScore(state.playerDamage),ai:formatScore(state.aiDamage)}):I.t('noAttack');
   renderResources();
 }
 
@@ -413,7 +406,7 @@ function renderLog() {
   for (const item of state.log.slice(0, 4)) {
     const li = document.createElement('li');
     li.className = `battle-log__item battle-log__item--${item.actor}`;
-    li.innerHTML = `<span>${item.icon}</span><p><strong>${item.title}</strong><small>${item.detail}</small></p>`;
+    li.innerHTML = `<span>${item.icon}</span><p><strong>${I.text(item.title)}</strong><small>${I.text(item.detail)}</small></p>`;
     battleLogList.append(li);
   }
 }
@@ -433,7 +426,7 @@ function addLog(actor, title, detail, icon = '✦') {
 
 function showToast(message, tone = 'info', duration = 1300) {
   window.clearTimeout(toastTimer);
-  boardToast.textContent = message;
+  boardToast.dataset.sourceText=message; boardToast.textContent=I.text(message);
   boardToast.dataset.tone = tone;
   boardToast.classList.add('is-visible');
   toastTimer = window.setTimeout(() => boardToast.classList.remove('is-visible'), duration);
@@ -880,22 +873,19 @@ function finishGame() {
     syncCampaignUi();
   }
   setSessionState(hasNextLevel ? 'stage-complete' : won ? 'won' : 'lost');
-  const title = document.querySelector('#result-title');
-  const detail = document.querySelector('#result-detail');
-  title.textContent = hasNextLevel ? `第 ${completedLevel.number} 关完成` : draw ? '星光平局' : playerWon ? '你赢下了星梦对决！' : '露娜守住了梦境';
-  detail.textContent = draw
-    ? hasNextLevel ? `下一关进入“${currentCampaignLevel().tierLabel}”，露娜的攻击压力会按阶段提升。` : '双方剩余生命完全相同，这是一场势均力敌的对局。'
-    : playerWon
-      ? hasNextLevel ? `你以 ${formatScore(state.playerScore - state.aiScore)} 点剩余生命优势通过本关。下一关：${currentCampaignLevel().rule}。` : `你以 ${formatScore(state.playerScore - state.aiScore)} 点剩余生命优势完成全部 20 关，并掌握了技能与特殊构形。`
-      : `露娜以 ${formatScore(state.aiScore - state.playerScore)} 点剩余生命优势获胜。${state.aiDamage > state.playerDamage ? '失败原因：AI 的有效消除与连消总伤害更高。' : '失败原因：关键回合未能把高价值走法转化为伤害。'} 下一局可降低 AI 难度或调整初始生命。`;
-  document.querySelector('#result-player-score').textContent = formatScore(state.playerScore);
-  document.querySelector('#result-ai-score').textContent = formatScore(state.aiScore);
+  renderLocalizedResult=()=>{
+    document.querySelector('#result-title').textContent=hasNextLevel?I.t('levelComplete',{number:completedLevel.number}):draw?I.t('draw'):playerWon?I.t('playerWin'):I.t('aiWin');
+    document.querySelector('#result-detail').textContent=draw?(hasNextLevel?I.t('nextTier',{tier:I.tier(currentCampaignLevel().number)}):I.t('drawDetail')):playerWon?(hasNextLevel?I.t('winNext',{lead:formatScore(state.playerScore-state.aiScore)}):I.t('winAll',{lead:formatScore(state.playerScore-state.aiScore)})):I.t('lose',{lead:formatScore(state.aiScore-state.playerScore)});
+    document.querySelector('#result-player-score').textContent = formatScore(state.playerScore);
+    document.querySelector('#result-ai-score').textContent = formatScore(state.aiScore);
+    document.querySelector('#play-again').textContent=hasNextLevel?I.t('enterLevel',{number:currentCampaignLevel().number}):won?I.t('replay'):I.t('retry');
+  };
+  renderLocalizedResult();
   resultModal.hidden = false;
   resultModal.classList.add('is-visible');
   gameRoot.inert = true;
   playTone(draw ? 'match' : playerWon ? 'win' : 'lose');
   const continueButton = document.querySelector('#play-again');
-  continueButton.textContent = hasNextLevel ? `进入第 ${currentCampaignLevel().number} 关` : won ? '重玩本关' : '再试本关';
   continueButton.focus();
 }
 
@@ -925,21 +915,22 @@ function finishSoloGame() {
     saveCampaignProgress();
   }
   setSessionState(next ? 'stage-complete' : won ? 'won' : 'lost');
-  document.querySelector('#result-title').textContent = won ? `${level.name} · 收集完成！` : '只差一点，再试一次';
-  document.querySelector('#result-detail').textContent = won
-    ? `剩余 ${state.solo.movesLeft} 步 · ${stars > previous ? `收藏新增 ${stars - previous} 颗星` : '已保留历史最佳'}。${next ? `下一站：${currentCampaignLevel().name}` : '20 站星梦旅程已全部点亮！'}`
-    : '本关步数已用完。先找目标颜色的三连；随时点击“给我提示”，不会扣步。';
   const medals = document.querySelector('#solo-result');
   medals.textContent = won ? '★'.repeat(stars) + '☆'.repeat(3 - stars) : '✧';
-  medals.setAttribute('aria-label', won ? `本关 ${stars} 星，历史最佳 ${Math.max(previous, stars)} 星` : '本关尚未完成');
-  document.querySelector('#solo-result-targets').textContent = Object.entries(level.targets)
-    .map(([type, target]) => `${TILE_LABEL[type]} ${Math.min(target, state.solo.collected[type] || 0)}/${target}`).join(' · ');
+  renderLocalizedResult=()=>{
+    document.querySelector('#result-title').textContent=won?I.t('collected',{name:I.levelName(level.number)}):I.t('almost');
+    document.querySelector('#result-detail').textContent=won?I.t('soloWin',{moves:state.solo.movesLeft,stars}):I.t('soloLose');
+    medals.setAttribute('aria-label',won?I.t('medal',{stars,best:Math.max(previous,stars)}):I.t('unfinished'));
+    document.querySelector('#solo-result-targets').textContent = Object.entries(level.targets)
+      .map(([type,target])=>I.t('target',{tile:I.t(type),count:Math.min(target,state.solo.collected[type]||0),target})).join(' · ');
+    document.querySelector('#play-again').textContent=next?I.t('nextStage'):won?I.t('replay'):I.t('retry');
+  };
+  renderLocalizedResult();
   resultModal.hidden = false;
   resultModal.classList.add('is-visible');
   gameRoot.inert = true;
   playTone(won ? 'win' : 'lose');
   const button = document.querySelector('#play-again');
-  button.textContent = next ? '前往下一站' : won ? '重玩本关' : '再试本关';
   button.focus();
 }
 
@@ -1169,9 +1160,9 @@ for (const button of skillButtons) button.addEventListener('click', () => useSki
 soundToggle.addEventListener('click', () => {
   soundEnabled = !soundEnabled;
   soundToggle.classList.toggle('is-muted', !soundEnabled);
-  soundToggle.setAttribute('aria-label', soundEnabled ? '关闭音效' : '开启音效');
+  soundToggle.setAttribute('aria-label',soundEnabled?I.text('关闭音效'):I.text('开启音效'));
   soundToggle.setAttribute('aria-pressed', String(soundEnabled));
-  soundToggleLabel.textContent = soundEnabled ? '声音开启' : '声音关闭';
+  soundToggleLabel.textContent=soundEnabled?I.t('soundOn'):I.t('soundOff');
   if (soundEnabled) playTone('select');
 });
 
@@ -1302,5 +1293,6 @@ window.__GAME_DEBUG__ = {
 };
 loadCampaignProgress();
 gameHelp = installGameHelp(() => ({ mode: gameMode, level: currentCampaignLevel() }));
+window.addEventListener('forge:locale-change',()=>{syncCampaignUi();if(state)render();if(!resultModal.hidden)renderLocalizedResult?.();if(boardToast.classList.contains('is-visible')&&boardToast.dataset.sourceText)boardToast.textContent=I.text(boardToast.dataset.sourceText);soundToggleLabel.textContent=soundEnabled?I.t('soundOn'):I.t('soundOff');});
 syncCampaignUi();
 openSetup();

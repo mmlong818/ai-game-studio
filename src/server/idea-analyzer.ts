@@ -11,6 +11,7 @@ import {
 import { mechanicVocabularyLines } from "../shared/design-knowledge.js";
 import { type OpenAISettings } from "./openai-settings.js";
 import { cancellationSignal, withTimeoutSignal } from "./cancellation.js";
+import { isPreDispatchNetworkFailure, waitForTransientRetry } from "./transient-retry.js";
 
 const DEFAULT_ENDPOINT = "https://api.openai.com/v1/chat/completions";
 const DEFAULT_TIMEOUT_MS = 20_000;
@@ -135,6 +136,7 @@ export class IdeaAnalyzer {
           const error = new Error(quota ? "文本模型额度不足，未自动重试。" : `模型接口返回 ${response.status}。`);
           if (retryable && attempt < MAX_ATTEMPTS) {
             lastError = error;
+            await waitForTransientRetry(attempt, cancellationSignal(signal), response);
             continue;
           }
           throw error;
@@ -145,11 +147,11 @@ export class IdeaAnalyzer {
         const annotated = error instanceof Error ? Object.assign(error, { failureMeta }) : error;
         if (error instanceof Error && error.name === "AbortError") {
           lastError = Object.assign(new Error(`模型接口在 ${this.timeoutMs}ms 内没有响应。`), { failureMeta });
-          if (attempt < MAX_ATTEMPTS) continue;
           throw lastError;
         }
-        if (attempt < MAX_ATTEMPTS && annotated instanceof TypeError) {
+        if (attempt < MAX_ATTEMPTS && isPreDispatchNetworkFailure(annotated)) {
           lastError = annotated;
+          await waitForTransientRetry(attempt, cancellationSignal(signal));
           continue;
         }
         throw annotated;

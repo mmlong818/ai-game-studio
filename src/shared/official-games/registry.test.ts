@@ -33,6 +33,7 @@ const LOCKED_LOBBY_ORDER = [
   "tetris",
   "island-kart",
   "meadow-railway",
+  "endless-match3",
 ];
 
 describe("官方游戏登记表守卫", () => {

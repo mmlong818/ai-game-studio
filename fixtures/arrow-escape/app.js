@@ -73,6 +73,23 @@ window.__FORGE_SPRITE_SPECS__ = Object.freeze({});
 "use strict";
 var qs=new URLSearchParams(location.search);
 var PROBE=qs.has("probe");
+var locale=/^(zh-CN|zh-TW|en|ja)$/.test(qs.get("lang")||"")?qs.get("lang"):"zh-CN";
+var TEXT={
+  "zh-CN":{
+    title:"箭头逃脱",rule:"让每支箭头依次射出棋盘。点一支箭头：它头部正前方一路到边界都空着就沿自己的折线滑出去；被别的箭头挡住会闪红、变深并扣掉一颗心。拖动可平移，双指可缩放；键盘方向键移动光标、回车发射，＋/－ 调整缩放。",level:"第 {n} 关",lives:"生命",streak:"连胜×{n}",restart:"重来",restartLevel:"重开本关",settings:"设置",board:"箭头棋盘",start:"开始 {level}",choose:"选择关卡（共 20 关）",close:"关闭",sfx:"音效",music:"音乐",vibration:"震动",theme:"主题：{value}",light:"明亮",dark:"夜间",bold:"粗线条",clearProgress:"清空进度",resume:"继续游戏",saveInfo:"最高抵达：{best} ｜ 上次：{last} ｜ 最佳连胜：{streak}",winTitles:["关卡完成！","势头正好！","相当漂亮！","势不可挡！","传奇表现！"],legendary:"传奇表现！×{n}",reached:"抵达 {level}！",newRecord:"新纪录",allComplete:"全部 20 关通过！",bestSummary:"最佳连胜 {streak} · 本关误判 {misses} 次",replay20:"再玩一次第 20 关",home:"返回首页",levelComplete:"{level} 完成",completeSummary:"连胜 {streak} · 剩余生命 {lives}{time}",remainingTime:" · 剩余 {seconds} 秒",next:"下一关",replay:"重玩本关",timeUp:"时间到",livesOut:"生命耗尽",interrupted:"本关中断",timeUpSub:"倒计时归零，本关中断。",livesSub:"四颗心都用完了：被挡的箭头需要先让前面的箭头离场。",reason:"原因：{reason}",addTime:"补时 +120 秒",addHeart:"补 1 颗心继续",retry:"重试本关",clearTitle:"清空进度？",clearSub:"将清除最高关、上次所在关与最佳连胜记录。",confirmClear:"确认清空",cancel:"取消"
+  },
+  "zh-TW":{
+    title:"箭頭逃脫",rule:"讓每支箭頭依次射出棋盤。點選一支箭頭：如果箭頭尖端前方到邊界一路暢通，它就會沿自身折線滑出；被其他箭頭擋住時會閃紅、變深並扣掉一顆心。拖曳可平移，雙指可縮放；鍵盤方向鍵移動游標、Enter 發射，＋/－ 調整縮放。",level:"第 {n} 關",lives:"生命",streak:"連勝×{n}",restart:"重來",restartLevel:"重開本關",settings:"設定",board:"箭頭棋盤",start:"開始 {level}",choose:"選擇關卡（共 20 關）",close:"關閉",sfx:"音效",music:"音樂",vibration:"震動",theme:"主題：{value}",light:"明亮",dark:"夜間",bold:"粗線條",clearProgress:"清除進度",resume:"繼續遊戲",saveInfo:"最高抵達：{best} ｜ 上次：{last} ｜ 最佳連勝：{streak}",winTitles:["關卡完成！","氣勢正好！","相當漂亮！","勢不可擋！","傳奇表現！"],legendary:"傳奇表現！×{n}",reached:"抵達 {level}！",newRecord:"新紀錄",allComplete:"全部 20 關通過！",bestSummary:"最佳連勝 {streak} · 本關誤判 {misses} 次",replay20:"再玩一次第 20 關",home:"返回首頁",levelComplete:"{level} 完成",completeSummary:"連勝 {streak} · 剩餘生命 {lives}{time}",remainingTime:" · 剩餘 {seconds} 秒",next:"下一關",replay:"重玩本關",timeUp:"時間到",livesOut:"生命耗盡",interrupted:"本關中斷",timeUpSub:"倒數歸零，本關中斷。",livesSub:"四顆心都用完了：被擋住的箭頭需要先讓前方箭頭離場。",reason:"原因：{reason}",addTime:"加時 +120 秒",addHeart:"補 1 顆心繼續",retry:"重試本關",clearTitle:"清除進度？",clearSub:"將清除最高關、上次所在關與最佳連勝紀錄。",confirmClear:"確認清除",cancel:"取消"
+  },
+  en:{
+    title:"Arrow Escape",rule:"Clear every arrow from the board. Select an arrow: if every space ahead of its tip to the edge is clear, it slides out along its path. A blocked arrow flashes red, darkens, and costs one heart. Drag to pan and pinch to zoom; use the arrow keys to move, Enter to fire, and +/− to zoom.",level:"Level {n}",lives:"Lives",streak:"Streak ×{n}",restart:"Restart",restartLevel:"Restart level",settings:"Settings",board:"Arrow board",start:"Start {level}",choose:"Choose a level (20 total)",close:"Close",sfx:"Sound effects",music:"Music",vibration:"Vibration",theme:"Theme: {value}",light:"Light",dark:"Dark",bold:"Bold lines",clearProgress:"Clear progress",resume:"Resume game",saveInfo:"Highest: {best} | Last: {last} | Best streak: {streak}",winTitles:["Level complete!","Great momentum!","Beautiful!","Unstoppable!","Legendary!"],legendary:"Legendary! ×{n}",reached:"Reached {level}!",newRecord:"New record",allComplete:"All 20 levels complete!",bestSummary:"Best streak {streak} · {misses} blocked attempts",replay20:"Play level 20 again",home:"Back to home",levelComplete:"{level} complete",completeSummary:"Streak {streak} · {lives} lives left{time}",remainingTime:" · {seconds}s left",next:"Next level",replay:"Replay level",timeUp:"Time up",livesOut:"No lives left",interrupted:"Level interrupted",timeUpSub:"The timer reached zero. This level has ended.",livesSub:"All four hearts are gone. Clear the arrows in front before firing a blocked arrow.",reason:"Reason: {reason}",addTime:"Add 120 seconds",addHeart:"Add 1 heart and continue",retry:"Retry level",clearTitle:"Clear progress?",clearSub:"This removes your highest level, last level, and best streak.",confirmClear:"Clear progress",cancel:"Cancel"
+  },
+  ja:{
+    title:"矢印脱出",rule:"すべての矢印を盤面の外へ出しましょう。矢印を選ぶと、先端から外周まで空いている場合は折れ線に沿って脱出します。前をふさがれていると赤く点滅して暗くなり、ハートを1つ失います。ドラッグで移動、ピンチで拡大縮小できます。キーボードでは方向キーで移動、Enterで発射、＋/－で拡大縮小します。",level:"レベル {n}",lives:"ライフ",streak:"連勝×{n}",restart:"やり直す",restartLevel:"このレベルをやり直す",settings:"設定",board:"矢印ボード",start:"{level} を開始",choose:"レベルを選択（全20）",close:"閉じる",sfx:"効果音",music:"音楽",vibration:"振動",theme:"テーマ：{value}",light:"ライト",dark:"ダーク",bold:"太い線",clearProgress:"進行状況を消去",resume:"ゲームを続ける",saveInfo:"最高：{best} ｜ 前回：{last} ｜ 最高連勝：{streak}",winTitles:["レベルクリア！","好調！","お見事！","止まらない！","伝説級！"],legendary:"伝説級！×{n}",reached:"{level} に到達！",newRecord:"新記録",allComplete:"全20レベルクリア！",bestSummary:"最高連勝 {streak} · このレベルの誤射 {misses} 回",replay20:"レベル20をもう一度",home:"ホームへ戻る",levelComplete:"{level} クリア",completeSummary:"連勝 {streak} · 残りライフ {lives}{time}",remainingTime:" · 残り {seconds} 秒",next:"次のレベル",replay:"このレベルをもう一度",timeUp:"時間切れ",livesOut:"ライフ切れ",interrupted:"レベル中断",timeUpSub:"カウントダウンが0になり、レベルが終了しました。",livesSub:"ハートを4つ使い切りました。前をふさぐ矢印を先に外へ出しましょう。",reason:"理由：{reason}",addTime:"120秒追加",addHeart:"ハートを1つ追加して続ける",retry:"このレベルを再挑戦",clearTitle:"進行状況を消去しますか？",clearSub:"最高レベル、前回のレベル、最高連勝を消去します。",confirmClear:"消去する",cancel:"キャンセル"
+  }
+};
+document.documentElement.lang=locale;
+function tr(key,values){var value=TEXT[locale][key];if(!values||typeof value!=="string")return value;return value.replace(/\{(\w+)\}/g,function(_,name){return values[name]===undefined?"":String(values[name]);});}
 var store=(function(){var s=window.safeStorage;if(s&&typeof s.getItem==="function")return s;var m={};return{getItem:function(k){return k in m?m[k]:null},setItem:function(k,v){m[k]=String(v)},removeItem:function(k){delete m[k]}};})();
 
 /* ============ 关卡表（前 20 关，按原作内置关卡表规律）
@@ -760,7 +777,7 @@ function drawConf(){
 
 /* ============ HUD ============ */
 function renderHud(){
-  elLvl.textContent="第 "+G.level+" 关";
+  elLvl.textContent=tr("level",{n:G.level});
   if(G.timeLimit<=0){elTime.textContent="—";elTime.classList.remove("warn");}
   else{
     var s=Math.max(0,Math.ceil(G.timeLeft));
@@ -770,7 +787,7 @@ function renderHud(){
   var html="";
   for(var i=0;i<4;i++)html+='<span class="'+(i<G.lives?"":"off")+'">'+(i<G.lives?"♥":"♡")+"</span>";
   elHearts.innerHTML=html;
-  if(G.streak>=2){elStreak.classList.remove("hide");elStreak.textContent="连胜×"+G.streak;}
+  if(G.streak>=2){elStreak.classList.remove("hide");elStreak.textContent=tr("streak",{n:G.streak});}
   else elStreak.classList.add("hide");
 }
 function shakeStreak(){
@@ -878,40 +895,46 @@ function win(){
   var pats=[[0,90],[0,55,45,80],[0,55,45,55,45,110],[0,60,40,60,40,60,40,130],[0,70,40,70,40,70,40,70,40,160]];
   vib(pats[tier]);
   confetti(tier);
-  var titles=["关卡完成！","势头正好！","相当漂亮！","势不可挡！","传奇表现！"];
+  var titles=tr("winTitles");
   var title=titles[tier];
-  if(tier===4&&G.streak>=20&&G.streak%5===0)title="传奇表现！×"+G.streak;
-  if(milestone)title="抵达第 "+G.level+" 关！";
+  if(tier===4&&G.streak>=20&&G.streak%5===0)title=tr("legendary",{n:G.streak});
+  if(milestone)title=tr("reached",{level:tr("level",{n:G.level})});
   if(tier>=1||milestone){
     elBanner.querySelector("b").textContent=title;
-    elBanner.querySelector("i").textContent=(newBest&&!milestone)?"新纪录":"";
+    elBanner.querySelector("i").textContent=(newBest&&!milestone)?tr("newRecord"):"";
     elBanner.classList.toggle("gold",milestone);
     elBanner.style.display="block";
   }
   setTimeout(function(){
     if(body.dataset.gameState!=="won")return;
     elBanner.style.display="none";
-    if(G.level>=20){
-      showOverlay("全部 20 关通过！","最佳连胜 "+save.bestStreak+" · 本关误判 "+(4-G.lives)+" 次",
-        [{t:"再玩一次第 20 关",f:function(){beginLevel(20,true);}},{t:"返回首页",f:goHome}]);
-    }else{
-      showOverlay("第 "+G.level+" 关完成","连胜 "+G.streak+" · 剩余生命 "+G.lives+(G.timeLimit>0?(" · 剩余 "+Math.ceil(G.timeLeft)+" 秒"):""),
-        [{t:"下一关",f:function(){beginLevel(G.level+1,false);}},{t:"重玩本关",f:function(){beginLevel(G.level,true);}},{t:"返回首页",f:goHome}]);
-    }
+    showWinOverlay();
   },700);
+}
+function showWinOverlay(){
+  if(G.level>=20){
+    showOverlay(tr("allComplete"),tr("bestSummary",{streak:save.bestStreak,misses:4-G.lives}),
+      [{t:tr("replay20"),f:function(){beginLevel(20,true);}},{t:tr("home"),f:goHome}],showWinOverlay);
+  }else{
+    showOverlay(tr("levelComplete",{level:tr("level",{n:G.level})}),tr("completeSummary",{streak:G.streak,lives:G.lives,time:G.timeLimit>0?tr("remainingTime",{seconds:Math.ceil(G.timeLeft)}):""}),
+      [{t:tr("next"),f:function(){beginLevel(G.level+1,false);}},{t:tr("replay"),f:function(){beginLevel(G.level,true);}},{t:tr("home"),f:goHome}],showWinOverlay);
+  }
 }
 function lose(reason){
   G.failureReason=reason;
   setState("lost");renderHud();
   vib([0,90,70,140]);
-  var title=reason==="time-up"?"时间到":reason==="lives-exhausted"?"生命耗尽":"本关中断";
-  var sub=reason==="time-up"?"倒计时归零，本关中断。":reason==="lives-exhausted"?"四颗心都用完了：被挡的箭头需要先让前面的箭头离场。":"原因："+reason;
+  showLoseOverlay(reason);
+}
+function showLoseOverlay(reason){
+  var title=reason==="time-up"?tr("timeUp"):reason==="lives-exhausted"?tr("livesOut"):tr("interrupted");
+  var sub=reason==="time-up"?tr("timeUpSub"):reason==="lives-exhausted"?tr("livesSub"):tr("reason",{reason:reason});
   var btns=[];
-  if(reason==="time-up")btns.push({t:"补时 +120 秒",f:function(){G.timeLeft=120;hideOverlay();setState("playing");renderHud();}});
-  else btns.push({t:"补 1 颗心继续",f:function(){G.lives=1;G.lastBlocked=-1;hideOverlay();setState("playing");renderHud();}});
-  btns.push({t:"重试本关",f:retryLevel});
-  btns.push({t:"返回首页",f:goHome});
-  showOverlay(title,sub,btns);
+  if(reason==="time-up")btns.push({t:tr("addTime"),f:function(){G.timeLeft=120;hideOverlay();setState("playing");renderHud();}});
+  else btns.push({t:tr("addHeart"),f:function(){G.lives=1;G.lastBlocked=-1;hideOverlay();setState("playing");renderHud();}});
+  btns.push({t:tr("retry"),f:retryLevel});
+  btns.push({t:tr("home"),f:goHome});
+  showOverlay(title,sub,btns,function(){showLoseOverlay(reason);});
 }
 function goHome(){
   hideOverlay();elBanner.style.display="none";
@@ -921,7 +944,9 @@ function goHome(){
 }
 
 /* ============ 浮层 ============ */
-function showOverlay(title,sub,buttons){
+var overlayLocaleRefresh=null;
+function showOverlay(title,sub,buttons,refresh){
+  overlayLocaleRefresh=refresh||null;
   var h='<h3>'+title+"</h3><p>"+sub+"</p>";
   elOvPanel.innerHTML=h;
   buttons.forEach(function(b){
@@ -932,7 +957,7 @@ function showOverlay(title,sub,buttons){
   });
   elOverlay.style.display="flex";
 }
-function hideOverlay(){elOverlay.style.display="none";elOvPanel.innerHTML="";}
+function hideOverlay(){elOverlay.style.display="none";elOvPanel.innerHTML="";overlayLocaleRefresh=null;}
 
 /* ============ 输入 ============ */
 var pointers={},panStart=null,pinchStart=null,downInfo=null;
@@ -995,9 +1020,6 @@ cv.addEventListener("wheel",function(e){
   zoomAt(e.clientX-rect.left,e.clientY-rect.top,e.deltaY<0?1.12:0.89);
 },{passive:false});
 
-document.getElementById("zin").addEventListener("click",function(){zoomAt(stage.clientWidth/2,stage.clientHeight/2,1.25);});
-document.getElementById("zout").addEventListener("click",function(){zoomAt(stage.clientWidth/2,stage.clientHeight/2,0.8);});
-
 window.addEventListener("keydown",function(e){
   if(e.key==="Escape"){toggleSettings();e.preventDefault();return;}
   if(body.dataset.gameState!=="playing"||paused())return;
@@ -1024,17 +1046,17 @@ function ensureAudio(){ac();if(settings.music)startBgm();}
 /* ============ 首页 / 设置 ============ */
 var elLevels=document.getElementById("levels"),elStart=document.getElementById("start"),elSaveInfo=document.getElementById("saveinfo");
 function syncHome(){
-  elStart.textContent="开始 第 "+selLevel+" 关";
+  elStart.textContent=tr("start",{level:tr("level",{n:selLevel})});
   var kids=elLevels.children;
-  for(var i=0;i<kids.length;i++)kids[i].setAttribute("aria-pressed",(i+1===selLevel)?"true":"false");
-  elSaveInfo.textContent="最高抵达：第 "+save.bestLevel+" 关 ｜ 上次：第 "+save.lastLevel+" 关 ｜ 最佳连胜："+save.bestStreak;
+  for(var i=0;i<kids.length;i++){kids[i].setAttribute("aria-pressed",(i+1===selLevel)?"true":"false");kids[i].setAttribute("aria-label",tr("level",{n:i+1}));}
+  elSaveInfo.textContent=tr("saveInfo",{best:tr("level",{n:save.bestLevel}),last:tr("level",{n:save.lastLevel}),streak:save.bestStreak});
 }
 (function buildLevelButtons(){
   for(var i=1;i<=20;i++){
     (function(n){
       var b=document.createElement("button");
       b.className="sk";b.type="button";b.textContent=n;
-      b.setAttribute("aria-label","第 "+n+" 关");
+      b.setAttribute("aria-label",tr("level",{n:n}));
       b.addEventListener("click",function(){selLevel=n;syncHome();});
       elLevels.appendChild(b);
     })(i);
@@ -1056,7 +1078,7 @@ function syncSettings(){
   document.getElementById("t-mus").setAttribute("aria-pressed",settings.music?"true":"false");
   document.getElementById("t-vib").setAttribute("aria-pressed",settings.vib?"true":"false");
   document.getElementById("t-wid").setAttribute("aria-pressed",settings.bold?"true":"false");
-  document.getElementById("t-thm").textContent="主题："+(settings.dark?"夜间":"明亮");
+  document.getElementById("t-thm").textContent=tr("theme",{value:tr(settings.dark?"dark":"light")});
 }
 document.getElementById("t-sfx").addEventListener("click",function(){settings.sfx=!settings.sfx;writeSettings();syncSettings();});
 document.getElementById("t-mus").addEventListener("click",function(){settings.music=!settings.music;writeSettings();syncSettings();if(settings.music)startBgm();else stopBgm();});
@@ -1067,9 +1089,37 @@ document.getElementById("t-thm").addEventListener("click",function(){
 document.getElementById("s-retry").addEventListener("click",function(){closeSettings();beginLevel(G.level,true);});
 document.getElementById("s-wipe").addEventListener("click",function(){
   closeSettings();
-  showOverlay("清空进度？","将清除最高关、上次所在关与最佳连胜记录。",
-   [{t:"确认清空",f:function(){save={bestLevel:1,lastLevel:1,bestStreak:0};G.streak=0;writeSave();hideOverlay();syncHome();renderHud();}},
-    {t:"取消",f:function(){hideOverlay();}}]);
+  showClearProgressOverlay();
+});
+function showClearProgressOverlay(){
+  showOverlay(tr("clearTitle"),tr("clearSub"),
+   [{t:tr("confirmClear"),f:function(){save={bestLevel:1,lastLevel:1,bestStreak:0};G.streak=0;writeSave();hideOverlay();syncHome();renderHud();}},
+    {t:tr("cancel"),f:function(){hideOverlay();}}],showClearProgressOverlay);
+}
+
+function applyLocale(){
+  document.documentElement.lang=locale;
+  document.title=tr("title");
+  document.querySelector("#home h1").textContent=tr("title");
+  document.querySelector("#home .rule").textContent=tr("rule");
+  document.querySelector("#home h2").textContent=tr("choose");
+  document.querySelector("#settings .head h3").textContent=tr("settings");
+  var values={restart:tr("restart"),gear:tr("settings"),"t-sfx":tr("sfx"),"t-mus":tr("music"),"t-vib":tr("vibration"),"t-wid":tr("bold"),"s-retry":tr("restartLevel"),"s-wipe":tr("clearProgress"),"s-resume":tr("resume")};
+  Object.keys(values).forEach(function(id){document.getElementById(id).textContent=values[id];});
+  document.getElementById("restart").title=tr("restartLevel");
+  document.getElementById("gear").title=tr("settings");
+  document.getElementById("sclose").setAttribute("aria-label",tr("close"));
+  elHearts.setAttribute("aria-label",tr("lives"));
+  cv.setAttribute("aria-label",tr("board"));
+  syncSettings();syncHome();renderHud();
+  if(elOverlay.style.display==="flex"&&overlayLocaleRefresh)overlayLocaleRefresh();
+}
+var trustedParentOrigin=null;
+try{if(document.referrer)trustedParentOrigin=new URL(document.referrer).origin;}catch(e){trustedParentOrigin=null;}
+window.addEventListener("message",function(event){
+  var data=event.data;
+  if(event.source!==window.parent||!trustedParentOrigin||event.origin!==trustedParentOrigin||!data||data.type!=="forge:locale"||!TEXT[data.locale]||data.locale===locale)return;
+  locale=data.locale;applyLocale();
 });
 
 /* ============ 主循环 ============ */
@@ -1100,7 +1150,7 @@ body.dataset.theme=settings.dark?"dark":"light";
 selLevel=Math.max(1,Math.min(20,save.lastLevel||1));
 var qlv=parseInt(qs.get("level"),10);
 if(qlv)selLevel=Math.max(1,Math.min(20,qlv));
-syncSettings();syncHome();renderHud();
+applyLocale();
 window.addEventListener("resize",resize);
 resize();
 setState("idle");

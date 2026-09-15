@@ -4,6 +4,22 @@ import { randomUUID } from "node:crypto";
 import { openTestDatabase } from "../src/server/database";
 import { ProductionJobs } from "../src/server/production-jobs";
 import { projectInputSchema } from "../src/shared/contracts";
+import type { Build } from "../src/shared/contracts";
+
+const terminalBuild = (projectId: string, id: string, code = "VALIDATION"): Build => ({
+  id, projectId, status: "failed", runtimeTarget: "web-2d", createdAt: new Date().toISOString(), startedAt: null, completedAt: new Date().toISOString(), versionId: null, previewUrl: null,
+  error: "平台验收失败", failureDetails: [{ stage: "validation", category: "validation", code, message: "平台验收失败", nextStep: "保留检查点", retryable: false }],
+  revisionScope: null, revisionPlan: null, assetClipId: null, steps: [],
+});
+
+async function waitForJob(jobs: ProductionJobs, id: string, status: string) {
+  for (let n = 0; n < 200; n++) {
+    const job = await jobs.get(id);
+    if (job?.status === status) return job;
+    await new Promise(resolve => setTimeout(resolve, 2));
+  }
+  throw new Error(`制作任务未进入 ${status}`);
+}
 
 test("新制作任务在排队和模型调用前拒绝缺失或自动画幅", async () => {
   const db = await openTestDatabase();
@@ -167,6 +183,19 @@ test("创建中取消会触发 AbortSignal，且取消后不进入下一阶段",
   } finally { await db.close(); }
 });
 
+test("未声明幂等安全的网络失败不会盲目重跑整个创建流程", async () => {
+  const db = await openTestDatabase();
+  let attempts = 0;
+  const jobs = new ProductionJobs(db, async () => { attempts++; throw new Error("HTTP 503"); });
+  try {
+    await jobs.initialize();
+    const receipt = await jobs.submit({ requestId: randomUUID(), idea: "在夜空中连接星座并完成图案的小游戏", aspectRatio: "16:9" });
+    for (let n = 0; n < 100 && (await jobs.get(receipt.id))?.status !== "failed"; n++) await new Promise(resolve => setTimeout(resolve, 2));
+    assert.equal(attempts, 1);
+    assert.equal((await jobs.get(receipt.id))?.failureDetails?.[0]?.code, "HTTP_503");
+  } finally { await db.close(); }
+});
+
 test("删除只接受终态任务，并只删除指定任务及其事件", async () => {
   const db = await openTestDatabase();
   const jobs = new ProductionJobs(db, async () => {});
@@ -184,5 +213,74 @@ test("删除只接受终态任务，并只删除指定任务及其事件", async
     assert.ok(await jobs.get(otherId));
     assert.equal((await db.query("SELECT id FROM production_job_events WHERE job_id = $1", [targetId])).rowCount, 0);
     assert.equal((await db.query("SELECT id FROM production_job_events WHERE job_id = $1", [otherId])).rowCount, 1);
+  } finally { await db.close(); }
+});
+
+test("已有零模型检查点时同一 production 自动复验一次，并发观察不会重复创建", async () => {
+  const db = await openTestDatabase();
+  const id = randomUUID();
+  let current = terminalBuild(id, randomUUID());
+  let starts = 0;
+  const jobs = new ProductionJobs(db, async () => {}, {
+    latestBuild: async () => current,
+    recoveryCheckpoint: async build => ({ sourceBuildId: build.id, sourceSha256: "a".repeat(64) }),
+    startBuild: async projectId => {
+      starts++;
+      current = { ...terminalBuild(projectId, randomUUID()), status: "succeeded", failureDetails: null, error: null };
+      return current;
+    },
+    pollMs: 1,
+  });
+  try {
+    await jobs.initialize();
+    await jobs.submit({ requestId: id, idea: "自由排列宝石并持续消除的小游戏", aspectRatio: "9:16" });
+    await waitForJob(jobs, id, "succeeded");
+    await Promise.all([jobs.settle(id, "failed"), jobs.settle(id, "failed"), jobs.get(id)]);
+    assert.equal(starts, 1);
+    assert.equal((await jobs.get(id))?.autoRecovery, "started");
+  } finally { await db.close(); }
+});
+
+test("没有零模型审核缓存或预算已经用尽时保持失败，不自动开新构建", async () => {
+  const db = await openTestDatabase();
+  const id = randomUUID();
+  let starts = 0;
+  const jobs = new ProductionJobs(db, async () => {}, {
+    latestBuild: async () => terminalBuild(id, randomUUID(), "AUTO_REPAIR_EXHAUSTED"),
+    recoveryCheckpoint: async () => null,
+    startBuild: async () => { starts++; throw new Error("不应启动"); },
+    pollMs: 1,
+  });
+  try {
+    await jobs.initialize();
+    await jobs.submit({ requestId: id, idea: "无终局且可以持续移动拼块的轻松棋盘游戏", aspectRatio: "1:1" });
+    await waitForJob(jobs, id, "failed");
+    assert.equal(starts, 0);
+    assert.equal((await jobs.get(id))?.autoRecovery, null);
+  } finally { await db.close(); }
+});
+
+test("自动复验认领后取消会中止新构建，且不会在取消后再次恢复", async () => {
+  const db = await openTestDatabase();
+  const id = randomUUID();
+  let starts = 0;
+  const jobs = new ProductionJobs(db, async () => {}, {
+    latestBuild: async () => terminalBuild(id, randomUUID()),
+    recoveryCheckpoint: async build => ({ sourceBuildId: build.id, sourceSha256: "a".repeat(64) }),
+    startBuild: async (_projectId, _checkpoint, signal) => {
+      starts++;
+      await new Promise<void>((_resolve, reject) => signal.addEventListener("abort", () => reject(signal.reason), { once: true }));
+      throw new Error("unreachable");
+    },
+    pollMs: 1,
+  });
+  try {
+    await jobs.initialize();
+    await jobs.submit({ requestId: id, idea: "持续旋转拼块的无终局游戏", aspectRatio: "9:16" });
+    await waitForJob(jobs, id, "recovering");
+    assert.equal((await jobs.cancel(id)).status, "cancelled");
+    await new Promise(resolve => setTimeout(resolve, 10));
+    assert.equal(starts, 1);
+    assert.equal((await jobs.get(id))?.status, "cancelled");
   } finally { await db.close(); }
 });

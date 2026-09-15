@@ -12,6 +12,7 @@ import type { GameTemplate, PlayActivity, ProjectSummary } from "../shared/contr
 import { getPlayActivities, getPublishedGames } from "./api";
 import { SiteHeader } from "./SiteHeader";
 import { usePreferences, type MessageKey } from "./preferences";
+import { localizeOfficialGame } from "./official-game-copy";
 
 const templateNameKeys: Record<GameTemplate, MessageKey> = {
   "signal-hunt": "library.template.signal-hunt",
@@ -30,7 +31,8 @@ const templateNameKeys: Record<GameTemplate, MessageKey> = {
 };
 
 export function GameArtwork({ game, featured }: { game: ProjectSummary; featured: boolean }) {
-  const { t } = usePreferences();
+  const { locale, t } = usePreferences();
+  game = localizeOfficialGame(game, locale);
   const [failed, setFailed] = useState(false);
   const artworkUrl = game.coverUrl ?? `/media/template-art/${game.template}/cover.png`;
   return (
@@ -43,7 +45,7 @@ export function GameArtwork({ game, featured }: { game: ProjectSummary; featured
         height={1152}
         loading={featured ? "eager" : "lazy"}
         fetchPriority={featured ? "high" : "auto"}
-        alt={`${game.title} 游戏封面`}
+        alt={t("library.coverAlt", { title: game.title })}
         onError={() => setFailed(true)}
       />}
     </div>
@@ -57,6 +59,7 @@ function GameChipArt({ game }: { game: ProjectSummary }) {
 }
 
 function GameMarquee({ games }: { games: ProjectSummary[] }) {
+  const { locale } = usePreferences();
   const containerRef = useRef<HTMLDivElement>(null);
   const segmentRef = useRef<HTMLDivElement>(null);
   const [loop, setLoop] = useState(false);
@@ -78,12 +81,14 @@ function GameMarquee({ games }: { games: ProjectSummary[] }) {
     return () => observer.disconnect();
   }, [games]);
 
-  const chips = games.map((game) => (
+  const chips = games.map((sourceGame) => {
+    const game = localizeOfficialGame(sourceGame, locale);
+    return (
     <span className="library-marquee-chip" key={game.id}>
       <span className="library-marquee-chip-art"><GameChipArt game={game} /></span>
       {game.title}
     </span>
-  ));
+  ); });
 
   return (
     <div className={`library-marquee ${loop ? "is-looping" : ""}`} ref={containerRef} aria-hidden="true">
@@ -96,7 +101,8 @@ function GameMarquee({ games }: { games: ProjectSummary[] }) {
 }
 
 function GameCard({ game, featured, activity }: { game: ProjectSummary; featured: boolean; activity?: PlayActivity }) {
-  const { t } = usePreferences();
+  const { locale, t } = usePreferences();
+  game = localizeOfficialGame(game, locale);
   const publication = game.publication;
   if (!publication) return null;
   const hasNewVersion = Boolean(activity && activity.versionId !== publication.versionId);
@@ -109,14 +115,14 @@ function GameCard({ game, featured, activity }: { game: ProjectSummary; featured
         <div className="library-badges" aria-label={t("library.playStatus")}>
           {activity?.status === "completed" ? <span className="library-badge is-complete" title={t("library.completed")}><Medal size={14} aria-hidden="true" /><span className="sr-only">{t("library.completed")}</span></span> : null}
           {activity && activity.status !== "completed" ? <span className="library-badge" title={t("library.recent")}><History size={14} aria-hidden="true" /><span className="sr-only">{t("library.recent")}</span></span> : null}
-          {activity && activity.bestScore > 0 ? <span className="library-badge is-score" title={t("library.best", { score: activity.bestScore })}><Trophy size={14} aria-hidden="true" />{activity.bestScore}</span> : null}
+          {activity && activity.bestScore > 0 ? <span className="library-badge is-score" title={t("library.best", { score: new Intl.NumberFormat(locale).format(activity.bestScore) })}><Trophy size={14} aria-hidden="true" />{new Intl.NumberFormat(locale).format(activity.bestScore)}</span> : null}
           {hasNewVersion ? <span className="library-badge is-new" title={t("library.newVersion")}><Sparkles size={14} aria-hidden="true" /><span className="sr-only">{t("library.newVersion")}</span></span> : null}
         </div>
         <p className="library-card-category">{t(templateNameKeys[game.template])} · {game.dimensions.toUpperCase()}</p>
         <h2>{game.title}</h2>
         <p className="library-card-idea">{game.idea}</p>
         <p className="library-card-meta">v{publication.versionNumber} · {difficultyLabel} · {game.sessionLength}</p>
-        <a className="library-play-link" href={`/player-first?game=${encodeURIComponent(game.id)}`}>
+        <a className="library-play-link" href={`/player-first?game=${encodeURIComponent(game.id)}&lang=${encodeURIComponent(locale)}`}>
           <Gamepad2 size={18} aria-hidden="true" /> {actionLabel}
         </a>
       </div>
@@ -134,7 +140,7 @@ function LibrarySkeleton() {
 }
 
 export function GameLibrary() {
-  const { t } = usePreferences();
+  const { locale, t } = usePreferences();
   const [games, setGames] = useState<ProjectSummary[]>([]);
   const [activities, setActivities] = useState<Map<string, PlayActivity>>(new Map());
   const [loading, setLoading] = useState(true);
@@ -159,8 +165,8 @@ export function GameLibrary() {
           setGames([...result].sort((left, right) => (activityMap.get(right.id)?.lastPlayedAt ?? "").localeCompare(activityMap.get(left.id)?.lastPlayedAt ?? "")));
         }
       })
-      .catch((caught) => {
-        if (active) setError(caught instanceof Error ? caught.message : "游戏大厅读取失败。");
+      .catch(() => {
+        if (active) setError(t("library.loadFailed"));
       })
       .finally(() => {
         if (active) setLoading(false);
@@ -168,13 +174,13 @@ export function GameLibrary() {
     return () => {
       active = false;
     };
-  }, []);
+  }, [t]);
 
   const visibleGames = useMemo(() => {
     const needle = query.trim().toLowerCase();
     if (!needle) return games;
-    return games.filter((game) => game.title.toLowerCase().includes(needle) || game.idea.toLowerCase().includes(needle));
-  }, [games, query]);
+    return games.filter((game) => { const localized = localizeOfficialGame(game, locale); return localized.title.toLowerCase().includes(needle) || localized.idea.toLowerCase().includes(needle); });
+  }, [games, locale, query]);
 
   const filtering = query.trim().length > 0;
 
@@ -189,7 +195,7 @@ export function GameLibrary() {
             <h1>{t("library.hero").split("\n").map((line, index) => <span key={line}>{index ? <br /> : null}{line}</span>)}</h1>
           </div>
           <div className="library-summary">
-            <strong>{String(games.length).padStart(2, "0")}</strong>
+            <strong>{new Intl.NumberFormat(locale, { minimumIntegerDigits: 2 }).format(games.length)}</strong>
             <span>{t("library.count")}</span>
             <p>{t("library.detail")}</p>
           </div>

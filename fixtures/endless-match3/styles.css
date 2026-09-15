@@ -1,0 +1,123 @@
+
+
+  :root{
+    --ink:#2B2A33;
+    --paper:#F7F3EA;
+    --paper2:#EDE7DA;
+    --c1:#FF9AA6;
+    --c2:#FFC978;
+    --c3:#8FE0C0;
+    --c4:#93C4F7;
+    --c5:#C4AAF5;
+  }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  html,body{margin:0;padding:0}
+  body{
+    background:var(--paper);
+    color:var(--ink);
+    font-family:"PingFang SC","Microsoft YaHei","Noto Sans SC",system-ui,sans-serif;
+    overflow-x:hidden;
+    background-image:
+      linear-gradient(90deg,rgba(43,42,51,.05) 0 2px,transparent 2px 100%),
+      linear-gradient(180deg,rgba(43,42,51,.05) 0 2px,transparent 2px 100%);
+    background-size:28px 28px,28px 28px;
+  }
+  #app{
+    min-height:100dvh;
+    display:flex;flex-direction:column;
+    max-width:480px;margin:0 auto;
+    padding:8px 8px 10px;
+  }
+  /* ---------- HUD ---------- */
+  #hud{flex:0 0 auto;border:3px solid var(--ink);background:#fff;box-shadow:5px 5px 0 var(--ink);padding:6px 8px 7px}
+  .hud-top{display:flex;align-items:center;gap:8px}
+  .chips{display:flex;flex:0 0 auto}
+  .chips i{display:block;width:10px;height:18px;border:2px solid var(--ink);border-right-width:0}
+  .chips i:last-child{border-right-width:2px}
+  h1{font-size:17px;margin:0;letter-spacing:.14em;font-weight:800}
+  .hud-top .tagline{margin-left:auto;font-size:10px;letter-spacing:.08em;background:var(--ink);color:var(--paper);padding:3px 5px}
+  .hud-stats{display:grid;grid-template-columns:1fr 1fr 1fr;gap:5px;margin-top:6px}
+  .stat{border:2px solid var(--ink);padding:2px 5px 3px;display:flex;align-items:baseline;gap:5px;background:var(--paper2)}
+  .stat .k{font-size:10px;letter-spacing:.1em;opacity:.8}
+  .stat b{font-size:18px;font-variant-numeric:tabular-nums;line-height:1.1}
+  #chainStat{background:#fff}
+  #chainStat.hot{background:var(--c2)}
+  /* ---------- 棋盘 ---------- */
+  #board-wrap{
+    flex:1 1 auto;min-height:268px;
+    display:flex;align-items:center;justify-content:center;
+    position:relative;margin-top:9px;
+  }
+  #stage{position:relative;flex:0 0 auto}
+  canvas{display:block;touch-action:none;border:3px solid var(--ink);box-shadow:6px 6px 0 var(--ink);outline:none;background:var(--paper2)}
+  canvas:focus-visible{box-shadow:6px 6px 0 var(--ink),0 0 0 3px var(--c4)}
+  #hint-layer{position:absolute;inset:0;pointer-events:none}
+  .hint{
+    position:absolute;margin:0;padding:0;background:rgba(255,255,255,.12);
+    border:3px dashed rgba(43,42,51,.6);
+    min-width:44px;min-height:44px;
+    transform:translate(-50%,-50%);
+    pointer-events:auto;cursor:pointer;
+    color:var(--ink);font-size:0;line-height:0;
+    animation:hintPulse 1.5s steps(2,end) infinite;
+  }
+  .hint::after{
+    content:"";position:absolute;right:-3px;bottom:-3px;width:10px;height:10px;background:var(--ink);
+  }
+  .hint::before{
+    position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);
+    font-size:16px;line-height:1;font-weight:800;
+    text-shadow:0 0 3px #fff,0 0 3px #fff,0 0 3px #fff;
+  }
+  .hint[data-game-drag="right"]::before{content:"▶"}
+  .hint[data-game-drag="left"]::before{content:"◀"}
+  .hint[data-game-drag="up"]::before{content:"▲"}
+  .hint[data-game-drag="down"]::before{content:"▼"}
+  .hint:focus-visible{outline:3px solid var(--c4);outline-offset:2px;border-color:var(--ink)}
+  @keyframes hintPulse{0%{border-color:rgba(43,42,51,.6)}50%{border-color:rgba(255,255,255,.95)}100%{border-color:rgba(43,42,51,.6)}}
+  @media (prefers-reduced-motion:reduce){.hint{animation:none}}
+  #banner{
+    position:absolute;top:6px;left:50%;transform:translate(-50%,-6px);
+    background:var(--ink);color:var(--paper);font-size:13px;font-weight:700;letter-spacing:.1em;
+    padding:6px 10px;border:3px solid var(--ink);box-shadow:4px 4px 0 var(--c2);
+    opacity:0;transition:opacity .16s linear,transform .16s linear;pointer-events:none;z-index:6;
+  }
+  #banner.show{opacity:1;transform:translate(-50%,0)}
+  /* ---------- 开始面板 ---------- */
+  #startPanel{
+    position:absolute;inset:0;z-index:8;
+    background:var(--paper);
+    border:3px solid var(--ink);box-shadow:6px 6px 0 var(--ink);
+    display:flex;flex-direction:column;justify-content:center;gap:12px;
+    padding:14px;overflow:auto;
+  }
+  body[data-game-state="playing"] #startPanel{display:none}
+  .panel-blocks{display:grid;grid-template-columns:repeat(5,1fr);gap:4px;height:26px}
+  .panel-blocks span{border:2px solid var(--ink)}
+  #startPanel h2{margin:0;font-size:22px;letter-spacing:.12em}
+  #startPanel p{margin:0;font-size:13px;line-height:1.7}
+  #startPanel .kv{border-left:8px solid var(--c3);padding-left:8px}
+  #start{
+    width:100%;max-width:280px;min-height:56px;align-self:center;
+    font-size:18px;font-weight:800;letter-spacing:.22em;
+    background:var(--c3);color:var(--ink);
+    border:3px solid var(--ink);border-radius:0;box-shadow:5px 5px 0 var(--ink);
+    cursor:pointer;
+  }
+  #start:active{transform:translate(3px,3px);box-shadow:2px 2px 0 var(--ink)}
+  /* ---------- 底部 ---------- */
+  footer{flex:0 0 auto;margin-top:9px;display:flex;gap:8px;align-items:stretch}
+  #status{
+    flex:1 1 auto;border:3px solid var(--ink);background:#fff;
+    padding:6px 8px;font-size:12px;line-height:1.5;display:flex;align-items:center;
+    box-shadow:4px 4px 0 var(--c4);
+  }
+  #restart{
+    flex:0 0 auto;min-width:96px;min-height:48px;
+    font-size:14px;font-weight:800;letter-spacing:.1em;
+    background:var(--c1);color:var(--ink);
+    border:3px solid var(--ink);border-radius:0;box-shadow:4px 4px 0 var(--ink);cursor:pointer;
+  }
+  #restart:active{transform:translate(2px,2px);box-shadow:2px 2px 0 var(--ink)}
+  #restart:focus-visible,#start:focus-visible{outline:3px solid var(--ink);outline-offset:3px}
+

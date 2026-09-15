@@ -587,6 +587,19 @@ test("额度不足只请求一次且不进入自动修复", async () => {
   assert.equal(calls, 1);
 });
 
+test("图像 provider 明确返回 503 时在同一资源预算内退避恢复", async () => {
+  let calls = 0;
+  const generator = new CoverArtGenerator(new OpenAISettings(validKey), { fetchImpl: async (_url, init) => {
+    calls += 1;
+    if (calls === 1) return new Response("temporary unavailable", { status: 503, headers: { "retry-after": "0" } });
+    const body = JSON.parse(String(init?.body)) as { size: string };
+    return imageResponse(providerFixtures.get(body.size)!);
+  } });
+  const bytes = await generator.generate(fakeProject());
+  assert.ok(bytes.length > 0);
+  assert.equal(calls, 2);
+});
+
 test("并行资源中只重新生成失败项，已通过资源不重复计费", async () => {
   const calls = new Map<string, number>();
   const generator = new CoverArtGenerator(new OpenAISettings(validKey), { fetchImpl: async (_url, init) => {

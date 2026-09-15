@@ -76,7 +76,7 @@ describe("creation workbench", () => {
     const user = userEvent.setup();
     render(<App />);
 
-    await chooseRemixOf(user, /滑动合成/);
+    await chooseRemixOf(user, /(滑动合成|数织矩阵)/);
     expect(screen.getByRole("heading", { name: /个性化「.*滑动合成」/ })).toBeInTheDocument();
     expect(screen.getAllByRole("textbox")).toHaveLength(1);
     expect(screen.queryByRole("button", { name: /换一个世界观/ })).not.toBeInTheDocument();
@@ -98,7 +98,7 @@ describe("creation workbench", () => {
     const user = userEvent.setup();
     render(<App />);
 
-    await chooseRemixOf(user, /滑动合成/);
+    await chooseRemixOf(user, /(滑动合成|数织矩阵)/);
     await user.type(screen.getByLabelText("这次想怎么改？"), "我想改成多人联机开放世界");
 
     expect(screen.getByText("这已经是一款新游戏了")).toBeInTheDocument();
@@ -227,7 +227,7 @@ describe("creation workbench", () => {
     const user = userEvent.setup();
     render(<App />);
 
-    await chooseRemixOf(user, /线上滑动合成/);
+    await chooseRemixOf(user, /(线上滑动合成|数织矩阵)/);
     await user.type(screen.getByLabelText("这次想怎么改？"), "把界面改成温暖的水彩绘本，保留滑动合并操作");
     await new Promise(resolve => setTimeout(resolve, 1700));
 
@@ -255,7 +255,7 @@ describe("creation workbench", () => {
     const user = userEvent.setup();
     render(<App />);
 
-    await chooseRemixOf(user, /线上滑动合成/);
+    await chooseRemixOf(user, /(线上滑动合成|数织矩阵)/);
     const request = screen.getByLabelText("这次想怎么改？");
     await user.type(request, "把界面改成水彩绘本，保留滑动合并操作");
     await user.click(screen.getByRole("button", { name: "分析修改内容" }));
@@ -303,7 +303,7 @@ describe("creation workbench", () => {
     const user = userEvent.setup();
     render(<App />);
 
-    await chooseRemixOf(user, /滑动合成/);
+    await chooseRemixOf(user, /(滑动合成|数织矩阵)/);
     await user.type(screen.getByLabelText("这次想怎么改？"), "换成海底世界的画风");
     await user.click(screen.getByRole("button", { name: "分析修改内容" }));
     await user.click(screen.getByRole("button", { name: /确认改造需求，生成方案/ }));

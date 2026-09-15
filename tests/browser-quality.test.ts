@@ -5,11 +5,13 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import test from "node:test";
 import { chromium } from "playwright";
-import { BrowserQualityTimeoutError, browserQualityAvailable, collectImageRenderingViolations, collectSpritePresentationFailures, collectSpriteSheetRuntimeFailures, collectSpriteSheetRuntimeObservations, inspectGameInBrowser, inspectGeneratedGameInBrowser, installImageRenderingProbe, requireBrowserExecutable } from "../src/server/browser-quality";
+import { BrowserQualityTimeoutError, browserQualityAvailable, collectImageRenderingViolations, collectSpritePresentationFailures, collectSpriteSheetRuntimeFailures, collectSpriteSheetRuntimeObservations, inspectEndlessNaturalAction, inspectGameInBrowser, inspectGeneratedGameInBrowser, installImageRenderingProbe, requireBrowserExecutable } from "../src/server/browser-quality";
 import type { GeneratedBlueprint } from "../src/shared/generated-blueprint";
 import { openTestDatabase } from "../src/server/database";
 import { writeDesignDocuments, writeGameArtifact } from "../src/server/game-artifact";
 import { StudioRepository } from "../src/server/studio-repository";
+import { ArtifactValidationFailure } from "../src/server/generation-budget";
+import { applyDeterministicArtifactRepair } from "../src/server/deterministic-artifact-repair";
 
 test("真实浏览器验收会覆盖五档画幅、玩法状态和三阶段截图", { skip: !browserQualityAvailable() }, async () => {
   const database = await openTestDatabase();
@@ -81,6 +83,193 @@ test("单局demo浏览器验收不要求多关递进探针", { skip: !browserQua
     assert.equal(progression?.status, "passed");
     assert.match(progression?.label ?? "", /单局 demo/);
   } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
+function writeEndlessBrowserFixture(root: string, observable: boolean) {
+  const campaign = { mode: "endless", failurePolicy: "forbidden", levelCount: 0, milestones: [], difficultyKeys: [], rationale: "自由消除，没有最终胜负。" };
+  writeFileSync(join(root, "game-manifest.json"), JSON.stringify({ generatedCampaign: campaign, runtimeTarget: "web-2d", levelProgression: { levelCount: 0 } }));
+  writeFileSync(join(root, "index.html"), '<!doctype html><meta name="viewport" content="width=device-width, initial-scale=1"><link rel="stylesheet" href="./styles.css"><body data-game-state="idle"><button id="start">开始</button><button id="restart">重开</button><div id="score" data-score>得分 0</div><div id="board" data-game-board role="grid"><button role="gridcell" data-game-action aria-label="三颗红宝石，可消除">◆ ◆ ◆</button></div><canvas id="game-canvas" width="240" height="240"></canvas><script src="./app.js"></script>');
+  writeFileSync(join(root, "styles.css"), "html,body{margin:0;overflow-x:hidden}button{width:88px;height:48px}#board{width:240px;height:80px}canvas{display:block;width:240px;height:240px}");
+  writeFileSync(join(root, "app.js"), `let moves=0;const action=document.querySelector('[data-game-action]'),score=document.querySelector('#score');const setState=s=>{document.body.dataset.gameState=s;dispatchEvent(new CustomEvent('game:state-change',{detail:{state:s}}))};const reset=()=>{moves=0;score.textContent='得分 0';action.dataset.boardValue='0';setState('playing')};start.onclick=reset;restart.onclick=reset;action.onclick=()=>{if(document.body.dataset.gameState!=='playing')return;moves++;${observable ? "score.textContent='得分 '+moves*10;action.dataset.boardValue=String(moves)" : "void moves"}};if(new URLSearchParams(location.search).has('probe'))window.__GAME_DEBUG__={getState:()=>({mode:'endless',counter:moves,milestone:moves,mechanicsActive:['self-report-only']}),restart:reset};`);
+  return campaign;
+}
+
+test("无限玩法以真实业务控件观察核心变化，并在重开后再次操作", { skip: !browserQualityAvailable() }, async () => {
+  const root = mkdtempSync(join(tmpdir(), "studio-endless-natural-"));
+  try {
+    const campaign = writeEndlessBrowserFixture(root, true);
+    const result = await inspectGeneratedGameInBrowser(root, { expectedCampaign: campaign, totalTimeoutMs: 25_000 });
+    const endless = result.checks.find(check => check.id === "ENDLESS-SAMPLED");
+    const noFailure = result.checks.find(check => check.id === "NO-FAILURE-SAMPLED");
+    assert.equal(endless?.status, "passed");
+    assert.equal(noFailure?.status, "passed");
+    assert.match(endless?.evidence ?? "", /重开前:玩家可见得分/);
+    assert.match(endless?.evidence ?? "", /重开后:玩家可见得分/);
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
+test("禁止失败的无限玩法一旦进入 lost 会把 no-failure 证据标为失败", { skip: !browserQualityAvailable() }, async () => {
+  const root = mkdtempSync(join(tmpdir(), "studio-endless-forbidden-loss-"));
+  try {
+    const campaign = writeEndlessBrowserFixture(root, true);
+    writeFileSync(join(root, "app.js"), `${readFileSync(join(root, "app.js"), "utf8")}\naction.onclick=()=>setState('lost');\n`);
+    await assert.rejects(inspectGeneratedGameInBrowser(root, { expectedCampaign: campaign, totalTimeoutMs: 25_000 }), /禁止的lost状态/);
+    const report = JSON.parse(readFileSync(join(root, "_studio", "BROWSER_QUALITY_REPORT.json"), "utf8"));
+    const noFailure = report.checks.find((check: { id: string }) => check.id === "NO-FAILURE-SAMPLED");
+    assert.equal(noFailure?.status, "failed");
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
+test("无限玩法不能只靠counter、milestone或mechanicsActive自报通过", { skip: !browserQualityAvailable() }, async () => {
+  const root = mkdtempSync(join(tmpdir(), "studio-endless-self-report-"));
+  try {
+    const campaign = writeEndlessBrowserFixture(root, false);
+    await assert.rejects(inspectGeneratedGameInBrowser(root, { expectedCampaign: campaign, totalTimeoutMs: 25_000 }), /真实点击、拖拽或键盘操作没有产生稳定可见.*调试counter\/milestone/);
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
+test("无限玩法无需分数，真实棋盘变化和重开后再操作也可验收", { skip: !browserQualityAvailable() }, async () => {
+  const browser = await chromium.launch({ executablePath: requireBrowserExecutable("无限棋盘变化测试"), headless: true });
+  const page = await browser.newPage({ viewport: { width: 390, height: 844 } });
+  try {
+    await page.setContent('<body data-game-state="playing"><div id="board" data-game-board role="grid"><button role="gridcell" data-game-action data-value="0">移动宝石</button></div><button id="restart">重开</button><script>let move=0;const tile=document.querySelector("[data-game-action]");tile.onclick=()=>tile.dataset.value=String(++move);restart.onclick=()=>{move=0;tile.dataset.value="0"}</script>');
+    assert.equal(await inspectEndlessNaturalAction(page), "棋盘DOM");
+    await page.locator("#restart").click();
+    assert.equal(await inspectEndlessNaturalAction(page), "棋盘DOM");
+  } finally {
+    await page.close();
+    await browser.close();
+  }
+});
+
+test("无限玩法等待启动后异步出现的真实棋盘动作", { skip: !browserQualityAvailable() }, async () => {
+  const browser = await chromium.launch({ executablePath: requireBrowserExecutable("无限异步动作测试"), headless: true });
+  const page = await browser.newPage({ viewport: { width: 390, height: 844 } });
+  try {
+    await page.setContent('<body data-game-state="playing"><div data-game-board role="grid" data-value="0"></div><script>setTimeout(()=>{const action=document.createElement("button");action.dataset.gameAction="click";action.textContent="交换宝石";action.onclick=()=>action.parentElement.dataset.value="1";document.querySelector("[data-game-board]").append(action)},120)</script>');
+    assert.equal(await inspectEndlessNaturalAction(page), "棋盘DOM");
+  } finally {
+    await page.close();
+    await browser.close();
+  }
+});
+
+test("无限玩法等待真实连锁变化结束后再确认稳定", { skip: !browserQualityAvailable() }, async () => {
+  const browser = await chromium.launch({ executablePath: requireBrowserExecutable("无限连锁稳定测试"), headless: true });
+  const page = await browser.newPage({ viewport: { width: 390, height: 844 } });
+  try {
+    await page.setContent('<body data-game-state="playing"><div data-game-board role="grid"><button data-game-action="click">合法交换</button></div><div id="score" data-score>0</div><script>document.querySelector("button").onclick=()=>{setTimeout(()=>score.textContent="30",150);setTimeout(()=>score.textContent="90",600)}</script>');
+    assert.equal(await inspectEndlessNaturalAction(page), "玩家可见得分");
+    assert.equal(await page.locator("#score").textContent(), "90");
+  } finally {
+    await page.close();
+    await browser.close();
+  }
+});
+
+test("无限玩法有界等待后仍无动作标记时拒绝", { skip: !browserQualityAvailable() }, async () => {
+  const browser = await chromium.launch({ executablePath: requireBrowserExecutable("无限无动作反例"), headless: true });
+  const page = await browser.newPage({ viewport: { width: 390, height: 844 } });
+  try {
+    await page.setContent('<body data-game-state="playing"><div data-game-board role="grid">棋盘</div>');
+    await assert.rejects(inspectEndlessNaturalAction(page), /没有标记当前可执行的真实玩法控件 data-game-action/);
+  } finally {
+    await page.close();
+    await browser.close();
+  }
+});
+
+test("无限玩法按声明执行真实拖拽与键盘动作", { skip: !browserQualityAvailable() }, async () => {
+  const browser = await chromium.launch({ executablePath: requireBrowserExecutable("无限声明动作测试"), headless: true });
+  const page = await browser.newPage({ viewport: { width: 390, height: 844 } });
+  try {
+    await page.setContent('<body data-game-state="playing"><div data-game-board role="grid"><button role="gridcell" data-game-action="drag" data-game-drag="right" data-position="0">可拖动宝石</button></div><script>const tile=document.querySelector("[data-game-action]");document.addEventListener("pointerup",()=>tile.dataset.position="1")</script>');
+    assert.equal(await inspectEndlessNaturalAction(page), "棋盘DOM");
+    await page.setContent('<body data-game-state="playing"><div data-game-board role="grid"><button role="gridcell" data-game-action="key:ArrowRight" data-position="0">键盘棋子</button></div><script>var keyTile=document.querySelector("[data-game-action]");keyTile.addEventListener("keydown",event=>{if(event.key==="ArrowRight")keyTile.dataset.position="1"})</script>');
+    assert.equal(await inspectEndlessNaturalAction(page), "棋盘DOM");
+  } finally {
+    await page.close();
+    await browser.close();
+  }
+});
+
+test("动态操作覆盖层与Canvas的唯一共同容器可给出精确修复建议，补标后真实动作通过", { skip: !browserQualityAvailable() }, async () => {
+  const browser = await chromium.launch({ executablePath: requireBrowserExecutable("无限棋盘根诊断测试"), headless: true });
+  const page = await browser.newPage({ viewport: { width: 390, height: 844 } });
+  try {
+    const source = '<body data-game-state="playing"><div id="stage" data-board-value="0"><canvas id="game-canvas" width="180" height="180"></canvas><div id="hint-layer"></div></div><script>var action=document.createElement("button");action.dataset.gameAction="click";action.textContent="交换相邻宝石";action.onclick=()=>stage.dataset.boardValue="1";document.querySelector("#hint-layer").append(action)</script>';
+    await page.setContent(source);
+    let repairHint: ArtifactValidationFailure["repairHint"] = undefined;
+    await assert.rejects(inspectEndlessNaturalAction(page), error => {
+      assert.match((error as Error).message, /都不在真实棋盘容器内/);
+      assert.match((error as Error).message, /没有执行任何有效玩法操作/);
+      assert.match((error as Error).message, /共同父容器.*data-game-board/);
+      assert.doesNotMatch((error as Error).message, /操作没有产生/);
+      assert.ok(error instanceof ArtifactValidationFailure);
+      repairHint = error.repairHint;
+      assert.deepEqual(repairHint, { kind: "add-game-board-marker", elementId: "stage", elementTag: "div" });
+      return true;
+    });
+    assert.equal(await page.locator("#stage").getAttribute("data-board-value"), "0", "棋盘根外的标记不得被执行后假通过");
+    const repaired = applyDeterministicArtifactRepair(source, repairHint);
+    assert.ok(repaired);
+    await page.setContent(repaired.html);
+    assert.equal(await inspectEndlessNaturalAction(page), "棋盘DOM");
+  } finally {
+    await page.close();
+    await browser.close();
+  }
+});
+
+test("根容器、多Canvas或已有另一棋盘时不提供自动补标建议", { skip: !browserQualityAvailable() }, async () => {
+  const browser = await chromium.launch({ executablePath: requireBrowserExecutable("无限棋盘根修复反例"), headless: true });
+  const page = await browser.newPage({ viewport: { width: 390, height: 844 } });
+  const cases = [
+    '<body data-game-state="playing"><canvas width="180" height="180"></canvas><button data-game-action>交换宝石</button></body>',
+    '<body data-game-state="playing"><div id="stage"><canvas width="180" height="180"></canvas><canvas width="180" height="180"></canvas><button data-game-action>交换宝石</button></div></body>',
+    '<body data-game-state="playing"><div id="other" data-game-board>另一棋盘</div><div id="stage"><canvas width="180" height="180"></canvas><button data-game-action>交换宝石</button></div></body>',
+  ];
+  try {
+    for (const source of cases) {
+      await page.setContent(source);
+      await assert.rejects(inspectEndlessNaturalAction(page), error => {
+        assert.ok(error instanceof ArtifactValidationFailure);
+        assert.equal(error.repairHint, undefined);
+        return true;
+      });
+    }
+  } finally {
+    await page.close();
+    await browser.close();
+  }
+});
+
+test("WebGL无分数玩法以稳定浏览器渲染画面证明拖拽有效", { skip: !browserQualityAvailable() }, async () => {
+  const browser = await chromium.launch({ executablePath: requireBrowserExecutable("无限WebGL动作测试"), headless: true, args: ["--enable-unsafe-swiftshader", "--use-angle=swiftshader"] });
+  const page = await browser.newPage({ viewport: { width: 390, height: 844 } });
+  try {
+    await page.setContent('<style>canvas{width:180px;height:180px}</style><body data-game-state="playing"><canvas id="game-canvas" data-game-action="drag" data-game-drag="right" width="180" height="180"></canvas><script>const canvas=document.querySelector("canvas"),gl=canvas.getContext("webgl");gl.clearColor(1,0,0,1);gl.clear(gl.COLOR_BUFFER_BIT);canvas.addEventListener("pointermove",event=>{if(event.buttons){gl.clearColor(0,0,1,1);gl.clear(gl.COLOR_BUFFER_BIT)}})</script>');
+    assert.equal(await inspectEndlessNaturalAction(page), "浏览器渲染画面");
+  } finally {
+    await page.close();
+    await browser.close();
+  }
+});
+
+test("DOM与WebGL拖拽无业务变化时不能靠动作或焦点样式通过", { skip: !browserQualityAvailable() }, async () => {
+  const browser = await chromium.launch({ executablePath: requireBrowserExecutable("无限空拖拽反例"), headless: true, args: ["--enable-unsafe-swiftshader", "--use-angle=swiftshader"] });
+  const page = await browser.newPage({ viewport: { width: 390, height: 844 } });
+  try {
+    await page.setContent('<body data-game-state="playing"><div data-game-board role="grid"><button role="gridcell" data-game-action="drag" data-game-drag="right" data-position="0">没有移动的宝石</button></div>');
+    await assert.rejects(inspectEndlessNaturalAction(page), /没有产生稳定可见/);
+    await page.setContent('<style>canvas{width:180px;height:180px}canvas:focus{filter:hue-rotate(120deg);outline:12px solid lime}</style><body data-game-state="playing"><canvas tabindex="0" id="game-canvas" data-game-action="drag" width="180" height="180"></canvas><script>var noOpCanvas=document.querySelector("canvas"),noOpGl=noOpCanvas.getContext("webgl");noOpGl.clearColor(1,0,0,1);noOpGl.clear(noOpGl.COLOR_BUFFER_BIT)</script>');
+    await assert.rejects(inspectEndlessNaturalAction(page), /没有产生稳定可见/);
+    await page.setContent('<style>canvas{width:180px;height:180px}</style><body data-game-state="playing"><canvas id="game-canvas" data-game-action="click" width="180" height="180"></canvas><script>const animated=document.querySelector("canvas"),ctx=animated.getContext("2d");let frame=0;(function loop(){ctx.fillStyle=`hsl(${frame++%360} 80% 50%)`;ctx.fillRect(0,0,180,180);requestAnimationFrame(loop)})()</script>');
+    await assert.rejects(inspectEndlessNaturalAction(page), /没有产生稳定可见/);
+  } finally {
+    await page.close();
+    await browser.close();
+  }
 });
 
 test("图像渲染探针拒绝拉伸并接受 contain、裁切图集与 DPR 等比显示", { skip: !browserQualityAvailable() }, async () => {

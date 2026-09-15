@@ -9,6 +9,7 @@ import sharp from "sharp";
 import { cancellationSignal, withTimeoutSignal } from "./cancellation.js";
 import { BuildFailure, safeFailure } from "./build-failure.js";
 import { reportImageRepair } from "./image-repair-progress.js";
+import { isPreDispatchNetworkFailure, waitForTransientRetry } from "./transient-retry.js";
 
 const DEFAULT_ENDPOINT = "https://api.openai.com/v1/images/generations";
 const DEFAULT_EDIT_ENDPOINT = "https://api.openai.com/v1/images/edits";
@@ -902,6 +903,7 @@ export class CoverArtGenerator {
           const retryable = !quota && (response.status === 429 || response.status >= 500);
           if (retryable && budget.used < budget.max) {
             lastError = error;
+            await waitForTransientRetry(attempt, cancellationSignal(), response);
             continue;
           }
           throw error;
@@ -911,11 +913,11 @@ export class CoverArtGenerator {
         if (cancellationSignal()?.aborted) throw error;
         if (error instanceof Error && error.name === "AbortError") {
           lastError = Object.assign(new Error(`生图接口在 ${this.timeoutMs}ms 内没有响应。`), { failureMeta: { attempt } });
-          if (budget.used < budget.max) continue;
           throw lastError;
         }
-        if (budget.used < budget.max && error instanceof TypeError) {
+        if (budget.used < budget.max && isPreDispatchNetworkFailure(error)) {
           lastError = error;
+          await waitForTransientRetry(attempt, cancellationSignal());
           continue;
         }
         throw error;

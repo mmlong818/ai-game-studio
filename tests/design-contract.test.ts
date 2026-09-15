@@ -5,6 +5,7 @@ import { createDesignProfile, gameDesignProfileSchema, gameSpecSchema, generateG
 import { contractRules, DesignContractGenerator } from "../src/server/design-contract";
 import { DESIGN_MODIFIERS, MECHANIC_ATLAS } from "../src/shared/game-design-knowledge/mechanic-atlas";
 import { OpenAISettings } from "../src/server/openai-settings";
+import { GenerationBudget } from "../src/server/generation-budget";
 
 const validKey = "sk-test_1234567890abcdef";
 
@@ -33,13 +34,13 @@ test("已取消的方案不启动任何模型调用", async () => {
   assert.equal(calls, 0);
 });
 
-test("初次创作即使提到七关也先收敛为单局demo，不能影响官方模板", async () => {
+test("初次创作即使提到七关也收敛为单局合同，不能影响官方模板", async () => {
   const campaign = { mode: "campaign", failurePolicy: "forbidden", levelCount: 7, milestones: [1, 4, 7], difficultyKeys: ["pairCount"], rationale: "七关花朵配对，操作错误可以继续。" };
   const generator = new DesignContractGenerator(new OpenAISettings(validKey), {
     fetchImpl: async () => llmResponse({ ...themedAnswer, generated_campaign: campaign }),
   });
   const generated = await generator.generate({ idea: "七关花朵配对小游戏，配对全部花朵即可获胜", template: "generated" });
-  assert.equal(generated?.generatedCampaign, null);
+  assert.deepEqual(generated?.generatedCampaign, { ...campaign, levelCount: 1, milestones: [1], difficultyKeys: [] });
   const official = await generator.generate({ idea: snakeIdea, template: "snake" }, snakeAnalysis);
   assert.equal(official?.generatedCampaign, undefined);
 });
@@ -93,6 +94,43 @@ test("流式设计逐段输出，完整校验后才返回合同", async () => {
   const result = await generator.generate({ idea: snakeIdea, template: "snake" }, snakeAnalysis, [], text => chunks.push(text));
   assert.equal(chunks.length, 2);
   assert.equal(result?.genre, themedAnswer.genre);
+});
+
+test("流式方案在首段输出前收到明确 503 时恢复且只交付成功尝试内容", async () => {
+  let calls = 0;
+  const chunks: string[] = [];
+  const generator = new DesignContractGenerator(new OpenAISettings(validKey), {
+    maxAttempts: 2,
+    fetchImpl: async () => {
+      calls += 1;
+      if (calls === 1) return new Response("temporary unavailable", { status: 503, headers: { "retry-after": "0" } });
+      const wire = `data: ${JSON.stringify({ choices: [{ delta: { content: JSON.stringify(themedAnswer) } }] })}\n\ndata: [DONE]\n\n`;
+      return new Response(wire, { status: 200, headers: { "content-type": "text/event-stream" } });
+    },
+  });
+  const result = await generator.generate({ idea: snakeIdea, template: "snake" }, snakeAnalysis, [], text => chunks.push(text));
+  assert.equal(result?.genre, themedAnswer.genre);
+  assert.equal(calls, 2);
+  assert.equal(chunks.join(""), JSON.stringify(themedAnswer));
+});
+
+test("流式方案已有输出后遇到提供方错误不重放请求", async () => {
+  let calls = 0;
+  const chunks: string[] = [];
+  const generator = new DesignContractGenerator(new OpenAISettings(validKey), {
+    maxAttempts: 2,
+    fetchImpl: async () => {
+      calls += 1;
+      const wire = [
+        `data: ${JSON.stringify({ choices: [{ delta: { content: '{"genre":' } }] })}`,
+        `data: ${JSON.stringify({ error: { message: "HTTP 503" } })}`,
+      ].join("\n\n") + "\n\n";
+      return new Response(wire, { status: 200, headers: { "content-type": "text/event-stream" } });
+    },
+  });
+  assert.equal(await generator.generate({ idea: snakeIdea, template: "snake" }, snakeAnalysis, [], text => chunks.push(text)), null);
+  assert.equal(calls, 1);
+  assert.deepEqual(chunks, ['{"genre":']);
 });
 
 test("方案预览可关闭隐式重试，错误只请求一次", async () => {
@@ -438,6 +476,31 @@ test("规则正确性审计:规则清单=核心循环+胜负,逐条判定并保�
   assert.equal(verdicts.at(-1)?.implemented, false);
   assert.match(verdicts.at(-1)?.evidence ?? "", /撞自身/);
 
+  let recoveryCalls = 0;
+  const recovering = new DesignContractGenerator(new OpenAISettings(validKey), {
+    fetchImpl: async () => {
+      recoveryCalls += 1;
+      return recoveryCalls === 1
+        ? new Response("temporary unavailable", { status: 503, headers: { "retry-after": "0" } })
+        : llmResponse(auditAnswer);
+    },
+  });
+  assert.ok(await recovering.auditRuleFidelity(profile, "<html>...code...</html>"));
+  assert.equal(recoveryCalls, 2);
+
+  let exhaustedCalls = 0;
+  const exhausted = new DesignContractGenerator(new OpenAISettings(validKey), {
+    fetchImpl: async () => {
+      exhaustedCalls += 1;
+      return new Response("temporary unavailable", { status: 503, headers: { "retry-after": "0" } });
+    },
+  });
+  await assert.rejects(
+    exhausted.auditRuleFidelity(profile, "<html></html>", new GenerationBudget(1)),
+    /达到 1 次请求上限/,
+  );
+  assert.equal(exhaustedCalls, 1);
+
   const failing = new DesignContractGenerator(new OpenAISettings(validKey), {
     fetchImpl: async () => new Response("boom", { status: 400 }),
   });
@@ -496,7 +559,7 @@ test("模型多给的条目按合同上限截断，而不是让整个方案作�
   assert.equal(profile.accessibility[0], "大按钮");
 });
 
-test("生成游戏必须从知识库选机制并写清取舍；库外机制让整份方案作废", async () => {
+test("生成游戏可按需使用知识库和位图；库外机制仍让整份方案作废", async () => {
   const blueprint = {
     mechanic_ids: [MECHANIC_ATLAS[0].id],
     modifier_ids: [DESIGN_MODIFIERS[0].id],
@@ -519,8 +582,8 @@ test("生成游戏必须从知识库选机制并写清取舍；库外机制让�
   assert.ok(profile?.generatedBlueprint, "生成游戏的方案必须带上知识蓝图");
   assert.deepEqual(profile.generatedBlueprint.mechanicIds, [MECHANIC_ATLAS[0].id]);
   assert.equal(profile.generatedBlueprint.sprites.length, 2);
-  assert.match(prompts[0], /mechanic_ids 只能从这些 id 中选/, "策划提示必须给出知识库候选菜单");
-  assert.match(prompts[0], /单局demo/);
+  assert.match(prompts[0], /mechanic_ids 只选确实构成核心动作/, "策划提示必须给出可选知识库候选菜单");
+  assert.match(prompts[0], /单局 campaign/);
   assert.ok(contractRules(profile).some(rule => rule.startsWith("玩家取舍:")), "取舍与位图要求必须逐条进入规则审核");
 
   const animatedBlueprint = { ...blueprint, sprites: [{ ...blueprint.sprites[0], animation: { frameWidth: 128, frameHeight: 128, columns: 4, rows: 1, frameCount: 4, anchor: { x: 64, y: 116 }, clips: [{ id: "idle", startFrame: 0, frameCount: 4, fps: 6, loop: true }] } }, blueprint.sprites[1]] };
@@ -579,13 +642,45 @@ test("参考取证失败时不调用原创玩法规划", async () => {
 });
 
 test("原创单局方案不因没有多关难度曲线而解析失败", async () => {
-  const singleDemoAnswer = { ...themedAnswer, core_loop: ["点击发光萤火虫"], difficulty_curve: [], game_feel: ["点中时玻璃瓶泛起柔光"], generated_campaign: null, generated_blueprint: null };
+  const campaign = { mode: "campaign" as const, failurePolicy: "forbidden" as const, levelCount: 1, milestones: [1], difficultyKeys: [], rationale: "点亮玻璃瓶后完成这一局。" };
+  const singleDemoAnswer = { ...themedAnswer, core_loop: ["点击发光萤火虫"], difficulty_curve: [], game_feel: ["点中时玻璃瓶泛起柔光"], generated_campaign: campaign, generated_blueprint: { mechanic_ids: [], modifier_ids: [], core_decision: "", tension: "", mastery_signal: "", sprites: [] } };
   const generator = new DesignContractGenerator(new OpenAISettings(validKey), { fetchImpl: async () => llmResponse(singleDemoAnswer) });
   const profile = await generator.generate({ idea: "点击萤火虫，把玻璃瓶点亮后完成这一局", template: "generated", creationMode: "original-demo" });
   assert.deepEqual(profile?.coreLoop, ["点击发光萤火虫"]);
   assert.deepEqual(profile?.difficultyCurve, []);
-  assert.equal(profile?.generatedCampaign, null);
-  assert.equal(profile?.generatedBlueprint, undefined);
+  assert.deepEqual(profile?.generatedCampaign, campaign);
+  assert.deepEqual(profile?.generatedBlueprint?.sprites, []);
+  assert.equal(contractRules(profile!).some(rule => rule.startsWith("玩家取舍:")), false);
+});
+
+test("本地文字 provider 已配置时不被图片 API Key 前置判断拦截", async () => {
+  let calls = 0;
+  const settings = new OpenAISettings(null);
+  settings.useClaudeCliText("opus");
+  const generator = new DesignContractGenerator(settings, {
+    fetchImpl: async (_url, init) => {
+      calls += 1;
+      assert.equal(JSON.parse(String(init?.body)).model, "claude-cli:opus");
+      return llmResponse(themedAnswer);
+    },
+  });
+  const profile = await generator.generate({ idea: snakeIdea, template: "snake" }, snakeAnalysis);
+  assert.equal(calls, 1);
+  assert.equal(profile?.genre, themedAnswer.genre);
+});
+
+test("原创无限玩法贯通为零关且不制造难度维度", async () => {
+  const endless = { mode: "endless" as const, failurePolicy: "forbidden" as const, levelCount: 0, milestones: [], difficultyKeys: ["scoreRate"], rationale: "自由拖动光点持续绘制，没有最终通关。" };
+  let request = "";
+  const generator = new DesignContractGenerator(new OpenAISettings(validKey), { fetchImpl: async (_url, init) => { request = String(init?.body); return llmResponse({ ...themedAnswer, win_condition: "没有最终胜利，可持续绘制", fail_condition: "不会失败", progression: [], difficulty_curve: [], generated_campaign: endless, generated_blueprint: { mechanic_ids: [], modifier_ids: [], core_decision: "", tension: "", mastery_signal: "", sprites: [] } }); } });
+  const profile = await generator.generate({ idea: "自由拖动光点持续绘制，没有失败和最终目标", template: "generated", creationMode: "original-demo" });
+  assert.deepEqual(profile?.generatedCampaign, { ...endless, difficultyKeys: [] });
+  const spec = generateGameSpec({ idea: "自由拖动光点持续绘制，没有失败和最终目标", template: "generated", confirmedDesignProfile: profile! }, null, profile);
+  assert.equal(spec.levelProgression.levelCount, 0);
+  assert.equal(spec.designProfile.generatedCampaign?.mode, "endless");
+  assert.match(request, /无参考创作必须按玩法本身选择单局 campaign 或 endless/);
+  assert.match(request, /原创无模板首版必须填写且不能为null/);
+  assert.match(request, /按玩法事实选择 failurePolicy，不强加失败/);
 });
 
 test("公开正文完整描述核心动作、状态变化与目标时可进入机制 demo", async () => {
@@ -601,6 +696,41 @@ test("公开正文完整描述核心动作、状态变化与目标时可进入�
   assert.equal(plannerCalls, 1);
   assert.equal(profile?.creationMode, "reference-replica");
   assert.equal(profile?.generatedCampaign, null);
+});
+
+test("公开入口观察失败时仍用安全静态客户端取证，核心玩法不足时不调用策划", async () => {
+  let browserCalls = 0;
+  let plannerCalls = 0;
+  const documented = new DesignContractGenerator(new OpenAISettings(validKey), {
+    referenceFetchImpl: async (url) => String(url).endsWith("game.js")
+      ? new Response("requestAnimationFrame(loop); canvas.getContext('2d'); addEventListener('pointerdown', move); function loop(){}".repeat(30), { status: 200, headers: { "content-type": "application/javascript" } })
+      : new Response('<html><body><h2>How to Play</h2>Drag matching cakes together to merge them and complete the order.<script src="/game.js"></script></body></html>', { status: 200, headers: { "content-type": "text/html" } }),
+    referenceBrowserInspectImpl: async () => { browserCalls += 1; throw new Error("browser unavailable"); },
+    fetchImpl: async () => { plannerCalls += 1; return llmResponse({ ...themedAnswer, generated_campaign: null, generated_blueprint: null }); },
+  });
+  const profile = await documented.generate({ idea: "复刻 https://example.com/cake", template: "generated" });
+  assert.equal(browserCalls, 1);
+  assert.equal(plannerCalls >= 1, true, "公开正文已给出核心动作时仍可形成基础方案");
+  assert.equal(profile?.creationMode, "reference-replica");
+
+  const insufficient = new DesignContractGenerator(new OpenAISettings(validKey), {
+    referenceFetchImpl: async () => new Response('<html><body>Play now<script src="/shell.js"></script></body></html>', { status: 200, headers: { "content-type": "text/html" } }),
+    referenceBrowserInspectImpl: async () => { throw new Error("browser unavailable"); },
+    fetchImpl: async () => { throw new Error("核心玩法不足时不得调用策划"); },
+  });
+  await assert.rejects(insufficient.generate({ idea: "复刻 https://example.com/shell", template: "generated" }), (error: unknown) => (error as { code?: string }).code === "REFERENCE_EVIDENCE_REQUIRED");
+});
+
+test("取消公开入口观察后立即停止，不继续客户端分析或策划", async () => {
+  const cancellation = new AbortController();
+  let plannerCalls = 0;
+  const generator = new DesignContractGenerator(new OpenAISettings(validKey), {
+    referenceFetchImpl: async () => new Response('<html><body><h2>How to Play</h2>Drag matching pieces together.<script src="/game.js"></script></body></html>', { status: 200, headers: { "content-type": "text/html" } }),
+    referenceBrowserInspectImpl: async (_url, options) => { cancellation.abort(); options.signal?.throwIfAborted(); throw new Error("unreachable"); },
+    fetchImpl: async () => { plannerCalls += 1; return llmResponse(themedAnswer); },
+  });
+  await assert.rejects(generator.generate({ idea: "复刻 https://example.com/game", template: "generated" }, null, [], undefined, undefined, cancellation.signal), { name: "AbortError" });
+  assert.equal(plannerCalls, 0);
 });
 
 test("原创描述中的参考配色和复制玩法动作不误入参考取证", async () => {
@@ -626,6 +756,7 @@ for (const [label, html] of [
     referenceFetchImpl: async (url) => String(url).endsWith("shell.js")
       ? new Response("window.boot=true", { status: 200, headers: { "content-type": "application/javascript" } })
       : new Response(html, { status: 200, headers: { "content-type": "text/html" } }),
+    referenceBrowserInspectImpl: async () => ({ method: "public-browser", runtimeStatus: "not-observed", gameplayStatus: "unknown", canClaimPlayable: false, finalUrl: "https://example.com/game", title: "", canvasCount: 0, iframeUrls: [], directEntryUrl: null, directEntryCanvasCount: 0, scriptUrls: [], visualChanged: false, consoleErrors: [], requestCount: 1, blockedRequestCount: 0, limitations: ["没有观察到玩法。"] }),
   });
   await assert.rejects(generator.generate({ idea: "复刻 https://example.com/game", template: "generated" }), (error: unknown) => (error as { code?: string }).code === "REFERENCE_EVIDENCE_REQUIRED");
   assert.equal(plannerCalls, 0);

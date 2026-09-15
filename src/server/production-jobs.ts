@@ -3,20 +3,40 @@ import { explicitAspectProjectInputSchema, projectInputSchema, type Build, type 
 import type { StudioDatabase } from "./database.js";
 import { runWithCancellation } from "./cancellation.js";
 import { safeFailure } from "./build-failure.js";
+import type { ZeroModelRecoveryCheckpoint } from "./production-auto-recovery.js";
 
-export type ProductionJob = { id: string; status: "queued" | "creating" | "building" | "succeeded" | "failed" | "cancelled"; error: string | null; failureDetails?: Build["failureDetails"]; events?: { title: string; createdAt: string }[] };
+export type ProductionJob = { id: string; status: "queued" | "creating" | "building" | "recovering" | "succeeded" | "failed" | "cancelled"; error: string | null; failureDetails?: Build["failureDetails"]; autoRecovery?: "checking" | "started" | "failed" | null; events?: { title: string; createdAt: string }[] };
+
+type RecoveryOptions = {
+  latestBuild: (projectId: string) => Promise<Build | null>;
+  recoveryCheckpoint: (build: Build) => Promise<ZeroModelRecoveryCheckpoint | null>;
+  startBuild: (projectId: string, checkpoint: ZeroModelRecoveryCheckpoint, signal: AbortSignal) => Promise<Build>;
+  pollMs?: number;
+};
+
 export class ProductionJobs {
   private active = 0;
   private waiting: { id: string; input: ProjectInput }[] = [];
   private controllers = new Map<string, AbortController>();
-  constructor(private db: StudioDatabase, private execute: (input: ProjectInput, report: (title: string) => Promise<void>, signal: AbortSignal) => Promise<void>) {}
+  private monitors = new Set<string>();
+  constructor(private db: StudioDatabase, private execute: (input: ProjectInput, report: (title: string) => Promise<void>, signal: AbortSignal) => Promise<void>, private recovery?: RecoveryOptions) {}
   async initialize() {
     await this.db.query("CREATE TABLE IF NOT EXISTS production_jobs (id TEXT PRIMARY KEY, input_json TEXT NOT NULL, status TEXT NOT NULL, error TEXT, failure_details_json TEXT)");
     if (this.db.provider === "postgresql") await this.db.query("ALTER TABLE production_jobs ADD COLUMN IF NOT EXISTS failure_details_json TEXT");
     await this.db.query("CREATE TABLE IF NOT EXISTS production_job_events (id TEXT PRIMARY KEY, job_id TEXT NOT NULL, title TEXT NOT NULL, created_at TEXT NOT NULL)");
+    await this.db.query("CREATE TABLE IF NOT EXISTS production_job_recoveries (job_id TEXT PRIMARY KEY, source_build_id TEXT NOT NULL, status TEXT NOT NULL, created_at TEXT NOT NULL)");
     // The API owns the database runtime lease before calling initialize. Only
     // queued receipts are safe to resume: creating may already have incurred cost.
-    await this.db.query("UPDATE production_jobs SET status = 'failed', error = '服务重启导致创建阶段中断，未自动重试。' WHERE status = 'creating'");
+    const interrupted = {
+      stage: "planning", category: "unknown", code: "CREATION_OUTCOME_UNKNOWN",
+      message: "服务重启时创建步骤的结果无法确认，系统已停止重复调用并保留同一制作回执。",
+      nextStep: "系统会按原回执检查是否已有项目或构建记录；在确认结果前不会重复调用付费服务。", retryable: false,
+    };
+    await this.db.query("UPDATE production_jobs SET status = 'failed', error = $1, failure_details_json = $2 WHERE status = 'creating'", [interrupted.message, JSON.stringify([interrupted])]);
+    // A recovery start is a local database/build handoff. After restart, inspect
+    // the latest persisted build; never repeat the handoff itself because the
+    // recovery receipt below remains the single-use claim.
+    await this.db.query("UPDATE production_jobs SET status = 'building' WHERE status = 'recovering'");
     const queued = (await this.db.query<{ id: string; input_json: string }>("SELECT id, input_json FROM production_jobs WHERE status = 'queued' ORDER BY id")).rows;
     for (const row of queued) {
       try {
@@ -27,13 +47,17 @@ export class ProductionJobs {
         await this.db.query("UPDATE production_jobs SET status = 'failed', error = '排队方案无法恢复，未启动模型调用。' WHERE id = $1 AND status = 'queued'", [row.id]);
       }
     }
+    if (this.recovery) {
+      const building = (await this.db.query<{ id: string }>("SELECT id FROM production_jobs WHERE status IN ('building', 'recovering')")).rows;
+      for (const row of building) this.monitor(row.id);
+    }
     if (this.waiting.length) setTimeout(() => this.drain(), 0);
   }
   async get(id: string): Promise<ProductionJob | null> {
-    const job = (await this.db.query<ProductionJob & { failure_details_json?: string | null }>("SELECT id, status, error, failure_details_json FROM production_jobs WHERE id = $1", [id])).rows[0];
+    const job = (await this.db.query<ProductionJob & { failure_details_json?: string | null; auto_recovery?: ProductionJob["autoRecovery"] }>("SELECT p.id, p.status, p.error, p.failure_details_json, r.status AS auto_recovery FROM production_jobs p LEFT JOIN production_job_recoveries r ON r.job_id = p.id WHERE p.id = $1", [id])).rows[0];
     if (!job) return null;
     const events = (await this.db.query<{ title: string; created_at: string }>("SELECT title, created_at FROM production_job_events WHERE job_id = $1 ORDER BY created_at, id", [id])).rows;
-    return { id: job.id, status: job.status, error: job.error, failureDetails: job.failure_details_json ? JSON.parse(job.failure_details_json) : null, events: events.map(event => ({ title: event.title, createdAt: event.created_at })) };
+    return { id: job.id, status: job.status, error: job.error, failureDetails: job.failure_details_json ? JSON.parse(job.failure_details_json) : null, autoRecovery: job.auto_recovery ?? null, events: events.map(event => ({ title: event.title, createdAt: event.created_at })) };
   }
   async submit(raw: ProjectInput): Promise<ProductionJob> {
     const input = explicitAspectProjectInputSchema.parse(raw);
@@ -65,7 +89,7 @@ export class ProductionJobs {
         return (await this.get(id))!;
       }
     }
-    await this.db.query("UPDATE production_jobs SET status = 'cancelled', error = NULL, failure_details_json = NULL WHERE id = $1 AND status IN ('queued', 'creating', 'building')", [id]);
+    await this.db.query("UPDATE production_jobs SET status = 'cancelled', error = NULL, failure_details_json = NULL WHERE id = $1 AND status IN ('queued', 'creating', 'building', 'recovering')", [id]);
     this.controllers.get(id)?.abort(new DOMException("用户已停止制作。", "AbortError"));
     this.waiting = this.waiting.filter(item => item.id !== id);
     job = (await this.get(id))!;
@@ -73,14 +97,16 @@ export class ProductionJobs {
   }
 
   async settle(id: string, status: "succeeded" | "failed") {
+    if (status === "failed" && this.recovery) { this.monitor(id); return; }
     await this.db.query("UPDATE production_jobs SET status = $2 WHERE id = $1 AND status = 'building'", [id, status]);
   }
   async deleteTerminal(id: string) {
     const job = await this.get(id);
     if (!job) return { deleted: false };
-    if (["queued", "creating", "building"].includes(job.status)) throw new Error("制作任务仍在运行，请先停止后再删除。");
+    if (["queued", "creating", "building", "recovering"].includes(job.status)) throw new Error("制作任务仍在运行，请先停止后再删除。");
     await this.db.transaction(async database => {
       await database.query("DELETE FROM production_job_events WHERE job_id = $1", [id]);
+      await database.query("DELETE FROM production_job_recoveries WHERE job_id = $1", [id]);
       await database.query("DELETE FROM production_jobs WHERE id = $1", [id]);
     });
     return { deleted: true };
@@ -118,9 +144,57 @@ export class ProductionJobs {
       }, controller.signal));
       controller.signal.throwIfAborted();
       await this.db.query("UPDATE production_jobs SET status = 'building' WHERE id = $1 AND status = 'creating'", [id]);
+      this.monitor(id);
     } catch (reason) {
       const detail = safeFailure("planning", reason);
       await this.db.query("UPDATE production_jobs SET status = 'failed', error = $2, failure_details_json = $3 WHERE id = $1 AND status IN ('queued', 'creating')", [id, detail.message, JSON.stringify([detail])]).catch(() => {});
     } finally { this.controllers.delete(id); }
+  }
+
+  private monitor(id: string) {
+    if (!this.recovery || this.monitors.has(id)) return;
+    this.monitors.add(id);
+    const poll = async () => {
+      const job = await this.get(id).catch(() => null);
+      if (!job || !["building", "recovering"].includes(job.status)) { this.monitors.delete(id); return; }
+      if (job.status === "recovering") { setTimeout(() => void poll(), this.recovery!.pollMs ?? 750); return; }
+      const build = await this.recovery!.latestBuild(id).catch(() => null);
+      if (!build || build.status === "queued" || build.status === "running") { setTimeout(() => void poll(), this.recovery!.pollMs ?? 750); return; }
+      if (build.status === "succeeded" || build.status === "cancelled") {
+        await this.db.query("UPDATE production_jobs SET status = $2 WHERE id = $1 AND status = 'building'", [id, build.status]);
+        this.monitors.delete(id); return;
+      }
+      const checkpoint = await this.recovery!.recoveryCheckpoint(build).catch(() => null);
+      if (!checkpoint) {
+        await this.db.query("UPDATE production_jobs SET status = 'failed' WHERE id = $1 AND status = 'building'", [id]);
+        this.monitors.delete(id); return;
+      }
+      const recorded = await this.db.query("INSERT INTO production_job_recoveries (job_id, source_build_id, status, created_at) VALUES ($1, $2, 'checking', $3) ON CONFLICT(job_id) DO NOTHING", [id, checkpoint.sourceBuildId, new Date().toISOString()]);
+      if (!recorded.rowCount) {
+        await this.db.query("UPDATE production_jobs SET status = 'failed' WHERE id = $1 AND status = 'building'", [id]);
+        this.monitors.delete(id); return;
+      }
+      const claimed = await this.db.query("UPDATE production_jobs SET status = 'recovering', error = NULL, failure_details_json = NULL WHERE id = $1 AND status = 'building'", [id]);
+      if (!claimed.rowCount) { this.monitors.delete(id); return; }
+      const controller = new AbortController();
+      this.controllers.set(id, controller);
+      await this.db.query("INSERT INTO production_job_events (id, job_id, title, created_at) VALUES ($1, $2, $3, $4)", [randomUUID(), id, "检测到无需新增模型请求的完整检查点，系统正在自动复验", new Date().toISOString()]);
+      try {
+        await this.recovery!.startBuild(id, checkpoint, controller.signal);
+        await this.db.query("UPDATE production_job_recoveries SET status = 'started' WHERE job_id = $1", [id]);
+        await this.db.query("UPDATE production_jobs SET status = 'building' WHERE id = $1 AND status = 'recovering'", [id]);
+      } catch (reason) {
+        if (controller.signal.aborted) return;
+        const detail = safeFailure("unknown", reason);
+        await this.db.query("UPDATE production_job_recoveries SET status = 'failed' WHERE job_id = $1", [id]);
+        await this.db.query("UPDATE production_jobs SET status = 'failed', error = $2, failure_details_json = $3 WHERE id = $1 AND status = 'recovering'", [id, detail.message, JSON.stringify([detail])]);
+      } finally {
+        this.controllers.delete(id);
+        const current = await this.get(id).catch(() => null);
+        if (current?.status === "building") setTimeout(() => void poll(), this.recovery!.pollMs ?? 750);
+        else this.monitors.delete(id);
+      }
+    };
+    setTimeout(() => void poll(), this.recovery.pollMs ?? 750);
   }
 }

@@ -18,19 +18,15 @@ import { RevisionPlanPicker } from "./web/RevisionPlanPicker";
 import { SpriteAnimationChoice, type SpriteAnimationPreference } from "./components/SpriteAnimationControl";
 import { AspectRatioChoice, type NewGameAspectRatio } from "./components/AspectRatioChoice";
 import { resolveCreationModeIntent } from "./shared/generated-blueprint";
+import { useAdvancedStudioCopy } from "./components/advanced-studio-i18n";
+import { useComponentLocale } from "./components/component-i18n";
+import { localizeOfficialGame } from "./web/official-game-copy";
+import { localizedTemplateNames } from "./web/preferences";
 
 type Stage = "compose" | "review" | "produce";
 type ComposeStep = "choose" | "pick-game" | "describe";
 
 // 面向外行的改动说明：不出现 R0–R3 代码，只说会发生什么。
-const LEVEL_EXPLAIN: Record<ChangeLevel, { tone: "safe" | "caution" | "blocked"; title: string; detail: string }> = {
-  R0: { tone: "safe", title: "这只改画面和文案，玩法不变", detail: "可以直接开始。" },
-  R1: { tone: "safe", title: "这是内容和难度上的调整", detail: "可以直接开始。" },
-  R2: { tone: "caution", title: "这会给游戏加一种新机制", detail: "开始前我们会先看看同类游戏是怎么做的。" },
-  R3: { tone: "blocked", title: "这已经是一款新游戏了", detail: "原来的游戏留着不动，你的描述会带到新游戏里继续。" },
-};
-const UNCERTAIN_EXPLAIN = { tone: "caution" as const, title: "我们不太确定这算不算改玩法", detail: "会按“加一种新机制”来谨慎处理，开始前先看看同类游戏。" };
-
 interface PickableGame {
   key: string;
   title: string;
@@ -76,6 +72,8 @@ function GameArt({ src, title, size = "large" }: { src: string | null; title: st
 
 /** 优先展示大厅里真实的官方游戏；拿不到大厅数据时退回内部模板列表。 */
 function usePickableGames() {
+  const locale=useComponentLocale();
+  const templateCategory={"zh-CN":"内置玩法","zh-TW":"內建玩法",en:"Built-in gameplay",ja:"内蔵ゲームプレイ"}[locale];
   const [games, setGames] = useState<PickableGame[] | null>(null);
   useEffect(() => {
     let cancelled = false;
@@ -84,39 +82,41 @@ function usePickableGames() {
         if (cancelled) return;
         const mapped = published.map<PickableGame>((game) => {
           const template = resolveTemplateForGame(game);
+          const localized=localizeOfficialGame(game,locale);
           return {
             key: `game:${game.id}`,
-            title: game.title,
-            subtitle: template?.genre ?? "暂不能改",
+            title: localized.title,
+            subtitle: game.isOfficial ? localized.idea : template?.genre ?? game.idea,
             coverUrl: game.coverUrl,
             templateId: template?.id ?? null,
             sourceGame: { id: game.id, title: game.title, coverUrl: game.coverUrl },
           };
         });
         const pickable = mapped.filter(game => game.templateId !== null);
-        setGames(pickable.length > 0 ? pickable : GAME_TEMPLATES.map(templateAsPickable));
+        setGames(pickable.length > 0 ? pickable : GAME_TEMPLATES.map(template=>({...templateAsPickable(template),title:localizedTemplateNames[locale][template.id as keyof typeof localizedTemplateNames[typeof locale]],subtitle:templateCategory})));
       })
       .catch(() => {
-        if (!cancelled) setGames(GAME_TEMPLATES.map(templateAsPickable));
+        if (!cancelled) setGames(GAME_TEMPLATES.map(template=>({...templateAsPickable(template),title:localizedTemplateNames[locale][template.id as keyof typeof localizedTemplateNames[typeof locale]],subtitle:templateCategory})));
       });
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [locale,templateCategory]);
   return games;
 }
 
 function PickGameStep({ games, onPick }: { games: PickableGame[] | null; onPick: (game: PickableGame) => void }) {
-  if (!games) return <p className="pick-loading" role="status">正在读取大厅里的游戏…</p>;
+  const c=useAdvancedStudioCopy();
+  if (!games) return <p className="pick-loading" role="status">{c("loading")}</p>;
   return (
-    <ul className="game-icon-grid" aria-label="可以改造的游戏">
+    <ul className="game-icon-grid" aria-label={c("list")}>
       {games.map((game) => (
         <li key={game.key}>
           <button
             type="button"
             className="game-icon-tile"
             disabled={!game.templateId}
-            title={game.templateId ? undefined : "这款游戏暂时不能改造"}
+            title={game.templateId ? undefined : c("unavailable")}
             onClick={() => onPick(game)}
           >
             <GameArt src={game.coverUrl} title={game.title} />
@@ -150,41 +150,42 @@ function RemixDescribeStep({
   onConvert: () => void;
   onPlanReady: (plan: RevisionPlan) => void;
 }) {
+  const c=useAdvancedStudioCopy();
   const hasText = value.trim().length > 0;
-  const explain = uncertain ? UNCERTAIN_EXPLAIN : LEVEL_EXPLAIN[level];
+  const explain = uncertain ? {tone:"caution" as const,title:c("uncertainTitle"),detail:c("uncertainDetail")} : {tone:level === "R2" ? "caution" as const : level === "R3" ? "blocked" as const : "safe" as const,title:c(`${level.toLowerCase()}Title` as "r0Title"),detail:c(`${level.toLowerCase()}Detail` as "r0Detail")};
   const blocked = level === "R3";
   const showAssessment = hasText && (explain.tone !== "caution" || /新增|加入|添加|新机制|玩法|战斗|联机/i.test(value));
   const title = sourceGame?.title ?? template.name;
   const art = sourceGame?.coverUrl ?? templateAsPickable(template).coverUrl;
   return (
-    <section className="describe-panel" aria-label="描述改动">
+    <section className="describe-panel" aria-label={c("describeRemix")}>
       <div className="chosen-game">
         <GameArt src={art} title={title} size="small" />
         <span className="chosen-game-copy">
-          <small>要改的游戏</small>
+          <small>{c("game")}</small>
           <strong>{title}</strong>
         </span>
-        <button type="button" className="text-link" onClick={onChangeGame}>换一个游戏</button>
+        <button type="button" className="text-link" onClick={onChangeGame}>{c("changeGame")}</button>
       </div>
       <RevisionPlanPicker projectId={sourceGame?.id ?? ""} content={value} onContentChange={onChange}
-        disabled={!sourceGame} inputId="remix-request" inputLabel="这次想怎么改？"
-        placeholder="例如：所有角色改为精灵动图，同时把技能墨量消耗减半。"
-        submitLabel="确认改造需求，生成方案" onConfirm={plan => { onPlanReady(plan); }} />
+        disabled={!sourceGame} inputId="remix-request" inputLabel={c("remixInput")}
+        placeholder={c("remixPlaceholder")}
+        submitLabel={c("remixSubmit")} onConfirm={plan => { onPlanReady(plan); }} />
       {showAssessment && (
         <div className={`assessment tone-${explain.tone}`} role="status">
           <strong>{explain.title}</strong>
           <span>{explain.detail}</span>
         </div>
       )}
-      <p className="remix-preservation-note">可一次确认玩法、资源和画面风格等互不冲突的修改。未点名的资源、玩法和操作仍会保留。</p>
+      <p className="remix-preservation-note">{c("preserve")}</p>
       {blocked ? (
         <button type="button" className="primary-action" onClick={onConvert}>
-          按新游戏继续 <span aria-hidden="true">→</span>
+          {c("convert")} <span aria-hidden="true">→</span>
         </button>
       ) : (
         null
       )}
-      <p className="action-footnote">{hasText ? "分析修改内容只会读取当前作品和资源，不调用模型；确认后生成方案会使用文字模型用量。" : "先写一句你想改什么。"}</p>
+      <p className="action-footnote">{c(hasText ? "analysisUse" : "writeFirst")}</p>
     </section>
   );
 }
@@ -208,37 +209,39 @@ function NewGameDescribeStep({
   aspectRatio: NewGameAspectRatio | null;
   onAspectRatioChange: (value: NewGameAspectRatio) => void;
 }) {
+  const c=useAdvancedStudioCopy();
   const ready = value.trim().length >= 12;
   const mechanics = ready ? recommendMechanics(value).slice(0, 2) : [];
   return (
-    <section className="describe-panel" aria-label="描述新游戏">
-      <label htmlFor="new-game-brief">说说你想做的游戏</label>
+    <section className="describe-panel" aria-label={c("describeNew")}>
+      <label htmlFor="new-game-brief">{c("newLabel")}</label>
       <textarea
         id="new-game-brief"
         value={value}
         onChange={(event) => onChange(event.target.value)}
         rows={7}
-        placeholder={"比如：\n一个像贪吃蛇的游戏，但吃的是星星，越吃越快\n我想做一个俄罗斯方块\n主角是一只小昆虫，在树干上一边爬一边躲树脂"}
+        placeholder={c("newPlaceholder")}
       />
       {ready && mechanics.length > 0 && (
         <div className="assessment tone-safe" role="status">
-          <strong>根据描述匹配到这些候选玩法，制作后仍需验证</strong>
+          <strong>{c("candidate")}</strong>
           <span>{mechanics.map((item) => item.name).join("、")}</span>
         </div>
       )}
       <AspectRatioChoice value={aspectRatio} onChange={onAspectRatioChange} />
       <SpriteAnimationChoice value={spriteAnimation} onChange={onSpriteAnimationChange} />
       <button type="button" className="primary-action" onClick={() => onContinue(true)} disabled={!validation.valid || !aspectRatio}>
-        提交，生成方案 <span aria-hidden="true">→</span>
+        {c("submit")} <span aria-hidden="true">→</span>
       </button>
       <p className="action-footnote">
-        {ready ? "下一步会先给你看一份可检查的方案，不会马上消耗 AI 额度。" : "再多写一点，一句完整的话就够。"}
+        {c(ready ? "ready" : "more")}
       </p>
     </section>
   );
 }
 
 export function AdvancedStudioApp() {
+  const c=useAdvancedStudioCopy();
   const [draft, setDraft] = useState<StudioDraft>(() => loadDraft());
   const [stage, setStage] = useState<Stage>(() => new URLSearchParams(location.search).has("production") || getPendingProductionId() ? "produce" : "compose");
   const [confirmedPlan, setConfirmedPlan] = useState<string>();
@@ -296,10 +299,10 @@ export function AdvancedStudioApp() {
     const changeLevel: ChangeLevel = draft.freeRequest.trim() ? classification.level : "R0";
     const mechanicIds = template ? knowledgeMappingForTemplate(template.id)?.mechanicIds ?? [] : [];
     const referenceDossier = changeLevel === "R2" && mechanicIds.length
-      ? createReferenceDossier(`${draft.sourceGame?.title ?? template?.name ?? "模板"}：${draft.freeRequest}`, mechanicIds.slice(0, 2))
+      ? createReferenceDossier(`${draft.sourceGame?.title ?? template?.name ?? c("template")}：${draft.freeRequest}`, mechanicIds.slice(0, 2))
       : null;
     return { ...draft, selectedSuggestionIds: [], changeLevel, referenceDossier };
-  }, [classification.level, draft, template]);
+  }, [c, classification.level, draft, template]);
 
   const validation = useMemo(() => validateDraft(finalizedDraft), [finalizedDraft]);
 
@@ -336,7 +339,7 @@ export function AdvancedStudioApp() {
 
   const convertToNewGame = () => {
     const inspiration = draft.sourceGame?.title ?? template?.name;
-    const combinedBrief = [inspiration ? `以「${inspiration}」为灵感` : "", draft.freeRequest].filter(Boolean).join("，");
+    const combinedBrief = [inspiration ? c("inspired",{title:inspiration}) : "", draft.freeRequest].filter(Boolean).join("，");
     setRevisionPlan(undefined);
     updateDraft({ creationMode: "mechanic-composition", templateId: null, sourceGame: null, newGameBrief: combinedBrief, changeLevel: "R3", aspectRatio: undefined });
     setStep("describe");
@@ -358,14 +361,14 @@ export function AdvancedStudioApp() {
   }
 
   const isRemix = draft.creationMode === "template-remix";
-  const remixTitle = draft.sourceGame?.title ?? template?.name ?? "这个游戏";
+  const remixTitle = draft.sourceGame?.title ?? template?.name ?? c("thisGame");
   const heading = step === "choose"
-    ? { title: "把想法，变成好玩的。", lead: "一句话开始你的小游戏。先确认玩法，再制作与试玩。" }
+    ? { title: c("startTitle"), lead: c("startLead") }
     : step === "pick-game"
-      ? { title: "你想改哪一个？", lead: "点一个游戏。" }
+      ? { title: c("pickTitle"), lead: c("pickLead") }
       : isRemix
-        ? { title: `个性化「${remixTitle}」`, lead: "可以一次说明玩法、资源和画面风格等互不冲突的调整。未点名的内容会保留。" }
-        : { title: "你想做一个什么游戏？", lead: "可以说一个你玩过的游戏，也可以说一个从没见过的点子。" };
+        ? { title: c("remixTitle",{title:remixTitle}), lead: c("remixLead") }
+        : { title: c("newTitle"), lead: c("newLead") };
   const backStep: ComposeStep | null = step === "choose" ? null : step === "describe" && isRemix ? "pick-game" : "choose";
 
   return (
@@ -376,21 +379,21 @@ export function AdvancedStudioApp() {
           <div className="intro-row">
             <div>
               {backStep ? (
-                <button type="button" className="text-action" onClick={() => setStep(backStep)}>← 返回</button>
+                <button type="button" className="text-action" onClick={() => setStep(backStep)}>{c("back")}</button>
               ) : (
-                <span className="eyebrow">游戏创作</span>
+                <span className="eyebrow">{c("eyebrow")}</span>
               )}
               <h1>{heading.title}</h1>
               <p>{heading.lead}</p>
             </div>
-            {step === "choose" && <span className="scope-chip">单人 · 网页 · 桌面与手机</span>}
+            {step === "choose" && <span className="scope-chip">{c("scope")}</span>}
           </div>
 
           {step === "choose" && <CreationStart value={draft.newGameBrief}
             errors={creationErrors}
             onChange={newGameBrief => { setCreationErrors([]); updateDraft({ newGameBrief, creationMode: "mechanic-composition", templateId: null, sourceGame: null }); }}
             onContinue={(explicit = false) => {
-              if (!draft.aspectRatio) { setCreationErrors(["请先选择游戏画幅。"]); return; }
+              if (!draft.aspectRatio) { setCreationErrors([c("needAspect")]); return; }
               const intent = resolveCreationModeIntent({ idea: draft.newGameBrief });
               if (intent === "reference-replica") {
                 const next: StudioDraft = { ...draft, creationMode: "mechanic-composition", templateId: null, sourceGame: null, selectedSuggestionIds: [], selectedMechanicIds: [], changeLevel: "R3", referenceDossier: null };
@@ -445,8 +448,8 @@ export function AdvancedStudioApp() {
         </div>
       )}
       <footer className="app-footer">
-        <span>当前能力：从范围判断到构建、验证与发布闭环</span>
-        <span>不会复制参考游戏的品牌、美术、音乐或界面识别</span>
+        <span>{c("footerCapability")}</span>
+        <span>{c("footerOriginal")}</span>
       </footer>
     </div>
   );

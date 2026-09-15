@@ -2,14 +2,14 @@ import { z } from "zod";
 import { DESIGN_MODIFIERS, MECHANIC_ATLAS } from "./game-design-knowledge/mechanic-atlas.js";
 
 /**
- * 生成式游戏的知识蓝图：把机制图谱里的独立机制与设计修饰器真正落到一次创作里，
- * 并要求策划写清玩家每次操作的取舍、张力来源与熟练度体现。
+ * 生成式游戏的最小知识蓝图。机制图谱和设计修饰器只在确实贴合核心玩法时使用；
+ * 简单直接的玩法不需要为了填满结构而追加取舍、张力或额外系统。
  *
- * 蓝图同时声明这次游戏需要的局内美术主体，使图片先于代码生成，
- * 代码只负责绘制已有位图，不再用 canvas 路径自绘主体。
+ * sprites 只声明确实需要位图实现的局内主体。空清单表示按已确认的美术方向使用
+ * CSS、Canvas、SVG 或 3D 材质程序绘制，不会因为选择了风格而强制调用图片模型。
  */
 const slug = z.string().regex(/^[a-z0-9][a-z0-9-]{0,60}$/);
-const statement = z.string().trim().min(10).max(200);
+const optionalStatement = z.string().trim().max(200).default("");
 
 export const spriteAnimationClipIds = ["idle", "run", "hit", "effect"] as const;
 export const spriteAnimationClipSchema = z.object({
@@ -74,15 +74,15 @@ export const blueprintSpriteSchema = z.object({
 });
 
 export const generatedBlueprintSchema = z.object({
-  mechanicIds: z.array(slug).min(1).max(3),
-  modifierIds: z.array(slug).min(1).max(2),
-  /** 玩家每次操作前的真实取舍：不同选择必须导致不同结果。 */
-  coreDecision: statement,
-  /** 张力来源：即使没有失败，也要说明什么让取舍有意义。 */
-  tension: statement,
-  /** 熟练度体现：技巧更好的玩家在同一关里表现出什么可观察差别。 */
-  masterySignal: statement,
-  sprites: z.array(blueprintSpriteSchema).min(2).max(5),
+  mechanicIds: z.array(slug).max(3).default([]),
+  modifierIds: z.array(slug).max(2).default([]),
+  /** 玩法本身存在逐次取舍时才填写；直接操作可留空。 */
+  coreDecision: optionalStatement,
+  /** 玩法本身存在压力或权衡时才填写；自由体验可留空。 */
+  tension: optionalStatement,
+  /** 玩法本身存在可观察的技巧差异时才填写。 */
+  masterySignal: optionalStatement,
+  sprites: z.array(blueprintSpriteSchema).max(5).default([]),
 }).superRefine((plan, ctx) => {
   const unknownMechanics = plan.mechanicIds.filter(id => !MECHANIC_ATLAS.some(entry => entry.id === id));
   if (unknownMechanics.length) ctx.addIssue({ code: "custom", path: ["mechanicIds"], message: `机制必须取自机制图谱：${unknownMechanics.join("、")} 不在库中。` });
@@ -112,7 +112,7 @@ export function blueprintSpriteFiles(plan?: GeneratedBlueprint | null): string[]
 }
 
 /**
- * 3D 作品默认单色渲染（2026-09-14 产品规则）：主体用纯色/顶点色材质与程序 CanvasTexture 表现，
+ * 3D 作品默认程序渲染（2026-09-14 产品规则）：主体用纯色/顶点色材质与程序 CanvasTexture 表现，
  * 方案里声明的位图不生成、不加载、不验收；是否补贴图留到上线后按需要单独决定。
  * 蓝图的玩法取舍、机制与修饰器照常生效，只把 sprites 清空。
  */
@@ -129,13 +129,13 @@ export function generatedBlueprintPrompt(plan?: GeneratedBlueprint | null): stri
   const mechanics = blueprintMechanics(plan).map(entry => `- 分类参考「${entry.label}」：${entry.productionRule}`);
   const modifiers = blueprintModifiers(plan).map(entry => `- 修饰器「${entry.label}」：${entry.intent}${entry.rule}`);
   return [
-    `玩法取舍（必须在代码中成立）：${plan.coreDecision}`,
-    `张力来源：${plan.tension}`,
-    `熟练度体现：${plan.masterySignal}`,
+    ...(plan.coreDecision ? [`玩法本身已有的取舍（在代码中保持成立）：${plan.coreDecision}`] : []),
+    ...(plan.tension ? [`玩法本身已有的张力来源：${plan.tension}`] : []),
+    ...(plan.masterySignal ? [`可观察的熟练度体现：${plan.masterySignal}`] : []),
     "以下知识库机制卡只用于帮助理解策划分类；不得用卡片里的通用角色、状态或结果替换上面的本游戏具体取舍，也不得据此增加玩家未要求的操作。",
     ...mechanics,
     ...modifiers,
-    ...(plan.sprites.length === 0 ? ["局内美术：本作品不使用任何位图（3D 默认单色渲染）：方块、角色、符号与反馈全部程序绘制——纯色或顶点色材质、程序 CanvasTexture、Canvas 路径；不得加载、引用或虚构任何图片文件。"] : []),
+    ...(plan.sprites.length === 0 ? ["局内美术：本作品没有必须生成的位图；按项目已确认的题材与画面风格，用 CSS、Canvas、SVG、纯色/顶点色材质或程序 CanvasTexture 绘制需要的主体与反馈。不得加载、引用或虚构未声明的图片文件。"] : []),
     ...(plan.sprites.length === 0 ? [] : [`局内美术：平台已生成 ${plan.sprites.map(({ file, role, animation, presentation }) => `${file}（${role}${animation ? `；Sprite Sheet ${animation.columns}×${animation.rows}，单帧 ${animation.frameWidth}×${animation.frameHeight}，像素锚点 ${animation.anchor.x},${animation.anchor.y}，动作 ${animation.clips.map(clip => `${clip.id}:${clip.startFrame}+${clip.frameCount}@${clip.fps}fps${clip.loop ? "循环" : "单次"}`).join("/")}` : "；静态位图"}；显示区域 ${presentation.region}；相对玩法区短边的常态显示比例 ${presentation.logicalSize.min}–${presentation.logicalSize.max}；归一化锚点 ${presentation.anchor.x},${presentation.anchor.y}；contain）`).join("、")}，全部必须实际加载并绘制。源文件像素尺寸与逻辑显示尺寸是两个独立概念。`]),
     ...(plan.sprites.some(({ animation }) => animation) ? ["带 animation 的文件是 row-major Sprite Sheet。必须使用平台 window.__FORGE_SPRITES__.create(image, animation, initialClip) 播放，并在正常玩法状态切换时调用 play(id)；每帧用 player.draw(ctx, anchorX, anchorY, scale, timestamp) 绘制。禁止把整张网格当静态图显示，也禁止另写一套帧索引算法。"] : []),
     ...(plan.sprites.length === 0 ? [] : ["玩家直接看到或操作的主体外观必须由这些位图承担；禁止用 canvas 路径、圆形、多边形或渐变替代主体位图。允许程序绘制路线、网格、碰撞或出口判定遮罩、高亮框、状态灯和进度条等玩法辅助层，也允许在位图之上叠加反馈。"]),
@@ -146,9 +146,9 @@ export function generatedBlueprintPrompt(plan?: GeneratedBlueprint | null): stri
 export function blueprintRules(plan?: GeneratedBlueprint | null): string[] {
   if (!plan) return [];
   return [
-    `玩家取舍:${plan.coreDecision}`,
+    ...(plan.coreDecision ? [`玩家取舍:${plan.coreDecision}`] : []),
     ...blueprintModifiers(plan).map(entry => `修饰器${entry.label}:${entry.rule}`),
-    ...(plan.sprites.length === 0 ? ["单色渲染:不加载、不引用任何图片文件；方块、角色、符号与反馈全部由纯色/顶点色材质、程序 CanvasTexture 或 Canvas 路径绘制。"] : []),
+    ...(plan.sprites.length === 0 ? ["程序绘制:不加载、不引用未声明图片；按已确认画面风格用 CSS、Canvas、SVG、纯色/顶点色材质或程序 CanvasTexture 绘制主体与反馈。"] : []),
     ...(plan.sprites.length === 0 ? [] : [`局内主体外观必须由这些已加载位图按显示合同承担:${plan.sprites.map(({ file, presentation }) => `${file}[${presentation.region},${presentation.logicalSize.min}-${presentation.logicalSize.max}]`).join("、")}；程序绘制路线、网格、碰撞或出口判定遮罩、高亮及状态UI属于允许的玩法辅助层，只有以程序图形替代主体位图才违规。`]),
   ];
 }
@@ -200,17 +200,15 @@ export function blueprintPlanningPrompt(idea: string): string {
   const candidates = selectBlueprintCandidates(idea).map(entry => `- ${entry.id}｜${entry.label}｜玩家动作:${entry.playerVerb}｜状态:${entry.state}｜结果:${entry.outcome}`);
   const modifiers = DESIGN_MODIFIERS.map(entry => `- ${entry.id}｜${entry.label}｜${entry.intent}`);
   return [
-    "知识库机制候选(mechanic_ids 只能从这些 id 中选 1–3 个，必须真正构成这次玩法的主体动作):",
+    "知识库机制候选(mechanic_ids 只选确实构成核心动作的 id，0–3 个；没有贴合项就返回空数组):",
     ...candidates,
-    "设计修饰器候选(modifier_ids 只能从这些 id 中选 1–2 个，用来决定节奏、信息、空间、资源或恢复方式):",
+    "设计修饰器候选(modifier_ids 只选玩法本来需要的 id，0–2 个；不得为了丰富方案而添加):",
     ...modifiers,
-    "玩法深度要求仅描述单局demo已有的决策，不得为了显得完整而增加新系统:",
-    "- core_decision 必须描述玩家每次操作前的真实取舍：不同选择导致不同结果。“点到就得分”不是取舍。",
-    "- tension 必须说明取舍为什么有意义。无失败玩法同样要有张力，例如有限空间、互相冲突的目标、会变化的局面或值得权衡的收益。",
-    "- mastery_signal 必须说明技巧更好的玩家在同一关里的可观察差别。",
-    "- 初次创建始终交付单局demo，generated_campaign 返回 null；即使创意提到多关，也先把它作为demo审核后的扩展意向，不在本轮实现。", "- 扩展多关或难度递进必须等demo经用户审核并明确提出后再规划。",
-    "局内美术清单(sprites, 2–5 个):",
-    "- 列出玩家直接看到或操作的主体，例如可拾取物、角色、容器、障碍。平台会在代码生成之前先把它们生成为透明底位图。",
+    "玩法说明只记录最小核心玩法已经存在的内容，不得为了显得完整而增加新系统:",
+    "- core_decision、tension、mastery_signal 只在玩法本身确有对应内容时填写；简单直接、自由体验或纯表现玩法可返回空字符串。",
+    "- 初次创建只能规划单局 campaign（levelCount=1、milestones=[1]、difficultyKeys=[]）或用户创意本身要求的 endless（levelCount=0、milestones=[]、difficultyKeys=[]）；按玩法事实选择 failurePolicy，不强加失败。扩展多关或难度递进必须等 demo 经用户审核并明确提出后再规划。",
+    "局内位图清单(sprites, 0–5 个):",
+    "- 只列出必须使用位图或 Sprite Sheet 才能表达的主体。几何棋盘、方向符号、连线、粒子、抽象卡牌和简单物体优先程序绘制，sprites 返回空数组；角色表演、题材插画或用户明确要求位图时才列出对应项。风格选择本身不要求生成图片。",
     "- file 用小写英文短横线命名，形如 assets/shell-scallop.png；role 是中文短名；hint 说明外形、材质与辨识特征。",
     "- presentation 必填：region 只选 playfield/hud/overlay；fit 固定 contain；logicalSize 的 min/max 是相对玩法区短边的常态显示比例，不是源图片像素；anchor 是 0–1 归一化绘制锚点；safeInsetRatio 是透明安全边；minSourcePixels 是主体可见内容短边的最低像素，动画会逐帧检查。移动路径仍由玩法决定，不要把位置锁死成屏幕像素。",
     "- 对玩家控制或持续运动的主要主体，优先增加 animation。第一版动作只能是 idle/run/hit/effect；每个动作 4–8 帧，row-major 单图集多动作，动作区间不可重叠。静态道具可不填 animation。",

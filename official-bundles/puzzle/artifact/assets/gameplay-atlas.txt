@@ -1,0 +1,7 @@
+Use case: stylized-concept
+Asset type: 3×3 game sprite atlas
+Primary request: Exact row-major 3x3 atlas for a cute photo-jigsaw game. Cells 1-4 each contain one isolated thick rounded blank jigsaw piece in coral, cobalt, yellow and lilac, with subtle paper texture and no printed picture. Cell 5 contains one compact cream puzzle-board corner ornament, not a large panel. Cell 6 contains one small magnetic placement pin with a glowing ring, designed to sit over the selected piece. Cell 7 is one butterfly sticker. Cell 8 is one tiny flower cluster. Cell 9 is one completion sparkle.
+Style/medium: premium tactile kawaii game sprites, soft paper and clay details, modern not antique
+Composition/framing: strict 3x3 equal-cell contact sheet, one large centered isolated object per cell, consistent scale and clear silhouette
+Lighting/mood: bright diffuse studio daylight
+Constraints: solid uniform chroma-green #00FF00 background; no grid lines, text, logos, watermark, overlap, large scene, full board, cast shadows crossing cells or green-family colors on objects

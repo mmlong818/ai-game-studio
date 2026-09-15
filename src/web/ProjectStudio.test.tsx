@@ -46,6 +46,7 @@ describe("制作停止", () => {
     vi.resetAllMocks();
     vi.stubGlobal("matchMedia", vi.fn(() => ({ matches: false, addEventListener: vi.fn(), removeEventListener: vi.fn() })));
     window.localStorage.clear();
+    window.localStorage.setItem("forge-locale", "zh-CN");
     vi.mocked(api.getLatestBuild).mockResolvedValue(queuedBuild);
     vi.mocked(api.getPlayableBuild).mockResolvedValue(null);
     vi.mocked(api.getProjectMessages).mockResolvedValue([]);

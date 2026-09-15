@@ -1,0 +1,7 @@
+Use case: stylized-concept
+Asset type: 3×3 game sprite atlas
+Primary request: Exact row-major 3x3 atlas for a cute cosmic-aquarium brick-breaker. Cells 1-4 each contain exactly one isolated wide rounded gummy brick of identical dimensions: coral, cyan, mango and milky white. Cell 5 is one isolated wide bubble paddle. Cell 6 is one isolated glowing pearl ball. Cell 7 is one compact star impact burst. Cell 8 is one tiny jellyfish spectator. Cell 9 is one compact bubble cluster, never a scene or background.
+Style/medium: premium pop-kawaii arcade sprites, glossy gummy candy and bubble glass, crisp mobile silhouettes
+Composition/framing: strict 3x3 equal-cell contact sheet, one centered isolated object per cell, bricks share exact scale and proportions
+Lighting/mood: bright aquarium studio glow
+Constraints: solid uniform chroma-green #00FF00 background; no grid lines, text, logos, watermark, overlap, scenes, full playfield, cast shadows crossing cells or green-family colors on objects

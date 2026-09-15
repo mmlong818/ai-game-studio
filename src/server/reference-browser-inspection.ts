@@ -25,7 +25,7 @@ export type ReferenceBrowserInspection = {
 };
 
 type RawObservation = Omit<ReferenceBrowserInspection, "method" | "runtimeStatus" | "gameplayStatus" | "canClaimPlayable" | "limitations"> & { pageBlocked: boolean };
-export type ReferenceBrowserDriver = (url: URL, options: { timeoutMs: number; maxRequests: number; screenshotPath?: string }) => Promise<RawObservation>;
+export type ReferenceBrowserDriver = (url: URL, options: { timeoutMs: number; maxRequests: number; screenshotPath?: string; signal?: AbortSignal }) => Promise<RawObservation>;
 
 const safeUrl = (value: string) => { try { const url = new URL(value); url.search = ""; url.hash = ""; return url.toString(); } catch { return ""; } };
 const digest = (bytes: Buffer) => createHash("sha256").update(bytes).digest("hex");
@@ -52,13 +52,15 @@ export function classifyReferenceBrowserObservation(raw: RawObservation, documen
   };
 }
 
-async function playwrightDriver(url: URL, options: { timeoutMs: number; maxRequests: number; screenshotPath?: string }): Promise<RawObservation> {
+async function playwrightDriver(url: URL, options: { timeoutMs: number; maxRequests: number; screenshotPath?: string; signal?: AbortSignal }): Promise<RawObservation> {
   let browser: Browser | null = null; let context: BrowserContext | null = null; let page: Page | null = null;
   let requestCount = 0; let blockedRequestCount = 0; let pageBlocked = false;
   const scriptUrls = new Set<string>(); const consoleErrors: string[] = [];
   try {
+    options.signal?.throwIfAborted();
     browser = await chromium.launch({ headless: true, args: ["--disable-extensions", "--disable-background-networking"] });
     context = await browser.newContext({ acceptDownloads: false, serviceWorkers: "block", viewport: { width: 1280, height: 800 } });
+    options.signal?.addEventListener("abort", () => { void context?.close().catch(() => {}); void browser?.close().catch(() => {}); }, { once: true });
     await context.route("**/*", async route => {
       requestCount += 1;
       const request = route.request();
@@ -71,10 +73,12 @@ async function playwrightDriver(url: URL, options: { timeoutMs: number; maxReque
       await route.continue();
     });
     page = await context.newPage();
+    options.signal?.throwIfAborted();
     page.on("console", message => { if (message.type() === "error" && consoleErrors.length < 10) consoleErrors.push(message.text().slice(0, 240)); });
     page.on("pageerror", error => { if (consoleErrors.length < 10) consoleErrors.push(error.message.slice(0, 240)); });
     page.on("download", download => void download.cancel());
     await page.goto(url.toString(), { waitUntil: "domcontentloaded", timeout: options.timeoutMs });
+    options.signal?.throwIfAborted();
     await page.waitForTimeout(Math.min(2_000, Math.max(250, options.timeoutMs / 4)));
     const first = await page.screenshot({ animations: "disabled" });
     await page.waitForTimeout(1_000);
@@ -103,8 +107,10 @@ async function playwrightDriver(url: URL, options: { timeoutMs: number; maxReque
   } finally { await context?.close().catch(() => {}); await browser?.close().catch(() => {}); }
 }
 
-export async function inspectReferenceInBrowser(rawUrl: string, options: { documented: boolean; timeoutMs?: number; maxRequests?: number; screenshotPath?: string; driver?: ReferenceBrowserDriver } = { documented: false }): Promise<ReferenceBrowserInspection> {
+export async function inspectReferenceInBrowser(rawUrl: string, options: { documented: boolean; timeoutMs?: number; maxRequests?: number; screenshotPath?: string; driver?: ReferenceBrowserDriver; signal?: AbortSignal } = { documented: false }): Promise<ReferenceBrowserInspection> {
+  options.signal?.throwIfAborted();
   const url = new URL(rawUrl); await assertPublicReferenceUrl(url);
-  const raw = await (options.driver ?? playwrightDriver)(url, { timeoutMs: options.timeoutMs ?? 15_000, maxRequests: options.maxRequests ?? 120, ...(options.screenshotPath ? { screenshotPath: options.screenshotPath } : {}) });
+  const raw = await (options.driver ?? playwrightDriver)(url, { timeoutMs: options.timeoutMs ?? 15_000, maxRequests: options.maxRequests ?? 120, signal: options.signal, ...(options.screenshotPath ? { screenshotPath: options.screenshotPath } : {}) });
+  options.signal?.throwIfAborted();
   return classifyReferenceBrowserObservation(raw, options.documented);
 }

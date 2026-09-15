@@ -37,8 +37,6 @@ body{
 #stage{position:relative;flex:1 1 auto;overflow:hidden}
 canvas{position:absolute;inset:0;width:100%;height:100%;display:block;touch-action:none}
 #fx{pointer-events:none;z-index:12}
-#zoom{position:absolute;right:8px;bottom:8px;z-index:16;display:flex;flex-direction:column;gap:8px}
-#zoom .sk{font-size:20px;padding:0;width:44px;height:44px;line-height:1}
 #banner{position:absolute;left:50%;top:14%;transform:translateX(-50%);z-index:20;display:none;
   border:2px solid var(--line);background:var(--paper);padding:10px 16px;text-align:center;
   border-radius:18px 10px 20px 12px/12px 20px 10px 18px}
@@ -66,5 +64,4 @@ body[data-theme="dark"] #settings{background:rgba(10,12,15,.55)}
 .row .sk{flex:1;margin-top:0;font-size:12px}
 .head{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px}
 .head h3{margin:0}
-
 

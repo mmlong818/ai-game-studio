@@ -1,0 +1,26 @@
+{
+  "schemaVersion": "design-acceptance-report-v1",
+  "contractId": "DESIGN-93620a9e-9916-4d4b-9301-e114ea1aa3a4",
+  "checkedAt": "2026-09-14T22:20:23.117Z",
+  "passed": true,
+  "criteria": [
+    {
+      "id": "ACCEPT-ENDLESS",
+      "label": "无限模式重开正常且抽样期间没有通关终点（不证明长期内容供给）",
+      "kind": "endless-sampled",
+      "passed": true,
+      "evidenceCheckIds": [
+        "ENDLESS-SAMPLED"
+      ]
+    },
+    {
+      "id": "ACCEPT-NO-FAILURE",
+      "label": "已测操作未进入失败状态（抽样检查）",
+      "kind": "no-failure",
+      "passed": true,
+      "evidenceCheckIds": [
+        "NO-FAILURE-SAMPLED"
+      ]
+    }
+  ]
+}

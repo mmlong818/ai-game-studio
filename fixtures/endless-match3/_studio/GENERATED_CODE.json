@@ -1,0 +1,16 @@
+{
+  "schemaVersion": 1,
+  "model": "local-repair",
+  "experimental": true,
+  "rounds": 0,
+  "files": [
+    "index.html",
+    "styles.css",
+    "app.js"
+  ],
+  "bytes": 37803,
+  "sha256": "a093dfe6d5ac5bf6cf7c4d88bab9f2a6a7de7113317719740aca92a49a93d96d",
+  "securityScan": "passed",
+  "designNotes": "服务器登记的本地修复候选 2026-09-14T22:17:10.137Z；仍需完整验收。",
+  "generatedAt": "2026-09-14T22:19:37.545Z"
+}

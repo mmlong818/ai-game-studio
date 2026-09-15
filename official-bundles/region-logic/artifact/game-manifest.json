@@ -1,0 +1,100 @@
+{
+  "title": "星灵巡格",
+  "template": "region-logic",
+  "runtimeTarget": "web-2d",
+  "difficulty": "standard",
+  "visualStyle": "cute",
+  "aspectRatio": "9:16",
+  "cameraMode": "board",
+  "inputModes": [
+    "pointer",
+    "keyboard",
+    "touch-buttons"
+  ],
+  "designProfile": {
+    "genre": "区域独占逻辑",
+    "targetPlayer": "喜欢逐步排除、无时间压力或轻量每日挑战的逻辑玩家",
+    "playerFantasy": "通过行列、区域与相邻关系推理出星灵唯一驻留位置",
+    "sessionLength": "3–15 分钟",
+    "coreLoop": [
+      "观察区域边界",
+      "标记不可能格",
+      "放置星灵",
+      "利用自动排除继续推理"
+    ],
+    "winCondition": "每行、每列和每个区域均达到本关规定星数，且任意两颗星互不相邻",
+    "failCondition": "标准模式不以生命耗尽强制失败；直接冲突会阻止落子，逻辑死路由可解释提示和撤销修正",
+    "progression": [
+      "第 1–12 关从 6×6 一星逐步推进到 8×8 一星",
+      "第 13–20 关进入 10×10 双星规则，并以反证和复合约束延长推理链"
+    ],
+    "difficultyCurve": [
+      "标准档：保持足够学习窗口，并在中段形成稳定压力",
+      "难度调整必须改变 region-logic 的真实规则参数，而不是只改标签"
+    ],
+    "gameFeel": [
+      "单击循环、星星和排除三种输入方式兼容不同熟练度",
+      "手动标记与规则自动排除来源清晰",
+      "冲突在格内反馈而不弹出遮挡窗口",
+      "完成时星灵连成庆祝轨迹"
+    ],
+    "onboarding": [
+      "首章分步解释配额与相邻禁放",
+      "默认开启自动排除降低重复操作",
+      "提示只解释下一步理由而不直接亮出答案"
+    ],
+    "accessibility": [
+      "循环、星星、排除、撤销、重做和推理都有文字按钮与键盘操作",
+      "区域同时使用边界、纹理和色相表达",
+      "刷新页面可恢复当前关卡"
+    ],
+    "productionRisks": [
+      "每题必须验证区域连通、唯一解和人工规则可推理",
+      "20 关布局签名必须去重",
+      "不得把求解器答案数组作为普通提示来源"
+    ]
+  },
+  "levelProgression": {
+    "levelCount": 20,
+    "curve": "stepped",
+    "tierSize": 4,
+    "unlockMode": "sequential",
+    "persistProgress": true
+  },
+  "templateSource": {
+    "sourceName": "Star Battle（MelodyLucien）+ mkgame-sudoku",
+    "sourceUrl": "https://github.com/MelodyLucien/starbattle",
+    "license": "MIT",
+    "licenseUrl": "https://github.com/MelodyLucien/starbattle/blob/main/LICENSE",
+    "integrationMode": "code-port",
+    "importedElements": [
+      "通用 K 星行列区域求解结构",
+      "唯一解提前退出",
+      "星星与排除标记循环输入",
+      "自动排除、撤销重做与断点恢复"
+    ],
+    "assetPolicy": "只移植 MIT 规则与求解结构；未复制任何第三方题库、图标、宣传图、音乐或其他媒体。20 关题面、提示教学与全部视听资产均由本平台重新生成。",
+    "verifiedAt": "2026-08-30"
+  },
+  "generatedAt": "2026-08-31T08:38:07.763Z",
+  "assetManifest": "./assets/asset-manifest.json",
+  "artPipeline": {
+    "renderer": "role-split-bitmaps",
+    "sourceAtlas": "./assets/gameplay-atlas.png",
+    "gameplayBackground": "./assets/background.png",
+    "sprites": [
+      "./assets/sprites/sprite-01.png",
+      "./assets/sprites/sprite-02.png",
+      "./assets/sprites/sprite-03.png",
+      "./assets/sprites/sprite-04.png",
+      "./assets/sprites/sprite-05.png",
+      "./assets/sprites/sprite-06.png",
+      "./assets/sprites/sprite-07.png",
+      "./assets/sprites/sprite-08.png",
+      "./assets/sprites/sprite-09.png"
+    ],
+    "cover": "./assets/cover.png"
+  },
+  "userCustomization": [],
+  "puzzleRules": null
+}

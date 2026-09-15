@@ -1,0 +1,54 @@
+{
+  "checkedAt": "2026-09-14T22:20:23.117Z",
+  "executablePath": "C:\\Users\\Admin\\AppData\\Local\\ms-playwright\\chromium-1234\\chrome-win64\\chrome.exe",
+  "experimental": true,
+  "timedOut": false,
+  "totalTimeoutMs": 120000,
+  "checks": [
+    {
+      "id": "GEN-BROWSER-CONTRACT",
+      "label": "生成游戏运行时契约（状态机、开始、无最终胜利、重开）",
+      "status": "passed",
+      "evidence": "360×640: 无横向溢出，首屏可开局。 390×844 执行 无限模式声明、正常玩法操作与重开后再次操作（重开前:玩家可见得分、重开后:玩家可见得分）；不代表无限时长运行证明；按确认方案不测试失败结算。 390×844: 无横向溢出，首屏可开局。 1366×900: 无横向溢出，首屏可开局。"
+    },
+    {
+      "id": "GEN-BROWSER-LAYOUT",
+      "label": "三档画幅布局与触控可达",
+      "status": "passed",
+      "evidence": "360/390/1366 宽度均无横向溢出且可开局。"
+    },
+    {
+      "id": "GEN-BROWSER-VISUAL",
+      "label": "位图等比显示与关键文字完整",
+      "status": "passed",
+      "evidence": "已核对 Canvas 源矩形/目标矩形、Canvas 像素画布/CSS 尺寸、DOM 图片 object-fit、CSS 背景和关键文字裁切；cover/contain 与等比 DPR 缩放保留。"
+    },
+    {
+      "id": "GEN-BROWSER-ERRORS",
+      "label": "浏览器错误监听",
+      "status": "passed",
+      "evidence": "已监听控制台错误与未处理异常。"
+    },
+    {
+      "id": "NO-FAILURE-SAMPLED",
+      "label": "正常操作抽样期间未进入禁止的失败状态",
+      "status": "passed",
+      "evidence": "已在正常操作与重开抽样期间持续监听 game:state-change 和 data-game-state，未观察到 lost；短期抽样不代表无限时长证明。"
+    },
+    {
+      "id": "ENDLESS-SAMPLED",
+      "label": "无限模式正常操作、重开后再操作及禁止胜利状态抽样",
+      "status": "passed",
+      "evidence": "真实指针操作观察到重开前:玩家可见得分、重开后:玩家可见得分；有限关卡检查不适用，短期观察不证明内容持续供给或长期性能。"
+    }
+  ],
+  "failures": [],
+  "observations": [],
+  "screenshots": [
+    "_studio/quality/phone-small-idle.png",
+    "_studio/quality/phone-standard-idle.png",
+    "_studio/quality/phone-standard-playing.png",
+    "_studio/quality/phone-standard-endless.png",
+    "_studio/quality/desktop-wide-idle.png"
+  ]
+}

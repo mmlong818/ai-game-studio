@@ -1,0 +1,81 @@
+{
+  "title": "朱门华容",
+  "template": "klotski",
+  "runtimeTarget": "web-2d",
+  "difficulty": "standard",
+  "visualStyle": "line-art",
+  "aspectRatio": "9:16",
+  "cameraMode": "board",
+  "inputModes": [
+    "drag",
+    "pointer",
+    "keyboard"
+  ],
+  "designProfile": {
+    "genre": "滑块逻辑解谜",
+    "targetPlayer": "偏好低压力、可反复推演空间关系的玩家",
+    "playerFantasy": "在有限棋盘里腾挪木块，为主将打开唯一出口",
+    "sessionLength": "5–20 分钟",
+    "coreLoop": [
+      "选择木块",
+      "判断可移动方向",
+      "执行一步腾挪",
+      "评估出口空间"
+    ],
+    "winCondition": "将曹操移动到棋盘底部中央出口",
+    "failCondition": "无强制失败；步数用于自我优化",
+    "progression": [
+      "每一步改变后续可用空间",
+      "完成后以步数支持重复挑战"
+    ],
+    "difficultyCurve": [
+      "标准档：保持足够学习窗口，并在中段形成稳定压力",
+      "难度调整必须改变 klotski 的真实规则参数，而不是只改标签"
+    ],
+    "gameFeel": [
+      "选择态和不可移动态清晰区分",
+      "移动以整格动画和木质声音确认",
+      "到达出口立即结束计步"
+    ],
+    "onboarding": [
+      "高亮主将与出口",
+      "第一次选择后显示可用方向"
+    ],
+    "accessibility": [
+      "按钮操作不依赖精细拖拽",
+      "木块使用尺寸、标签与颜色共同区分"
+    ],
+    "productionRisks": [
+      "棋盘布局必须保证可解"
+    ]
+  },
+  "levelProgression": {
+    "levelCount": 20,
+    "curve": "stepped",
+    "tierSize": 4,
+    "unlockMode": "sequential",
+    "persistProgress": true
+  },
+  "templateSource": null,
+  "generatedAt": "2026-08-31T08:40:00.930Z",
+  "assetManifest": "./assets/asset-manifest.json",
+  "artPipeline": {
+    "renderer": "role-split-bitmaps",
+    "sourceAtlas": "./assets/gameplay-atlas.png",
+    "gameplayBackground": "./assets/background.png",
+    "sprites": [
+      "./assets/sprites/sprite-01.png",
+      "./assets/sprites/sprite-02.png",
+      "./assets/sprites/sprite-03.png",
+      "./assets/sprites/sprite-04.png",
+      "./assets/sprites/sprite-05.png",
+      "./assets/sprites/sprite-06.png",
+      "./assets/sprites/sprite-07.png",
+      "./assets/sprites/sprite-08.png",
+      "./assets/sprites/sprite-09.png"
+    ],
+    "cover": "./assets/cover.png"
+  },
+  "userCustomization": [],
+  "puzzleRules": null
+}

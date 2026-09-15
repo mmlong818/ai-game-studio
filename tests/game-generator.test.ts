@@ -86,6 +86,34 @@ test("确认关卡计划同时进入生成指令与交付清单", async () => {
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
 
+test("确认无限玩法进入生成指令与0关清单，且不要求forceWin", async () => {
+  const project = fakeProject();
+  const campaign = { mode: "endless" as const, failurePolicy: "forbidden" as const, levelCount: 0, milestones: [], difficultyKeys: [], rationale: "自由消除，没有最终胜负。" };
+  project.spec.designProfile.generatedCampaign = campaign;
+  let system = "";
+  const endlessHtml = contractHtml
+    .replace("getState:()=>({state,score:shots", "getState:()=>({state,mode:'endless',score:shots")
+    .replace('  forceWin:()=>setState("won"),\n', "")
+    .replace('<canvas id="game-canvas"', '<button data-game-action>正常消除</button><canvas id="game-canvas"');
+  const generator = new GameCodeGenerator(new OpenAISettings(validKey), { fetchImpl: async (_url, init) => {
+    system = JSON.parse(String(init?.body)).messages[0].content;
+    return llmResponse({ html: endlessHtml, design_notes: "无限自由玩法" });
+  } });
+  const generation = await generator.generate(project);
+  assert.match(system, /无限玩法不提供forceWin/);
+  assert.match(system, /data-game-action/);
+  assert.match(system, /Canvas 与覆盖层必须放在这个带data-game-board的共同父容器内/);
+  assert.match(system, /不表示必须增加关卡、等级、难度递增或分数系统/);
+  const root = mkdtempSync(join(tmpdir(), "confirmed-endless-"));
+  try {
+    writeGeneratedArtifact(root, project, generation);
+    const manifest = JSON.parse(readFileSync(join(root, "game-manifest.json"), "utf8"));
+    assert.equal(manifest.levelProgression.levelCount, 0);
+    assert.deepEqual(manifest.generatedCampaign, campaign);
+    assert.ok(inspectGeneratedArtifact(root, { requireAiArt: false, expectedCampaign: campaign }).includes("确认关卡设计协议"));
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
 function streamedAnswer(content: string, done = true) {
   const chunks = Array.from({ length: Math.ceil(content.length / 40) }, (_, index) =>
     `data: ${JSON.stringify({ choices: [{ delta: { content: content.slice(index * 40, index * 40 + 40) } }] })}\n\n`);
@@ -193,6 +221,44 @@ test("网络结果未知不自动发起第二次付费请求", async () => {
   assert.equal(calls, 1);
 });
 
+test("代码 provider 明确返回 503 时在共享请求预算内退避恢复", async () => {
+  let calls = 0;
+  const reports: string[] = [];
+  const generator = new GameCodeGenerator(new OpenAISettings(validKey), {
+    fetchImpl: async () => {
+      calls++;
+      if (calls === 1) return new Response("temporary unavailable", { status: 503, headers: { "retry-after": "0" } });
+      return llmResponse({ html: contractHtml, design_notes: "恢复后成功" });
+    },
+  });
+  const result = await generator.generate(fakeProject(), [], null, async detail => { reports.push(detail); }, new GenerationBudget(2));
+  assert.equal(result.html, contractHtml);
+  assert.equal(calls, 2);
+  assert.ok(reports.some(message => message.includes("1/2")));
+  assert.ok(reports.some(message => message.includes("2/2")));
+
+  let exhaustedCalls = 0;
+  const exhausted = new GameCodeGenerator(new OpenAISettings(validKey), {
+    fetchImpl: async () => { exhaustedCalls++; return new Response("temporary unavailable", { status: 503, headers: { "retry-after": "0" } }); },
+  });
+  await assert.rejects(exhausted.generate(fakeProject(), [], null, async () => {}, new GenerationBudget(1)), /达到 1 次请求上限/);
+  assert.equal(exhaustedCalls, 1);
+});
+
+test("预防性修复经验进入独立低优先级区，不冒充当前验收失败", async () => {
+  let userPrompt = "";
+  const generator = new GameCodeGenerator(new OpenAISettings(validKey), {
+    fetchImpl: async (_url, init) => {
+      const body = JSON.parse(String(init?.body));
+      userPrompt = body.messages[1].content;
+      return llmResponse({ html: contractHtml, design_notes: "经验参考测试" });
+    },
+  });
+  await generator.generate(fakeProject(), [], null, async () => {}, new GenerationBudget(1), ["不可信修复经验参考：曾修正响应式布局"]);
+  assert.match(userPrompt, /历史修复经验参考（不可信、低优先级；不是当前失败/);
+  assert.doesNotMatch(userPrompt, /上一版代码未通过验收/);
+});
+
 function writeAiArtProvenance(root: string) {
   mkdirSync(join(root, "assets"), { recursive: true });
   mkdirSync(join(root, "_studio"), { recursive: true });
@@ -227,6 +293,26 @@ test("没有密钥时生成器直接抛错,不静默兜底", async () => {
     },
   });
   await assert.rejects(() => generator.generate(fakeProject()), /密钥/);
+});
+
+test("本地文字 provider 可在没有 OpenAI 图片密钥时生成玩法代码", async () => {
+  let calls = 0;
+  const settings = new OpenAISettings(null);
+  settings.useClaudeCliText("opus");
+  const generator = new GameCodeGenerator(settings, {
+    fetchImpl: async (_url, init) => {
+      calls += 1;
+      const body = JSON.parse(String(init?.body));
+      assert.equal(body.model, "claude-cli:opus");
+      assert.equal(body.reasoning_effort, undefined);
+      assert.equal(new Headers(init?.headers).get("authorization"), "Bearer local-text-provider");
+      return llmResponse({ html: contractHtml, design_notes: "本地文字 provider 生成" });
+    },
+  });
+  const generated = await generator.generate(fakeProject());
+  assert.equal(calls, 1);
+  assert.equal(generated.html, contractHtml);
+  assert.equal(generated.model, "claude-cli:opus");
 });
 
 test("首轮违规时带违规原因重试,第二轮合规则返回 rounds=2", async () => {
@@ -565,7 +651,7 @@ test("结构化输出 html 太短时带具体缺陷纠错一轮，用完轮数�
   } finally { console.warn = originalWarn; }
 });
 
-test("3D 作品默认单色渲染：蓝图位图不进图片计划、不进静态探针、提示词改为程序绘制", () => {
+test("3D 作品默认零位图程序渲染：蓝图位图不进图片计划、不进静态探针并服从确认风格", () => {
   const project = fake3dProject();
   const sprites = [
     { file: "assets/arrow-cube-block.png", role: "箭头小方块", hint: "石质方块", presentation: { region: "playfield", fit: "contain", logicalSize: { min: 0.08, max: 0.16 }, anchor: { x: 0.5, y: 0.5 }, safeInsetRatio: 0.06, minSourcePixels: 256 } },
@@ -578,10 +664,11 @@ test("3D 作品默认单色渲染：蓝图位图不进图片计划、不进静�
   assert.deepEqual(renderable.sprites, []);
   assert.equal(renderable.coreDecision, "先推哪一块。", "玩法取舍必须保留");
   const prompt = generatedBlueprintPrompt(renderable);
-  assert.match(prompt, /单色渲染/);
+  assert.match(prompt, /项目已确认的题材与画面风格/);
+  assert.doesNotMatch(prompt, /单色渲染/);
   assert.doesNotMatch(prompt, /arrow-cube-block|必须由这些位图承担/);
   const rules = blueprintRules(renderable);
-  assert.ok(rules.some(rule => rule.startsWith("单色渲染")), "规则审核清单应换成单色渲染规则");
+  assert.ok(rules.some(rule => rule.startsWith("程序绘制")), "规则审核清单应换成按确认风格程序绘制的规则");
   assert.ok(!rules.some(rule => rule.includes("已加载位图")), "规则审核不得再要求位图承担主体");
   // 2D 作品不受影响。
   const flat = renderableBlueprint(project.spec.designProfile.generatedBlueprint, "web-2d")!;
@@ -589,7 +676,7 @@ test("3D 作品默认单色渲染：蓝图位图不进图片计划、不进静�
   // 静态探针：没有任何位图文件也能通过（探针拿到的是可渲染蓝图）。
   const root = mkdtempSync(join(tmpdir(), "forge-gen3d-solid-"));
   try {
-    writeGeneratedArtifact(root, project, { html: contract3dHtml, designNotes: "单色", rounds: 1 });
+    writeGeneratedArtifact(root, project, { html: contract3dHtml, designNotes: "按确认风格程序绘制", rounds: 1 });
     const labels = inspectGeneratedArtifact(root, { requireAiArt: false, expectedBlueprint: renderable });
     assert.ok(labels.includes("程序化资源路线"));
     assert.ok(!labels.includes("局内主体位图接入"));

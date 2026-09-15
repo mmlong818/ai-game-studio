@@ -1,8 +1,9 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ProjectSummary } from "../shared/contracts";
 import { DesignKnowledgeConsole } from "./DesignKnowledgeConsole";
+import { designKnowledgeCopy } from "./DesignKnowledgeConsole.copy";
 import { PreferencesProvider } from "./preferences";
 import * as api from "./api";
 
@@ -69,9 +70,23 @@ describe("策划知识发布台", () => {
     const rail = screen.getByRole("list", { name: "知识更新流程" });
     for (const label of ["真人试玩", "季度复核", "版本变更", "知识发布"]) expect(rail).toHaveTextContent(label);
     await user.click(screen.getByRole("button", { name: /记录真人试玩/ }));
-    expect(screen.getByText("结构化试玩")).toBeInTheDocument();
+    expect(screen.getByText(designKnowledgeCopy("zh-CN", "main.structuredPlaytest"))).toBeInTheDocument();
     expect(screen.getByText("教学清晰")).toBeInTheDocument();
     expect(screen.getByText("公平性")).toBeInTheDocument();
+  });
+
+  it("以四种当前语言渲染主页面和可展开试玩表单", async () => {
+    for (const locale of ["zh-CN", "zh-TW", "en", "ja"] as const) {
+      window.localStorage.setItem("forge-locale", locale);
+      const user = userEvent.setup();
+      const view = render(<PreferencesProvider><DesignKnowledgeConsole /></PreferencesProvider>);
+      expect(await screen.findByRole("heading", { name: designKnowledgeCopy(locale, "main.title") })).toBeInTheDocument();
+      await user.click(screen.getByRole("button", { name: designKnowledgeCopy(locale, "main.recordPlaytest") }));
+      expect(screen.getByText(designKnowledgeCopy(locale, "main.structuredPlaytest"))).toBeInTheDocument();
+      expect(screen.getByText(designKnowledgeCopy(locale, "playtest.game"))).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: designKnowledgeCopy(locale, "playtest.save") })).toBeInTheDocument();
+      view.unmount();
+    }
   });
 
   it("显示跨榜玩法雷达，并且过期信号只能重新进入研究", async () => {
@@ -106,10 +121,10 @@ describe("策划知识发布台", () => {
     const user = userEvent.setup();
     render(<PreferencesProvider><DesignKnowledgeConsole /></PreferencesProvider>);
     await screen.findByRole("heading", { name: /把试玩证据变成/ });
-    await user.click(screen.getByRole("button", { name: /生成复核快照/ }));
+    await user.click(screen.getByRole("button", { name: designKnowledgeCopy("zh-CN", "main.capture") }));
     await waitFor(() => expect(api.captureDesignKnowledgeReview).toHaveBeenCalledOnce());
     expect(api.getDesignKnowledgeReviews).toHaveBeenCalledTimes(2);
-    expect(await screen.findByText("新的季度复核快照已保存。")).toBeInTheDocument();
+    expect(await screen.findByText(designKnowledgeCopy("zh-CN", "main.notice.capture"))).toBeInTheDocument();
   });
 
   it("显示跨周期变化和试玩细分，并通过说明理由创建恢复发布", async () => {
@@ -154,7 +169,7 @@ describe("策划知识发布台", () => {
     vi.mocked(api.getDesignResearchTasks).mockResolvedValue([task]);
     vi.mocked(api.addDesignResearchSource).mockResolvedValue({ ...task, status: "researching", sources: [] });
     render(<PreferencesProvider><DesignKnowledgeConsole /></PreferencesProvider>);
-    expect(await screen.findByRole("heading", { name: "先登记证据，再提炼候选" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: designKnowledgeCopy("zh-CN", "main.researchTitle") })).toBeInTheDocument();
     expect(screen.getByText("0/3")).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "登记来源" }));
     expect(screen.getByRole("dialog", { name: "登记外部来源" })).toBeInTheDocument();
@@ -197,14 +212,15 @@ describe("策划知识发布台", () => {
     vi.mocked(api.getDesignResearchTasks).mockResolvedValue([task]);
     vi.mocked(api.attachDesignResearchCandidate).mockResolvedValue(task as never);
     render(<PreferencesProvider><DesignKnowledgeConsole /></PreferencesProvider>);
-    await user.click(await screen.findByRole("button", { name: "形成候选" }));
-    await user.selectOptions(screen.getByLabelText("机制族"), "economy");
-    await user.type(screen.getByLabelText("稳定 ID"), "budget-upgrade");
-    await user.type(screen.getByLabelText("中文名称"), "预算升级");
-    await user.type(screen.getByLabelText("玩家动词"), "选择升级");
-    await user.type(screen.getByLabelText("关键状态（逗号分隔）"), "预算,速度");
-    await user.type(screen.getByLabelText("探针成功信号（逗号分隔）"), "upgrade-bought");
-    await user.click(screen.getByRole("button", { name: "保存候选草案" }));
+    await user.click(await screen.findByRole("button", { name: designKnowledgeCopy("zh-CN", "task.resource.candidate") }));
+    const candidateDialog = screen.getByRole("dialog", { name: designKnowledgeCopy("zh-CN", "candidate.title") });
+    await user.selectOptions(within(candidateDialog).getByLabelText(designKnowledgeCopy("zh-CN", "candidate.family")), "economy");
+    await user.type(within(candidateDialog).getByLabelText(designKnowledgeCopy("zh-CN", "candidate.id")), "budget-upgrade");
+    await user.type(within(candidateDialog).getByLabelText(designKnowledgeCopy("zh-CN", "candidate.label")), "预算升级");
+    await user.type(within(candidateDialog).getByLabelText(designKnowledgeCopy("zh-CN", "candidate.verb")), "选择升级");
+    await user.type(within(candidateDialog).getByLabelText(designKnowledgeCopy("zh-CN", "candidate.state")), "预算,速度");
+    await user.type(within(candidateDialog).getByLabelText(designKnowledgeCopy("zh-CN", "candidate.signal")), "upgrade-bought");
+    await user.click(within(candidateDialog).getByRole("button", { name: designKnowledgeCopy("zh-CN", "candidate.save") }));
     await waitFor(() => expect(api.attachDesignResearchCandidate).toHaveBeenCalledWith(task.id, expect.objectContaining({
       kind: "mechanic",
       artifact: expect.objectContaining({ id: "budget-upgrade", family: "economy" }),
@@ -254,7 +270,7 @@ describe("策划知识发布台", () => {
     vi.mocked(api.submitDesignResearchResourceWork).mockResolvedValue(submittedTask as never);
     vi.mocked(api.reviewDesignResearchResourceWork).mockResolvedValue(submittedTask as never);
     render(<PreferencesProvider><DesignKnowledgeConsole /></PreferencesProvider>);
-    const ledger = await screen.findByRole("group", { name: "研究资源缺口" });
+    const ledger = await screen.findByRole("group", { name: designKnowledgeCopy("zh-CN", "task.resource.aria") });
     expect(ledger).toHaveTextContent("资源账本");
     expect(ledger).toHaveTextContent("原型可占位");
     expect(ledger).toHaveTextContent("评审前3 项");
@@ -269,19 +285,21 @@ describe("策划知识发布台", () => {
     await user.click(screen.getByRole("button", { name: "生成资源执行任务" }));
     await waitFor(() => expect(api.createDesignResearchResourceAcquisitionTask).toHaveBeenCalledWith(task.id));
     expect(await screen.findByText(/资源执行任务：持续跟踪/)).toBeInTheDocument();
-    const updatedLedger = screen.getByRole("group", { name: "研究资源缺口" });
+    const updatedLedger = screen.getByRole("group", { name: designKnowledgeCopy("zh-CN", "task.resource.aria") });
     expect(updatedLedger).toHaveTextContent("已批准 0");
     await user.click(screen.getByText("查看 2 项执行任务"));
     await user.click(screen.getAllByRole("button", { name: "提交成果" })[0]!);
-    await user.type(screen.getByLabelText("资源文件引用"), "_studio/resources/ui.json");
-    await user.type(screen.getByLabelText("视觉复核引用"), "_studio/reviews/ui.json");
-    await user.type(screen.getByLabelText("运行报告引用"), "_studio/reports/ui.json");
-    await user.type(screen.getByLabelText("本次成果说明"), "界面资源已经完成实际运行验证");
-    await user.click(screen.getByRole("button", { name: "提交独立复核" }));
+    const submissionDialog = screen.getByRole("dialog", { name: designKnowledgeCopy("zh-CN", "resourceSubmit.title") });
+    await user.type(within(submissionDialog).getByLabelText(designKnowledgeCopy("zh-CN", "resourceSubmit.fileRef")), "_studio/resources/ui.json");
+    await user.type(within(submissionDialog).getByLabelText(designKnowledgeCopy("zh-CN", "resourceSubmit.visualRef")), "_studio/reviews/ui.json");
+    await user.type(within(submissionDialog).getByLabelText(designKnowledgeCopy("zh-CN", "resourceSubmit.runtimeRef")), "_studio/reports/ui.json");
+    await user.type(within(submissionDialog).getByLabelText(designKnowledgeCopy("zh-CN", "resourceSubmit.resultNote")), "界面资源已经完成实际运行验证");
+    await user.click(within(submissionDialog).getByRole("button", { name: designKnowledgeCopy("zh-CN", "resourceSubmit.save") }));
     await waitFor(() => expect(api.submitDesignResearchResourceWork).toHaveBeenCalledWith(task.id, "ASSET-UI-SHELL", expect.objectContaining({ evidence: expect.arrayContaining([expect.objectContaining({ kind: "resource-file" }), expect.objectContaining({ kind: "visual-review" }), expect.objectContaining({ kind: "runtime-report" })]) })));
     await user.click(await screen.findByRole("button", { name: "退回" }));
-    await user.type(screen.getByLabelText("复核理由"), "触控状态的视觉区分仍需加强");
-    await user.click(screen.getByRole("button", { name: "确认退回" }));
+    const reviewDialog = screen.getByRole("dialog", { name: designKnowledgeCopy("zh-CN", "resourceReview.returnTitle") });
+    await user.type(within(reviewDialog).getByLabelText(designKnowledgeCopy("zh-CN", "resourceReview.reason")), "触控状态的视觉区分仍需加强");
+    await user.click(within(reviewDialog).getByRole("button", { name: designKnowledgeCopy("zh-CN", "resourceReview.confirmReturn") }));
     await waitFor(() => expect(api.reviewDesignResearchResourceWork).toHaveBeenCalledWith(task.id, "ASSET-UI-SHELL", { decision: "return", rationale: "触控状态的视觉区分仍需加强" }));
   });
 });

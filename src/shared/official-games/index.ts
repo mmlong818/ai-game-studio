@@ -23,6 +23,7 @@ import { islandKart } from "./island-kart.js";
 import { meadowRailway } from "./meadow-railway.js";
 import { arrowCube3d } from "./arrow-cube-3d.js";
 import { arrowEscape } from "./arrow-escape.js";
+import { endlessMatch3 } from "./endless-match3.js";
 import type { OfficialGameDefinition, ServerTemplatesOf } from "./types.js";
 
 export * from "./types.js";
@@ -50,6 +51,7 @@ export const OFFICIAL_GAMES = [
   meadowRailway,
   arrowEscape,
   arrowCube3d,
+  endlessMatch3,
   // @scaffold:insert — 脚手架会把新登记追加在这一行之上
 ] as const satisfies readonly OfficialGameDefinition[];
 

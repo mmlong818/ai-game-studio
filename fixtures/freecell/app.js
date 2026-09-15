@@ -74,6 +74,14 @@ const dom = {
   stuckUndo: document.getElementById("stuck-undo"),
   stuckRestart: document.getElementById("stuck-restart"),
 };
+const LOCALES=new Set(['zh-CN','zh-TW','en','ja']);let locale=new URLSearchParams(location.search).get('lang');if(!LOCALES.has(locale))locale='zh-CN';
+const I18N={
+'zh-CN':{name:'空档接龙',title:l=>`空档接龙 · 第 ${l} 关`,brand:'FREECELL / 空档接龙',level:l=>`第 ${l} 关`,changeBack:'更换牌背',statsAria:'本局统计',moves:'步数',time:'用时',unlocked:'已解锁',table:'牌桌：方向键移动光标，空格选牌，回车放牌，U 撤销，H 提示',cell:'空档',ready:'选择一张牌，再点目标位置；再点一次自动放置。',stuck:'没有可以移动的牌了',stuckSub:'可以撤销几步换条路，或者重开本关。',undoOne:'撤销一步',restartLevel:'重开本关',actions:'操作',undo:'撤销',hint:'提示',restart:'重开',levels:'关卡',cardBack:'牌背',clear:'第 {level} 关完成',bestMoves:'最佳步数',next:'下一关',again:'再玩一次',chooseLevel:'选择关卡',close:'关闭',levelNote:'每一关对应同编号的经典 Microsoft FreeCell 牌局，均已知可解；完成当前关后解锁下一关。',changeBackTitle:'更换牌背',backNote:'支持常见图片以及浏览器可读取的 HEIC、HEIF、TIFF。原图会在本机裁切并压缩成 5:7 牌背，只保存在这台设备，不会上传。',preview:'牌背预览',chooseImage:'选择图片',zoom:'缩放',horizontal:'左右',vertical:'上下',useImage:'使用这张图片',resetBack:'恢复默认牌背',started:l=>`第 ${l} 关开始。`,noMoves:'没有可以移动的牌了。',practiceDone:'完成！你可以继续下一段练习。',practiceLegal:'这是合法移动。要完成本练习，请按上方说明操作；也可点“重练”。',superMove:(n,c)=>`超级移动 ×${n}：${c}。`,placedAuto:(c,n)=>`${c} 已放好，自动收牌 ${n} 张。`,placed:c=>`${c} 已放好。`,undone:'已撤销上一步。',noPlace:'这组牌现在没有可放的位置。',runOnly:'只能拿起底部连续交替颜色、点数递减的牌组。',capped:n=>`现在最多一次搬 ${n} 张，已拿起底部 ${n} 张；上面变灰的牌这次带不走。`,pickedMany:(n,c)=>`已拿起 ${n} 张牌（${c} 起），再点目标位置。`,picked:c=>`已拿起 ${c}，点目标位置或再点一次自动放置。`,empty:'空',emptyColumn:'空列',foundation:'收牌堆',column:n=>`第 ${n} 列`,cellN:n=>`空档 ${n}`,nextMove:(cards,target)=>`下一步：把 ${cards} 移到${target}。`,autoFinish:'剩下的牌会自动收完。',noRoute:'暂时算不出路线，试试撤销几步。',hintFoundation:'先找可按花色收入的下一张牌。再点提示查看下一步。',hintCell:'借用一个空档，释放被压住的牌。再点提示查看下一步。',hintColumn:'检查亮起的牌组：异色递减能否接到另一列？再点提示查看下一步。',doneBest:n=>`比自己的最佳纪录少 ${n} 步。`,donePlan:'完成整副牌的空间规划。',growth:(extra,h)=>`52 张归位 · 四门全收。${extra} 使用方向提示 ${h} 次。`,complete:(l,m,time)=>`第 ${l} 关完成！${m} 步，用时 ${time}。`,best:n=>`${n} 步`,locked:'未解锁',playable:'可玩',levelAria:(l,b,locked)=>`第 ${l} 关${b?`，最佳 ${b} 步`:locked?'，未解锁':''}`,currentCustom:'当前使用自定义牌背。',currentDefault:'当前使用默认牌背。',badType:'请选择 PNG、JPEG、WebP、GIF、BMP、AVIF、HEIC、HEIF 或 TIFF 图片。',converting:'正在本机转换 HEIC/HEIF，然后压缩牌背……',reading:'正在读取原图，完成取景后会自动压缩……',decodeError:'图片内容无法解码，请确认文件没有损坏。',readOk:(w,h)=>`${w}×${h} 原图已读取；拖动滑块调整取景，保存时会自动压缩。`,readFail:'图片无法读取。',storageFull:'浏览器存储空间不足，牌背只在本次会话生效。',backChanged:'已更换牌背，刷新后仍然有效。',backChangedStatus:'牌背已更换。',backReset:'已恢复默认牌背。',tipExtra:'空档和空列越多，一次能搬得越多：每个空档 +1，每个空列翻倍。',spaceLearning:'空间与学习',practice:n=>`练习 ${n} / 3`,retryPractice:'重练',practiceComplete:'练习完成',nextPractice:'下一练习',backGame:'回到牌局',collected:n=>`归位 ${n} / 52`,capacity:(c,n)=>`空档 ${c} / 4 · 现可搬 ${n} 张到非空列`,beginPractice:'新手练习',returned:'已回到原牌局，练习不会改变正式成绩。',restored:l=>`已恢复第 ${l} 关的进度。`,lessons:[['移动到空档','把顶牌移进空档，释放牌列。'],['交替颜色递减','把红黑交替且点数递减的牌接到另一列。'],['收入收牌堆','按同花色从 A 到 K 收牌。']],suits:['梅花','方块','红心','黑桃']},
+'zh-TW':{name:'空檔接龍',title:l=>`空檔接龍 · 第 ${l} 關`,brand:'FREECELL / 空檔接龍',level:l=>`第 ${l} 關`,changeBack:'更換牌背',statsAria:'本局統計',moves:'步數',time:'用時',unlocked:'已解鎖',table:'牌桌：方向鍵移動游標，空白鍵選牌，Enter 放牌，U 復原，H 提示',cell:'空檔',ready:'選一張牌，再點目標位置；再點一次可自動放置。',stuck:'沒有可以移動的牌了',stuckSub:'可以復原幾步換條路，或重開本關。',undoOne:'復原一步',restartLevel:'重開本關',actions:'操作',undo:'復原',hint:'提示',restart:'重開',levels:'關卡',cardBack:'牌背',clear:'第 {level} 關完成',bestMoves:'最佳步數',next:'下一關',again:'再玩一次',chooseLevel:'選擇關卡',close:'關閉',levelNote:'每一關對應同編號的經典 Microsoft FreeCell 牌局，均已知可解；完成目前關卡後解鎖下一關。',changeBackTitle:'更換牌背',backNote:'支援常見圖片及瀏覽器可讀取的 HEIC、HEIF、TIFF。原圖會在本機裁切並壓縮成 5:7 牌背，只留在此裝置，不會上傳。',preview:'牌背預覽',chooseImage:'選擇圖片',zoom:'縮放',horizontal:'左右',vertical:'上下',useImage:'使用這張圖片',resetBack:'恢復預設牌背',started:l=>`第 ${l} 關開始。`,noMoves:'沒有可以移動的牌了。',practiceDone:'完成！你可以繼續下一段練習。',practiceLegal:'這是合法移動。要完成本練習，請依上方說明操作；也可點「重練」。',superMove:(n,c)=>`超級移動 ×${n}：${c}。`,placedAuto:(c,n)=>`${c} 已放好，自動收牌 ${n} 張。`,placed:c=>`${c} 已放好。`,undone:'已復原上一步。',noPlace:'這組牌目前沒有可放的位置。',runOnly:'只能拿起底部連續交替顏色、點數遞減的牌組。',capped:n=>`目前最多一次搬 ${n} 張，已拿起底部 ${n} 張；上面變灰的牌這次帶不走。`,pickedMany:(n,c)=>`已拿起 ${n} 張牌（從 ${c} 起），再點目標位置。`,picked:c=>`已拿起 ${c}，點目標位置或再點一次自動放置。`,empty:'空',emptyColumn:'空列',foundation:'收牌堆',column:n=>`第 ${n} 列`,cellN:n=>`空檔 ${n}`,nextMove:(cards,target)=>`下一步：把 ${cards} 移到${target}。`,autoFinish:'剩下的牌會自動收完。',noRoute:'暫時算不出路線，試著復原幾步。',hintFoundation:'先找可依花色收入的下一張牌。再點提示查看下一步。',hintCell:'借用一個空檔，釋放被壓住的牌。再點提示查看下一步。',hintColumn:'檢查亮起的牌組：異色遞減能否接到另一列？再點提示查看下一步。',doneBest:n=>`比自己的最佳紀錄少 ${n} 步。`,donePlan:'完成整副牌的空間規劃。',growth:(extra,h)=>`52 張歸位 · 四門全收。${extra} 使用方向提示 ${h} 次。`,complete:(l,m,time)=>`第 ${l} 關完成！${m} 步，用時 ${time}。`,best:n=>`${n} 步`,locked:'未解鎖',playable:'可玩',levelAria:(l,b,locked)=>`第 ${l} 關${b?`，最佳 ${b} 步`:locked?'，未解鎖':''}`,currentCustom:'目前使用自訂牌背。',currentDefault:'目前使用預設牌背。',badType:'請選擇 PNG、JPEG、WebP、GIF、BMP、AVIF、HEIC、HEIF 或 TIFF 圖片。',converting:'正在本機轉換 HEIC/HEIF，然後壓縮牌背……',reading:'正在讀取原圖，完成取景後會自動壓縮……',decodeError:'圖片內容無法解碼，請確認檔案沒有損壞。',readOk:(w,h)=>`${w}×${h} 原圖已讀取；拖曳滑桿調整取景，儲存時會自動壓縮。`,readFail:'圖片無法讀取。',storageFull:'瀏覽器儲存空間不足，牌背只在本次工作階段生效。',backChanged:'已更換牌背，重新整理後仍然有效。',backChangedStatus:'牌背已更換。',backReset:'已恢復預設牌背。',tipExtra:'空檔和空列越多，一次能搬得越多：每個空檔 +1，每個空列翻倍。',spaceLearning:'空間與學習',practice:n=>`練習 ${n} / 3`,retryPractice:'重練',practiceComplete:'練習完成',nextPractice:'下一練習',backGame:'回到牌局',collected:n=>`歸位 ${n} / 52`,capacity:(c,n)=>`空檔 ${c} / 4 · 現可搬 ${n} 張到非空列`,beginPractice:'新手練習',returned:'已回到原牌局，練習不會改變正式成績。',restored:l=>`已恢復第 ${l} 關的進度。`,lessons:[['移動到空檔','把頂牌移進空檔，釋放牌列。'],['交替顏色遞減','把紅黑交替且點數遞減的牌接到另一列。'],['收入收牌堆','按同花色從 A 到 K 收牌。']],suits:['梅花','方塊','紅心','黑桃']},
+en:{name:'FreeCell',title:l=>`FreeCell · Level ${l}`,brand:'FREECELL',level:l=>`Level ${l}`,changeBack:'Change card back',statsAria:'Game statistics',moves:'Moves',time:'Time',unlocked:'Unlocked',table:'Card table: arrows move focus, Space selects, Enter places, U undoes, H gives a hint',cell:'Free cell',ready:'Select a card, then its destination. Select it again to auto-place.',stuck:'No cards can move',stuckSub:'Undo a few moves to try another route, or restart this level.',undoOne:'Undo one move',restartLevel:'Restart level',actions:'Actions',undo:'Undo',hint:'Hint',restart:'Restart',levels:'Levels',cardBack:'Card back',clear:'Level {level} complete',bestMoves:'Best moves',next:'Next level',again:'Play again',chooseLevel:'Choose a level',close:'Close',levelNote:'Each level is the matching classic Microsoft FreeCell deal and is known to be solvable. Complete the current level to unlock the next.',changeBackTitle:'Change card back',backNote:'Supports common images plus HEIC, HEIF, and TIFF when the browser can read them. Images are cropped and compressed locally to 5:7, stored only on this device, and never uploaded.',preview:'Card back preview',chooseImage:'Choose image',zoom:'Zoom',horizontal:'Horizontal',vertical:'Vertical',useImage:'Use this image',resetBack:'Restore default card back',started:l=>`Level ${l} started.`,noMoves:'No cards can move.',practiceDone:'Done! Continue to the next practice step.',practiceLegal:'That move is legal. Follow the instruction above to finish this exercise, or select Retry.',superMove:(n,c)=>`Supermove ×${n}: ${c}.`,placedAuto:(c,n)=>`${c} placed; ${n} cards moved home automatically.`,placed:c=>`${c} placed.`,undone:'Undid the last move.',noPlace:'That run has no legal destination.',runOnly:'Select a descending run of alternating colors from the bottom of a column.',capped:n=>`You can move at most ${n} cards now. The bottom ${n} are selected; dimmed cards cannot move with them.`,pickedMany:(n,c)=>`Selected ${n} cards starting with ${c}. Select a destination.`,picked:c=>`Selected ${c}. Select a destination or select it again to auto-place.`,empty:'empty',emptyColumn:'empty column',foundation:'foundation',column:n=>`column ${n}`,cellN:n=>`free cell ${n}`,nextMove:(cards,target)=>`Next: move ${cards} to ${target}.`,autoFinish:'The remaining cards will move home automatically.',noRoute:'No route found yet. Try undoing a few moves.',hintFoundation:'Find the next card that can move home by suit. Select Hint again for the move.',hintCell:'Use a free cell to release a covered card. Select Hint again for the move.',hintColumn:'Check the highlighted run: can alternating descending cards join another column? Select Hint again for the move.',doneBest:n=>`${n} fewer moves than your previous best.`,donePlan:'You planned space for the full deck.',growth:(extra,h)=>`All 52 cards home in four suits. ${extra} Direction hints used: ${h}.`,complete:(l,m,time)=>`Level ${l} complete! ${m} moves in ${time}.`,best:n=>`${n} moves`,locked:'Locked',playable:'Playable',levelAria:(l,b,locked)=>`Level ${l}${b?`, best ${b} moves`:locked?', locked':''}`,currentCustom:'Using a custom card back.',currentDefault:'Using the default card back.',badType:'Choose a PNG, JPEG, WebP, GIF, BMP, AVIF, HEIC, HEIF, or TIFF image.',converting:'Converting HEIC/HEIF locally, then compressing the card back…',reading:'Reading the image locally. It will be compressed after framing…',decodeError:'The image could not be decoded. Check that the file is not damaged.',readOk:(w,h)=>`${w}×${h} image loaded. Adjust the framing; it will be compressed when saved.`,readFail:'The image could not be read.',storageFull:'Browser storage is full. This card back will last for this session only.',backChanged:'Card back changed and saved for future visits.',backChangedStatus:'Card back changed.',backReset:'Default card back restored.',tipExtra:'More free cells and empty columns let you move more cards: each free cell adds one, and each empty column doubles the total.',spaceLearning:'Space and practice',practice:n=>`Practice ${n} / 3`,retryPractice:'Retry',practiceComplete:'Finish practice',nextPractice:'Next exercise',backGame:'Return to game',collected:n=>`Home ${n} / 52`,capacity:(c,n)=>`Free cells ${c} / 4 · Up to ${n} cards can move to a nonempty column`,beginPractice:'Beginner practice',returned:'Returned to your game. Practice does not change your score.',restored:l=>`Restored your progress in Level ${l}.`,lessons:[['Move to a free cell','Move the top card into a free cell to expose the column.'],['Alternate colors downward','Join descending cards of alternating colors to another column.'],['Build foundations','Move cards home by suit from A through K.']],suits:['clubs','diamonds','hearts','spades']},
+ja:{name:'フリーセル',title:l=>`フリーセル · ステージ ${l}`,brand:'FREECELL / フリーセル',level:l=>`ステージ ${l}`,changeBack:'カード裏面を変更',statsAria:'ゲーム統計',moves:'手数',time:'時間',unlocked:'解放済み',table:'カード台：方向キーで移動、Spaceで選択、Enterで配置、Uで元に戻す、Hでヒント',cell:'フリーセル',ready:'カードを選び、移動先を選択します。もう一度選ぶと自動配置します。',stuck:'動かせるカードがありません',stuckSub:'何手か戻して別の手順を試すか、このステージをやり直せます。',undoOne:'1手戻す',restartLevel:'ステージをやり直す',actions:'操作',undo:'元に戻す',hint:'ヒント',restart:'やり直す',levels:'ステージ',cardBack:'カード裏面',clear:'ステージ {level} クリア',bestMoves:'最少手数',next:'次のステージ',again:'もう一度',chooseLevel:'ステージを選択',close:'閉じる',levelNote:'各ステージは同じ番号の古典的な Microsoft FreeCell 配置で、解けることが確認済みです。現在のステージをクリアすると次が開きます。',changeBackTitle:'カード裏面を変更',backNote:'一般的な画像と、ブラウザが読める HEIC・HEIF・TIFF に対応します。画像は端末内で5:7に切り抜き・圧縮し、この端末だけに保存してアップロードしません。',preview:'カード裏面プレビュー',chooseImage:'画像を選択',zoom:'拡大縮小',horizontal:'左右',vertical:'上下',useImage:'この画像を使う',resetBack:'既定の裏面に戻す',started:l=>`ステージ ${l} を開始しました。`,noMoves:'動かせるカードがありません。',practiceDone:'できました！次の練習へ進めます。',practiceLegal:'正しい移動です。この練習を終えるには上の説明どおりに操作するか、「もう一度」を選びます。',superMove:(n,c)=>`まとめて移動 ×${n}：${c}。`,placedAuto:(c,n)=>`${c}を配置し、${n}枚を自動で収めました。`,placed:c=>`${c}を配置しました。`,undone:'1手戻しました。',noPlace:'このカード列を置ける場所がありません。',runOnly:'列の下端から、色が交互で数字が小さくなる並びだけを選べます。',capped:n=>`現在は最大${n}枚です。下の${n}枚を選択しました。暗いカードは一緒に運べません。`,pickedMany:(n,c)=>`${c}から${n}枚を選択しました。移動先を選んでください。`,picked:c=>`${c}を選択しました。移動先を選ぶか、もう一度選んで自動配置します。`,empty:'空',emptyColumn:'空の列',foundation:'ホームセル',column:n=>`${n}列目`,cellN:n=>`フリーセル ${n}`,nextMove:(cards,target)=>`次の手：${cards}を${target}へ移動。`,autoFinish:'残りのカードは自動で収まります。',noRoute:'手順を見つけられません。何手か戻してみてください。',hintFoundation:'同じスートで次に収められるカードを探します。もう一度ヒントを選ぶと手順を表示します。',hintCell:'フリーセルを使って下のカードを出します。もう一度ヒントを選ぶと手順を表示します。',hintColumn:'光っている並びを確認：色違いの降順で別の列につなげます。もう一度ヒントを選ぶと手順を表示します。',doneBest:n=>`自己ベストより${n}手少なくできました。`,donePlan:'52枚すべての空間を計画できました。',growth:(extra,h)=>`52枚を4スートに収めました。${extra} 方向ヒント使用：${h}回。`,complete:(l,m,time)=>`ステージ ${l} クリア！${m}手、${time}。`,best:n=>`${n}手`,locked:'未解放',playable:'プレイ可能',levelAria:(l,b,locked)=>`ステージ ${l}${b?`、ベスト ${b}手`:locked?'、未解放':''}`,currentCustom:'カスタムのカード裏面を使用中です。',currentDefault:'既定のカード裏面を使用中です。',badType:'PNG、JPEG、WebP、GIF、BMP、AVIF、HEIC、HEIF、TIFF画像を選んでください。',converting:'端末内でHEIC/HEIFを変換し、カード裏面を圧縮しています…',reading:'元画像を読み込んでいます。位置調整後に自動圧縮します…',decodeError:'画像を読み込めません。ファイルが壊れていないか確認してください。',readOk:(w,h)=>`${w}×${h}の画像を読み込みました。位置を調整すると保存時に圧縮します。`,readFail:'画像を読み込めません。',storageFull:'ブラウザの保存容量が不足しています。このセッションだけ有効です。',backChanged:'カード裏面を変更し、次回用に保存しました。',backChangedStatus:'カード裏面を変更しました。',backReset:'既定のカード裏面に戻しました。',tipExtra:'フリーセルと空の列が多いほど、まとめて動かせます：フリーセル1つで+1枚、空の列ごとに倍になります。',spaceLearning:'空間と練習',practice:n=>`練習 ${n} / 3`,retryPractice:'もう一度',practiceComplete:'練習を完了',nextPractice:'次の練習',backGame:'ゲームへ戻る',collected:n=>`収容 ${n} / 52`,capacity:(c,n)=>`フリーセル ${c} / 4 · 空でない列へ最大${n}枚移動可能`,beginPractice:'初心者練習',returned:'元のゲームに戻りました。練習は正式記録に影響しません。',restored:l=>`ステージ ${l} の進行を復元しました。`,lessons:[['フリーセルへ移動','一番上のカードをフリーセルへ動かし、下の列を出します。'],['色を交互に降順','赤黒交互で数字が小さくなるカードを別の列につなげます。'],['ホームセルへ収容','同じスートごとにAからKまで収めます。']],suits:['クラブ','ダイヤ','ハート','スペード']}};
+const text=key=>I18N[locale][key];
+const localizedCardName=card=>`${I18N[locale].suits[suitOf(card)]}${RANK_LABELS[rankOf(card)]}`;
 
 // ---------- 本地存储 ----------
 
@@ -181,7 +189,7 @@ function startLevel(level, { deal = true } = {}) {
   dom.body.dataset.gameState = "playing";
   saveSession();
   renderMeta();
-  setStatus(`第 ${level} 关开始。`);
+  setStatus(text('started')(level));
   if (deal) dealAnimation();
   else render();
 }
@@ -207,7 +215,7 @@ function buildCardElement(card) {
   element.className = `card ${isRed(card) ? "is-red" : "is-black"}${isCourt ? " card--court" : ""}`;
   element.dataset.card = label;
   element.setAttribute("role", "button");
-  element.setAttribute("aria-label", cardName(card));
+  element.setAttribute("aria-label", localizedCardName(card));
   element.tabIndex = -1;
   const face = document.createElement("div");
   face.className = "card__face";
@@ -345,7 +353,7 @@ function renderStuck() {
   dom.stuckBanner.hidden = !stuck;
   if (stuck) {
     dom.stuckUndo.hidden = game.history.length === 0;
-    setStatus("没有可以移动的牌了。");
+    setStatus(text('noMoves'));
   }
 }
 
@@ -361,18 +369,33 @@ function renderSlots() {
   }
 }
 
+function applyLocale({ announce = true } = {}) {
+  document.documentElement.lang=locale;
+  dom.openBackDialog.setAttribute('aria-label',text('changeBack'));document.querySelector('.brand .eyebrow').textContent=text('brand');
+  document.querySelector('.stats').setAttribute('aria-label',text('statsAria'));document.querySelectorAll('.stats dt').forEach((node,index)=>node.textContent=[text('moves'),text('time'),text('unlocked')][index]);
+  dom.table.setAttribute('aria-label',text('table'));document.querySelectorAll('.slot__hint').forEach(node=>node.textContent=text('cell'));
+  const stuck=dom.stuckBanner.querySelector('.stuck-banner__copy');stuck.querySelector('strong').textContent=text('stuck');stuck.querySelector('span').textContent=text('stuckSub');dom.stuckUndo.textContent=text('undoOne');dom.stuckRestart.textContent=text('restartLevel');
+  document.querySelector('.toolbar').setAttribute('aria-label',text('actions'));dom.undo.textContent=text('undo');dom.hint.textContent=text('hint');dom.restart.textContent=text('restart');dom.openLevels.textContent=text('levels');dom.openBack.textContent=text('cardBack');
+  const win=dom.winDialog,[winBefore,winAfter]=text('clear').split('{level}');win.querySelector('#win-title').childNodes[0].nodeValue=winBefore;win.querySelector('#win-title').childNodes[2].nodeValue=winAfter;win.querySelectorAll('.win-stats dt').forEach((node,index)=>node.textContent=[text('moves'),text('time'),text('bestMoves')][index]);dom.nextLevel.textContent=text('next');dom.replayLevel.textContent=text('again');
+  document.querySelector('#level-title').textContent=text('chooseLevel');dom.closeLevels.textContent=text('close');dom.levelDialog.querySelector('.sheet__note').textContent=text('levelNote');
+  document.querySelector('#back-title').textContent=text('changeBackTitle');dom.closeBack.textContent=text('close');dom.backDialog.querySelector('.sheet__note').textContent=text('backNote');dom.backCanvas.setAttribute('aria-label',text('preview'));
+  const labels=dom.backDialog.querySelectorAll('.back-editor__controls > label');labels[0].childNodes[0].nodeValue=text('chooseImage');labels[1].childNodes[0].nodeValue=text('zoom');labels[2].childNodes[0].nodeValue=text('horizontal');labels[3].childNodes[0].nodeValue=text('vertical');dom.applyBack.textContent=text('useImage');dom.resetBack.textContent=text('resetBack');
+  learningBar?.setAttribute('aria-label',text('spaceLearning'));renderMeta();renderLearningBar();if(dom.levelDialog.open)renderLevelGrid();if(announce)setStatus(text('ready'));
+}
+
 function renderMeta() {
   renderLearningBar();
   dom.level.textContent = String(game.level);
   dom.moves.textContent = String(game.moves);
-  dom.moves.dataset.prefix = "步";
-  dom.timer.dataset.prefix = "时";
-  dom.unlocked.dataset.prefix = "解锁";
+  dom.moves.dataset.prefix = text('moves');
+  dom.timer.dataset.prefix = text('time');
+  dom.unlocked.dataset.prefix = text('unlocked');
   dom.unlocked.textContent = String(progress.unlocked);
   dom.timer.textContent = formatTime(elapsedMs());
   dom.undo.disabled = game.history.length === 0 || game.won;
   dom.hint.disabled = game.won;
-  document.title = `空档接龙 · 第 ${game.level} 关`;
+  const [levelBefore,levelAfter]=text('level')(game.level).split(String(game.level));document.querySelector('#game-title').childNodes[0].nodeValue=levelBefore;document.querySelector('#game-title').childNodes[2].nodeValue=levelAfter;
+  document.title = text('title')(game.level);
 }
 
 function slotKey(slot) {
@@ -415,14 +438,14 @@ function showRuleToast(message, slot) {
     toast.setAttribute("role", "status");
     dom.table.appendChild(toast);
   }
-  let text = message;
+  let displayText = message;
   try {
     if (!localStorage.getItem(SUPERMOVE_TIP_KEY)) {
-      text = `${message} 空档和空列越多，一次能搬得越多：每个空档 +1，每个空列翻倍。`;
+      displayText = `${message} ${text('tipExtra')}`;
       localStorage.setItem(SUPERMOVE_TIP_KEY, "1");
     }
   } catch { /* 存储不可用时只显示短提示 */ }
-  toast.textContent = text;
+  toast.textContent = displayText;
   const position = slot ? slotPosition(slot) : { x: metrics.left, y: metrics.columnsY };
   const width = Math.min(dom.table.clientWidth - 16, 300);
   const left = Math.max(4, Math.min(position.x + metrics.cardW / 2 - width / 2, dom.table.clientWidth - width - 4));
@@ -437,8 +460,9 @@ function showRuleToast(message, slot) {
 
 /** 统一处理被拒绝的移动:上限类拒绝在目标旁弹出说明,其余只更新状态栏。 */
 function rejectMove(move, verdict) {
-  setStatus(verdict.reason ?? "这个位置不能放。");
-  if (verdict.code === "supermove-limit") showRuleToast(verdict.reason, move.to);
+  const reason=verdict.code==='supermove-limit'?text('capped')(verdict.limit):text('noPlace');
+  setStatus(reason);
+  if (verdict.code === "supermove-limit") showRuleToast(reason, move.to);
 }
 
 function validTargets(selection) {
@@ -464,8 +488,8 @@ function performMove(move, { announce = true } = {}) {
   if (game.cascading) return false;
   if(game.practice){
     game.state=applyMove(game.state,move);game.selection=null;game.hint=null;
-    if(lessonAccepts(game.practice.index,{...move,count:move.count??1})){game.practice.passed=true;setStatus('完成！你可以继续下一段练习。');}
-    else setStatus('这是合法移动。要完成本练习，请按上方说明操作；也可点“重练”。');
+    if(lessonAccepts(game.practice.index,{...move,count:move.count??1})){game.practice.passed=true;setStatus(text('practiceDone'));}
+    else setStatus(text('practiceLegal'));
     render();return true;
   }
   startTimerIfNeeded();
@@ -477,11 +501,11 @@ function performMove(move, { announce = true } = {}) {
   game.moves += 1;
   game.selection = null;
   game.hint = null;
-  const label = verdict.cards.map(cardName).join("、");
+  const label = verdict.cards.map(localizedCardName).join(locale==='en'?', ':'、');
   if (announce) {
-    if (verdict.cards.length > 1) setStatus(`超级移动 ×${verdict.cards.length}:${label}。`);
-    else if (auto.moves.length > 0) setStatus(`${label} 已放好,自动收牌 ${auto.moves.length} 张。`);
-    else setStatus(`${label} 已放好。`);
+    if (verdict.cards.length > 1) setStatus(text('superMove')(verdict.cards.length,label));
+    else if (auto.moves.length > 0) setStatus(text('placedAuto')(label,auto.moves.length));
+    else setStatus(text('placed')(label));
   }
   render();
   // 会话直接保存收牌完成后的局面:刷新后不会卡在收牌中途。
@@ -557,7 +581,7 @@ function undo() {
   game.moves = previous.moves;
   game.selection = null;
   game.hint = null;
-  setStatus("已撤销上一步。");
+  setStatus(text('undone'));
   render();
   saveSession();
 }
@@ -565,7 +589,7 @@ function undo() {
 function autoMoveFrom(from, count) {
   const move = findBestDestination(game.state, from, count);
   if (!move) {
-    setStatus("这组牌现在没有可放的位置。");
+    setStatus(text('noPlace'));
     return false;
   }
   return performMove(move);
@@ -580,7 +604,7 @@ function isMovableRun(from, count) {
 function select(from, count) {
   if (game.cascading || dom.body.dataset.dealing === "true") return false;
   if (!isMovableRun(from, count)) {
-    setStatus("只能拿起底部连续交替颜色、点数递减的牌组。");
+    setStatus(text('runOnly'));
     return false;
   }
   let capped = false;
@@ -591,8 +615,8 @@ function select(from, count) {
   game.selection = { from, count };
   game.hint = null;
   const cards = selectedCards();
-  if (capped) setStatus(`现在最多一次搬 ${count} 张，已拿起底部 ${count} 张；上面变灰的牌这次带不走。`);
-  else setStatus(cards.length > 1 ? `已拿起 ${cards.length} 张牌(${cardName(cards[0])} 起),再点目标位置。` : `已拿起 ${cardName(cards[0])},点目标位置或再点一次自动放置。`);
+  if (capped) setStatus(text('capped')(count));
+  else setStatus(cards.length > 1 ? text('pickedMany')(cards.length,localizedCardName(cards[0])) : text('picked')(localizedCardName(cards[0])));
   render();
   return true;
 }
@@ -791,10 +815,10 @@ function moveCursor(dx, dy) {
   renderSlots();
   const slot = cursorSlot();
   const description = slot.type === "cell"
-    ? `空档 ${slot.index + 1}:${game.state.cells[slot.index] === null ? "空" : cardName(game.state.cells[slot.index])}`
+    ? `${text('cellN')(slot.index + 1)}: ${game.state.cells[slot.index] === null ? text('empty') : localizedCardName(game.state.cells[slot.index])}`
     : slot.type === "foundation"
-      ? `收牌堆 ${slot.index + 1}:已收 ${game.state.foundations[slot.index]} 张`
-      : `第 ${slot.index + 1} 列:${game.state.columns[slot.index].length ? `底牌 ${cardName(game.state.columns[slot.index].at(-1))}` : "空列"}`;
+      ? `${text('foundation')} ${slot.index + 1}: ${game.state.foundations[slot.index]}`
+      : `${text('column')(slot.index + 1)}: ${game.state.columns[slot.index].length ? localizedCardName(game.state.columns[slot.index].at(-1)) : text('emptyColumn')}`;
   setStatus(description);
 }
 
@@ -857,20 +881,19 @@ function showHint() {
   if (game.won||game.cascading||game.practice) return;
   const signature=JSON.stringify(game.state);
   if(game.hint?.signature===signature){
-    const move=game.hint.move,target=move.to.type==='foundation'?'收牌堆':move.to.type==='cell'?`空档 ${move.to.index+1}`:`第 ${move.to.index+1} 列`;
-    game.hint.revealed=true;setStatus(`下一步：把 ${game.hint.cards.map(cardName).join('、')} 移到${target}。`);render();return;
+    const move=game.hint.move,target=move.to.type==='foundation'?text('foundation'):move.to.type==='cell'?text('cellN')(move.to.index+1):text('column')(move.to.index+1);
+    game.hint.revealed=true;setStatus(text('nextMove')(game.hint.cards.map(localizedCardName).join(locale==='en'?', ':'、'),target));render();return;
   }
   const result = solve(game.state, { maxNodes: 40_000 });
   const move = result.moves[0]?.move;
   if (!move) {
-    setStatus(result.solved ? "剩下的牌会自动收完。" : "暂时算不出路线,试试撤销几步。");
+    setStatus(result.solved ? text('autoFinish') : text('noRoute'));
     return;
   }
   const verdict = validateMove(game.state, move);
   game.hintCount++;saveSession();
   game.hint = { move, cards: verdict.cards ?? [],signature,revealed:false };
-  const target = move.to.type === "foundation" ? "收牌堆" : move.to.type === "cell" ? `空档 ${move.to.index + 1}` : `第 ${move.to.index + 1} 列`;
-  setStatus(move.to.type==='foundation'?'先找可按花色收入的下一张牌。再点提示查看下一步。':move.to.type==='cell'?'借用一个空档，释放被压住的牌。再点提示查看下一步。':'检查亮起的牌组：异色递减能否接到另一列？再点提示查看下一步。');
+  setStatus(move.to.type==='foundation'?text('hintFoundation'):move.to.type==='cell'?text('hintCell'):text('hintColumn'));
   render();
 }
 
@@ -902,10 +925,10 @@ function finishLevel() {
   dom.winBest.textContent = String(best);
   let growth=dom.winDialog.querySelector('.growth-summary');
   if(!growth){growth=document.createElement('p');growth.className='growth-summary';dom.winDialog.querySelector('.win-stats').after(growth);}
-  growth.textContent='52 张归位 · 四门全收。'+(previous&&game.moves<previous.bestMoves?`比自己的最佳纪录少 ${previous.bestMoves-game.moves} 步。`:'完成整副牌的空间规划。')+` 使用方向提示 ${game.hintCount} 次。`;
+  growth.textContent=text('growth')(previous&&game.moves<previous.bestMoves?text('doneBest')(previous.bestMoves-game.moves):text('donePlan'),game.hintCount);
   dom.nextLevel.hidden = game.level >= LEVEL_COUNT;
   renderMeta();
-  setStatus(`第 ${game.level} 关完成!${game.moves} 步,用时 ${formatTime(game.elapsedBefore)}。`);
+  setStatus(text('complete')(game.level,game.moves,formatTime(game.elapsedBefore)));
   for (const [, element] of cardElements) element.classList.remove("is-selected", "is-hint");
   if (!dom.winDialog.open) dom.winDialog.showModal();
 }
@@ -930,8 +953,8 @@ function renderLevelGrid() {
     button.dataset.level = String(level);
     button.setAttribute("role", "listitem");
     button.disabled = level > progress.unlocked;
-    button.innerHTML = `<span>${level}</span><small>${result ? `${result.bestMoves} 步` : level > progress.unlocked ? "未解锁" : "可玩"}</small>`;
-    button.setAttribute("aria-label", `第 ${level} 关${result ? `,最佳 ${result.bestMoves} 步` : level > progress.unlocked ? ",未解锁" : ""}`);
+    button.innerHTML = `<span>${level}</span><small>${result ? text('best')(result.bestMoves) : level > progress.unlocked ? text('locked') : text('playable')}</small>`;
+    button.setAttribute("aria-label", text('levelAria')(level,result?.bestMoves,level > progress.unlocked));
     button.addEventListener("click", () => {
       dom.levelDialog.close();
       startLevel(level);
@@ -998,7 +1021,7 @@ function openBackDialog() {
   dom.backOffsetY.value = "0";
   for (const input of [dom.backZoom, dom.backOffsetX, dom.backOffsetY]) input.disabled = true;
   dom.applyBack.disabled = true;
-  dom.backStatus.textContent = dom.body.dataset.cardBack === "custom" ? "当前使用自定义牌背。" : "当前使用默认牌背。";
+  dom.backStatus.textContent = dom.body.dataset.cardBack === "custom" ? text('currentCustom') : text('currentDefault');
   dom.backFile.value = "";
   const preview = new Image();
   preview.onload = () => {
@@ -1017,11 +1040,11 @@ async function loadBackFile(file) {
   const isRasterImage = file.type.startsWith("image/") || CARD_BACK_IMAGE_EXTENSIONS.has(extension);
   const unsupportedExtension = String.fromCharCode(115, 118, 103);
   if (!isRasterImage || extension === unsupportedExtension || file.type === `image/${unsupportedExtension}+xml`) {
-    dom.backStatus.textContent = "请选择 PNG、JPEG、WebP、GIF、BMP、AVIF、HEIC、HEIF 或 TIFF 图片。";
+    dom.backStatus.textContent = text('badType');
     return;
   }
   const needsConversion = extension === "heic" || extension === "heif" || file.type === "image/heic" || file.type === "image/heif";
-  dom.backStatus.textContent = needsConversion ? "正在本机转换 HEIC/HEIF，然后压缩牌背……" : "正在读取原图，完成取景后会自动压缩……";
+  dom.backStatus.textContent = needsConversion ? text('converting') : text('reading');
   let readableFile = file;
   try {
     if (needsConversion) {
@@ -1032,7 +1055,7 @@ async function loadBackFile(file) {
     try {
       await new Promise((resolve, reject) => {
         image.onload = resolve;
-        image.onerror = () => reject(new Error("图片内容无法解码，请确认文件没有损坏。"));
+        image.onerror = () => reject(new Error(text('decodeError')));
         image.src = url;
       });
     } finally {
@@ -1047,10 +1070,10 @@ async function loadBackFile(file) {
     dom.backOffsetY.value = "0";
     for (const input of [dom.backZoom, dom.backOffsetX, dom.backOffsetY]) input.disabled = false;
     dom.applyBack.disabled = false;
-    dom.backStatus.textContent = `${image.naturalWidth}×${image.naturalHeight} 原图已读取，不限制原文件大小；拖动滑块调整取景，保存时会自动压缩。`;
+    dom.backStatus.textContent = text('readOk')(image.naturalWidth,image.naturalHeight);
     refreshBackPreview();
   } catch (error) {
-    dom.backStatus.textContent = error instanceof Error ? error.message : "图片无法读取。";
+    dom.backStatus.textContent = error instanceof Error ? error.message : text('readFail');
   }
 }
 
@@ -1072,11 +1095,11 @@ function saveCardBack() {
   try {
     localStorage.setItem(CARD_BACK_KEY, dataUrl);
   } catch {
-    dom.backStatus.textContent = "浏览器存储空间不足,牌背只在本次会话生效。";
+    dom.backStatus.textContent = text('storageFull');
   }
   applyCardBack(dataUrl);
-  dom.backStatus.textContent = "已更换牌背,刷新后仍然有效。";
-  setStatus("牌背已更换。");
+  dom.backStatus.textContent = text('backChanged');
+  setStatus(text('backChangedStatus'));
   dom.backDialog.close();
 }
 
@@ -1090,8 +1113,8 @@ function resetCardBack() {
   backEditor.image = null;
   dom.applyBack.disabled = true;
   for (const input of [dom.backZoom, dom.backOffsetX, dom.backOffsetY]) input.disabled = true;
-  dom.backStatus.textContent = "已恢复默认牌背。";
-  setStatus("已恢复默认牌背。");
+  dom.backStatus.textContent = text('backReset');
+  setStatus(text('backReset'));
   const preview = new Image();
   preview.onload = () => {
     const context = dom.backCanvas.getContext("2d");
@@ -1189,15 +1212,15 @@ dom.stuckRestart.addEventListener("click", () => restartLevel());
 
 // ---------- 启动 ----------
 
-const learningBar=document.createElement('section');learningBar.className='learning-bar';learningBar.setAttribute('aria-label','空间与学习');
+const learningBar=document.createElement('section');learningBar.className='learning-bar';learningBar.setAttribute('aria-label',text('spaceLearning'));
 document.querySelector('.topbar').after(learningBar);
 function renderLearningBar(){
   if(!game.state)return;
-  if(game.practice){const lesson=LESSONS[game.practice.index];
-    learningBar.innerHTML=`<div><strong>练习 ${game.practice.index+1} / 3 · ${lesson.name}</strong><p>${lesson.detail}</p></div><div class="learning-actions"><button type="button" data-learn="retry">重练</button><button type="button" data-learn="next" ${game.practice.passed?'':'disabled'}>${game.practice.index===2?'练习完成':'下一练习'}</button><button type="button" data-learn="close">回到牌局</button></div>`;
+  if(game.practice){const lesson=I18N[locale].lessons[game.practice.index];
+    learningBar.innerHTML=`<div><strong>${text('practice')(game.practice.index+1)} · ${lesson[0]}</strong><p>${lesson[1]}</p></div><div class="learning-actions"><button type="button" data-learn="retry">${text('retryPractice')}</button><button type="button" data-learn="next" ${game.practice.passed?'':'disabled'}>${game.practice.index===2?text('practiceComplete'):text('nextPractice')}</button><button type="button" data-learn="close">${text('backGame')}</button></div>`;
   }else{
     const collected=game.state.foundations.reduce((sum,count)=>sum+count,0),cells=game.state.cells.filter(card=>card===null).length;
-    learningBar.innerHTML=`<div><strong>归位 ${collected} / 52</strong><p>空档 ${cells} / 4 · 现可搬 ${maxMovableCount(game.state,false)} 张到非空列</p></div><button type="button" data-learn="start">新手练习</button>`;
+    learningBar.innerHTML=`<div><strong>${text('collected')(collected)}</strong><p>${text('capacity')(cells,maxMovableCount(game.state,false))}</p></div><button type="button" data-learn="start">${text('beginPractice')}</button>`;
   }
 }
 function loadPracticeStep(index){
@@ -1214,7 +1237,7 @@ function endPractice(){
   if(!game.practice)return;
   const bookmark=game.practice.bookmark;game.state=bookmark.state;game.history=bookmark.history;game.moves=bookmark.moves;game.elapsedBefore=bookmark.elapsed;
   game.startedAt=bookmark.started?Date.now():null;game.practice=null;game.selection=null;game.hint=null;
-  writeJson('freecell.learning.v1',{seen:true});render();saveSession();setStatus('已回到原牌局，练习不会改变正式成绩。');
+  writeJson('freecell.learning.v1',{seen:true});render();saveSession();setStatus(text('returned'));
 }
 learningBar.addEventListener('click',event=>{
   const action=event.target.closest('[data-learn]')?.dataset.learn;
@@ -1227,7 +1250,7 @@ dom.body.dataset.cascading = "false";
 loadCardBack();
 if (restoreSession()) {
   dom.body.dataset.gameState = "playing";
-  setStatus(`已恢复第 ${game.level} 关的进度。`);
+  setStatus(text('restored')(game.level));
   renderMeta();
   dealAnimation();
 } else {
@@ -1235,6 +1258,8 @@ if (restoreSession()) {
   const resumeLevel = session?.won && Number.isInteger(session.level) ? Math.min(progress.unlocked, session.level + 1) : progress.unlocked;
   startLevel(Math.max(1, Math.min(LEVEL_COUNT, resumeLevel)), { deal: true });
 }
+applyLocale({announce:false});
+addEventListener('message',event=>{let parentOrigin='';try{parentOrigin=new URL(document.referrer).origin;}catch{}if(event.source!==window.parent||!parentOrigin||event.origin!==parentOrigin||event.data?.type!=='forge:locale'||!LOCALES.has(event.data.locale)||event.data.locale===locale)return;locale=event.data.locale;for(const [card,element]of cardElements)element.setAttribute('aria-label',localizedCardName(card));applyLocale();});
 
 // 测试与调试钩子:只读状态、按规则执行移动、求解当前局面。不暴露任何跳过规则的捷径。
 window.__freecell = {

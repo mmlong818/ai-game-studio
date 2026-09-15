@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<link rel="stylesheet" href="./styles.css">
+
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>无限三消</title>
+
+</head>
+<body data-game-state="idle">
+<div id="app">
+  <header id="hud">
+    <div class="hud-top">
+      <div class="chips" aria-hidden="true">
+        <i style="background:#FF9AA6"></i><i style="background:#FFC978"></i><i style="background:#8FE0C0"></i><i style="background:#93C4F7"></i><i style="background:#C4AAF5"></i>
+      </div>
+      <h1>无限三消</h1>
+      <span class="tagline">无限三消</span>
+    </div>
+    <div class="hud-stats">
+      <div class="stat"><span class="k">分数</span><b id="score">0</b></div>
+      <div class="stat"><span class="k">最好</span><b id="best">0</b></div>
+      <div class="stat" id="chainStat"><span class="k">连锁</span><b id="chain">—</b></div>
+    </div>
+  </header>
+
+  <main id="board-wrap">
+    <div id="stage" data-game-board data-selected="" data-board="" data-score="0" data-phase="idle">
+      <canvas id="game-canvas" width="320" height="320" tabindex="0" data-score="0" aria-label="三消棋盘，方向键移动光标，空格选中"></canvas>
+      <div id="hint-layer"></div>
+    </div>
+    <div id="banner" role="status" aria-live="polite"></div>
+
+    <section id="startPanel" aria-label="开始">
+      <div class="panel-blocks" aria-hidden="true">
+        <span style="background:#FF9AA6"></span><span style="background:#FFC978"></span><span style="background:#8FE0C0"></span><span style="background:#93C4F7"></span><span style="background:#C4AAF5"></span>
+      </div>
+      <h2>无限三消</h2>
+      <p class="kv">拖动或点两下交换相邻方块，三个以上同色同形就会消除，上方方块落下还能连锁。</p>
+      <p class="kv" style="border-left-color:#93C4F7">没有时间、没有失败，分数一直累积，想停就停。虚线格上的箭头是一处现成的可消交换。</p>
+      <button id="start" type="button" data-game-action="click">开 始</button>
+    </section>
+  </main>
+
+  <footer>
+    <div id="status">拖动或点两下交换相邻方块</div>
+    <button id="restart" type="button">重新开始</button>
+  </footer>
+</div>
+
+
+
+<script src="./i18n.js"></script>
+<script src="./app.js"></script>
+<script src="_studio/runtime-inspector.js"></script></body>
+</html>

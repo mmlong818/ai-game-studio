@@ -1,0 +1,95 @@
+{
+  "title": "数织矩阵",
+  "template": "merge-2048",
+  "runtimeTarget": "web-2d",
+  "difficulty": "standard",
+  "visualStyle": "fashion",
+  "aspectRatio": "9:16",
+  "cameraMode": "board",
+  "inputModes": [
+    "swipe",
+    "keyboard"
+  ],
+  "designProfile": {
+    "genre": "滑动数字合成",
+    "targetPlayer": "偏好短回合规划、追求高阶合成的益智玩家",
+    "playerFantasy": "用有限棋盘把分散数字组织成越来越高的单一数值",
+    "sessionLength": "3–12 分钟",
+    "coreLoop": [
+      "观察空位与相同数字",
+      "选择一个整体滑动方向",
+      "合并同值数字",
+      "为新数字块预留空间"
+    ],
+    "winCondition": "合成当前难度指定的目标数字",
+    "failCondition": "棋盘填满且四个方向都不能产生移动或合并",
+    "progression": [
+      "二十个独立开局分为五章，逐步加入角落、空位、连并、预告、限步和零回溯任务",
+      "最终关合成 2048 后可继续无尽模式"
+    ],
+    "difficultyCurve": [
+      "标准档：保持足够学习窗口，并在中段形成稳定压力",
+      "难度调整必须改变 merge-2048 的真实规则参数，而不是只改标签"
+    ],
+    "gameFeel": [
+      "数字块在 168ms 内连续滑向目标格，合并与新生分别反馈",
+      "无效移动只产生轻微回弹且绝不生成新块",
+      "下一块预告靠近棋盘并在生成后更新"
+    ],
+    "onboarding": [
+      "第一关在棋盘下方只显示一次滑动提示",
+      "开局保持低密度，随后用不同初始局面教学角落与空位"
+    ],
+    "accessibility": [
+      "手机直接滑动棋盘，桌面使用方向键或 WASD，Z 键和回溯按钮等价",
+      "数字文本始终提供并维持高对比，不只依赖色块"
+    ],
+    "productionRisks": [
+      "一次移动中每个数字块最多合并一次；2、2、2、2 必须得到 4、4",
+      "动画期间只允许缓存一个方向，存档必须保留棋盘、下一块和随机状态"
+    ]
+  },
+  "levelProgression": {
+    "levelCount": 20,
+    "curve": "stepped",
+    "tierSize": 4,
+    "unlockMode": "sequential",
+    "persistProgress": true
+  },
+  "templateSource": {
+    "sourceName": "2048",
+    "sourceUrl": "https://github.com/gabrielecirulli/2048",
+    "license": "MIT",
+    "licenseUrl": "https://github.com/gabrielecirulli/2048/blob/master/LICENSE.txt",
+    "integrationMode": "code-port",
+    "importedElements": [
+      "四向遍历顺序",
+      "单次合并标记",
+      "移动后生成新数字块",
+      "无可用移动判定"
+    ],
+    "assetPolicy": "只移植玩法结构；画面、声音和界面由本平台独立制作。",
+    "verifiedAt": "2026-08-26"
+  },
+  "generatedAt": "2026-08-31T08:38:55.284Z",
+  "assetManifest": "./assets/asset-manifest.json",
+  "artPipeline": {
+    "renderer": "role-split-bitmaps",
+    "sourceAtlas": "./assets/gameplay-atlas.png",
+    "gameplayBackground": "./assets/background.png",
+    "sprites": [
+      "./assets/sprites/sprite-01.png",
+      "./assets/sprites/sprite-02.png",
+      "./assets/sprites/sprite-03.png",
+      "./assets/sprites/sprite-04.png",
+      "./assets/sprites/sprite-05.png",
+      "./assets/sprites/sprite-06.png",
+      "./assets/sprites/sprite-07.png",
+      "./assets/sprites/sprite-08.png",
+      "./assets/sprites/sprite-09.png"
+    ],
+    "cover": "./assets/cover.png"
+  },
+  "userCustomization": [],
+  "puzzleRules": null
+}

@@ -1,18 +1,19 @@
 import type { GameAspectRatio } from "../shared/contracts";
+import { useComponentMessages } from "./component-i18n";
 
 export type NewGameAspectRatio = Extract<GameAspectRatio, "9:16" | "16:9" | "1:1">;
 
-const choices: Array<{ value: NewGameAspectRatio; label: string; shape: string }> = [
-  { value: "9:16", label: "竖向", shape: "竖向画幅" },
-  { value: "16:9", label: "横向", shape: "横向画幅" },
-  { value: "1:1", label: "方形", shape: "方形画幅" },
-];
-
 export function AspectRatioChoice({ value, onChange }: { value: NewGameAspectRatio | null; onChange: (value: NewGameAspectRatio) => void }) {
+  const t = useComponentMessages();
+  const choices = [
+    { value: "9:16" as const, label: t("aspect.portrait"), shape: t("aspect.portraitShape") },
+    { value: "16:9" as const, label: t("aspect.landscape"), shape: t("aspect.landscapeShape") },
+    { value: "1:1" as const, label: t("aspect.square"), shape: t("aspect.squareShape") },
+  ];
   return (
     <fieldset className="aspect-ratio-choice">
-      <legend>选择游戏画幅</legend>
-      <p>画幅只决定游戏画面的横竖比例，不限制操作方式或设备。</p>
+      <legend>{t("aspect.title")}</legend>
+      <p>{t("aspect.detail")}</p>
       <div className="aspect-ratio-options">
         {choices.map(choice => (
           <label key={choice.value}>

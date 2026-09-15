@@ -1,0 +1,82 @@
+{
+  "title": "折光堆叠",
+  "template": "tetris",
+  "runtimeTarget": "web-2d",
+  "difficulty": "standard",
+  "visualStyle": "color-block",
+  "aspectRatio": "9:16",
+  "cameraMode": "board",
+  "inputModes": [
+    "swipe",
+    "keyboard",
+    "touch-buttons"
+  ],
+  "designProfile": {
+    "genre": "落块消行",
+    "targetPlayer": "熟悉经典规则、希望得到短局技巧挑战的玩家",
+    "playerFantasy": "在结构失稳前把不断落下的光块组织成完整横线",
+    "sessionLength": "3–8 分钟",
+    "coreLoop": [
+      "预判落点",
+      "移动或旋转方块",
+      "完成横线消除",
+      "为下一块保留空间"
+    ],
+    "winCondition": "完成当前难度要求的目标消行数",
+    "failCondition": "新方块无法进入棋盘",
+    "progression": [
+      "消行数持续累积",
+      "落块速度随难度提高"
+    ],
+    "difficultyCurve": [
+      "标准档：保持足够学习窗口，并在中段形成稳定压力",
+      "难度调整必须改变 tetris 的真实规则参数，而不是只改标签"
+    ],
+    "gameFeel": [
+      "旋转和硬降有独立反馈",
+      "消行形成明显节奏停顿",
+      "危险高度通过对比增强"
+    ],
+    "onboarding": [
+      "开局展示移动、旋转和硬降",
+      "前几个方块使用较缓落速"
+    ],
+    "accessibility": [
+      "键盘和触控均提供全部动作",
+      "方块使用轮廓与颜色共同区分"
+    ],
+    "productionRisks": [
+      "旋转贴墙判定必须稳定",
+      "移动端控制不能遮挡棋盘"
+    ]
+  },
+  "levelProgression": {
+    "levelCount": 20,
+    "curve": "stepped",
+    "tierSize": 4,
+    "unlockMode": "sequential",
+    "persistProgress": true
+  },
+  "templateSource": null,
+  "generatedAt": "2026-08-31T09:22:01.628Z",
+  "assetManifest": "./assets/asset-manifest.json",
+  "artPipeline": {
+    "renderer": "role-split-bitmaps",
+    "sourceAtlas": "./assets/gameplay-atlas.png",
+    "gameplayBackground": "./assets/background.png",
+    "sprites": [
+      "./assets/sprites/sprite-01.png",
+      "./assets/sprites/sprite-02.png",
+      "./assets/sprites/sprite-03.png",
+      "./assets/sprites/sprite-04.png",
+      "./assets/sprites/sprite-05.png",
+      "./assets/sprites/sprite-06.png",
+      "./assets/sprites/sprite-07.png",
+      "./assets/sprites/sprite-08.png",
+      "./assets/sprites/sprite-09.png"
+    ],
+    "cover": "./assets/cover.png"
+  },
+  "userCustomization": [],
+  "puzzleRules": null
+}

@@ -5,6 +5,7 @@ import App from "./App";
 import { createProject } from "./domain/project";
 import { saveProject } from "./domain/projectStorage";
 import { INITIAL_DRAFT } from "./domain/storage";
+import { PreferencesProvider } from "./web/preferences";
 
 const simpleProduction = vi.hoisted(() => ({
   buildSimplePlayableRevision: vi.fn(() => new Promise(() => {})),
@@ -41,6 +42,7 @@ describe("player-first creation flow", () => {
     expect(screen.queryByRole('link',{name:/改造这个游戏/})).not.toBeInTheDocument();
   });
   beforeEach(() => {
+    vi.stubGlobal("matchMedia", vi.fn(() => ({ matches: false, addEventListener: vi.fn(), removeEventListener: vi.fn() })));
     simpleProduction.buildSimplePlayableRevision.mockClear();
     localStorage.clear();
     window.history.replaceState({}, "", "/player-first?game=game-a");
@@ -91,6 +93,16 @@ describe("player-first creation flow", () => {
     expect(screen.getByRole("heading", { name: "先选一个要改造的游戏" })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "去游戏大厅选择" })).toHaveAttribute("href", "/games");
     expect(screen.queryByTitle(/游戏画面/)).not.toBeInTheDocument();
+  });
+
+  it.each([
+    ["zh-CN", "先选一个要改造的游戏"], ["zh-TW", "先選一個要改造的遊戲"],
+    ["en", "Choose a game to remix"], ["ja", "改造するゲームを選択"],
+  ])("玩家入口使用 %s 平台文案", async (locale, heading) => {
+    localStorage.setItem("forge-locale", locale);
+    window.history.replaceState({}, "", "/player-first");
+    render(<PreferencesProvider><App /></PreferencesProvider>);
+    expect(screen.getByRole("heading", { name: heading })).toBeInTheDocument();
   });
 
   it("旧流程选择方向前不会制作，执行按钮明确说明开始制作", async () => {

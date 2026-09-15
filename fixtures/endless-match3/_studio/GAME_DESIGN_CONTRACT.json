@@ -1,0 +1,150 @@
+{
+  "schemaVersion": "game-design-contract-v1",
+  "id": "DESIGN-93620a9e-9916-4d4b-9301-e114ea1aa3a4",
+  "projectId": "93620a9e-9916-4d4b-9301-e114ea1aa3a4",
+  "knowledge": {
+    "libraryVersion": "game-design-knowledge-v1",
+    "integrationStatus": "matched",
+    "patternIds": [
+      "turn-match3-duel"
+    ],
+    "capabilityIds": [
+      "game-lifecycle",
+      "unified-input",
+      "difficulty-plan"
+    ],
+    "mechanicIds": [
+      "swap-match"
+    ],
+    "researchTaskIds": [],
+    "evidenceUrls": [
+      "https://github.com/mmlong818/ai-game-studio"
+    ]
+  },
+  "playerPromise": "在柔和的糖果色棋盘上随手拨动方块，看成串消除和连锁一路蔓延",
+  "audience": {
+    "experience": "first-time",
+    "accessibilityNeeds": [
+      "拖动与点选两次皆可完成交换",
+      "方块用颜色加不同形状区分",
+      "触控目标不小于棋盘格全尺寸",
+      "重新开始按钮常驻且可键盘聚焦"
+    ]
+  },
+  "session": {
+    "targetMinutes": 5,
+    "restartSeconds": 2,
+    "firstMeaningfulChoiceSeconds": 8
+  },
+  "loops": {
+    "instant": "扫视棋盘找可消的相邻对",
+    "tactical": "拖动或点选交换两个相邻方块",
+    "session": "无通关目标，玩家自行决定何时停止；分数持续累积；失败条件：无失败条件：不会输，无倒计时与生命，无解时自动洗牌",
+    "longTerm": "逐步掌握更复杂的变化"
+  },
+  "mechanics": [
+    {
+      "id": "swap-match",
+      "label": "交换消除",
+      "ruleIds": [
+        "RULE-03"
+      ],
+      "core": true,
+      "learningStages": [
+        "introduce",
+        "practice",
+        "vary",
+        "combine"
+      ],
+      "onboardingExemption": null
+    }
+  ],
+  "onboarding": [],
+  "content": {
+    "mode": "endless",
+    "beats": [
+      {
+        "id": "BEAT-SAFE",
+        "label": "安全理解",
+        "pressure": "safe",
+        "introducesMechanicIds": [
+          "swap-match"
+        ],
+        "practicesMechanicIds": [],
+        "difficulty": {
+          "cognition": 0,
+          "operation": 0,
+          "space": 0,
+          "resources": 0,
+          "combination": 0,
+          "punishment": 0
+        },
+        "changeReason": "先让玩家在无惩罚环境中完成全部核心动作",
+        "expectedSeconds": 45
+      },
+      {
+        "id": "BEAT-PRACTICE",
+        "label": "独立练习",
+        "pressure": "normal",
+        "introducesMechanicIds": [],
+        "practicesMechanicIds": [
+          "swap-match"
+        ],
+        "difficulty": {
+          "cognition": 1,
+          "operation": 1,
+          "space": 1,
+          "resources": 1,
+          "combination": 0,
+          "punishment": 0
+        },
+        "changeReason": "逐步加入决策压力",
+        "expectedSeconds": 105
+      },
+      {
+        "id": "BEAT-COMBINE",
+        "label": "组合掌握",
+        "pressure": "high",
+        "introducesMechanicIds": [],
+        "practicesMechanicIds": [
+          "swap-match"
+        ],
+        "difficulty": {
+          "cognition": 2,
+          "operation": 2,
+          "space": 2,
+          "resources": 2,
+          "combination": 1,
+          "punishment": 1
+        },
+        "changeReason": "组合已学机制形成后段挑战",
+        "expectedSeconds": 150
+      }
+    ]
+  },
+  "failurePolicy": "forbidden",
+  "assistance": {
+    "hiddenAdaptation": false,
+    "steps": []
+  },
+  "acceptance": [
+    {
+      "id": "ACCEPT-ENDLESS",
+      "label": "无限模式重开正常且抽样期间没有通关终点（不证明长期内容供给）",
+      "kind": "endless-sampled",
+      "mechanicIds": [
+        "swap-match"
+      ],
+      "onboardingStepIds": [],
+      "beatIds": []
+    },
+    {
+      "id": "ACCEPT-NO-FAILURE",
+      "label": "已测操作未进入失败状态（抽样检查）",
+      "kind": "no-failure",
+      "mechanicIds": [],
+      "onboardingStepIds": [],
+      "beatIds": []
+    }
+  ]
+}

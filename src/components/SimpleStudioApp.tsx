@@ -15,6 +15,8 @@ import { downloadSimpleOpenSourceBundle, publishSimplePlayableRevision, verifySi
 import { INITIAL_DRAFT } from "../domain/storage";
 import { getTemplate } from "../domain/templates";
 import { resolveTemplateForGame } from "../domain/templateResolution";
+import { LocalizedGameFrame } from "./LocalizedGameFrame";
+import { useSimplePlayerMessages, useSimplePlayerOptions } from "./simple-player-i18n";
 
 type FlowMode = "remix" | "new-game";
 type FlowPhase = "playing" | "input" | "analyzing" | "choices" | "producing" | "validating" | "ready" | "testing" | "published" | "failed" | "stopped";
@@ -56,22 +58,9 @@ const INITIAL_FLOW: SimpleFlowState = {
   publishedUrl: "",
 };
 
-const REMIX_SUGGESTIONS = [
-  "画面更可爱，角色更有辨识度",
-  "操作反馈再明显一点",
-  "手机版按钮不要挡住画面",
-  "节奏快一点，但不要突然变难",
-];
-
-const NEW_GAME_SUGGESTIONS = [
-  "小昆虫在树干上收集露珠并躲避障碍",
-  "轻松的三分钟合成小游戏",
-  "可以反复挑战的短局解谜游戏",
-];
-
 const isVisualRequest = (request: string) =>
-  /画面|美术|风格|颜色|背景|可爱|丑|造型|封面/.test(request) &&
-  !/操作|碰撞|判定|范围|速度|节奏|难度|障碍|规则/.test(request);
+  /画面|美[术術]|风格|風格|颜色|顏色|背景|可爱|可愛|丑|造型|封面|visual|art|style|colou?r|background|cute|cover|見た目|絵|色|かわい|デザイン/i.test(request) &&
+  !/操作|碰撞|判定|范围|範圍|速度|节奏|節奏|难度|難度|障碍|障礙|规则|規則|control|collision|speed|pace|difficulty|obstacle|rule|操作|当たり判定|速度|テンポ|難易度|障害|ルール/i.test(request);
 
 const visualChoices = [
   { id: "storybook", label: "绘本森林", note: "轮廓清楚、颜色克制，最适合手机", recommended: true },
@@ -102,12 +91,15 @@ const embeddableGameUrl = (url: string | undefined): string | undefined => {
 };
 
 export function SimpleStudioApp() {
+  const t = useSimplePlayerMessages();
+  const localizedOptions = useSimplePlayerOptions();
+  useEffect(() => { document.title = t("documentTitle"); }, [t]);
   const sourceGameId = new URLSearchParams(window.location.search).get("game")?.trim() || null;
   const flowStorageKey = sourceGameId ? `${STORAGE_KEY}:${sourceGameId}` : STORAGE_KEY;
   const [flow, setFlow] = useState<SimpleFlowState>(() => readFlow(flowStorageKey));
   const [sourceGame, setSourceGame] = useState<ProjectDetail | null>(null);
   const [sourceLoading, setSourceLoading] = useState(Boolean(sourceGameId));
-  const [sourceError, setSourceError] = useState("");
+  const [sourceError, setSourceError] = useState(false);
   const [draftRequest, setDraftRequest] = useState("");
   const [sheetView, setSheetView] = useState<SheetView | null>(flow.phase === "input" ? "request" : null);
   const [processOpen, setProcessOpen] = useState(true);
@@ -133,8 +125,8 @@ export function SimpleStudioApp() {
           ? current
           : { ...current, revision: project.publication?.versionNumber ?? project.version.number });
       })
-      .catch((error) => {
-        if (active) setSourceError(failureMessage(error, "当前游戏暂时无法读取。请确认本机制作服务可用后再打开。"));
+      .catch(() => {
+        if (active) setSourceError(true);
       })
       .finally(() => {
         if (active) setSourceLoading(false);
@@ -203,16 +195,32 @@ export function SimpleStudioApp() {
   }, [activeProject, flow.phase, flow.selectedDirection, spec]);
 
   const suggestions = flow.mode === "new-game"
-    ? NEW_GAME_SUGGESTIONS
+    ? [...localizedOptions.fresh]
     : sourceTemplate
       ? [
           ...sourceTemplate.suggestions.slice(0, 2).map((item) => `${item.title}：${item.description}`),
-          ...REMIX_SUGGESTIONS.slice(1, 3),
+          ...localizedOptions.remix.slice(1, 3),
         ]
-      : REMIX_SUGGESTIONS;
-  const choices = isVisualRequest(flow.request) ? visualChoices : designChoices;
-  const gameTitle = flow.mode === "new-game" ? "新游戏试玩" : sourceGame?.title ?? "载入游戏";
+      : [...localizedOptions.remix];
+  const choices = (isVisualRequest(flow.request) ? visualChoices : designChoices).map((choice, index) => ({ ...choice, label: localizedOptions[isVisualRequest(flow.request) ? "visual" : "design"][index][0], note: localizedOptions[isVisualRequest(flow.request) ? "visual" : "design"][index][1] }));
+  const gameTitle = flow.mode === "new-game" ? localizedOptions.newPreview : sourceGame?.title ?? localizedOptions.loadingGame;
   const showGeneratedRevision = Boolean(activeProject && ["testing", "published"].includes(flow.phase));
+  const displayEvent = (event: ProcessEvent) => {
+    if (event.author === "user") {
+      if (event.id.startsWith("choice-")) return `${t("chooseKicker")}：${choices.find(choice => choice.id === flow.selectedDirection)?.label ?? flow.selectedDirection}`;
+      return event.text;
+    }
+    if (event.id.startsWith("received-")) return t("analyzing");
+    if (event.id.startsWith("analysis-")) return t("decisionDetail");
+    if (event.id.startsWith("stopped-")) return t("stoppedDetail");
+    if (event.id.startsWith("browser-") || event.id.startsWith("testing-")) return t("checking");
+    if (event.id.startsWith("publishing-")) return t("validating");
+    if (event.id.startsWith("published-")) return t("publishedDetail");
+    if (event.id.startsWith("bundle-")) return t("download");
+    if (event.id.startsWith("work-")) return t("producing");
+    if (event.id.includes("failed-")) return t("failedFallback");
+    return event.text;
+  };
 
   const openRequest = (mode: FlowMode = flow.mode) => {
     setFlow((current) => ({ ...current, mode, phase: current.phase === "input" ? "playing" : current.phase }));
@@ -398,10 +406,7 @@ export function SimpleStudioApp() {
     return (
       <main className="player-first-app game-choice-page">
         <section className="game-choice-message">
-          <span className="player-brand">游造</span>
-          <h1>先选一个要改造的游戏</h1>
-          <p>“边玩边改”会跟随具体游戏保存意见、版本和开发记录，不会绑定固定示例。</p>
-          <a href="/games">去游戏大厅选择</a>
+          <span className="player-brand">{t("brand")}</span><h1>{t("chooseTitle")}</h1><p>{t("chooseDetail")}</p><a href="/games">{t("choose")}</a>
         </section>
       </main>
     );
@@ -411,10 +416,7 @@ export function SimpleStudioApp() {
     return (
       <main className="player-first-app game-choice-page">
         <section className="game-choice-message" role={sourceError ? "alert" : "status"}>
-          <span className="player-brand">游造</span>
-          <h1>{sourceError ? "这个游戏暂时打不开" : "正在打开游戏"}</h1>
-          <p>{sourceError || "正在读取当前游戏和已发布版本。"}</p>
-          {sourceError && <a href="/games">返回游戏大厅</a>}
+          <span className="player-brand">{t("brand")}</span><h1>{t(sourceError ? "unavailable" : "opening")}</h1><p>{t(sourceError ? "unavailable" : "loading")}</p>{sourceError && <a href="/games">{t("back")}</a>}
         </section>
       </main>
     );
@@ -422,42 +424,39 @@ export function SimpleStudioApp() {
 
   return (
     <main className={`player-first-app${showGeneratedRevision ? " player-first-app--generated-preview" : ""}`}>
-      {showGeneratedRevision && <nav className="game-lobby-bar" aria-label="游戏导航"><a href="/games">← 回大厅</a></nav>}
-      <section className="game-stage" aria-label="游戏试玩区">
-        <iframe
-          key={`${sourceGame.id}-${flow.revision}-${flow.phase}`}
-          title={`${gameTitle}游戏画面`}
-          {...(showGeneratedRevision
-            ? { srcDoc: runtime }
-            : { src: embeddableGameUrl(sourceGame.publication?.stableUrl ?? sourceGame.publication?.versionUrl) })}
-        />
+      {showGeneratedRevision && <nav className="game-lobby-bar" aria-label={t("navigation")}><a href="/games">{t("backShort")}</a></nav>}
+      <section className="game-stage" aria-label={t("stage")}>
+        {showGeneratedRevision ? <iframe key={`${sourceGame.id}-${flow.revision}-${flow.phase}`} title={t("frame", { title: gameTitle })} srcDoc={runtime} /> : (() => {
+          const source = embeddableGameUrl(sourceGame.publication?.stableUrl ?? sourceGame.publication?.versionUrl);
+          return source ? <LocalizedGameFrame key={`${sourceGame.id}-${flow.revision}`} title={t("frame", { title: gameTitle })} source={source} /> : null;
+        })()}
       </section>
 
       {/* 游戏内的修改不是独立流程：直接进入创作页的“改一个现有游戏”步骤，并预选当前游戏。 */}
       {sourceTemplateId && <a className="remix-edge-button" href={`/create?game=${encodeURIComponent(sourceGame.id)}`}>
-        <span aria-hidden="true">＋</span> 改造这个游戏
+        <span aria-hidden="true">＋</span> {t("remix")}
       </a>}
 
       {flow.requestHistory.length > 0 && flow.phase !== "input" && flow.phase !== "playing" && (
         <section className={`process-chat ${processOpen ? "is-open" : "is-collapsed"}`} aria-live="polite">
           <header>
             <span className={["analyzing", "producing", "validating"].includes(flow.phase) ? "status-pulse" : "status-dot"} aria-hidden="true" />
-            <div><strong>开发过程</strong><small>{flow.phase === "analyzing" ? "正在分析你的意见" : flow.phase === "producing" ? "正在生成 AI 位图" : flow.phase === "validating" ? "正在构建并验证" : flow.phase === "stopped" ? "本轮已停止" : flow.phase === "published" ? "已完成" : flow.phase === "failed" ? "需要处理" : "有新进展"}</small></div>
-            <button type="button" aria-label={processOpen ? "收起开发过程" : "展开开发过程"} onClick={() => setProcessOpen((open) => !open)}>{processOpen ? "收起" : "查看"}</button>
+            <div><strong>{t("process")}</strong><small>{t(flow.phase === "analyzing" ? "analyzing" : flow.phase === "producing" ? "producing" : flow.phase === "validating" ? "validating" : flow.phase === "stopped" ? "stopped" : flow.phase === "published" ? "completed" : flow.phase === "failed" ? "needsAction" : "update")}</small></div>
+            <button type="button" aria-label={t(processOpen ? "collapseProcess" : "expandProcess")} onClick={() => setProcessOpen((open) => !open)}>{t(processOpen ? "collapse" : "view")}</button>
           </header>
           {processOpen && (
             <div className="process-chat-body" ref={processBody}>
-              {flow.events.map((event) => <div className={`chat-line ${event.author === "user" ? "is-user" : "is-studio"}`} key={event.id}><span>{event.author === "user" ? "你" : "游造"}</span><p>{event.text}</p></div>)}
-              {flow.phase === "analyzing" && <div className="thinking-line"><i /><i /><i /><span>正在分析相似玩法和改造范围</span></div>}
-              {flow.phase === "analyzing" && <div className="chat-notice compact"><span>想到新的要求，可以现在补充，不需要等待。</span><button type="button" className="quiet-action" onClick={() => openRequest(flow.mode)}>补充意见</button><button type="button" className="quiet-action stop-action" onClick={stopCurrentWork}>停止制作</button></div>}
-              {(flow.phase === "producing" || flow.phase === "validating") && <div className="thinking-line"><i /><i /><i /><span>{flow.phase === "producing" ? "正在生成并绑定游戏位图" : "正在执行构建和玩法规则检查"}</span></div>}
-              {(flow.phase === "producing" || flow.phase === "validating") && <div className="chat-notice compact"><span>补充新要求会安全停止本轮制作，当前可玩版本不会被覆盖。</span><button type="button" className="quiet-action" onClick={() => openRequest(flow.mode)}>补充并调整</button><button type="button" className="quiet-action stop-action" onClick={stopCurrentWork}>停止制作</button></div>}
-              {flow.phase === "choices" && <div className="chat-notice"><strong>有一项需要你决定</strong><span>我准备了少量选项，并标出了推荐方案。</span><div><button type="button" onClick={() => setSheetView("choices")}>查看选项</button><button type="button" className="quiet-action" onClick={() => openRequest(flow.mode)}>补充意见</button></div></div>}
-              {flow.phase === "ready" && <div className="chat-notice"><strong>新版本已经做好</strong><span>按你的意见完成了第 {flow.revision} 版，可以直接试玩。</span><div><button type="button" className="quiet-action" onClick={() => openRequest(flow.mode)}>补充意见</button><button type="button" onClick={startTesting}>试玩新版本</button></div></div>}
-              {flow.phase === "testing" && <div className="chat-notice"><strong>你正在试玩新版本</strong><span>不满意就继续提意见；确认目标清楚、操作舒适后再发布。</span><div><button type="button" className="quiet-action" onClick={() => openRequest(flow.mode)}>继续提意见</button><button type="button" onClick={publishVersion}>试玩满意，发布版本</button></div></div>}
-              {flow.phase === "published" && <div className="chat-notice"><strong>这个版本已发布</strong><span>以后仍然可以从游戏边缘继续改造。</span>{flow.publishedUrl && <a className="published-link" href={flow.publishedUrl} target="_blank" rel="noreferrer">打开玩家网址</a>}<div><button type="button" className="quiet-action" onClick={downloadBundle}>下载开源包</button><button type="button" className="quiet-action" onClick={() => openRequest(flow.mode)}>继续改造</button></div></div>}
-              {flow.phase === "failed" && <div className="chat-notice is-error"><strong>这次没有覆盖旧版本</strong><FailureDetails error={flow.lastError} fallback="这份本地记录没有保存详细原因。请调整意见后再次明确提交。" /><button type="button" onClick={() => openRequest(flow.mode)}>调整意见后重新提交</button></div>}
-              {flow.phase === "stopped" && <div className="chat-notice"><strong>本轮制作已停止</strong><span>已发出的图片请求已尝试中止；服务商可能已开始计费。当前可玩版本和已保存成果保持不变。</span><button type="button" onClick={() => openRequest(flow.mode)}>提出新意见，重新开始</button></div>}
+              {flow.events.map((event) => <div className={`chat-line ${event.author === "user" ? "is-user" : "is-studio"}`} key={event.id}><span>{event.author === "user" ? t("you") : t("brand")}</span><p>{displayEvent(event)}</p></div>)}
+              {flow.phase === "analyzing" && <div className="thinking-line"><i /><i /><i /><span>{t("analyzingScope")}</span></div>}
+              {flow.phase === "analyzing" && <div className="chat-notice compact"><span>{t("addNow")}</span><button type="button" className="quiet-action" onClick={() => openRequest(flow.mode)}>{t("add")}</button><button type="button" className="quiet-action stop-action" onClick={stopCurrentWork}>{t("stop")}</button></div>}
+              {(flow.phase === "producing" || flow.phase === "validating") && <div className="thinking-line"><i /><i /><i /><span>{t(flow.phase === "producing" ? "producingArt" : "checking")}</span></div>}
+              {(flow.phase === "producing" || flow.phase === "validating") && <div className="chat-notice compact"><span>{t("addStops")}</span><button type="button" className="quiet-action" onClick={() => openRequest(flow.mode)}>{t("addAdjust")}</button><button type="button" className="quiet-action stop-action" onClick={stopCurrentWork}>{t("stop")}</button></div>}
+              {flow.phase === "choices" && <div className="chat-notice"><strong>{t("decision")}</strong><span>{t("decisionDetail")}</span><div><button type="button" onClick={() => setSheetView("choices")}>{t("choices")}</button><button type="button" className="quiet-action" onClick={() => openRequest(flow.mode)}>{t("add")}</button></div></div>}
+              {flow.phase === "ready" && <div className="chat-notice"><strong>{t("ready")}</strong><span>{t("readyDetail", { revision: flow.revision })}</span><div><button type="button" className="quiet-action" onClick={() => openRequest(flow.mode)}>{t("add")}</button><button type="button" onClick={startTesting}>{t("test")}</button></div></div>}
+              {flow.phase === "testing" && <div className="chat-notice"><strong>{t("testing")}</strong><span>{t("testingDetail")}</span><div><button type="button" className="quiet-action" onClick={() => openRequest(flow.mode)}>{t("continueFeedback")}</button><button type="button" onClick={publishVersion}>{t("publish")}</button></div></div>}
+              {flow.phase === "published" && <div className="chat-notice"><strong>{t("published")}</strong><span>{t("publishedDetail")}</span>{flow.publishedUrl && <a className="published-link" href={flow.publishedUrl} target="_blank" rel="noreferrer">{t("openPlayer")}</a>}<div><button type="button" className="quiet-action" onClick={downloadBundle}>{t("download")}</button><button type="button" className="quiet-action" onClick={() => openRequest(flow.mode)}>{t("continueRemix")}</button></div></div>}
+              {flow.phase === "failed" && <div className="chat-notice is-error"><strong>{t("failed")}</strong><FailureDetails fallback={t("failedFallback")} /><button type="button" onClick={() => openRequest(flow.mode)}>{t("retry")}</button></div>}
+              {flow.phase === "stopped" && <div className="chat-notice"><strong>{t("stoppedTitle")}</strong><span>{t("stoppedDetail")}</span><button type="button" onClick={() => openRequest(flow.mode)}>{t("restart")}</button></div>}
             </div>
           )}
         </section>
@@ -468,40 +467,34 @@ export function SimpleStudioApp() {
           if (event.target === event.currentTarget) setSheetView(null);
         }}>
           <section className="request-sheet" role="dialog" aria-modal="true" aria-labelledby="request-title">
-            <button type="button" className="sheet-close" aria-label="关闭" onClick={() => {
+            <button type="button" className="sheet-close" aria-label={t("close")} onClick={() => {
               setSheetView(null);
               if (flow.phase === "input") setFlow((current) => ({ ...current, phase: "playing" }));
             }}>×</button>
 
             {sheetView === "request" ? (
               <>
-                <span className="sheet-kicker">{flow.mode === "new-game" ? "新游戏" : "游戏改造"}</span>
-                <h1 id="request-title">{flow.mode === "new-game" ? "你想玩什么？" : "哪里不满意？"}</h1>
-                <p>{flow.mode === "new-game" ? "用一句话说清玩家要做什么。其他事情交给我们。" : "说一句最想改变的地方。提交后可以关掉面板继续玩。"}</p>
-                <div className="quick-prompts" aria-label="一句话建议">
+                <span className="sheet-kicker">{t(flow.mode === "new-game" ? "newGame" : "gameRemix")}</span><h1 id="request-title">{t(flow.mode === "new-game" ? "newQuestion" : "remixQuestion")}</h1><p>{t(flow.mode === "new-game" ? "newHelp" : "remixHelp")}</p><div className="quick-prompts" aria-label={t("suggestions")}>
                   {suggestions.map((suggestion) => <button type="button" key={suggestion} onClick={() => setDraftRequest(suggestion)}>{suggestion}</button>)}
                 </div>
                 <label className="simple-prompt">
-                  <span>{flow.mode === "new-game" ? "游戏需求" : "你的意见"}</span>
-                  <textarea value={draftRequest} onChange={(event) => setDraftRequest(event.target.value)} rows={4} placeholder={flow.mode === "new-game" ? "例如：小昆虫在树干上收集露珠并躲避障碍…" : "例如：角色太大了，障碍根本躲不过去…"} />
+                  <span>{t(flow.mode === "new-game" ? "gameRequest" : "feedback")}</span><textarea value={draftRequest} onChange={(event) => setDraftRequest(event.target.value)} rows={4} placeholder={t(flow.mode === "new-game" ? "newPlaceholder" : "remixPlaceholder")} />
                 </label>
-                <button type="button" className="submit-request" disabled={!draftRequest.trim()} onClick={submitRequest}>提交需求，查看方向</button>
+                <button type="button" className="submit-request" disabled={!draftRequest.trim()} onClick={submitRequest}>{t("submit")}</button>
               </>
             ) : (
               <>
-                <span className="sheet-kicker">需要你选一下</span>
-                <h1 id="request-title">{isVisualRequest(flow.request) ? "你更喜欢哪种画面？" : "这次改到什么程度？"}</h1>
-                <p>我们已经先排除了不适合当前玩法的方向。选择一个方向会开始制作并产生模型用量。</p>
+                <span className="sheet-kicker">{t("chooseKicker")}</span><h1 id="request-title">{t(isVisualRequest(flow.request) ? "visualQuestion" : "scopeQuestion")}</h1><p>{t("choiceHelp")}</p>
                 <div className="direction-list">
                   {choices.map((choice) => (
                     <button type="button" key={choice.id} onClick={() => chooseDirection(choice.id)}>
-                      <span><strong>{choice.label}</strong>{choice.recommended && <small>推荐</small>}</span>
+                      <span><strong>{choice.label}</strong>{choice.recommended && <small>{t("recommended")}</small>}</span>
                       <p>{choice.note}</p>
-                      <span>使用此方向，开始制作</span>
+                      <span>{t("useChoice")}</span>
                     </button>
                   ))}
                 </div>
-                <button type="button" className="choice-revise" onClick={() => openRequest(flow.mode)}>先补充一条意见</button>
+                <button type="button" className="choice-revise" onClick={() => openRequest(flow.mode)}>{t("reviseChoice")}</button>
               </>
             )}
           </section>
